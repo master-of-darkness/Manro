@@ -1,0 +1,41 @@
+namespace Engine.Networking;
+
+struct Vec3 {
+  x: float;
+  y: float;
+  z: float;
+}
+
+table ClientInput {
+  move_forward : float;
+  move_right   : float;
+  view_yaw     : float;
+  view_pitch   : float;
+  buttons      : uint32;
+}
+
+// entity_type: 0 = unknown, 1 = player, 2 = prop
+table EntitySnapshot {
+  entity_id   : uint32;
+  position    : Vec3;
+  entity_type : uint8 = 0;
+  color       : Vec3;
+  velocity    : Vec3;
+}
+
+table SnapshotPacket {
+  entities : [EntitySnapshot];
+}
+
+table AssignPlayer {
+  entity_id : uint32;
+  position  : Vec3;
+}
+
+union Payload { SnapshotPacket, ClientInput, AssignPlayer }
+
+table Message {
+  payload : Payload;
+}
+
+root_type Message;

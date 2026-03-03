@@ -1,0 +1,208 @@
+cmake_minimum_required(VERSION 3.20)
+cmake_policy(SET CMP0091 NEW)
+project(GameEngine VERSION 0.1 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+if(MSVC)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    add_compile_options(/DNOMINMAX)
+endif()
+
+include(FetchContent)
+
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+
+set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+set(SDL_STATIC ON CACHE BOOL "" FORCE)
+set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
+
+set(SDL3MIXER_VENDORED ON CACHE BOOL "" FORCE)
+set(SDL3MIXER_SAMPLES OFF CACHE BOOL "" FORCE)
+set(SDL3MIXER_OPUS OFF CACHE BOOL "" FORCE)
+set(SDL3MIXER_FLAC OFF CACHE BOOL "" FORCE)
+set(SDL3MIXER_VORBIS OFF CACHE BOOL "" FORCE)
+
+FetchContent_Declare(
+        SDL3
+        GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
+        GIT_TAG        main
+        OVERRIDE_FIND_PACKAGE
+)
+
+FetchContent_Declare(
+        SDL3_mixer
+        GIT_REPOSITORY https://github.com/libsdl-org/SDL_mixer.git
+        GIT_TAG        main
+)
+
+FetchContent_MakeAvailable(SDL3 SDL3_mixer)
+
+add_subdirectory(Engine/deps/vk-bootstrap)
+add_subdirectory(Engine/deps/volk)
+add_subdirectory(Engine/deps/VulkanMemoryAllocator)
+
+set(SLANG_ENABLE_PCH OFF CACHE BOOL "" FORCE)
+set(SLANG_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
+set(SLANG_ENABLE_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(SLANG_ENABLE_SLANG_GLSLANG OFF CACHE BOOL "" FORCE)
+set(SLANG_LIB_TYPE "STATIC" CACHE STRING "" FORCE)
+add_subdirectory(Engine/deps/slang)
+
+FetchContent_Declare(
+        flatbuffers
+        GIT_REPOSITORY https://github.com/google/flatbuffers.git
+        GIT_TAG        v23.5.26
+)
+set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(flatbuffers)
+
+FetchContent_Declare(
+        glm
+        GIT_REPOSITORY https://github.com/g-truc/glm.git
+        GIT_TAG        0.9.9.8
+)
+FetchContent_MakeAvailable(glm)
+
+FetchContent_Declare(
+        enet
+        GIT_REPOSITORY https://github.com/lsalzman/enet.git
+        GIT_TAG        v1.3.17
+)
+FetchContent_MakeAvailable(enet)
+
+FetchContent_Declare(
+        tinyobjloader
+        GIT_REPOSITORY https://github.com/tinyobjloader/tinyobjloader.git
+        GIT_TAG        v2.0.0rc13
+)
+FetchContent_MakeAvailable(tinyobjloader)
+
+FetchContent_Declare(
+        stb
+        GIT_REPOSITORY https://github.com/nothings/stb.git
+        GIT_TAG        master
+)
+FetchContent_MakeAvailable(stb)
+
+FetchContent_Declare(
+        JoltPhysics
+        GIT_REPOSITORY https://github.com/jrouwe/JoltPhysics.git
+        GIT_TAG        v5.2.0
+        SOURCE_SUBDIR  Build
+)
+set(DOUBLE_PRECISION                    OFF CACHE BOOL "" FORCE)
+set(GENERATE_DEBUG_SYMBOLS              ON  CACHE BOOL "" FORCE)
+set(DEBUG_RENDERER_IN_DEBUG_AND_RELEASE OFF CACHE BOOL "" FORCE)
+set(PROFILER_IN_DEBUG_AND_RELEASE       OFF CACHE BOOL "" FORCE)
+set(ENABLE_ASSERTS                      OFF CACHE BOOL "" FORCE)
+set(USE_STD_VECTOR                      ON  CACHE BOOL "" FORCE)
+set(TARGET_UNIT_TESTS                   OFF CACHE BOOL "" FORCE)
+set(TARGET_HELLO_WORLD                  OFF CACHE BOOL "" FORCE)
+set(TARGET_PERFORMANCE_TEST             OFF CACHE BOOL "" FORCE)
+set(TARGET_SAMPLES                      OFF CACHE BOOL "" FORCE)
+set(USE_STATIC_MSVC_RUNTIME ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(JoltPhysics)
+
+if(MSVC)
+    target_compile_options(Jolt PRIVATE /wd4865 /wd5105)
+endif()
+
+FetchContent_Declare(
+        spdlog
+        GIT_REPOSITORY https://github.com/gabime/spdlog.git
+        GIT_TAG        v1.17.0
+)
+FetchContent_MakeAvailable(spdlog)
+
+set(SCHEMA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Engine/src/Networking/Schema")
+set(SCHEMA_FILE "${SCHEMA_DIR}/NetworkMessage.fbs")
+set(GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+
+add_custom_command(
+        OUTPUT "${GEN_DIR}/NetworkMessage_generated.h"
+        COMMAND flatc --cpp -o "${GEN_DIR}" "${SCHEMA_FILE}"
+        DEPENDS "${SCHEMA_FILE}" flatc
+        COMMENT "Building C++ header for ${SCHEMA_FILE}"
+)
+
+add_custom_target(GenerateNetworkSchema
+        DEPENDS "${GEN_DIR}/NetworkMessage_generated.h"
+)
+
+add_library(Engine STATIC
+        Engine/src/Core/EngineContext.cpp
+        Engine/src/Core/Logger.cpp
+        Engine/src/Core/JobSystem.cpp
+        Engine/src/Scene/SceneManager.cpp
+        Engine/src/Input/InputManager.cpp
+        Engine/src/Networking/NetworkClient.cpp
+        Engine/src/Networking/NetworkServer.cpp
+        Engine/src/Render/Renderer.cpp
+        Engine/src/Render/Swapchain.cpp
+        Engine/src/Render/VulkanContext.cpp
+        Engine/src/Render/Buffer.cpp
+        Engine/src/Render/SlangCompiler.cpp
+        Engine/src/Render/Pipeline.cpp
+        Engine/src/Render/ModelLoader.cpp
+        Engine/src/Render/TextureLoader.cpp
+        Engine/src/Physics/PhysicsWorld.cpp
+        Engine/src/Platform/Audio/AudioManager.cpp
+        Engine/src/Platform/Audio/SDL3AudioBackend.cpp
+        Engine/src/Platform/Input/SDL3InputBackend.cpp
+        Engine/src/Platform/Window/SDL3Window.cpp
+        Engine/src/Platform/Window/WindowManager.cpp
+        Engine/src/Platform/PlatformContext.cpp
+)
+
+add_dependencies(Engine GenerateNetworkSchema)
+
+target_include_directories(Engine PUBLIC
+        Engine/src
+        Engine/deps/vk-bootstrap/src
+        ${GEN_DIR}
+        ${enet_SOURCE_DIR}/include
+        ${tinyobjloader_SOURCE_DIR}
+        ${stb_SOURCE_DIR}
+)
+
+target_include_directories(Engine PRIVATE
+        ${joltphysics_SOURCE_DIR}
+)
+
+target_compile_definitions(Engine PUBLIC VK_NO_PROTOTYPES)
+
+target_link_libraries(Engine PUBLIC
+        vk-bootstrap::vk-bootstrap
+        volk::volk
+        GPUOpen::VulkanMemoryAllocator
+        slang
+        flatbuffers
+        glm::glm
+        enet
+        tinyobjloader
+        Jolt
+        spdlog::spdlog
+        SDL3::SDL3-static
+        SDL3_mixer::SDL3_mixer-static
+)
+
+if(WIN32)
+    target_link_libraries(Engine PRIVATE ws2_32 winmm)
+else()
+    target_link_libraries(Engine PRIVATE m dl pthread)
+endif()
+
+set(ENGINE_FLAGS
+        $<$<CXX_COMPILER_ID:MSVC>:
+        /W4 /WX /utf-8
+        /wd4865 /wd5105 /wd4201 /wd4100 /wd4324 /wd4189 /wd4267
+        >
+        $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra -Wno-unused-parameter>
+)
+
+target_compile_options(Engine PRIVATE ${ENGINE_FLAGS})
+
+add_subdirectory(tests/Multiplayer)
+add_subdirectory(tests/Sponza)

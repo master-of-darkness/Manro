@@ -1,0 +1,11 @@
+# ground.obj — large flat quad in XZ plane (Y=0)
+# Scaled further in WorldScene
+
+v -0.5  0.0 -0.5
+v  0.5  0.0 -0.5
+v  0.5  0.0  0.5
+v -0.5  0.0  0.5
+
+# 2 triangles
+f 1 2 3
+f 3 4 1
