@@ -10,7 +10,7 @@
 #include <stdexcept>
 
 static constexpr const char *kSponzaPath = "assets/models/sponza.obj";
-static constexpr float kFov = 60.f;
+static constexpr float kFov = 100.f;
 static constexpr float kNearZ = 1.f;
 static constexpr float kFarZ = 10000.f;
 static constexpr Engine::u32 kWindowWidth = 1920;

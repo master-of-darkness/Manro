@@ -33,38 +33,44 @@ namespace Engine {
         m_Swapchain = vkb_swapchain.swapchain;
         m_ImageFormat = vkb_swapchain.image_format;
         m_Extent = vkb_swapchain.extent;
-
         m_Images = vkb_swapchain.get_images().value();
         m_ImageViews = vkb_swapchain.get_image_views().value();
     }
 
     void Swapchain::Recreate(u32 width, u32 height) {
+        vkDeviceWaitIdle(m_Context.GetDevice());
         Shutdown();
         Initialize(width, height);
+        m_NeedsRecreate = false;
     }
 
     void Swapchain::Shutdown() {
-        if (m_Swapchain) {
-            for (auto imageView: m_ImageViews) {
-                vkDestroyImageView(m_Context.GetDevice(), imageView, nullptr);
-            }
-            m_ImageViews.clear();
-            vkDestroySwapchainKHR(m_Context.GetDevice(), m_Swapchain, nullptr);
-            m_Swapchain = nullptr;
-        }
+        if (m_Swapchain == VK_NULL_HANDLE) return;
+
+        for (auto imageView: m_ImageViews)
+            vkDestroyImageView(m_Context.GetDevice(), imageView, nullptr);
+        m_ImageViews.clear();
+        m_Images.clear();
+
+        vkDestroySwapchainKHR(m_Context.GetDevice(), m_Swapchain, nullptr);
+        m_Swapchain = VK_NULL_HANDLE;
     }
 
     u32 Swapchain::AcquireNextImage(VkSemaphore presentCompleteSemaphore) {
         u32 imageIndex;
-        VkResult res = vkAcquireNextImageKHR(m_Context.GetDevice(), m_Swapchain, UINT64_MAX, presentCompleteSemaphore,
-                                             VK_NULL_HANDLE, &imageIndex);
-        if (res != VK_SUCCESS && res != VK_SUBOPTIMAL_KHR) {
-            throw std::runtime_error("Failed to acquire swapchain image!");
+        VkResult res = vkAcquireNextImageKHR(m_Context.GetDevice(), m_Swapchain, UINT64_MAX,
+                                             presentCompleteSemaphore, VK_NULL_HANDLE, &imageIndex);
+        if (res == VK_ERROR_OUT_OF_DATE_KHR) {
+            m_NeedsRecreate = true;
+            return UINT32_MAX;
         }
+        if (res != VK_SUCCESS && res != VK_SUBOPTIMAL_KHR)
+            throw std::runtime_error("Failed to acquire swapchain image!");
+
         return imageIndex;
     }
 
-    void Swapchain::Present(u32 imageIndex, VkSemaphore renderCompleteSemaphore) {
+    bool Swapchain::Present(u32 imageIndex, VkSemaphore renderCompleteSemaphore) {
         VkPresentInfoKHR presentInfo{};
         presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
         presentInfo.waitSemaphoreCount = 1;
@@ -74,8 +80,13 @@ namespace Engine {
         presentInfo.pImageIndices = &imageIndex;
 
         VkResult res = vkQueuePresentKHR(m_Context.GetGraphicsQueue(), &presentInfo);
-        if (res != VK_SUCCESS && res != VK_SUBOPTIMAL_KHR) {
-            throw std::runtime_error("Failed to present swapchain image!");
+        if (res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_SUBOPTIMAL_KHR) {
+            m_NeedsRecreate = true;
+            return true;
         }
+        if (res != VK_SUCCESS)
+            throw std::runtime_error("Failed to present swapchain image!");
+
+        return false;
     }
 } // namespace Engine

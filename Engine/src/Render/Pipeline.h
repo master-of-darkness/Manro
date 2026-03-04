@@ -14,6 +14,7 @@ namespace Engine {
         std::vector<VkVertexInputAttributeDescription> vertexInputAttributes;
 
         VkDescriptorSetLayout descriptorSetLayout{VK_NULL_HANDLE};
+        VkSampleCountFlagBits msaaSamples{VK_SAMPLE_COUNT_1_BIT};
 
         u32 pushConstantSize{0};
     };

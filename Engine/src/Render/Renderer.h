@@ -30,7 +30,9 @@ namespace Engine {
 
         void Shutdown();
 
-        void BeginFrame();
+        void OnResize(u32 width, u32 height);
+
+        bool BeginFrame();
 
         void EndFrameAndPresent();
 
@@ -61,6 +63,12 @@ namespace Engine {
         VulkanContext &GetContext() { return m_Context; }
 
     private:
+        void CreateDepthResources(u32 width, u32 height);
+
+        void DestroyDepthResources();
+
+        void RecreateSwapchain();
+
         void CreateCommandBuffers();
 
         void CreateSyncObjects();
@@ -111,6 +119,11 @@ namespace Engine {
         VkImageView m_DepthImageView{VK_NULL_HANDLE};
         VmaAllocation m_DepthAllocation{nullptr};
         VkFormat m_DepthFormat{VK_FORMAT_D32_SFLOAT};
+        VkSampleCountFlagBits m_MsaaSamples{VK_SAMPLE_COUNT_1_BIT};
+
+        VkImage m_ColorImage{VK_NULL_HANDLE};
+        VkImageView m_ColorImageView{VK_NULL_HANDLE};
+        VmaAllocation m_ColorAllocation{nullptr};
 
         VkDescriptorPool m_DescriptorPool{VK_NULL_HANDLE};
         VkDescriptorSetLayout m_DescriptorSetLayout{VK_NULL_HANDLE};
@@ -133,5 +146,9 @@ namespace Engine {
 
         u32 m_CurrentImageIndex{0};
         u32 m_CurrentFrame{0};
+
+        u32 m_PendingWidth{0};
+        u32 m_PendingHeight{0};
+        bool m_PendingResize{false};
     };
 } // namespace Engine

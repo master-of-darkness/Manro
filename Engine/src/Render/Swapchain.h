@@ -20,7 +20,9 @@ namespace Engine {
 
         u32 AcquireNextImage(VkSemaphore presentCompleteSemaphore);
 
-        void Present(u32 imageIndex, VkSemaphore renderCompleteSemaphore);
+        bool Present(u32 imageIndex, VkSemaphore renderCompleteSemaphore);
+
+        bool NeedsRecreate() const { return m_NeedsRecreate; }
 
         VkSwapchainKHR GetHandle() const { return m_Swapchain; }
         size_t GetImageCount() const { return m_Images.size(); }
@@ -32,11 +34,13 @@ namespace Engine {
     private:
         const VulkanContext &m_Context;
 
-        VkSwapchainKHR m_Swapchain{nullptr};
+        VkSwapchainKHR m_Swapchain{VK_NULL_HANDLE};
         std::vector<VkImage> m_Images;
         std::vector<VkImageView> m_ImageViews;
 
-        VkFormat m_ImageFormat;
-        VkExtent2D m_Extent;
+        VkFormat m_ImageFormat{VK_FORMAT_UNDEFINED};
+        VkExtent2D m_Extent{};
+
+        bool m_NeedsRecreate{false};
     };
 } // namespace Engine

@@ -28,6 +28,8 @@ namespace Engine {
 
         VkSurfaceKHR GetSurface() const { return m_Surface; }
 
+        VkSampleCountFlagBits GetMaxUsableSampleCount() const;
+
     private:
         void CreateInstance(const char *appName);
 
