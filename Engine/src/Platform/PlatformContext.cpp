@@ -13,6 +13,8 @@ namespace Engine {
     bool PlatformContext::Initialize() {
         if (m_Initialized) return true;
 
+        // SDL_SetHint(SDL_HINT_VIDEO_WAYLAND_ALLOW_LIBDECOR, "0"); // TODO: Gnome requires special plugin for window decorations.
+
         if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) {
             LOG_ERROR("[PlatformContext] SDL_Init failed: {}", SDL_GetError());
             return false;

@@ -5,6 +5,12 @@ project(GameEngine VERSION 0.1 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Build type" FORCE)
+    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "RelWithDebInfo")
+endif()
+
 if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     add_compile_options(/DNOMINMAX)
@@ -117,6 +123,35 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(spdlog)
 
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    foreach(_target
+            SDL3-static SDL3_mixer-static
+            vk-bootstrap volk
+            slang flatbuffers enet Jolt spdlog
+    )
+        if(TARGET ${_target})
+            get_target_property(_type ${_target} TYPE)
+            if(NOT _type STREQUAL "INTERFACE_LIBRARY")
+                if(MSVC)
+                    target_compile_options(${_target} PRIVATE
+                            /O2 /Ob3 /GL /DNDEBUG /GS-
+                    )
+                else()
+                    target_compile_options(${_target} PRIVATE
+                            -O3 -DNDEBUG
+                            -fvisibility=hidden
+                            -fvisibility-inlines-hidden
+                            -ffunction-sections
+                            -fdata-sections
+                            -fno-unwind-tables
+                            -fno-asynchronous-unwind-tables
+                    )
+                endif()
+            endif()
+        endif()
+    endforeach()
+endif()
+
 set(SCHEMA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Engine/src/Networking/Schema")
 set(SCHEMA_FILE "${SCHEMA_DIR}/NetworkMessage.fbs")
 set(GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
@@ -195,15 +230,48 @@ else()
     target_link_libraries(Engine PRIVATE m dl pthread)
 endif()
 
-set(ENGINE_FLAGS
+target_compile_options(Engine PRIVATE
         $<$<CXX_COMPILER_ID:MSVC>:
         /W4 /WX /utf-8
         /wd4865 /wd5105 /wd4201 /wd4100 /wd4324 /wd4189 /wd4267
         >
         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra -Wno-unused-parameter>
+
+        $<$<AND:$<CONFIG:Debug>,$<CXX_COMPILER_ID:MSVC>>:/Od /Zi /RTC1>
+        $<$<AND:$<CONFIG:Debug>,$<NOT:$<CXX_COMPILER_ID:MSVC>>>:-O0 -g3>
+
+        $<$<AND:$<CONFIG:RelWithDebInfo>,$<CXX_COMPILER_ID:MSVC>>:/O2 /Zi /Ob2 /DNDEBUG>
+        $<$<AND:$<CONFIG:RelWithDebInfo>,$<NOT:$<CXX_COMPILER_ID:MSVC>>>:-O2 -g -DNDEBUG>
+
+        $<$<AND:$<CONFIG:Release>,$<CXX_COMPILER_ID:MSVC>>:/O2 /Ob3 /GL /DNDEBUG /GS->
+        $<$<AND:$<CONFIG:Release>,$<NOT:$<CXX_COMPILER_ID:MSVC>>>:
+        -O3 -DNDEBUG
+        -fvisibility=hidden
+        -fvisibility-inlines-hidden
+        -ffunction-sections
+        -fdata-sections
+        -fno-unwind-tables
+        -fno-asynchronous-unwind-tables
+        >
 )
 
-target_compile_options(Engine PRIVATE ${ENGINE_FLAGS})
+if(MSVC)
+    target_link_options(Engine PUBLIC
+            $<$<CONFIG:Release>:      /LTCG /OPT:REF /OPT:ICF /DEBUG:NONE>
+            $<$<CONFIG:RelWithDebInfo>:/DEBUG:FULL /OPT:REF /OPT:ICF>
+            $<$<CONFIG:Debug>:        /DEBUG:FULL>
+    )
+else()
+    target_link_options(Engine PUBLIC
+            $<$<CONFIG:Release>:
+            -Wl,--gc-sections
+            -Wl,--strip-all
+            >
+            $<$<CONFIG:RelWithDebInfo>:
+            -Wl,--build-id
+            >
+    )
+endif()
 
 add_subdirectory(tests/Multiplayer)
 add_subdirectory(tests/Sponza)
