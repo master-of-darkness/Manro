@@ -11,6 +11,11 @@
 #include <unordered_map>
 #include <vector>
 
+enum class SceneType {
+    Sponza,
+    Bistro,
+};
+
 struct FlyCamera {
     Engine::Vec3 Position{0.f, 150.f, 0.f};
     float Yaw{-90.f};
@@ -29,7 +34,7 @@ struct FlyCamera {
 
 class Sponza {
 public:
-    Sponza() = default;
+    explicit Sponza(SceneType scene = SceneType::Sponza) : m_SceneType(scene) {}
 
     ~Sponza() { Shutdown(); }
 
@@ -40,7 +45,7 @@ public:
     void Shutdown();
 
 private:
-    void LoadSponza();
+    void LoadScene();
 
     void Render(float dt);
 
@@ -62,5 +67,6 @@ private:
 
     std::vector<SubMesh> m_SubMeshes; // TODO: wrap this shit into engine
 
+    SceneType m_SceneType{SceneType::Bistro};
     FlyCamera m_Camera;
 };

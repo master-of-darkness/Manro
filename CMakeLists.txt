@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 cmake_policy(SET CMP0091 NEW)
-project(GameEngine VERSION 0.1 LANGUAGES CXX)
+project(GameEngine VERSION 0.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -94,6 +94,13 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(stb)
 
 FetchContent_Declare(
+        ufbx
+        GIT_REPOSITORY https://github.com/ufbx/ufbx.git
+        GIT_TAG        v0.21.3
+)
+FetchContent_MakeAvailable(ufbx)
+
+FetchContent_Declare(
         JoltPhysics
         GIT_REPOSITORY https://github.com/jrouwe/JoltPhysics.git
         GIT_TAG        v5.2.0
@@ -182,6 +189,7 @@ add_library(Engine STATIC
         Engine/src/Render/SlangCompiler.cpp
         Engine/src/Render/Pipeline.cpp
         Engine/src/Render/ModelLoader.cpp
+        Engine/src/Render/FBXLoader.cpp
         Engine/src/Render/TextureLoader.cpp
         Engine/src/Physics/PhysicsWorld.cpp
         Engine/src/Platform/Audio/AudioManager.cpp
@@ -190,6 +198,7 @@ add_library(Engine STATIC
         Engine/src/Platform/Window/SDL3Window.cpp
         Engine/src/Platform/Window/WindowManager.cpp
         Engine/src/Platform/PlatformContext.cpp
+        ${ufbx_SOURCE_DIR}/ufbx.c
 )
 
 add_dependencies(Engine GenerateNetworkSchema)
@@ -201,6 +210,7 @@ target_include_directories(Engine PUBLIC
         ${enet_SOURCE_DIR}/include
         ${tinyobjloader_SOURCE_DIR}
         ${stb_SOURCE_DIR}
+        ${ufbx_SOURCE_DIR}
 )
 
 target_include_directories(Engine PRIVATE

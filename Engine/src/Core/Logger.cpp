@@ -7,7 +7,7 @@ namespace Engine {
 
     void Logger::Init() {
         spdlog::set_pattern("%^[%T] %n: %v%$");
-        s_CoreLogger = spdlog::stdout_color_mt("ENGINE");
+        s_CoreLogger = spdlog::stdout_color_mt("Manro");
         s_CoreLogger->set_level(spdlog::level::trace);
     }
 } // namespace Engine

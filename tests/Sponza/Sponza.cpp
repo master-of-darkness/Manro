@@ -1,6 +1,7 @@
 #include "Sponza.h"
 
 #include <Render/ModelLoader.h>
+#include <Render/FBXLoader.h>
 #include <Render/TextureLoader.h>
 #include <Core/Logger.h>
 #include <glm/gtc/matrix_transform.hpp>
@@ -10,6 +11,7 @@
 #include <stdexcept>
 
 static constexpr const char *kSponzaPath = "assets/models/sponza.obj";
+static constexpr const char *kBistroPath = "assets/models/BistroExterior.fbx";
 static constexpr float kFov = 100.f;
 static constexpr float kNearZ = 1.f;
 static constexpr float kFarZ = 10000.f;
@@ -63,7 +65,7 @@ void Sponza::Initialize() {
 
     auto &wm = m_Engine.GetPlatform().GetWindowManager();
     Engine::WindowDesc desc;
-    desc.Title = "Sponza Test";
+    desc.Title = (m_SceneType == SceneType::Bistro) ? "Bistro Test" : "Sponza Test";
     desc.Width = kWindowWidth;
     desc.Height = kWindowHeight;
     m_Window = wm.AddWindow(desc);
@@ -86,19 +88,28 @@ void Sponza::Initialize() {
     m_Renderer->Initialize(wm.Get(m_Window), kWindowWidth, kWindowHeight, VK_SAMPLE_COUNT_8_BIT);
     LOG_INFO("[SponzaTest] Renderer initialized.");
 
-    LoadSponza();
+    LoadScene();
 
     m_IsRunning = true;
     m_LastFrameTime = std::chrono::high_resolution_clock::now();
     LOG_INFO("[SponzaTest] Ready.  WASD=move  Mouse=look  Shift=sprint  Q/E=up/down  Escape=quit");
 }
 
-void Sponza::LoadSponza() {
-    LOG_INFO("[SponzaTest] Loading {} ...", kSponzaPath);
+void Sponza::LoadScene() {
+    const char *path = (m_SceneType == SceneType::Bistro) ? kBistroPath : kSponzaPath;
 
     std::vector<Engine::SubMeshData> subMeshData;
-    if (!Engine::ModelLoader::LoadSubMeshes(kSponzaPath, subMeshData)) {
-        LOG_ERROR("[SponzaTest] Failed to load Sponza. Make sure '{}' exists.", kSponzaPath);
+    bool ok = false;
+    switch (m_SceneType) {
+        case SceneType::Bistro:
+            ok = Engine::FBXLoader::LoadSubMeshes(path, subMeshData, Engine::AxisRemap::ZUpToYUp());
+            break;
+        case SceneType::Sponza:
+            ok = Engine::ModelLoader::LoadSubMeshes(path, subMeshData);
+            break;
+    }
+    if (!ok) {
+        LOG_ERROR("[SponzaTest] Failed to load scene. Make sure '{}' exists.", path);
         return;
     }
 
