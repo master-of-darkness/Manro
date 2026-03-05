@@ -18,15 +18,19 @@ namespace Engine {
         Shutdown();
     }
 
-    void Renderer::Initialize(IWindow *window, u32 width, u32 height) {
+    void Renderer::Initialize(IWindow *window, u32 width, u32 height,
+                              VkSampleCountFlagBits msaaSamples) {
         m_Context.Initialize("GameEngine");
         m_Context.CreateSurface(window);
 
         m_Swapchain = CreateScope<Swapchain>(m_Context);
         m_Swapchain->Initialize(width, height);
 
-        m_MsaaSamples = m_Context.GetMaxUsableSampleCount();
-        LOG_INFO("[Renderer] MSAA samples: {}", (int)m_MsaaSamples);
+        VkSampleCountFlagBits maxSamples = m_Context.GetMaxUsableSampleCount();
+        m_MsaaSamples = (static_cast<u32>(msaaSamples) <= static_cast<u32>(maxSamples))
+                            ? msaaSamples : maxSamples;
+        LOG_INFO("[Renderer] MSAA samples: {} (requested: {}, max: {})",
+                 (int)m_MsaaSamples, (int)msaaSamples, (int)maxSamples);
 
         CreateColorResources(width, height);
         CreateDepthResources(width, height);
@@ -79,7 +83,7 @@ namespace Engine {
         depthInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
         depthInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         depthInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-        depthInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+        depthInfo.samples = m_MsaaSamples;
         depthInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
         VmaAllocationCreateInfo depthAllocInfo{};
@@ -120,6 +124,8 @@ namespace Engine {
     }
 
     void Renderer::CreateColorResources(u32 width, u32 height) {
+        if (m_MsaaSamples == VK_SAMPLE_COUNT_1_BIT) return;
+
         VkImageCreateInfo colorInfo{};
         colorInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
         colorInfo.imageType = VK_IMAGE_TYPE_2D;
@@ -209,10 +215,29 @@ namespace Engine {
         barrier.image = m_Swapchain->GetImage(m_CurrentImageIndex);
         barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
+        VkImageMemoryBarrier2 barriers[2];
+        u32 barrierCount = 1;
+        barriers[0] = barrier;
+
+        if (m_MsaaSamples != VK_SAMPLE_COUNT_1_BIT) {
+            VkImageMemoryBarrier2 msaaBarrier{};
+            msaaBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+            msaaBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+            msaaBarrier.srcAccessMask = 0;
+            msaaBarrier.dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+            msaaBarrier.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+            msaaBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            msaaBarrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            msaaBarrier.image = m_ColorImage;
+            msaaBarrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            barriers[1] = msaaBarrier;
+            barrierCount = 2;
+        }
+
         VkDependencyInfo dep{};
         dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        dep.imageMemoryBarrierCount = 1;
-        dep.pImageMemoryBarriers = &barrier;
+        dep.imageMemoryBarrierCount = barrierCount;
+        dep.pImageMemoryBarriers = barriers;
         vkCmdPipelineBarrier2(frame.commandBuffer, &dep);
 
         return true;
@@ -227,18 +252,28 @@ namespace Engine {
 
         VkRenderingAttachmentInfo colorAttachment{};
         colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        colorAttachment.imageView = m_Swapchain->GetImageView(m_CurrentImageIndex);
-        colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         colorAttachment.clearValue = cv;
+
+        if (m_MsaaSamples != VK_SAMPLE_COUNT_1_BIT) {
+            colorAttachment.imageView = m_ColorImageView;
+            colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+            colorAttachment.resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
+            colorAttachment.resolveImageView = m_Swapchain->GetImageView(m_CurrentImageIndex);
+            colorAttachment.resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        } else {
+            colorAttachment.imageView = m_Swapchain->GetImageView(m_CurrentImageIndex);
+            colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        }
 
         VkRenderingAttachmentInfo depthAttachment{};
         depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
         depthAttachment.imageView = m_DepthImageView;
         depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
         depthAttachment.clearValue.depthStencil = {1.0f, 0};
 
         VkRenderingInfo renderInfo{};
@@ -489,6 +524,7 @@ namespace Engine {
         config.vertexInputAttributes[2] = {2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, uv)};
 
         config.pushConstantSize = sizeof(MeshPushConstants);
+        config.msaaSamples = m_MsaaSamples;
 
         m_Pipeline->BuildGraphics(vertSpv, fragSpv, config);
 

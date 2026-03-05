@@ -82,7 +82,7 @@ void Sponza::Initialize() {
     wm.Get(m_Window)->ShowCursor(false);
 
     m_Renderer = Engine::CreateScope<Engine::Renderer>();
-    m_Renderer->Initialize(wm.Get(m_Window), kWindowWidth, kWindowHeight);
+    m_Renderer->Initialize(wm.Get(m_Window), kWindowWidth, kWindowHeight, VK_SAMPLE_COUNT_8_BIT);
     LOG_INFO("[SponzaTest] Renderer initialized.");
 
     LoadSponza();

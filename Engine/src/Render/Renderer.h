@@ -26,7 +26,8 @@ namespace Engine {
 
         ~Renderer();
 
-        void Initialize(IWindow *window, u32 width, u32 height);
+        void Initialize(IWindow *window, u32 width, u32 height,
+                        VkSampleCountFlagBits msaaSamples = VK_SAMPLE_COUNT_1_BIT);
 
         void Shutdown();
 
