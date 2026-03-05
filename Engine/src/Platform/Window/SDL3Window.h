@@ -21,6 +21,8 @@ namespace Engine {
 
         void SetFullscreen(bool fullscreen) override;
 
+        bool IsFullscreen() const override { return m_Fullscreen; }
+
         bool IsOpen() const override { return m_Open; }
         u32 GetWidth() const override { return m_Width; }
         u32 GetHeight() const override { return m_Height; }
@@ -45,5 +47,6 @@ namespace Engine {
         u32 m_Width{0};
         u32 m_Height{0};
         bool m_Open{false};
+        bool m_Fullscreen{false};
     };
 } // namespace Engine

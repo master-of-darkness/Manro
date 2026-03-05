@@ -80,6 +80,7 @@ void Sponza::Initialize() {
     m_InputManager.SetBackend(&m_InputBackend);
     wm.Get(m_Window)->CaptureMouse(true);
     wm.Get(m_Window)->ShowCursor(false);
+    // wm.Get(m_Window)->SetFullscreen(true);
 
     m_Renderer = Engine::CreateScope<Engine::Renderer>();
     m_Renderer->Initialize(wm.Get(m_Window), kWindowWidth, kWindowHeight, VK_SAMPLE_COUNT_8_BIT);

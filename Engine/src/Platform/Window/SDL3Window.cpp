@@ -22,6 +22,7 @@ namespace Engine {
         }
 
         m_Open = true;
+        m_Fullscreen = desc.Fullscreen;
         LOG_INFO("[SDL3Window] Created '{}' ({}x{})", m_Title, m_Width, m_Height);
         return true;
     }
@@ -50,8 +51,10 @@ namespace Engine {
     }
 
     void SDL3Window::SetFullscreen(bool fullscreen) {
-        if (m_Handle)
+        if (m_Handle) {
             SDL_SetWindowFullscreen(m_Handle, fullscreen);
+            m_Fullscreen = fullscreen;
+        }
     }
 
     void *SDL3Window::GetNativeHandle() const {

@@ -36,6 +36,10 @@ namespace Engine {
 
         virtual void SetFullscreen(bool fullscreen) = 0;
 
+        virtual bool IsFullscreen() const = 0;
+
+        virtual void ToggleFullscreen() { SetFullscreen(!IsFullscreen()); }
+
         virtual bool IsOpen() const = 0;
 
         virtual u32 GetWidth() const = 0;
