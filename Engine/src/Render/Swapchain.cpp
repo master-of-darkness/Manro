@@ -60,9 +60,10 @@ namespace Engine {
         u32 imageIndex;
         VkResult res = vkAcquireNextImageKHR(m_Context.GetDevice(), m_Swapchain, UINT64_MAX,
                                              presentCompleteSemaphore, VK_NULL_HANDLE, &imageIndex);
-        if (res == VK_ERROR_OUT_OF_DATE_KHR) {
+        if (res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_SUBOPTIMAL_KHR) {
             m_NeedsRecreate = true;
-            return UINT32_MAX;
+            if (res == VK_ERROR_OUT_OF_DATE_KHR)
+                return UINT32_MAX;
         }
         if (res != VK_SUCCESS && res != VK_SUBOPTIMAL_KHR)
             throw std::runtime_error("Failed to acquire swapchain image!");

@@ -71,8 +71,10 @@ void Sponza::Initialize() {
         throw std::runtime_error("[SponzaTest] Failed to create window.");
 
     wm.Get(m_Window)->SetEventCallback(
-        [this](Engine::WindowEvent ev, Engine::u32, Engine::u32) {
+        [this](Engine::WindowEvent ev, Engine::u32 w, Engine::u32 h) {
             if (ev == Engine::WindowEvent::Close) m_IsRunning = false;
+            else if (ev == Engine::WindowEvent::Resized && m_Renderer)
+                m_Renderer->OnResize(w, h);
         });
 
     m_InputManager.SetBackend(&m_InputBackend);
@@ -155,7 +157,8 @@ void Sponza::Run() {
 void Sponza::Render(float dt) {
     if (!m_Renderer) return;
 
-    m_Renderer->BeginFrame();
+    if (!m_Renderer->BeginFrame())
+        return;
     m_Renderer->BeginRenderPass({0.05f, 0.05f, 0.08f, 1.f});
 
     const float aspect = m_Renderer->GetAspectRatio();

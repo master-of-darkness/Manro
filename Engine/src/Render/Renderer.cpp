@@ -28,45 +28,7 @@ namespace Engine {
         m_MsaaSamples = m_Context.GetMaxUsableSampleCount();
         LOG_INFO("[Renderer] MSAA samples: {}", (int)m_MsaaSamples);
 
-        VkImageCreateInfo colorInfo{};
-        colorInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-        colorInfo.imageType = VK_IMAGE_TYPE_2D;
-        colorInfo.extent.width = width;
-        colorInfo.extent.height = height;
-        colorInfo.extent.depth = 1;
-        colorInfo.mipLevels = 1;
-        colorInfo.arrayLayers = 1;
-        colorInfo.format = m_Swapchain->GetImageFormat();
-        colorInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-        colorInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        colorInfo.usage = VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-        colorInfo.samples = m_MsaaSamples;
-        colorInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-        VmaAllocationCreateInfo colorAllocInfo{};
-        colorAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-        colorAllocInfo.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-
-        if (vmaCreateImage(m_Context.GetAllocator(), &colorInfo, &colorAllocInfo,
-                           &m_ColorImage, &m_ColorAllocation, nullptr) != VK_SUCCESS) {
-            throw std::runtime_error("[Renderer] Failed to create multisampled color image!");
-        }
-
-        VkImageViewCreateInfo colorViewInfo{};
-        colorViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        colorViewInfo.image = m_ColorImage;
-        colorViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        colorViewInfo.format = m_Swapchain->GetImageFormat();
-        colorViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        colorViewInfo.subresourceRange.baseMipLevel = 0;
-        colorViewInfo.subresourceRange.levelCount = 1;
-        colorViewInfo.subresourceRange.baseArrayLayer = 0;
-        colorViewInfo.subresourceRange.layerCount = 1;
-
-        if (vkCreateImageView(m_Context.GetDevice(), &colorViewInfo, nullptr, &m_ColorImageView) != VK_SUCCESS) {
-            throw std::runtime_error("[Renderer] Failed to create multisampled color image view!");
-        }
-
+        CreateColorResources(width, height);
         CreateDepthResources(width, height);
         CreateCommandBuffers();
         CreateSyncObjects();
@@ -96,6 +58,9 @@ namespace Engine {
         if (w == 0 || h == 0) return;
 
         m_Swapchain->Recreate(w, h);
+
+        DestroyColorResources();
+        CreateColorResources(w, h);
 
         DestroyDepthResources();
         CreateDepthResources(w, h);
@@ -151,6 +116,59 @@ namespace Engine {
             vmaDestroyImage(m_Context.GetAllocator(), m_DepthImage, m_DepthAllocation);
             m_DepthImage = VK_NULL_HANDLE;
             m_DepthAllocation = nullptr;
+        }
+    }
+
+    void Renderer::CreateColorResources(u32 width, u32 height) {
+        VkImageCreateInfo colorInfo{};
+        colorInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        colorInfo.imageType = VK_IMAGE_TYPE_2D;
+        colorInfo.extent.width = width;
+        colorInfo.extent.height = height;
+        colorInfo.extent.depth = 1;
+        colorInfo.mipLevels = 1;
+        colorInfo.arrayLayers = 1;
+        colorInfo.format = m_Swapchain->GetImageFormat();
+        colorInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        colorInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        colorInfo.usage = VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+        colorInfo.samples = m_MsaaSamples;
+        colorInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        VmaAllocationCreateInfo colorAllocInfo{};
+        colorAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+        colorAllocInfo.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+
+        if (vmaCreateImage(m_Context.GetAllocator(), &colorInfo, &colorAllocInfo,
+                           &m_ColorImage, &m_ColorAllocation, nullptr) != VK_SUCCESS) {
+            throw std::runtime_error("[Renderer] Failed to create multisampled color image!");
+        }
+
+        VkImageViewCreateInfo colorViewInfo{};
+        colorViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        colorViewInfo.image = m_ColorImage;
+        colorViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        colorViewInfo.format = m_Swapchain->GetImageFormat();
+        colorViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        colorViewInfo.subresourceRange.baseMipLevel = 0;
+        colorViewInfo.subresourceRange.levelCount = 1;
+        colorViewInfo.subresourceRange.baseArrayLayer = 0;
+        colorViewInfo.subresourceRange.layerCount = 1;
+
+        if (vkCreateImageView(m_Context.GetDevice(), &colorViewInfo, nullptr, &m_ColorImageView) != VK_SUCCESS) {
+            throw std::runtime_error("[Renderer] Failed to create multisampled color image view!");
+        }
+    }
+
+    void Renderer::DestroyColorResources() {
+        if (m_ColorImageView) {
+            vkDestroyImageView(m_Context.GetDevice(), m_ColorImageView, nullptr);
+            m_ColorImageView = VK_NULL_HANDLE;
+        }
+        if (m_ColorImage) {
+            vmaDestroyImage(m_Context.GetAllocator(), m_ColorImage, m_ColorAllocation);
+            m_ColorImage = VK_NULL_HANDLE;
+            m_ColorAllocation = nullptr;
         }
     }
 
@@ -319,6 +337,7 @@ namespace Engine {
         }
         m_Textures.clear();
 
+        DestroyColorResources();
         DestroyDepthResources();
 
         if (m_Sampler) vkDestroySampler(m_Context.GetDevice(), m_Sampler, nullptr);

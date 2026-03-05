@@ -29,9 +29,11 @@ void Game::Initialize() {
             throw std::runtime_error("[Game] Failed to create main window.");
 
         wm.Get(m_MainWindow)->SetEventCallback(
-            [this](Engine::WindowEvent ev, Engine::u32, Engine::u32) {
+            [this](Engine::WindowEvent ev, Engine::u32 w, Engine::u32 h) {
                 if (ev == Engine::WindowEvent::Close)
                     m_IsRunning = false;
+                else if (ev == Engine::WindowEvent::Resized && m_Renderer)
+                    m_Renderer->OnResize(w, h);
             });
 
         m_InputManager.SetBackend(&m_InputBackend);
@@ -124,7 +126,8 @@ void Game::UpdateLogic(float dt) {
 
 void Game::Render() {
     if (m_Renderer) {
-        m_Renderer->BeginFrame();
+        if (!m_Renderer->BeginFrame())
+            return;
         m_Renderer->BeginRenderPass({0.01f, 0.01f, 0.033f, 1.f});
         m_SceneManager.Render(m_Renderer.get());
         m_Renderer->EndRenderPass();

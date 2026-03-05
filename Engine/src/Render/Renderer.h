@@ -67,6 +67,10 @@ namespace Engine {
 
         void DestroyDepthResources();
 
+        void CreateColorResources(u32 width, u32 height);
+
+        void DestroyColorResources();
+
         void RecreateSwapchain();
 
         void CreateCommandBuffers();
