@@ -11,7 +11,11 @@
 #include <stdexcept>
 
 static constexpr const char *kSponzaPath = "assets/models/sponza.obj";
-static constexpr const char *kBistroPath = "assets/models/BistroExterior.fbx";
+static constexpr const char *kBistroPaths[] = {
+    "assets/models/BistroExterior.fbx",
+    "assets/models/BistroInterior.fbx",
+    "assets/models/BistroInterior_Wine.fbx",
+};
 static constexpr float kFov = 100.f;
 static constexpr float kNearZ = 1.f;
 static constexpr float kFarZ = 10000.f;
@@ -96,54 +100,64 @@ void Sponza::Initialize() {
 }
 
 void Sponza::LoadScene() {
-    const char *path = (m_SceneType == SceneType::Bistro) ? kBistroPath : kSponzaPath;
-
-    std::vector<Engine::SubMeshData> subMeshData;
-    bool ok = false;
-    switch (m_SceneType) {
-        case SceneType::Bistro:
-            ok = Engine::FBXLoader::LoadSubMeshes(path, subMeshData, Engine::AxisRemap::ZUpToYUp());
-            break;
-        case SceneType::Sponza:
-            ok = Engine::ModelLoader::LoadSubMeshes(path, subMeshData);
-            break;
-    }
-    if (!ok) {
-        LOG_ERROR("[SponzaTest] Failed to load scene. Make sure '{}' exists.", path);
-        return;
+    std::vector<const char *> paths;
+    if (m_SceneType == SceneType::Bistro) {
+        for (const char *p : kBistroPaths)
+            paths.push_back(p);
+    } else {
+        paths.push_back(kSponzaPath);
     }
 
-    m_SubMeshes.reserve(subMeshData.size());
-    size_t totalVerts = 0;
-    size_t totalIndices = 0;
-    int texLoaded = 0;
-    int texFailed = 0;
+    std::unordered_map<std::string, Engine::u32> textureCache;
 
-    for (auto &sd: subMeshData) {
-        if (sd.vertices.empty()) continue;
-
-        Engine::ModelData md;
-        md.vertices = std::move(sd.vertices);
-        md.indices = std::move(sd.indices);
-        md.diffuseTexturePath = sd.diffuseTexturePath;
-
-        SubMesh sm;
-        sm.meshId = m_Renderer->UploadMesh(md);
-
-        if (!sd.diffuseTexturePath.empty()) {
-            Engine::TextureData td;
-            if (Engine::TextureLoader::Load(sd.diffuseTexturePath, td)) {
-                sm.textureId = m_Renderer->UploadTexture(td);
-                ++texLoaded;
-            } else {
-                ++texFailed;
-            }
+    for (const char *path : paths) {
+        std::vector<Engine::SubMeshData> subMeshData;
+        bool ok = false;
+        switch (m_SceneType) {
+            case SceneType::Bistro:
+                ok = Engine::FBXLoader::LoadSubMeshes(path, subMeshData, Engine::AxisRemap::ZUpToYUp());
+                break;
+            case SceneType::Sponza:
+                ok = Engine::ModelLoader::LoadSubMeshes(path, subMeshData);
+                break;
+        }
+        if (!ok) {
+            LOG_ERROR("[SponzaTest] Failed to load '{}'. Skipping.", path);
+            continue;
         }
 
-        totalVerts += md.vertices.size();
-        totalIndices += md.indices.size();
-        m_SubMeshes.push_back(sm);
+        for (auto &sd : subMeshData) {
+            if (sd.vertices.empty()) continue;
+
+            Engine::ModelData md;
+            md.vertices = std::move(sd.vertices);
+            md.indices = std::move(sd.indices);
+            md.diffuseTexturePath = sd.diffuseTexturePath;
+
+            SubMesh sm;
+            sm.meshId = m_Renderer->UploadMesh(md);
+
+            if (!sd.diffuseTexturePath.empty()) {
+                auto cacheIt = textureCache.find(sd.diffuseTexturePath);
+                if (cacheIt != textureCache.end()) {
+                    sm.textureId = cacheIt->second;
+                } else {
+                    Engine::TextureData td;
+                    if (Engine::TextureLoader::Load(sd.diffuseTexturePath, td)) {
+                        sm.textureId = m_Renderer->UploadTexture(td);
+                        textureCache[sd.diffuseTexturePath] = sm.textureId;
+                    }
+                }
+            }
+
+            m_SubMeshes.push_back(sm);
+        }
+
+        LOG_INFO("[SponzaTest] Loaded '{}' — {} sub-meshes total so far", path, m_SubMeshes.size());
     }
+
+    LOG_INFO("[SponzaTest] Scene loaded: {} sub-meshes, {} unique textures",
+             m_SubMeshes.size(), textureCache.size());
 }
 
 void Sponza::Run() {
