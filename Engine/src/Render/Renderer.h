@@ -20,6 +20,36 @@ namespace Engine {
         Vec2 uv;
     };
 
+    static constexpr int MAX_POINT_LIGHTS = 4;
+
+    struct PointLightGPU {
+        Vec3 position;
+        float radius;
+        Vec3 color;
+        float intensity;
+    };
+
+    struct LightDataGPU {
+        Vec3 dirLightDirection;
+        float _pad0;
+        Vec3 dirLightColor;
+        float dirLightIntensity;
+        Vec3 cameraPos;
+        float _pad1;
+        Vec3 ambientColor;
+        float ambientIntensity;
+        int numPointLights;
+        Vec3 _pad2;
+        PointLightGPU pointLights[MAX_POINT_LIGHTS];
+    };
+
+    struct PBRMaterial {
+        u32 albedoTextureId{0};
+        u32 normalTextureId{0};
+        u32 specularTextureId{0};
+        VkDescriptorSet descriptorSet{VK_NULL_HANDLE};
+    };
+
     class Renderer {
     public:
         Renderer();
@@ -51,6 +81,19 @@ namespace Engine {
 
         void BindTexture(u32 textureId);
 
+        // PBR pipeline
+        u32 UploadPBRMesh(const PBRSubMeshData &data);
+
+        void UpdateLights(const LightDataGPU &lightData);
+
+        void BeginPBRPass();
+
+        void BindPBRMaterial(const PBRMaterial &mat);
+
+        void BuildPBRMaterialDescriptor(PBRMaterial &mat);
+
+        void DrawPBRMesh(u32 meshId, const Mat4 &mvp, const Mat4 &model);
+
         float GetAspectRatio() const {
             if (!m_Swapchain) return 16.f / 9.f;
             auto ext = m_Swapchain->GetExtent();
@@ -62,6 +105,9 @@ namespace Engine {
         void SetTintColor(const Vec3 &color) { m_TintColor = color; }
 
         VulkanContext &GetContext() { return m_Context; }
+
+        u32 GetNeutralNormalTextureId() const { return m_NeutralNormalTextureId; }
+        u32 GetWhiteTextureId() const { return m_WhiteTextureId; }
 
     private:
         void CreateDepthResources(u32 width, u32 height);
@@ -87,6 +133,8 @@ namespace Engine {
         void CreateWhiteTexture();
 
         void LoadShadersAndPipeline();
+
+        void CreatePBRResources();
 
         u32 UploadTextureInternal(const u8 *pixels, int width, int height);
 
@@ -135,8 +183,15 @@ namespace Engine {
         VkSampler m_Sampler{VK_NULL_HANDLE};
 
         u32 m_WhiteTextureId{0};
+        u32 m_NeutralNormalTextureId{0};
 
         Vec3 m_TintColor{1.0f, 1.0f, 1.0f};
+
+        Scope<Pipeline> m_PBRPipeline;
+        VkDescriptorSetLayout m_PBRLightSetLayout{VK_NULL_HANDLE};
+        VkDescriptorSetLayout m_PBRMaterialSetLayout{VK_NULL_HANDLE};
+        Scope<Buffer> m_LightUBO;
+        VkDescriptorSet m_LightDescriptorSet{VK_NULL_HANDLE};
 
         struct FrameData {
             VkCommandPool commandPool{VK_NULL_HANDLE};

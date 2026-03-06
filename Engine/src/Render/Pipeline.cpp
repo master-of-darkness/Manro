@@ -88,14 +88,17 @@ namespace Engine {
         depthStencil.stencilTestEnable = VK_FALSE;
 
         VkPushConstantRange pushRange{};
-        pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        pushRange.stageFlags = config.pushConstantStages;
         pushRange.offset = 0;
         pushRange.size = config.pushConstantSize;
 
         VkPipelineLayoutCreateInfo layoutInfo{};
         layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 
-        if (config.descriptorSetLayout != VK_NULL_HANDLE) {
+        if (!config.descriptorSetLayouts.empty()) {
+            layoutInfo.setLayoutCount = static_cast<u32>(config.descriptorSetLayouts.size());
+            layoutInfo.pSetLayouts = config.descriptorSetLayouts.data();
+        } else if (config.descriptorSetLayout != VK_NULL_HANDLE) {
             layoutInfo.setLayoutCount = 1;
             layoutInfo.pSetLayouts = &config.descriptorSetLayout;
         }

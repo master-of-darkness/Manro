@@ -69,7 +69,7 @@ void Sponza::Initialize() {
 
     auto &wm = m_Engine.GetPlatform().GetWindowManager();
     Engine::WindowDesc desc;
-    desc.Title = (m_SceneType == SceneType::Bistro) ? "Bistro Test" : "Sponza Test";
+    desc.Title = (m_SceneType == SceneType::Bistro) ? "Bistro PBR" : "Sponza PBR";
     desc.Width = kWindowWidth;
     desc.Height = kWindowHeight;
     m_Window = wm.AddWindow(desc);
@@ -86,7 +86,6 @@ void Sponza::Initialize() {
     m_InputManager.SetBackend(&m_InputBackend);
     wm.Get(m_Window)->CaptureMouse(true);
     wm.Get(m_Window)->ShowCursor(false);
-    // wm.Get(m_Window)->SetFullscreen(true);
 
     m_Renderer = Engine::CreateScope<Engine::Renderer>();
     m_Renderer->Initialize(wm.Get(m_Window), kWindowWidth, kWindowHeight, VK_SAMPLE_COUNT_8_BIT);
@@ -97,6 +96,22 @@ void Sponza::Initialize() {
     m_IsRunning = true;
     m_LastFrameTime = std::chrono::high_resolution_clock::now();
     LOG_INFO("[SponzaTest] Ready.  WASD=move  Mouse=look  Shift=sprint  Q/E=up/down  Escape=quit");
+}
+
+static Engine::u32 LoadOrCacheTexture(
+    const std::string &path,
+    std::unordered_map<std::string, Engine::u32> &cache,
+    Engine::Renderer *renderer) {
+    if (path.empty()) return 0;
+    auto it = cache.find(path);
+    if (it != cache.end()) return it->second;
+    Engine::TextureData td;
+    if (Engine::TextureLoader::Load(path, td)) {
+        Engine::u32 id = renderer->UploadTexture(td);
+        cache[path] = id;
+        return id;
+    }
+    return 0;
 }
 
 void Sponza::LoadScene() {
@@ -111,16 +126,15 @@ void Sponza::LoadScene() {
     std::unordered_map<std::string, Engine::u32> textureCache;
 
     for (const char *path : paths) {
-        std::vector<Engine::SubMeshData> subMeshData;
+        std::vector<Engine::PBRSubMeshData> subMeshData;
         bool ok = false;
-        switch (m_SceneType) {
-            case SceneType::Bistro:
-                ok = Engine::FBXLoader::LoadSubMeshes(path, subMeshData, Engine::AxisRemap::ZUpToYUp());
-                break;
-            case SceneType::Sponza:
-                ok = Engine::ModelLoader::LoadSubMeshes(path, subMeshData);
-                break;
+
+        if (m_SceneType == SceneType::Bistro) {
+            ok = Engine::FBXLoader::LoadPBRSubMeshes(path, subMeshData,
+                                                      Engine::AxisRemap::ZUpToYUp());
         }
+        // TODO: OBJ PBR loading for Sponza
+
         if (!ok) {
             LOG_ERROR("[SponzaTest] Failed to load '{}'. Skipping.", path);
             continue;
@@ -129,27 +143,17 @@ void Sponza::LoadScene() {
         for (auto &sd : subMeshData) {
             if (sd.vertices.empty()) continue;
 
-            Engine::ModelData md;
-            md.vertices = std::move(sd.vertices);
-            md.indices = std::move(sd.indices);
-            md.diffuseTexturePath = sd.diffuseTexturePath;
+            PBRSubMesh sm;
+            sm.meshId = m_Renderer->UploadPBRMesh(sd);
 
-            SubMesh sm;
-            sm.meshId = m_Renderer->UploadMesh(md);
+            sm.material.albedoTextureId = LoadOrCacheTexture(
+                sd.albedoTexturePath, textureCache, m_Renderer.get());
+            sm.material.normalTextureId = LoadOrCacheTexture(
+                sd.normalTexturePath, textureCache, m_Renderer.get());
+            sm.material.specularTextureId = LoadOrCacheTexture(
+                sd.specularTexturePath, textureCache, m_Renderer.get());
 
-            if (!sd.diffuseTexturePath.empty()) {
-                auto cacheIt = textureCache.find(sd.diffuseTexturePath);
-                if (cacheIt != textureCache.end()) {
-                    sm.textureId = cacheIt->second;
-                } else {
-                    Engine::TextureData td;
-                    if (Engine::TextureLoader::Load(sd.diffuseTexturePath, td)) {
-                        sm.textureId = m_Renderer->UploadTexture(td);
-                        textureCache[sd.diffuseTexturePath] = sm.textureId;
-                    }
-                }
-            }
-
+            m_Renderer->BuildPBRMaterialDescriptor(sm.material);
             m_SubMeshes.push_back(sm);
         }
 
@@ -189,14 +193,25 @@ void Sponza::Render(float dt) {
 
     const float aspect = m_Renderer->GetAspectRatio();
     const Engine::Mat4 vp = m_Camera.ViewProj(kFov, aspect, kNearZ, kFarZ);
+    const Engine::Mat4 model = Engine::Mat4(1.f);
 
-    for (const auto &sm: m_SubMeshes) {
-        m_Renderer->BindTexture(sm.textureId);
-        m_Renderer->SetTintColor({1.f, 1.f, 1.f});
-        m_Renderer->DrawMesh(sm.meshId, vp);
+    Engine::LightDataGPU lights{};
+    lights.dirLightDirection = glm::normalize(Engine::Vec3{-0.5f, -1.0f, -0.3f});
+    lights.dirLightColor = {1.0f, 0.98f, 0.95f};
+    lights.dirLightIntensity = 1.5f;
+    lights.cameraPos = m_Camera.Position;
+    lights.ambientColor = {0.6f, 0.65f, 0.8f};
+    lights.ambientIntensity = 0.15f;
+    lights.numPointLights = 0;
+    m_Renderer->UpdateLights(lights);
+
+    m_Renderer->BeginPBRPass();
+
+    for (const auto &sm : m_SubMeshes) {
+        m_Renderer->BindPBRMaterial(sm.material);
+        m_Renderer->DrawPBRMesh(sm.meshId, vp * model, model);
     }
 
-    m_Renderer->SetTintColor({1.f, 1.f, 1.f});
     m_Renderer->EndRenderPass();
     m_Renderer->EndFrameAndPresent();
 }

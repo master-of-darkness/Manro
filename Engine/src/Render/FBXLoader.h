@@ -35,5 +35,9 @@ namespace Engine {
         static bool LoadSubMeshes(const std::string &filepath,
                                   std::vector<SubMeshData> &out,
                                   const AxisRemap &remap = AxisRemap::Identity());
+
+        static bool LoadPBRSubMeshes(const std::string &filepath,
+                                     std::vector<PBRSubMeshData> &out,
+                                     const AxisRemap &remap = AxisRemap::Identity());
     };
 } // namespace Engine

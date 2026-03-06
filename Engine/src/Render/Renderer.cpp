@@ -11,6 +11,13 @@ struct MeshPushConstants {
 
 static_assert(sizeof(MeshPushConstants) % 16 == 0);
 
+struct PBRPushConstants {
+    Engine::Mat4 mvp;
+    Engine::Mat4 model;
+};
+
+static_assert(sizeof(PBRPushConstants) % 16 == 0);
+
 namespace Engine {
     Renderer::Renderer() = default;
 
@@ -41,6 +48,7 @@ namespace Engine {
         CreateDefaultSampler();
         LoadShadersAndPipeline();
         CreateWhiteTexture();
+        CreatePBRResources();
 
         m_ActiveDescriptorSet = m_Textures[m_WhiteTextureId].descriptorSet;
 
@@ -375,6 +383,12 @@ namespace Engine {
         DestroyColorResources();
         DestroyDepthResources();
 
+        m_LightUBO.reset();
+        m_PBRPipeline.reset();
+
+        if (m_PBRLightSetLayout) vkDestroyDescriptorSetLayout(m_Context.GetDevice(), m_PBRLightSetLayout, nullptr);
+        if (m_PBRMaterialSetLayout) vkDestroyDescriptorSetLayout(m_Context.GetDevice(), m_PBRMaterialSetLayout, nullptr);
+
         if (m_Sampler) vkDestroySampler(m_Context.GetDevice(), m_Sampler, nullptr);
         if (m_DescriptorSetLayout) vkDestroyDescriptorSetLayout(m_Context.GetDevice(), m_DescriptorSetLayout, nullptr);
         if (m_DescriptorPool) vkDestroyDescriptorPool(m_Context.GetDevice(), m_DescriptorPool, nullptr);
@@ -401,15 +415,17 @@ namespace Engine {
     }
 
     void Renderer::CreateDescriptorPool() {
-        VkDescriptorPoolSize poolSize{};
-        poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        poolSize.descriptorCount = 1024;
+        VkDescriptorPoolSize poolSizes[2]{};
+        poolSizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        poolSizes[0].descriptorCount = 4096;
+        poolSizes[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        poolSizes[1].descriptorCount = 16;
 
         VkDescriptorPoolCreateInfo poolInfo{};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        poolInfo.poolSizeCount = 1;
-        poolInfo.pPoolSizes = &poolSize;
-        poolInfo.maxSets = 1024;
+        poolInfo.poolSizeCount = 2;
+        poolInfo.pPoolSizes = poolSizes;
+        poolInfo.maxSets = 2048;
 
         if (vkCreateDescriptorPool(m_Context.GetDevice(), &poolInfo, nullptr, &m_DescriptorPool) != VK_SUCCESS)
             throw std::runtime_error("[Renderer] Failed to create descriptor pool!");
@@ -450,6 +466,9 @@ namespace Engine {
     void Renderer::CreateWhiteTexture() {
         const u8 whitePixel[4] = {255, 255, 255, 255};
         m_WhiteTextureId = UploadTextureInternal(whitePixel, 1, 1);
+
+        const u8 normalPixel[4] = {128, 128, 255, 255};
+        m_NeutralNormalTextureId = UploadTextureInternal(normalPixel, 1, 1);
     }
 
     void Renderer::CreateCommandBuffers() {
@@ -765,6 +784,239 @@ namespace Engine {
                            VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MeshPushConstants), &pc);
         vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 m_Pipeline->GetLayout(), 0, 1, &m_ActiveDescriptorSet, 0, nullptr);
+
+        VkBuffer vb[] = {mesh.vertexBuffer->GetHandle()};
+        VkDeviceSize offs[] = {0};
+        vkCmdBindVertexBuffers(cb, 0, 1, vb, offs);
+        vkCmdBindIndexBuffer(cb, mesh.indexBuffer->GetHandle(), 0, VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexed(cb, mesh.indexCount, 1, 0, 0, 0);
+    }
+
+    void Renderer::CreatePBRResources() {
+        {
+            VkDescriptorSetLayoutBinding binding{};
+            binding.binding = 0;
+            binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            binding.descriptorCount = 1;
+            binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+            VkDescriptorSetLayoutCreateInfo layoutInfo{};
+            layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+            layoutInfo.bindingCount = 1;
+            layoutInfo.pBindings = &binding;
+
+            if (vkCreateDescriptorSetLayout(m_Context.GetDevice(), &layoutInfo,
+                                            nullptr, &m_PBRLightSetLayout) != VK_SUCCESS)
+                throw std::runtime_error("[Renderer] Failed to create PBR light set layout!");
+        }
+
+        {
+            VkDescriptorSetLayoutBinding bindings[3]{};
+            for (int i = 0; i < 3; ++i) {
+                bindings[i].binding = i;
+                bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                bindings[i].descriptorCount = 1;
+                bindings[i].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+            }
+
+            VkDescriptorSetLayoutCreateInfo layoutInfo{};
+            layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+            layoutInfo.bindingCount = 3;
+            layoutInfo.pBindings = bindings;
+
+            if (vkCreateDescriptorSetLayout(m_Context.GetDevice(), &layoutInfo,
+                                            nullptr, &m_PBRMaterialSetLayout) != VK_SUCCESS)
+                throw std::runtime_error("[Renderer] Failed to create PBR material set layout!");
+        }
+
+        m_LightUBO = CreateScope<Buffer>(m_Context, sizeof(LightDataGPU),
+                                         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                         VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+        {
+            VkDescriptorSetAllocateInfo allocInfo{};
+            allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+            allocInfo.descriptorPool = m_DescriptorPool;
+            allocInfo.descriptorSetCount = 1;
+            allocInfo.pSetLayouts = &m_PBRLightSetLayout;
+            vkAllocateDescriptorSets(m_Context.GetDevice(), &allocInfo, &m_LightDescriptorSet);
+
+            VkDescriptorBufferInfo bufInfo{};
+            bufInfo.buffer = m_LightUBO->GetHandle();
+            bufInfo.offset = 0;
+            bufInfo.range = sizeof(LightDataGPU);
+
+            VkWriteDescriptorSet write{};
+            write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            write.dstSet = m_LightDescriptorSet;
+            write.dstBinding = 0;
+            write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            write.descriptorCount = 1;
+            write.pBufferInfo = &bufInfo;
+            vkUpdateDescriptorSets(m_Context.GetDevice(), 1, &write, 0, nullptr);
+        }
+
+        {
+            std::vector<u8> vertSpv, fragSpv;
+            if (!m_ShaderCompiler->CompileShaderToSPIRV("assets/shaders/pbr.slang",
+                                                         "vertexMain", "sm_6_5", vertSpv)) {
+                LOG_ERROR("[Renderer] Failed to compile PBR vertex shader!");
+                return;
+            }
+            if (!m_ShaderCompiler->CompileShaderToSPIRV("assets/shaders/pbr.slang",
+                                                         "fragmentMain", "sm_6_5", fragSpv)) {
+                LOG_ERROR("[Renderer] Failed to compile PBR fragment shader!");
+                return;
+            }
+
+            m_PBRPipeline = CreateScope<Pipeline>(m_Context);
+            PipelineConfigParams config{};
+            config.colorAttachmentFormat = m_Swapchain->GetImageFormat();
+            config.depthAttachmentFormat = m_DepthFormat;
+            config.descriptorSetLayouts = {m_PBRLightSetLayout, m_PBRMaterialSetLayout};
+
+            config.vertexInputBindings.resize(1);
+            config.vertexInputBindings[0].binding = 0;
+            config.vertexInputBindings[0].stride = sizeof(PBRVertex);
+            config.vertexInputBindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+            config.vertexInputAttributes.resize(4);
+            config.vertexInputAttributes[0] = {0, 0, VK_FORMAT_R32G32B32_SFLOAT,
+                                                offsetof(PBRVertex, position)};
+            config.vertexInputAttributes[1] = {1, 0, VK_FORMAT_R32G32B32_SFLOAT,
+                                                offsetof(PBRVertex, normal)};
+            config.vertexInputAttributes[2] = {2, 0, VK_FORMAT_R32G32_SFLOAT,
+                                                offsetof(PBRVertex, uv)};
+            config.vertexInputAttributes[3] = {3, 0, VK_FORMAT_R32G32B32_SFLOAT,
+                                                offsetof(PBRVertex, tangent)};
+
+            config.pushConstantSize = sizeof(PBRPushConstants);
+            config.pushConstantStages = VK_SHADER_STAGE_VERTEX_BIT;
+            config.msaaSamples = m_MsaaSamples;
+
+            m_PBRPipeline->BuildGraphics(vertSpv, fragSpv, config);
+            LOG_INFO("[Renderer] PBR pipeline created.");
+        }
+    }
+
+    u32 Renderer::UploadPBRMesh(const PBRSubMeshData &data) {
+        if (data.vertices.empty() || data.indices.empty()) return 0;
+
+        LoadedMesh mesh;
+        mesh.indexCount = static_cast<u32>(data.indices.size());
+
+        mesh.vertexBuffer = CreateScope<Buffer>(m_Context,
+                                                sizeof(PBRVertex) * data.vertices.size(),
+                                                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                                                VMA_MEMORY_USAGE_CPU_TO_GPU);
+        mesh.vertexBuffer->LoadData(data.vertices.data(),
+                                    sizeof(PBRVertex) * data.vertices.size());
+
+        mesh.indexBuffer = CreateScope<Buffer>(m_Context,
+                                               sizeof(u32) * data.indices.size(),
+                                               VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                                               VMA_MEMORY_USAGE_CPU_TO_GPU);
+        mesh.indexBuffer->LoadData(data.indices.data(),
+                                   sizeof(u32) * data.indices.size());
+
+        u32 id = m_NextMeshId++;
+        m_Meshes.emplace(id, std::move(mesh));
+        return id;
+    }
+
+    void Renderer::UpdateLights(const LightDataGPU &lightData) {
+        m_LightUBO->LoadData(&lightData, sizeof(LightDataGPU));
+    }
+
+    void Renderer::BeginPBRPass() {
+        if (!m_PBRPipeline || !m_PBRPipeline->GetHandle()) return;
+
+        VkCommandBuffer cb = m_Frames[m_CurrentFrame].commandBuffer;
+        vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_PBRPipeline->GetHandle());
+
+        VkViewport viewport{};
+        viewport.width = static_cast<float>(m_Swapchain->GetExtent().width);
+        viewport.height = static_cast<float>(m_Swapchain->GetExtent().height);
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+        vkCmdSetViewport(cb, 0, 1, &viewport);
+
+        VkRect2D scissor{};
+        scissor.extent = m_Swapchain->GetExtent();
+        vkCmdSetScissor(cb, 0, 1, &scissor);
+
+        vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                m_PBRPipeline->GetLayout(), 0, 1,
+                                &m_LightDescriptorSet, 0, nullptr);
+    }
+
+    void Renderer::BuildPBRMaterialDescriptor(PBRMaterial &mat) {
+        VkDescriptorSetAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocInfo.descriptorPool = m_DescriptorPool;
+        allocInfo.descriptorSetCount = 1;
+        allocInfo.pSetLayouts = &m_PBRMaterialSetLayout;
+
+        if (vkAllocateDescriptorSets(m_Context.GetDevice(), &allocInfo,
+                                     &mat.descriptorSet) != VK_SUCCESS) {
+            LOG_ERROR("[Renderer] Failed to allocate PBR material descriptor set!");
+            mat.descriptorSet = VK_NULL_HANDLE;
+            return;
+        }
+
+        auto getView = [&](u32 texId, u32 fallback) -> VkImageView {
+            auto it = m_Textures.find(texId ? texId : fallback);
+            return it != m_Textures.end() ? it->second.view : m_Textures[fallback].view;
+        };
+
+        VkDescriptorImageInfo imgInfos[3]{};
+        imgInfos[0].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        imgInfos[0].imageView = getView(mat.albedoTextureId, m_WhiteTextureId);
+        imgInfos[0].sampler = m_Sampler;
+
+        imgInfos[1].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        imgInfos[1].imageView = getView(mat.normalTextureId, m_NeutralNormalTextureId);
+        imgInfos[1].sampler = m_Sampler;
+
+        imgInfos[2].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        imgInfos[2].imageView = getView(mat.specularTextureId, m_WhiteTextureId);
+        imgInfos[2].sampler = m_Sampler;
+
+        VkWriteDescriptorSet writes[3]{};
+        for (int i = 0; i < 3; ++i) {
+            writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[i].dstSet = mat.descriptorSet;
+            writes[i].dstBinding = i;
+            writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            writes[i].descriptorCount = 1;
+            writes[i].pImageInfo = &imgInfos[i];
+        }
+        vkUpdateDescriptorSets(m_Context.GetDevice(), 3, writes, 0, nullptr);
+    }
+
+    void Renderer::BindPBRMaterial(const PBRMaterial &mat) {
+        if (mat.descriptorSet == VK_NULL_HANDLE) return;
+
+        VkCommandBuffer cb = m_Frames[m_CurrentFrame].commandBuffer;
+        vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                m_PBRPipeline->GetLayout(), 1, 1,
+                                &mat.descriptorSet, 0, nullptr);
+    }
+
+    void Renderer::DrawPBRMesh(u32 meshId, const Mat4 &mvp, const Mat4 &model) {
+        auto it = m_Meshes.find(meshId);
+        if (it == m_Meshes.end()) return;
+        const LoadedMesh &mesh = it->second;
+
+        VkCommandBuffer cb = m_Frames[m_CurrentFrame].commandBuffer;
+
+        PBRPushConstants pc;
+        pc.mvp = mvp;
+        pc.model = model;
+
+        vkCmdPushConstants(cb, m_PBRPipeline->GetLayout(),
+                           VK_SHADER_STAGE_VERTEX_BIT, 0,
+                           sizeof(PBRPushConstants), &pc);
 
         VkBuffer vb[] = {mesh.vertexBuffer->GetHandle()};
         VkDeviceSize offs[] = {0};

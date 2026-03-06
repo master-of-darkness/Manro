@@ -60,12 +60,12 @@ private:
 
     std::chrono::high_resolution_clock::time_point m_LastFrameTime;
 
-    struct SubMesh {
+    struct PBRSubMesh {
         Engine::u32 meshId{0};
-        Engine::u32 textureId{0};
+        Engine::PBRMaterial material;
     };
 
-    std::vector<SubMesh> m_SubMeshes; // TODO: wrap this shit into engine
+    std::vector<PBRSubMesh> m_SubMeshes;
 
     SceneType m_SceneType{SceneType::Bistro};
     FlyCamera m_Camera;

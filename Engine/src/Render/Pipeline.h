@@ -14,9 +14,11 @@ namespace Engine {
         std::vector<VkVertexInputAttributeDescription> vertexInputAttributes;
 
         VkDescriptorSetLayout descriptorSetLayout{VK_NULL_HANDLE};
+        std::vector<VkDescriptorSetLayout> descriptorSetLayouts;
         VkSampleCountFlagBits msaaSamples{VK_SAMPLE_COUNT_1_BIT};
 
         u32 pushConstantSize{0};
+        VkShaderStageFlags pushConstantStages{VK_SHADER_STAGE_VERTEX_BIT};
     };
 
     class Pipeline {
