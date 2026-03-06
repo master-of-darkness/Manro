@@ -191,6 +191,10 @@ add_library(Engine STATIC
         Engine/src/Render/ModelLoader.cpp
         Engine/src/Render/FBXLoader.cpp
         Engine/src/Render/TextureLoader.cpp
+        Engine/src/Render/FrameManager.cpp
+        Engine/src/Render/ResourceManager.cpp
+        Engine/src/Render/DescriptorManager.cpp
+        Engine/src/Render/RenderTargets.cpp
         Engine/src/Physics/PhysicsWorld.cpp
         Engine/src/Platform/Audio/AudioManager.cpp
         Engine/src/Platform/Audio/SDL3AudioBackend.cpp

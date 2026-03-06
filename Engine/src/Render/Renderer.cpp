@@ -34,23 +34,25 @@ namespace Engine {
         m_Swapchain->Initialize(width, height);
 
         VkSampleCountFlagBits maxSamples = m_Context.GetMaxUsableSampleCount();
-        m_MsaaSamples = (static_cast<u32>(msaaSamples) <= static_cast<u32>(maxSamples))
+        VkSampleCountFlagBits effectiveMsaa = (static_cast<u32>(msaaSamples) <= static_cast<u32>(maxSamples))
                             ? msaaSamples : maxSamples;
         LOG_INFO("[Renderer] MSAA samples: {} (requested: {}, max: {})",
-                 (int)m_MsaaSamples, (int)msaaSamples, (int)maxSamples);
+                 (int)effectiveMsaa, (int)msaaSamples, (int)maxSamples);
 
-        CreateColorResources(width, height);
-        CreateDepthResources(width, height);
-        CreateCommandBuffers();
-        CreateSyncObjects();
-        CreateDescriptorPool();
-        CreateDescriptorSetLayout();
-        CreateDefaultSampler();
+        m_RenderTargets.Initialize(m_Context, *m_Swapchain, width, height, effectiveMsaa);
+        m_FrameManager.Initialize(m_Context);
+        m_Descriptors.Initialize(m_Context);
+
+        m_Resources.Initialize(m_Context, m_Descriptors.GetPool(),
+                               m_Descriptors.GetTextureLayout(),
+                               m_Descriptors.GetDefaultSampler());
+
         LoadShadersAndPipeline();
-        CreateWhiteTexture();
-        CreatePBRResources();
+        m_Resources.CreateDefaultTextures();
+        CreatePBRPipeline();
 
-        m_ActiveDescriptorSet = m_Textures[m_WhiteTextureId].descriptorSet;
+        const auto* whiteTex = m_Resources.GetTexture(m_Resources.GetWhiteTextureId());
+        m_ActiveDescriptorSet = whiteTex ? whiteTex->descriptorSet : VK_NULL_HANDLE;
 
         m_PendingWidth = width;
         m_PendingHeight = height;
@@ -70,120 +72,10 @@ namespace Engine {
         if (w == 0 || h == 0) return;
 
         m_Swapchain->Recreate(w, h);
-
-        DestroyColorResources();
-        CreateColorResources(w, h);
-
-        DestroyDepthResources();
-        CreateDepthResources(w, h);
+        m_RenderTargets.Recreate(m_Context.GetDevice(), m_Context.GetAllocator(),
+                                 *m_Swapchain, w, h);
 
         LOG_INFO("[Renderer] Swapchain recreated {}x{}", w, h);
-    }
-
-    void Renderer::CreateDepthResources(u32 width, u32 height) {
-        VkImageCreateInfo depthInfo{};
-        depthInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-        depthInfo.imageType = VK_IMAGE_TYPE_2D;
-        depthInfo.extent = {width, height, 1};
-        depthInfo.mipLevels = 1;
-        depthInfo.arrayLayers = 1;
-        depthInfo.format = m_DepthFormat;
-        depthInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-        depthInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        depthInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-        depthInfo.samples = m_MsaaSamples;
-        depthInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-        VmaAllocationCreateInfo depthAllocInfo{};
-        depthAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-        depthAllocInfo.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-
-        if (vmaCreateImage(m_Context.GetAllocator(), &depthInfo, &depthAllocInfo,
-                           &m_DepthImage, &m_DepthAllocation, nullptr) != VK_SUCCESS) {
-            throw std::runtime_error("[Renderer] Failed to create depth image!");
-        }
-
-        VkImageViewCreateInfo depthViewInfo{};
-        depthViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        depthViewInfo.image = m_DepthImage;
-        depthViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        depthViewInfo.format = m_DepthFormat;
-        depthViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-        depthViewInfo.subresourceRange.baseMipLevel = 0;
-        depthViewInfo.subresourceRange.levelCount = 1;
-        depthViewInfo.subresourceRange.baseArrayLayer = 0;
-        depthViewInfo.subresourceRange.layerCount = 1;
-
-        if (vkCreateImageView(m_Context.GetDevice(), &depthViewInfo, nullptr, &m_DepthImageView) != VK_SUCCESS) {
-            throw std::runtime_error("[Renderer] Failed to create depth image view!");
-        }
-    }
-
-    void Renderer::DestroyDepthResources() {
-        if (m_DepthImageView) {
-            vkDestroyImageView(m_Context.GetDevice(), m_DepthImageView, nullptr);
-            m_DepthImageView = VK_NULL_HANDLE;
-        }
-        if (m_DepthImage) {
-            vmaDestroyImage(m_Context.GetAllocator(), m_DepthImage, m_DepthAllocation);
-            m_DepthImage = VK_NULL_HANDLE;
-            m_DepthAllocation = nullptr;
-        }
-    }
-
-    void Renderer::CreateColorResources(u32 width, u32 height) {
-        if (m_MsaaSamples == VK_SAMPLE_COUNT_1_BIT) return;
-
-        VkImageCreateInfo colorInfo{};
-        colorInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-        colorInfo.imageType = VK_IMAGE_TYPE_2D;
-        colorInfo.extent.width = width;
-        colorInfo.extent.height = height;
-        colorInfo.extent.depth = 1;
-        colorInfo.mipLevels = 1;
-        colorInfo.arrayLayers = 1;
-        colorInfo.format = m_Swapchain->GetImageFormat();
-        colorInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-        colorInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        colorInfo.usage = VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-        colorInfo.samples = m_MsaaSamples;
-        colorInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-        VmaAllocationCreateInfo colorAllocInfo{};
-        colorAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-        colorAllocInfo.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-
-        if (vmaCreateImage(m_Context.GetAllocator(), &colorInfo, &colorAllocInfo,
-                           &m_ColorImage, &m_ColorAllocation, nullptr) != VK_SUCCESS) {
-            throw std::runtime_error("[Renderer] Failed to create multisampled color image!");
-        }
-
-        VkImageViewCreateInfo colorViewInfo{};
-        colorViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        colorViewInfo.image = m_ColorImage;
-        colorViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        colorViewInfo.format = m_Swapchain->GetImageFormat();
-        colorViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        colorViewInfo.subresourceRange.baseMipLevel = 0;
-        colorViewInfo.subresourceRange.levelCount = 1;
-        colorViewInfo.subresourceRange.baseArrayLayer = 0;
-        colorViewInfo.subresourceRange.layerCount = 1;
-
-        if (vkCreateImageView(m_Context.GetDevice(), &colorViewInfo, nullptr, &m_ColorImageView) != VK_SUCCESS) {
-            throw std::runtime_error("[Renderer] Failed to create multisampled color image view!");
-        }
-    }
-
-    void Renderer::DestroyColorResources() {
-        if (m_ColorImageView) {
-            vkDestroyImageView(m_Context.GetDevice(), m_ColorImageView, nullptr);
-            m_ColorImageView = VK_NULL_HANDLE;
-        }
-        if (m_ColorImage) {
-            vmaDestroyImage(m_Context.GetAllocator(), m_ColorImage, m_ColorAllocation);
-            m_ColorImage = VK_NULL_HANDLE;
-            m_ColorAllocation = nullptr;
-        }
     }
 
     bool Renderer::BeginFrame() {
@@ -195,7 +87,7 @@ namespace Engine {
         if (m_PendingWidth == 0 || m_PendingHeight == 0)
             return false;
 
-        FrameData &frame = m_Frames[m_CurrentFrame];
+        FrameData &frame = m_FrameManager.CurrentFrame();
 
         vkWaitForFences(m_Context.GetDevice(), 1, &frame.inFlightFence, VK_TRUE, UINT64_MAX);
 
@@ -227,7 +119,7 @@ namespace Engine {
         u32 barrierCount = 1;
         barriers[0] = barrier;
 
-        if (m_MsaaSamples != VK_SAMPLE_COUNT_1_BIT) {
+        if (m_RenderTargets.GetMsaaSamples() != VK_SAMPLE_COUNT_1_BIT) {
             VkImageMemoryBarrier2 msaaBarrier{};
             msaaBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
             msaaBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -236,7 +128,7 @@ namespace Engine {
             msaaBarrier.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
             msaaBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
             msaaBarrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            msaaBarrier.image = m_ColorImage;
+            msaaBarrier.image = m_RenderTargets.GetColorImage();
             msaaBarrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
             barriers[1] = msaaBarrier;
             barrierCount = 2;
@@ -252,7 +144,7 @@ namespace Engine {
     }
 
     void Renderer::BeginRenderPass(Vec4 clearColor) {
-        FrameData &frame = m_Frames[m_CurrentFrame];
+        FrameData &frame = m_FrameManager.CurrentFrame();
         VkCommandBuffer cb = frame.commandBuffer;
 
         VkClearValue cv{};
@@ -263,8 +155,8 @@ namespace Engine {
         colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         colorAttachment.clearValue = cv;
 
-        if (m_MsaaSamples != VK_SAMPLE_COUNT_1_BIT) {
-            colorAttachment.imageView = m_ColorImageView;
+        if (m_RenderTargets.GetMsaaSamples() != VK_SAMPLE_COUNT_1_BIT) {
+            colorAttachment.imageView = m_RenderTargets.GetColorView();
             colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
             colorAttachment.resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
@@ -278,7 +170,7 @@ namespace Engine {
 
         VkRenderingAttachmentInfo depthAttachment{};
         depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        depthAttachment.imageView = m_DepthImageView;
+        depthAttachment.imageView = m_RenderTargets.GetDepthView();
         depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -307,15 +199,16 @@ namespace Engine {
         scissor.extent = m_Swapchain->GetExtent();
         vkCmdSetScissor(cb, 0, 1, &scissor);
 
-        m_ActiveDescriptorSet = m_Textures[m_WhiteTextureId].descriptorSet;
+        const auto* whiteTex = m_Resources.GetTexture(m_Resources.GetWhiteTextureId());
+        m_ActiveDescriptorSet = whiteTex ? whiteTex->descriptorSet : VK_NULL_HANDLE;
     }
 
     void Renderer::EndRenderPass() {
-        vkCmdEndRendering(m_Frames[m_CurrentFrame].commandBuffer);
+        vkCmdEndRendering(m_FrameManager.CurrentFrame().commandBuffer);
     }
 
     void Renderer::EndFrameAndPresent() {
-        FrameData &frame = m_Frames[m_CurrentFrame];
+        FrameData &frame = m_FrameManager.CurrentFrame();
 
         VkImageMemoryBarrier2 barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
@@ -367,149 +260,30 @@ namespace Engine {
         if (needsRecreate)
             m_PendingResize = true;
 
-        m_CurrentFrame = (m_CurrentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+        m_FrameManager.AdvanceFrame();
     }
 
     void Renderer::Shutdown() {
         if (!m_Context.GetDevice()) return;
         vkDeviceWaitIdle(m_Context.GetDevice());
 
-        for (auto &[id, tex]: m_Textures) {
-            if (tex.view) vkDestroyImageView(m_Context.GetDevice(), tex.view, nullptr);
-            if (tex.image) vmaDestroyImage(m_Context.GetAllocator(), tex.image, tex.allocation);
-        }
-        m_Textures.clear();
-
-        DestroyColorResources();
-        DestroyDepthResources();
+        m_Resources.Shutdown(m_Context.GetDevice(), m_Context.GetAllocator());
+        m_RenderTargets.Shutdown(m_Context.GetDevice(), m_Context.GetAllocator());
 
         m_LightUBO.reset();
         m_PBRPipeline.reset();
 
-        if (m_PBRLightSetLayout) vkDestroyDescriptorSetLayout(m_Context.GetDevice(), m_PBRLightSetLayout, nullptr);
-        if (m_PBRMaterialSetLayout) vkDestroyDescriptorSetLayout(m_Context.GetDevice(), m_PBRMaterialSetLayout, nullptr);
-
-        if (m_Sampler) vkDestroySampler(m_Context.GetDevice(), m_Sampler, nullptr);
-        if (m_DescriptorSetLayout) vkDestroyDescriptorSetLayout(m_Context.GetDevice(), m_DescriptorSetLayout, nullptr);
-        if (m_DescriptorPool) vkDestroyDescriptorPool(m_Context.GetDevice(), m_DescriptorPool, nullptr);
+        m_Descriptors.Shutdown(m_Context.GetDevice());
 
         m_Pipeline.reset();
         m_ShaderCompiler.reset();
-        m_Meshes.clear();
         m_VertexBuffer.reset();
         m_IndexBuffer.reset();
 
-        for (auto &frame: m_Frames) {
-            if (frame.renderFinishedSemaphore)
-                vkDestroySemaphore(m_Context.GetDevice(), frame.renderFinishedSemaphore, nullptr);
-            if (frame.imageAvailableSemaphore)
-                vkDestroySemaphore(m_Context.GetDevice(), frame.imageAvailableSemaphore, nullptr);
-            if (frame.inFlightFence)
-                vkDestroyFence(m_Context.GetDevice(), frame.inFlightFence, nullptr);
-            if (frame.commandPool)
-                vkDestroyCommandPool(m_Context.GetDevice(), frame.commandPool, nullptr);
-        }
+        m_FrameManager.Shutdown(m_Context.GetDevice());
 
         if (m_Swapchain) m_Swapchain->Shutdown();
         m_Context.Shutdown();
-    }
-
-    void Renderer::CreateDescriptorPool() {
-        VkDescriptorPoolSize poolSizes[2]{};
-        poolSizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        poolSizes[0].descriptorCount = 4096;
-        poolSizes[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        poolSizes[1].descriptorCount = 16;
-
-        VkDescriptorPoolCreateInfo poolInfo{};
-        poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        poolInfo.poolSizeCount = 2;
-        poolInfo.pPoolSizes = poolSizes;
-        poolInfo.maxSets = 2048;
-
-        if (vkCreateDescriptorPool(m_Context.GetDevice(), &poolInfo, nullptr, &m_DescriptorPool) != VK_SUCCESS)
-            throw std::runtime_error("[Renderer] Failed to create descriptor pool!");
-    }
-
-    void Renderer::CreateDescriptorSetLayout() {
-        VkDescriptorSetLayoutBinding binding{};
-        binding.binding = 0;
-        binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        binding.descriptorCount = 1;
-        binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-        VkDescriptorSetLayoutCreateInfo layoutInfo{};
-        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.bindingCount = 1;
-        layoutInfo.pBindings = &binding;
-
-        if (vkCreateDescriptorSetLayout(m_Context.GetDevice(), &layoutInfo, nullptr, &m_DescriptorSetLayout) !=
-            VK_SUCCESS)
-            throw std::runtime_error("[Renderer] Failed to create descriptor set layout!");
-    }
-
-    void Renderer::CreateDefaultSampler() {
-        VkSamplerCreateInfo samplerInfo{};
-        samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-        samplerInfo.magFilter = VK_FILTER_LINEAR;
-        samplerInfo.minFilter = VK_FILTER_LINEAR;
-        samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        samplerInfo.maxLod = VK_LOD_CLAMP_NONE;
-
-        if (vkCreateSampler(m_Context.GetDevice(), &samplerInfo, nullptr, &m_Sampler) != VK_SUCCESS)
-            throw std::runtime_error("[Renderer] Failed to create texture sampler!");
-    }
-
-    void Renderer::CreateWhiteTexture() {
-        const u8 whitePixel[4] = {255, 255, 255, 255};
-        m_WhiteTextureId = UploadTextureInternal(whitePixel, 1, 1);
-
-        const u8 normalPixel[4] = {128, 128, 255, 255};
-        m_NeutralNormalTextureId = UploadTextureInternal(normalPixel, 1, 1);
-    }
-
-    void Renderer::CreateCommandBuffers() {
-        m_Frames.resize(MAX_FRAMES_IN_FLIGHT);
-
-        VkCommandPoolCreateInfo poolInfo{};
-        poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-        poolInfo.queueFamilyIndex = m_Context.GetGraphicsQueueFamilyIndex();
-
-        for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-            if (vkCreateCommandPool(m_Context.GetDevice(), &poolInfo, nullptr, &m_Frames[i].commandPool) != VK_SUCCESS)
-                throw std::runtime_error("Failed to create command pool!");
-
-            VkCommandBufferAllocateInfo allocInfo{};
-            allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-            allocInfo.commandPool = m_Frames[i].commandPool;
-            allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-            allocInfo.commandBufferCount = 1;
-
-            if (vkAllocateCommandBuffers(m_Context.GetDevice(), &allocInfo, &m_Frames[i].commandBuffer) != VK_SUCCESS)
-                throw std::runtime_error("Failed to allocate command buffers!");
-        }
-    }
-
-    void Renderer::CreateSyncObjects() {
-        VkSemaphoreCreateInfo semInfo{};
-        semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-
-        VkFenceCreateInfo fenceInfo{};
-        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-        fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-
-        for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-            if (vkCreateSemaphore(m_Context.GetDevice(), &semInfo, nullptr, &m_Frames[i].imageAvailableSemaphore) !=
-                VK_SUCCESS ||
-                vkCreateSemaphore(m_Context.GetDevice(), &semInfo, nullptr, &m_Frames[i].renderFinishedSemaphore) !=
-                VK_SUCCESS ||
-                vkCreateFence(m_Context.GetDevice(), &fenceInfo, nullptr, &m_Frames[i].inFlightFence) != VK_SUCCESS)
-                throw std::runtime_error("Failed to create sync objects!");
-        }
     }
 
     void Renderer::LoadShadersAndPipeline() {
@@ -529,8 +303,8 @@ namespace Engine {
         m_Pipeline = CreateScope<Pipeline>(m_Context);
         PipelineConfigParams config{};
         config.colorAttachmentFormat = m_Swapchain->GetImageFormat();
-        config.depthAttachmentFormat = m_DepthFormat;
-        config.descriptorSetLayout = m_DescriptorSetLayout;
+        config.depthAttachmentFormat = m_RenderTargets.GetDepthFormat();
+        config.descriptorSetLayout = m_Descriptors.GetTextureLayout();
 
         config.vertexInputBindings.resize(1);
         config.vertexInputBindings[0].binding = 0;
@@ -543,7 +317,7 @@ namespace Engine {
         config.vertexInputAttributes[2] = {2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, uv)};
 
         config.pushConstantSize = sizeof(MeshPushConstants);
-        config.msaaSamples = m_MsaaSamples;
+        config.msaaSamples = m_RenderTargets.GetMsaaSamples();
 
         m_Pipeline->BuildGraphics(vertSpv, fragSpv, config);
 
@@ -573,208 +347,85 @@ namespace Engine {
         m_IndexBuffer->LoadData(indices.data(), sizeof(u32) * indices.size());
     }
 
-    u32 Renderer::UploadTextureInternal(const u8 *pixels, int width, int height) {
-        VkDeviceSize imageSize = static_cast<VkDeviceSize>(width) * height * 4;
+    void Renderer::CreatePBRPipeline() {
+        m_Descriptors.CreatePBRDescriptorLayouts(m_Context.GetDevice());
 
-        VkBufferCreateInfo stagingBufInfo{};
-        stagingBufInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        stagingBufInfo.size = imageSize;
-        stagingBufInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-        stagingBufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        m_LightUBO = CreateScope<Buffer>(m_Context, sizeof(LightDataGPU),
+                                         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                         VMA_MEMORY_USAGE_CPU_TO_GPU);
 
-        VmaAllocationCreateInfo stagingAllocInfo{};
-        stagingAllocInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY;
-        stagingAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+        m_Descriptors.AllocateLightDescriptorSet(m_Context.GetDevice(), *m_LightUBO);
 
-        VkBuffer stagingBuf{};
-        VmaAllocation stagingAlloc{};
-        VmaAllocationInfo stagingAllocRes{};
-
-        if (vmaCreateBuffer(m_Context.GetAllocator(), &stagingBufInfo, &stagingAllocInfo,
-                            &stagingBuf, &stagingAlloc, &stagingAllocRes) != VK_SUCCESS) {
-            LOG_ERROR("[Renderer] Failed to create texture staging buffer!");
-            return 0;
-        }
-        std::memcpy(stagingAllocRes.pMappedData, pixels, imageSize);
-
-        VkImageCreateInfo imageInfo{};
-        imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-        imageInfo.imageType = VK_IMAGE_TYPE_2D;
-        imageInfo.extent = {static_cast<u32>(width), static_cast<u32>(height), 1};
-        imageInfo.mipLevels = 1;
-        imageInfo.arrayLayers = 1;
-        imageInfo.format = VK_FORMAT_R8G8B8A8_SRGB;
-        imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-        imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-        imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-        imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-        VmaAllocationCreateInfo gpuAllocInfo{};
-        gpuAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-
-        LoadedTexture tex{};
-        if (vmaCreateImage(m_Context.GetAllocator(), &imageInfo, &gpuAllocInfo,
-                           &tex.image, &tex.allocation, nullptr) != VK_SUCCESS) {
-            LOG_ERROR("[Renderer] Failed to create VkImage!");
-            vmaDestroyBuffer(m_Context.GetAllocator(), stagingBuf, stagingAlloc);
-            return 0;
-        }
-
-        VkCommandPool tmpPool{};
-        VkCommandBuffer tmpCmd{};
-
-        VkCommandPoolCreateInfo poolInfo{};
-        poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        poolInfo.queueFamilyIndex = m_Context.GetGraphicsQueueFamilyIndex();
-        poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-        vkCreateCommandPool(m_Context.GetDevice(), &poolInfo, nullptr, &tmpPool);
-
-        VkCommandBufferAllocateInfo allocInfo{};
-        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        allocInfo.commandPool = tmpPool;
-        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        allocInfo.commandBufferCount = 1;
-        vkAllocateCommandBuffers(m_Context.GetDevice(), &allocInfo, &tmpCmd);
-
-        VkCommandBufferBeginInfo beginInfo{};
-        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        vkBeginCommandBuffer(tmpCmd, &beginInfo);
-
-        {
-            VkImageMemoryBarrier barrier{};
-            barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-            barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-            barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            barrier.image = tex.image;
-            barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-            barrier.srcAccessMask = 0;
-            barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-            vkCmdPipelineBarrier(tmpCmd,
-                                 VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                 0, 0, nullptr, 0, nullptr, 1, &barrier);
-        }
-
-        VkBufferImageCopy region{};
-        region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-        region.imageExtent = {static_cast<u32>(width), static_cast<u32>(height), 1};
-        vkCmdCopyBufferToImage(tmpCmd, stagingBuf, tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-
-        {
-            VkImageMemoryBarrier barrier{};
-            barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-            barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-            barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            barrier.image = tex.image;
-            barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-            barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-            barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-            vkCmdPipelineBarrier(tmpCmd,
-                                 VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                                 0, 0, nullptr, 0, nullptr, 1, &barrier);
-        }
-
-        vkEndCommandBuffer(tmpCmd);
-
-        VkSubmitInfo submitInfo{};
-        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = &tmpCmd;
-        vkQueueSubmit(m_Context.GetGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE);
-        vkQueueWaitIdle(m_Context.GetGraphicsQueue());
-
-        vkDestroyCommandPool(m_Context.GetDevice(), tmpPool, nullptr);
-        vmaDestroyBuffer(m_Context.GetAllocator(), stagingBuf, stagingAlloc);
-
-        VkImageViewCreateInfo viewInfo{};
-        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        viewInfo.image = tex.image;
-        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        viewInfo.format = VK_FORMAT_R8G8B8A8_SRGB;
-        viewInfo.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-
-        if (vkCreateImageView(m_Context.GetDevice(), &viewInfo, nullptr, &tex.view) != VK_SUCCESS) {
-            LOG_ERROR("[Renderer] Failed to create texture image view!");
-            return 0;
-        }
-
-        VkDescriptorSetAllocateInfo dsAllocInfo{};
-        dsAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        dsAllocInfo.descriptorPool = m_DescriptorPool;
-        dsAllocInfo.descriptorSetCount = 1;
-        dsAllocInfo.pSetLayouts = &m_DescriptorSetLayout;
-        vkAllocateDescriptorSets(m_Context.GetDevice(), &dsAllocInfo, &tex.descriptorSet);
-
-        VkDescriptorImageInfo imgInfo{};
-        imgInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imgInfo.imageView = tex.view;
-        imgInfo.sampler = m_Sampler;
-
-        VkWriteDescriptorSet write{};
-        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet = tex.descriptorSet;
-        write.dstBinding = 0;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        write.descriptorCount = 1;
-        write.pImageInfo = &imgInfo;
-        vkUpdateDescriptorSets(m_Context.GetDevice(), 1, &write, 0, nullptr);
-
-        u32 id = m_NextTextureId++;
-        m_Textures.emplace(id, std::move(tex));
-        return id;
-    }
-
-    u32 Renderer::UploadTexture(const TextureData &data) {
-        if (data.pixels.empty() || data.width <= 0 || data.height <= 0) return 0;
-        return UploadTextureInternal(data.pixels.data(), data.width, data.height);
-    }
-
-    void Renderer::BindTexture(u32 textureId) {
-        if (textureId == 0) {
-            m_ActiveDescriptorSet = m_Textures[m_WhiteTextureId].descriptorSet;
+        std::vector<u8> vertSpv, fragSpv;
+        if (!m_ShaderCompiler->CompileShaderToSPIRV("assets/shaders/pbr.slang",
+                                                     "vertexMain", "sm_6_5", vertSpv)) {
+            LOG_ERROR("[Renderer] Failed to compile PBR vertex shader!");
             return;
         }
-        auto it = m_Textures.find(textureId);
-        m_ActiveDescriptorSet = (it != m_Textures.end())
-                                    ? it->second.descriptorSet
-                                    : m_Textures[m_WhiteTextureId].descriptorSet;
+        if (!m_ShaderCompiler->CompileShaderToSPIRV("assets/shaders/pbr.slang",
+                                                     "fragmentMain", "sm_6_5", fragSpv)) {
+            LOG_ERROR("[Renderer] Failed to compile PBR fragment shader!");
+            return;
+        }
+
+        m_PBRPipeline = CreateScope<Pipeline>(m_Context);
+        PipelineConfigParams config{};
+        config.colorAttachmentFormat = m_Swapchain->GetImageFormat();
+        config.depthAttachmentFormat = m_RenderTargets.GetDepthFormat();
+        config.descriptorSetLayouts = {m_Descriptors.GetPBRLightLayout(),
+                                       m_Descriptors.GetPBRMaterialLayout()};
+
+        config.vertexInputBindings.resize(1);
+        config.vertexInputBindings[0].binding = 0;
+        config.vertexInputBindings[0].stride = sizeof(PBRVertex);
+        config.vertexInputBindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+        config.vertexInputAttributes.resize(4);
+        config.vertexInputAttributes[0] = {0, 0, VK_FORMAT_R32G32B32_SFLOAT,
+                                            offsetof(PBRVertex, position)};
+        config.vertexInputAttributes[1] = {1, 0, VK_FORMAT_R32G32B32_SFLOAT,
+                                            offsetof(PBRVertex, normal)};
+        config.vertexInputAttributes[2] = {2, 0, VK_FORMAT_R32G32_SFLOAT,
+                                            offsetof(PBRVertex, uv)};
+        config.vertexInputAttributes[3] = {3, 0, VK_FORMAT_R32G32B32_SFLOAT,
+                                            offsetof(PBRVertex, tangent)};
+
+        config.pushConstantSize = sizeof(PBRPushConstants);
+        config.pushConstantStages = VK_SHADER_STAGE_VERTEX_BIT;
+        config.msaaSamples = m_RenderTargets.GetMsaaSamples();
+
+        m_PBRPipeline->BuildGraphics(vertSpv, fragSpv, config);
+        LOG_INFO("[Renderer] PBR pipeline created.");
     }
 
     u32 Renderer::UploadMesh(const ModelData &data) {
-        if (data.vertices.empty() || data.indices.empty()) return 0;
+        return m_Resources.UploadMesh(data);
+    }
 
-        static_assert(sizeof(ModelVertex) == sizeof(Vertex),
-                      "ModelVertex and Renderer::Vertex layout mismatch!");
+    u32 Renderer::UploadPBRMesh(const PBRSubMeshData &data) {
+        return m_Resources.UploadPBRMesh(data);
+    }
 
-        LoadedMesh mesh;
-        mesh.indexCount = static_cast<u32>(data.indices.size());
+    u32 Renderer::UploadTexture(const TextureData &data) {
+        return m_Resources.UploadTexture(data);
+    }
 
-        mesh.vertexBuffer = CreateScope<Buffer>(m_Context,
-                                                sizeof(ModelVertex) * data.vertices.size(),
-                                                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-        mesh.vertexBuffer->LoadData(data.vertices.data(), sizeof(ModelVertex) * data.vertices.size());
-
-        mesh.indexBuffer = CreateScope<Buffer>(m_Context,
-                                               sizeof(u32) * data.indices.size(),
-                                               VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-        mesh.indexBuffer->LoadData(data.indices.data(), sizeof(u32) * data.indices.size());
-
-        u32 id = m_NextMeshId++;
-        m_Meshes.emplace(id, std::move(mesh));
-        return id;
+    void Renderer::BindTexture(u32 textureId) {
+        const auto* whiteTex = m_Resources.GetTexture(m_Resources.GetWhiteTextureId());
+        if (textureId == 0) {
+            m_ActiveDescriptorSet = whiteTex ? whiteTex->descriptorSet : VK_NULL_HANDLE;
+            return;
+        }
+        const auto* tex = m_Resources.GetTexture(textureId);
+        m_ActiveDescriptorSet = tex ? tex->descriptorSet
+                                    : (whiteTex ? whiteTex->descriptorSet : VK_NULL_HANDLE);
     }
 
     void Renderer::DrawMesh(u32 meshId, const Mat4 &mvp) {
-        auto it = m_Meshes.find(meshId);
-        if (it == m_Meshes.end()) return;
-        const LoadedMesh &mesh = it->second;
+        const auto* mesh = m_Resources.GetMesh(meshId);
+        if (!mesh) return;
 
-        VkCommandBuffer cb = m_Frames[m_CurrentFrame].commandBuffer;
+        VkCommandBuffer cb = m_FrameManager.CurrentFrame().commandBuffer;
 
         MeshPushConstants pc;
         pc.mvp = mvp;
@@ -785,143 +436,11 @@ namespace Engine {
         vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 m_Pipeline->GetLayout(), 0, 1, &m_ActiveDescriptorSet, 0, nullptr);
 
-        VkBuffer vb[] = {mesh.vertexBuffer->GetHandle()};
+        VkBuffer vb[] = {mesh->vertexBuffer->GetHandle()};
         VkDeviceSize offs[] = {0};
         vkCmdBindVertexBuffers(cb, 0, 1, vb, offs);
-        vkCmdBindIndexBuffer(cb, mesh.indexBuffer->GetHandle(), 0, VK_INDEX_TYPE_UINT32);
-        vkCmdDrawIndexed(cb, mesh.indexCount, 1, 0, 0, 0);
-    }
-
-    void Renderer::CreatePBRResources() {
-        {
-            VkDescriptorSetLayoutBinding binding{};
-            binding.binding = 0;
-            binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            binding.descriptorCount = 1;
-            binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-            VkDescriptorSetLayoutCreateInfo layoutInfo{};
-            layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-            layoutInfo.bindingCount = 1;
-            layoutInfo.pBindings = &binding;
-
-            if (vkCreateDescriptorSetLayout(m_Context.GetDevice(), &layoutInfo,
-                                            nullptr, &m_PBRLightSetLayout) != VK_SUCCESS)
-                throw std::runtime_error("[Renderer] Failed to create PBR light set layout!");
-        }
-
-        {
-            VkDescriptorSetLayoutBinding bindings[3]{};
-            for (int i = 0; i < 3; ++i) {
-                bindings[i].binding = i;
-                bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-                bindings[i].descriptorCount = 1;
-                bindings[i].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-            }
-
-            VkDescriptorSetLayoutCreateInfo layoutInfo{};
-            layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-            layoutInfo.bindingCount = 3;
-            layoutInfo.pBindings = bindings;
-
-            if (vkCreateDescriptorSetLayout(m_Context.GetDevice(), &layoutInfo,
-                                            nullptr, &m_PBRMaterialSetLayout) != VK_SUCCESS)
-                throw std::runtime_error("[Renderer] Failed to create PBR material set layout!");
-        }
-
-        m_LightUBO = CreateScope<Buffer>(m_Context, sizeof(LightDataGPU),
-                                         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                         VMA_MEMORY_USAGE_CPU_TO_GPU);
-
-        {
-            VkDescriptorSetAllocateInfo allocInfo{};
-            allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-            allocInfo.descriptorPool = m_DescriptorPool;
-            allocInfo.descriptorSetCount = 1;
-            allocInfo.pSetLayouts = &m_PBRLightSetLayout;
-            vkAllocateDescriptorSets(m_Context.GetDevice(), &allocInfo, &m_LightDescriptorSet);
-
-            VkDescriptorBufferInfo bufInfo{};
-            bufInfo.buffer = m_LightUBO->GetHandle();
-            bufInfo.offset = 0;
-            bufInfo.range = sizeof(LightDataGPU);
-
-            VkWriteDescriptorSet write{};
-            write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            write.dstSet = m_LightDescriptorSet;
-            write.dstBinding = 0;
-            write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            write.descriptorCount = 1;
-            write.pBufferInfo = &bufInfo;
-            vkUpdateDescriptorSets(m_Context.GetDevice(), 1, &write, 0, nullptr);
-        }
-
-        {
-            std::vector<u8> vertSpv, fragSpv;
-            if (!m_ShaderCompiler->CompileShaderToSPIRV("assets/shaders/pbr.slang",
-                                                         "vertexMain", "sm_6_5", vertSpv)) {
-                LOG_ERROR("[Renderer] Failed to compile PBR vertex shader!");
-                return;
-            }
-            if (!m_ShaderCompiler->CompileShaderToSPIRV("assets/shaders/pbr.slang",
-                                                         "fragmentMain", "sm_6_5", fragSpv)) {
-                LOG_ERROR("[Renderer] Failed to compile PBR fragment shader!");
-                return;
-            }
-
-            m_PBRPipeline = CreateScope<Pipeline>(m_Context);
-            PipelineConfigParams config{};
-            config.colorAttachmentFormat = m_Swapchain->GetImageFormat();
-            config.depthAttachmentFormat = m_DepthFormat;
-            config.descriptorSetLayouts = {m_PBRLightSetLayout, m_PBRMaterialSetLayout};
-
-            config.vertexInputBindings.resize(1);
-            config.vertexInputBindings[0].binding = 0;
-            config.vertexInputBindings[0].stride = sizeof(PBRVertex);
-            config.vertexInputBindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-            config.vertexInputAttributes.resize(4);
-            config.vertexInputAttributes[0] = {0, 0, VK_FORMAT_R32G32B32_SFLOAT,
-                                                offsetof(PBRVertex, position)};
-            config.vertexInputAttributes[1] = {1, 0, VK_FORMAT_R32G32B32_SFLOAT,
-                                                offsetof(PBRVertex, normal)};
-            config.vertexInputAttributes[2] = {2, 0, VK_FORMAT_R32G32_SFLOAT,
-                                                offsetof(PBRVertex, uv)};
-            config.vertexInputAttributes[3] = {3, 0, VK_FORMAT_R32G32B32_SFLOAT,
-                                                offsetof(PBRVertex, tangent)};
-
-            config.pushConstantSize = sizeof(PBRPushConstants);
-            config.pushConstantStages = VK_SHADER_STAGE_VERTEX_BIT;
-            config.msaaSamples = m_MsaaSamples;
-
-            m_PBRPipeline->BuildGraphics(vertSpv, fragSpv, config);
-            LOG_INFO("[Renderer] PBR pipeline created.");
-        }
-    }
-
-    u32 Renderer::UploadPBRMesh(const PBRSubMeshData &data) {
-        if (data.vertices.empty() || data.indices.empty()) return 0;
-
-        LoadedMesh mesh;
-        mesh.indexCount = static_cast<u32>(data.indices.size());
-
-        mesh.vertexBuffer = CreateScope<Buffer>(m_Context,
-                                                sizeof(PBRVertex) * data.vertices.size(),
-                                                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                                                VMA_MEMORY_USAGE_CPU_TO_GPU);
-        mesh.vertexBuffer->LoadData(data.vertices.data(),
-                                    sizeof(PBRVertex) * data.vertices.size());
-
-        mesh.indexBuffer = CreateScope<Buffer>(m_Context,
-                                               sizeof(u32) * data.indices.size(),
-                                               VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                                               VMA_MEMORY_USAGE_CPU_TO_GPU);
-        mesh.indexBuffer->LoadData(data.indices.data(),
-                                   sizeof(u32) * data.indices.size());
-
-        u32 id = m_NextMeshId++;
-        m_Meshes.emplace(id, std::move(mesh));
-        return id;
+        vkCmdBindIndexBuffer(cb, mesh->indexBuffer->GetHandle(), 0, VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexed(cb, mesh->indexCount, 1, 0, 0, 0);
     }
 
     void Renderer::UpdateLights(const LightDataGPU &lightData) {
@@ -931,7 +450,7 @@ namespace Engine {
     void Renderer::BeginPBRPass() {
         if (!m_PBRPipeline || !m_PBRPipeline->GetHandle()) return;
 
-        VkCommandBuffer cb = m_Frames[m_CurrentFrame].commandBuffer;
+        VkCommandBuffer cb = m_FrameManager.CurrentFrame().commandBuffer;
         vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_PBRPipeline->GetHandle());
 
         VkViewport viewport{};
@@ -945,70 +464,30 @@ namespace Engine {
         scissor.extent = m_Swapchain->GetExtent();
         vkCmdSetScissor(cb, 0, 1, &scissor);
 
+        VkDescriptorSet lightSet = m_Descriptors.GetLightDescriptorSet();
         vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 m_PBRPipeline->GetLayout(), 0, 1,
-                                &m_LightDescriptorSet, 0, nullptr);
+                                &lightSet, 0, nullptr);
     }
 
     void Renderer::BuildPBRMaterialDescriptor(PBRMaterial &mat) {
-        VkDescriptorSetAllocateInfo allocInfo{};
-        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        allocInfo.descriptorPool = m_DescriptorPool;
-        allocInfo.descriptorSetCount = 1;
-        allocInfo.pSetLayouts = &m_PBRMaterialSetLayout;
-
-        if (vkAllocateDescriptorSets(m_Context.GetDevice(), &allocInfo,
-                                     &mat.descriptorSet) != VK_SUCCESS) {
-            LOG_ERROR("[Renderer] Failed to allocate PBR material descriptor set!");
-            mat.descriptorSet = VK_NULL_HANDLE;
-            return;
-        }
-
-        auto getView = [&](u32 texId, u32 fallback) -> VkImageView {
-            auto it = m_Textures.find(texId ? texId : fallback);
-            return it != m_Textures.end() ? it->second.view : m_Textures[fallback].view;
-        };
-
-        VkDescriptorImageInfo imgInfos[3]{};
-        imgInfos[0].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imgInfos[0].imageView = getView(mat.albedoTextureId, m_WhiteTextureId);
-        imgInfos[0].sampler = m_Sampler;
-
-        imgInfos[1].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imgInfos[1].imageView = getView(mat.normalTextureId, m_NeutralNormalTextureId);
-        imgInfos[1].sampler = m_Sampler;
-
-        imgInfos[2].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imgInfos[2].imageView = getView(mat.specularTextureId, m_WhiteTextureId);
-        imgInfos[2].sampler = m_Sampler;
-
-        VkWriteDescriptorSet writes[3]{};
-        for (int i = 0; i < 3; ++i) {
-            writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writes[i].dstSet = mat.descriptorSet;
-            writes[i].dstBinding = i;
-            writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            writes[i].descriptorCount = 1;
-            writes[i].pImageInfo = &imgInfos[i];
-        }
-        vkUpdateDescriptorSets(m_Context.GetDevice(), 3, writes, 0, nullptr);
+        m_Descriptors.BuildPBRMaterialDescriptor(m_Context.GetDevice(), mat, m_Resources);
     }
 
     void Renderer::BindPBRMaterial(const PBRMaterial &mat) {
         if (mat.descriptorSet == VK_NULL_HANDLE) return;
 
-        VkCommandBuffer cb = m_Frames[m_CurrentFrame].commandBuffer;
+        VkCommandBuffer cb = m_FrameManager.CurrentFrame().commandBuffer;
         vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 m_PBRPipeline->GetLayout(), 1, 1,
                                 &mat.descriptorSet, 0, nullptr);
     }
 
     void Renderer::DrawPBRMesh(u32 meshId, const Mat4 &mvp, const Mat4 &model) {
-        auto it = m_Meshes.find(meshId);
-        if (it == m_Meshes.end()) return;
-        const LoadedMesh &mesh = it->second;
+        const auto* mesh = m_Resources.GetMesh(meshId);
+        if (!mesh) return;
 
-        VkCommandBuffer cb = m_Frames[m_CurrentFrame].commandBuffer;
+        VkCommandBuffer cb = m_FrameManager.CurrentFrame().commandBuffer;
 
         PBRPushConstants pc;
         pc.mvp = mvp;
@@ -1018,11 +497,11 @@ namespace Engine {
                            VK_SHADER_STAGE_VERTEX_BIT, 0,
                            sizeof(PBRPushConstants), &pc);
 
-        VkBuffer vb[] = {mesh.vertexBuffer->GetHandle()};
+        VkBuffer vb[] = {mesh->vertexBuffer->GetHandle()};
         VkDeviceSize offs[] = {0};
         vkCmdBindVertexBuffers(cb, 0, 1, vb, offs);
-        vkCmdBindIndexBuffer(cb, mesh.indexBuffer->GetHandle(), 0, VK_INDEX_TYPE_UINT32);
-        vkCmdDrawIndexed(cb, mesh.indexCount, 1, 0, 0, 0);
+        vkCmdBindIndexBuffer(cb, mesh->indexBuffer->GetHandle(), 0, VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexed(cb, mesh->indexCount, 1, 0, 0, 0);
     }
 
     void Renderer::DrawCube(const Mat4 &mvp) {
@@ -1035,13 +514,16 @@ namespace Engine {
             return;
         }
 
-        VkCommandBuffer cb = m_Frames[m_CurrentFrame].commandBuffer;
+        VkCommandBuffer cb = m_FrameManager.CurrentFrame().commandBuffer;
 
         vkCmdPushConstants(cb, m_Pipeline->GetLayout(),
                            VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Mat4), &mvp);
+
+        const auto* whiteTex = m_Resources.GetTexture(m_Resources.GetWhiteTextureId());
+        VkDescriptorSet whiteSet = whiteTex ? whiteTex->descriptorSet : VK_NULL_HANDLE;
         vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 m_Pipeline->GetLayout(), 0, 1,
-                                &m_Textures[m_WhiteTextureId].descriptorSet, 0, nullptr);
+                                &whiteSet, 0, nullptr);
 
         VkBuffer vb[] = {m_VertexBuffer->GetHandle()};
         VkDeviceSize offs[] = {0};

@@ -8,6 +8,10 @@
 #include "Buffer.h"
 #include "ModelLoader.h"
 #include "TextureLoader.h"
+#include "FrameManager.h"
+#include "ResourceManager.h"
+#include "DescriptorManager.h"
+#include "RenderTargets.h"
 #include <vector>
 #include <unordered_map>
 
@@ -106,40 +110,23 @@ namespace Engine {
 
         VulkanContext &GetContext() { return m_Context; }
 
-        u32 GetNeutralNormalTextureId() const { return m_NeutralNormalTextureId; }
-        u32 GetWhiteTextureId() const { return m_WhiteTextureId; }
+        u32 GetNeutralNormalTextureId() const { return m_Resources.GetNeutralNormalTextureId(); }
+        u32 GetWhiteTextureId() const { return m_Resources.GetWhiteTextureId(); }
 
     private:
-        void CreateDepthResources(u32 width, u32 height);
-
-        void DestroyDepthResources();
-
-        void CreateColorResources(u32 width, u32 height);
-
-        void DestroyColorResources();
-
         void RecreateSwapchain();
-
-        void CreateCommandBuffers();
-
-        void CreateSyncObjects();
-
-        void CreateDescriptorPool();
-
-        void CreateDescriptorSetLayout();
-
-        void CreateDefaultSampler();
-
-        void CreateWhiteTexture();
 
         void LoadShadersAndPipeline();
 
-        void CreatePBRResources();
-
-        u32 UploadTextureInternal(const u8 *pixels, int width, int height);
+        void CreatePBRPipeline();
 
         VulkanContext m_Context;
         Scope<Swapchain> m_Swapchain;
+
+        FrameManager m_FrameManager;
+        ResourceManager m_Resources;
+        DescriptorManager m_Descriptors;
+        RenderTargets m_RenderTargets;
 
         Scope<SlangCompiler> m_ShaderCompiler;
         Scope<Pipeline> m_Pipeline;
@@ -147,65 +134,14 @@ namespace Engine {
         Scope<Buffer> m_VertexBuffer;
         Scope<Buffer> m_IndexBuffer;
 
-        struct LoadedMesh {
-            Scope<Buffer> vertexBuffer;
-            Scope<Buffer> indexBuffer;
-            u32 indexCount{0};
-        };
-
-        std::unordered_map<u32, LoadedMesh> m_Meshes;
-        u32 m_NextMeshId{1};
-
-        struct LoadedTexture {
-            VkImage image{VK_NULL_HANDLE};
-            VkImageView view{VK_NULL_HANDLE};
-            VmaAllocation allocation{nullptr};
-            VkDescriptorSet descriptorSet{VK_NULL_HANDLE};
-        };
-
-        std::unordered_map<u32, LoadedTexture> m_Textures;
-        u32 m_NextTextureId{1};
-
         VkDescriptorSet m_ActiveDescriptorSet{VK_NULL_HANDLE};
-
-        VkImage m_DepthImage{VK_NULL_HANDLE};
-        VkImageView m_DepthImageView{VK_NULL_HANDLE};
-        VmaAllocation m_DepthAllocation{nullptr};
-        VkFormat m_DepthFormat{VK_FORMAT_D32_SFLOAT};
-        VkSampleCountFlagBits m_MsaaSamples{VK_SAMPLE_COUNT_1_BIT};
-
-        VkImage m_ColorImage{VK_NULL_HANDLE};
-        VkImageView m_ColorImageView{VK_NULL_HANDLE};
-        VmaAllocation m_ColorAllocation{nullptr};
-
-        VkDescriptorPool m_DescriptorPool{VK_NULL_HANDLE};
-        VkDescriptorSetLayout m_DescriptorSetLayout{VK_NULL_HANDLE};
-        VkSampler m_Sampler{VK_NULL_HANDLE};
-
-        u32 m_WhiteTextureId{0};
-        u32 m_NeutralNormalTextureId{0};
 
         Vec3 m_TintColor{1.0f, 1.0f, 1.0f};
 
         Scope<Pipeline> m_PBRPipeline;
-        VkDescriptorSetLayout m_PBRLightSetLayout{VK_NULL_HANDLE};
-        VkDescriptorSetLayout m_PBRMaterialSetLayout{VK_NULL_HANDLE};
         Scope<Buffer> m_LightUBO;
-        VkDescriptorSet m_LightDescriptorSet{VK_NULL_HANDLE};
-
-        struct FrameData {
-            VkCommandPool commandPool{VK_NULL_HANDLE};
-            VkCommandBuffer commandBuffer{VK_NULL_HANDLE};
-            VkSemaphore imageAvailableSemaphore{VK_NULL_HANDLE};
-            VkSemaphore renderFinishedSemaphore{VK_NULL_HANDLE};
-            VkFence inFlightFence{VK_NULL_HANDLE};
-        };
-
-        static constexpr int MAX_FRAMES_IN_FLIGHT = 2;
-        std::vector<FrameData> m_Frames;
 
         u32 m_CurrentImageIndex{0};
-        u32 m_CurrentFrame{0};
 
         u32 m_PendingWidth{0};
         u32 m_PendingHeight{0};

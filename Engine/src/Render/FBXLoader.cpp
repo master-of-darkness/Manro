@@ -22,13 +22,11 @@ namespace Engine {
     static std::string ResolveTexturePath(const ufbx_texture *tex, const std::string &baseDir) {
         if (!tex) return {};
 
-        // Prefer relative_filename (relative to the FBX file) with baseDir
         if (tex->relative_filename.length > 0) {
             return NormalisePath(baseDir + std::string(
                 tex->relative_filename.data, tex->relative_filename.length));
         }
 
-        // Fall back to filename as-is (may be absolute or already correct)
         if (tex->filename.length > 0) {
             return NormalisePath(std::string(
                 tex->filename.data, tex->filename.length));
@@ -133,18 +131,15 @@ namespace Engine {
 
         std::unordered_map<VertKey, u32, VertKeyHash> indexMap;
 
-        // Iterate all faces, filter by material, triangulate
         for (size_t fi = 0; fi < mesh->faces.count; ++fi) {
             ufbx_face face = mesh->faces.data[fi];
 
-            // Check material
             if (mesh->face_material.count > 0) {
                 uint32_t faceMat = mesh->face_material.data[fi];
                 if (matIdx >= 0 && faceMat != static_cast<uint32_t>(matIdx))
                     continue;
             }
 
-            // Triangulate the face (fan triangulation)
             for (uint32_t t = 1; t + 1 < face.num_indices; ++t) {
                 uint32_t triIndices[3] = {
                     face.index_begin,
@@ -205,7 +200,6 @@ namespace Engine {
         out.indices.clear();
         out.diffuseTexturePath.clear();
 
-        // Find first diffuse texture
         for (size_t mi = 0; mi < scene->materials.count && out.diffuseTexturePath.empty(); ++mi) {
             out.diffuseTexturePath = ResolveDiffuseTexture(scene->materials.data[mi], baseDir);
         }
@@ -241,7 +235,6 @@ namespace Engine {
 
         std::string baseDir = GetBaseDir(filepath);
 
-        // Build one bucket per material + one for no-material faces
         size_t numMats = scene->materials.count;
         std::vector<SubMeshData> buckets(numMats + 1);
 
