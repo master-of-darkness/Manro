@@ -16,3 +16,9 @@ add_custom_command(TARGET SponzaTest POST_BUILD
         "$<TARGET_FILE_DIR:SponzaTest>/assets"
         COMMENT "Copying assets -> SponzaTest output dir"
 )
+add_custom_command(TARGET SponzaTest POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/shaders"
+        "$<TARGET_FILE_DIR:SponzaTest>/shaders"
+        COMMENT "Copying shaders -> SponzaTest output dir"
+)
