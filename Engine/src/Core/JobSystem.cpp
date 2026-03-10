@@ -2,15 +2,7 @@
 #include <algorithm>
 
 namespace Engine {
-    JobSystem::JobSystem() = default;
-
-    JobSystem::~JobSystem() {
-        Shutdown();
-    }
-
-    void JobSystem::Initialize(u32 numThreads) {
-        if (m_Running) return;
-
+    JobSystem::JobSystem(u32 numThreads) {
         if (numThreads == 0) {
             numThreads = std::max(1u, std::thread::hardware_concurrency() - 1u);
         }
@@ -22,9 +14,7 @@ namespace Engine {
         }
     }
 
-    void JobSystem::Shutdown() {
-        if (!m_Running) return;
-
+    JobSystem::~JobSystem() {
         m_Running = false;
         m_WakeCondition.notify_all();
 

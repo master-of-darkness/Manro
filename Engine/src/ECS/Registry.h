@@ -7,6 +7,7 @@
 #include <typeindex>
 #include <memory>
 #include <cassert>
+#include <functional>
 
 namespace Engine {
     class Registry {
@@ -44,7 +45,7 @@ namespace Engine {
 
         template<typename T>
         void RegisterComponent() {
-            std::type_index typeName = typeid(T);
+            std::string typeName = typeid(T).name();
             assert(
                 m_ComponentTypes.find(typeName) == m_ComponentTypes.end() &&
                 "Registering component type more than once.");
@@ -82,15 +83,25 @@ namespace Engine {
 
         template<typename T>
         std::shared_ptr<ComponentArray<T> > GetComponentArray() {
-            std::type_index typeName = typeid(T);
+            std::string typeName = typeid(T).name();
             assert(m_ComponentTypes.find(typeName) != m_ComponentTypes.end() && "Component not registered before use.");
             return std::static_pointer_cast<ComponentArray<T> >(m_ComponentArrays[typeName]);
+        }
+
+        template<typename T>
+        void ForEach(const std::function<void(Entity, T &)> &callback) {
+            auto arr = GetComponentArray<T>();
+            auto &dense = arr->GetDenseArray();
+            auto &entityMap = arr->GetDenseToEntityMap();
+            for (size_t i = 0; i < arr->GetSize(); ++i) {
+                callback(entityMap[i], dense[i]);
+            }
         }
 
     private:
         template<typename T>
         u32 GetComponentType() {
-            std::type_index typeName = typeid(T);
+            std::string typeName = typeid(T).name();
             assert(m_ComponentTypes.find(typeName) != m_ComponentTypes.end() && "Component not registered before use.");
             return m_ComponentTypes[typeName];
         }
@@ -99,9 +110,9 @@ namespace Engine {
         u32 m_LivingEntityCount{0};
 
         std::array<Signature, MAX_ENTITIES> m_Signatures;
-        std::unordered_map<std::type_index, u32> m_ComponentTypes;
+        std::unordered_map<std::string, u32> m_ComponentTypes;
         u32 m_NextComponentType{0};
 
-        std::unordered_map<std::type_index, std::shared_ptr<IComponentArray> > m_ComponentArrays;
+        std::unordered_map<std::string, std::shared_ptr<IComponentArray> > m_ComponentArrays;
     };
 } // namespace Engine

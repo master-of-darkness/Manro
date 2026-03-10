@@ -6,14 +6,16 @@
 #include <stdexcept>
 #include <chrono>
 
-Game::Game(GameMode mode) : m_Mode(mode) {
+Game::Game(GameMode mode)
+    : m_Mode(mode),
+      m_Engine(mode != GameMode::DedicatedServer) {
 }
 
-Game::~Game() { Shutdown(); }
+Game::~Game() {
+}
 
 void Game::Initialize() {
     const bool needsPlatform = (m_Mode != GameMode::DedicatedServer);
-    m_Engine.Initialize(needsPlatform);
     LOG_INFO("[Game] Engine initialized.");
 
     if (needsPlatform) {
@@ -28,7 +30,8 @@ void Game::Initialize() {
         if (m_MainWindow == Engine::kInvalidWindow)
             throw std::runtime_error("[Game] Failed to create main window.");
 
-        wm.Get(m_MainWindow)->SetEventCallback(
+        auto* window = wm.Get(m_MainWindow);
+        window->SetEventCallback(
             [this](Engine::WindowEvent ev, Engine::u32 w, Engine::u32 h) {
                 if (ev == Engine::WindowEvent::Close)
                     m_IsRunning = false;
@@ -38,12 +41,11 @@ void Game::Initialize() {
 
         m_InputManager.SetBackend(&m_InputBackend);
 
-        wm.Get(m_MainWindow)->CaptureMouse(true);
-        wm.Get(m_MainWindow)->ShowCursor(false);
+        window->CaptureMouse(true);
+        window->ShowCursor(false);
 
-        m_Renderer = Engine::CreateScope<Engine::Renderer>();
-        m_Renderer->Initialize(
-            wm.Get(m_MainWindow), 1280, 720);
+        m_Renderer = Engine::CreateScope<Engine::Renderer>(
+            *window, 1280, 720);
         LOG_INFO("[Game] Renderer initialized.");
 
         if (m_Mode == GameMode::Client) {
@@ -53,12 +55,12 @@ void Game::Initialize() {
     }
 
     if (m_Mode == GameMode::DedicatedServer || m_Mode == GameMode::ListenServer) {
-        m_Server = Engine::CreateScope<Engine::NetworkServer>();
-        m_Server->Initialize(7777);
+        m_Server = Engine::CreateScope<Engine::NetworkServer>(7777);
         LOG_INFO("[Game] Server initialized.");
     }
 
-    auto worldScene = Engine::CreateScope<WorldScene>(m_Renderer.get());
+    auto worldScene = Engine::CreateScope<WorldScene>(*m_Renderer);
+
     m_WorldScene = worldScene.get();
     m_SceneManager.LoadScene(std::move(worldScene));
     LOG_INFO("[Game] WorldScene loaded.");
@@ -111,7 +113,12 @@ void Game::UpdateLogic(float dt) {
                                         m_ActionMap->GetPitch());
     }
 
-    m_SceneManager.Update(dt, m_Client.get(), m_CurrentCmd);
+    m_SceneManager.Update(dt, m_CurrentCmd);
+
+    if (m_Client) {
+        auto& reg = m_SceneManager.GetActiveScene()->GetRegistry();
+        m_Client->Tick(reg, &m_WorldScene->GetPhysics(), m_CurrentCmd, dt);
+    }
 
     if (m_Server && m_WorldScene) {
         auto &registry = m_SceneManager.GetActiveScene()->GetRegistry();
@@ -129,7 +136,7 @@ void Game::Render() {
         if (!m_Renderer->BeginFrame())
             return;
         m_Renderer->BeginRenderPass({0.01f, 0.01f, 0.033f, 1.f});
-        m_SceneManager.Render(m_Renderer.get());
+        m_SceneManager.Render(*m_Renderer);
         m_Renderer->EndRenderPass();
         m_Renderer->EndFrameAndPresent();
     }
@@ -139,6 +146,6 @@ void Game::Shutdown() {
     m_Renderer.reset();
     m_Server.reset();
     m_Client.reset();
-    m_Engine.Shutdown();
     m_IsRunning = false;
 }
+

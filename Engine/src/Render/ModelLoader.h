@@ -5,20 +5,20 @@
 #include <vector>
 
 namespace Engine {
-    struct ModelVertex {
+    struct Vertex {
         Vec3 position;
         Vec3 color;
         Vec2 uv;
     };
 
     struct SubMeshData {
-        std::vector<ModelVertex> vertices;
+        std::vector<Vertex> vertices;
         std::vector<u32> indices;
         std::string diffuseTexturePath;
     };
 
     struct ModelData {
-        std::vector<ModelVertex> vertices;
+        std::vector<Vertex> vertices;
         std::vector<u32> indices;
         std::string diffuseTexturePath;
     };

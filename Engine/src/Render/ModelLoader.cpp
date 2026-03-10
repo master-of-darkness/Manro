@@ -88,7 +88,7 @@ namespace Engine {
                     if (it != indexMap.end()) {
                         out.indices.push_back(it->second);
                     } else {
-                        ModelVertex vert{};
+                        Vertex vert{};
                         vert.position = {
                             attrib.vertices[3 * idx.vertex_index + 0],
                             attrib.vertices[3 * idx.vertex_index + 1],
@@ -114,10 +114,10 @@ namespace Engine {
 
         if (!out.diffuseTexturePath.empty())
             LOG_INFO("[ModelLoader] Loaded '{}' - {} vertices, {} indices, texture: {}",
-                 filepath, out.vertices.size(), out.indices.size(), out.diffuseTexturePath);
+                     filepath, out.vertices.size(), out.indices.size(), out.diffuseTexturePath);
         else
             LOG_INFO("[ModelLoader] Loaded '{}' - {} vertices, {} indices",
-                 filepath, out.vertices.size(), out.indices.size());
+                     filepath, out.vertices.size(), out.indices.size());
         return true;
     }
 
@@ -179,7 +179,7 @@ namespace Engine {
                     if (it != imap.end()) {
                         bucket.indices.push_back(it->second);
                     } else {
-                        ModelVertex vert{};
+                        Vertex vert{};
                         vert.position = {
                             attrib.vertices[3 * idx.vertex_index + 0],
                             attrib.vertices[3 * idx.vertex_index + 1],

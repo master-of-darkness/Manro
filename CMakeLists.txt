@@ -185,6 +185,9 @@ add_library(Engine STATIC
         Engine/src/Render/Renderer.cpp
         Engine/src/Render/Swapchain.cpp
         Engine/src/Render/VulkanContext.cpp
+        Engine/src/Render/VulkanHelpers.cpp
+        Engine/src/Render/TextureManager.cpp
+        Engine/src/Render/MeshManager.cpp
         Engine/src/Render/Buffer.cpp
         Engine/src/Render/SlangCompiler.cpp
         Engine/src/Render/Pipeline.cpp

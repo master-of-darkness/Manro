@@ -12,17 +12,13 @@
 namespace Engine {
     class JobSystem {
     public:
-        JobSystem();
+        explicit JobSystem(u32 numThreads = 0);
 
         ~JobSystem();
 
         JobSystem(const JobSystem &) = delete;
 
         JobSystem &operator=(const JobSystem &) = delete;
-
-        void Initialize(u32 numThreads = 0);
-
-        void Shutdown();
 
         void Execute(std::function<void()> job);
 

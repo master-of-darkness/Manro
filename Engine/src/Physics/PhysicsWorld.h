@@ -24,10 +24,6 @@ namespace Engine {
 
         PhysicsWorld &operator=(const PhysicsWorld &) = delete;
 
-        void Initialize();
-
-        void Shutdown();
-
         void Step(float deltaTime);
 
         PhysicsBodyHandle AddStaticBox(const Vec3 &position, const Vec3 &halfExtents);
@@ -62,14 +58,12 @@ namespace Engine {
 
         void ForEachDynamicBody(const BodySyncCallback &cb) const;
 
-        bool IsInitialized() const { return m_Initialized; }
-
     private:
         struct Impl;
         std::unique_ptr<Impl> m_Impl;
 
-        bool m_Initialized{false};
         float m_Accumulator{0.f};
+
         static constexpr float FIXED_STEP = 1.f / 60.f;
 
         struct KinematicMove {

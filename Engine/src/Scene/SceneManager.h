@@ -12,9 +12,9 @@ namespace Engine {
 
         void LoadScene(Scope<Scene> scene);
 
-        void Update(float deltaTime, NetworkClient *client, const UserCmd &cmd);
+        void Update(float deltaTime, const UserCmd &cmd);
 
-        void Render(Renderer *renderer);
+        void Render(Renderer &renderer);
 
         Scene *GetActiveScene() const { return m_ActiveScene.get(); }
 

@@ -9,16 +9,11 @@
 #include <algorithm>
 
 namespace Engine {
-    NetworkServer::NetworkServer() = default;
-
-    NetworkServer::~NetworkServer() { Shutdown(); }
-
-    void NetworkServer::Initialize(u16 port) {
+    NetworkServer::NetworkServer(u16 port) : m_Port(port) {
         if (enet_initialize() != 0) {
             LOG_ERROR("[Server] ENet init failed.");
             return;
         }
-        m_Port = port;
         ENetAddress address;
         address.host = ENET_HOST_ANY;
         address.port = m_Port;
@@ -27,22 +22,20 @@ namespace Engine {
             LOG_ERROR("[Server] Failed to create ENet host.");
             return;
         }
-        m_IsListening = true;
         m_ServerTime = 0.f;
         m_LastSnapshotTime = 0.f;
         LOG_INFO("[Server] Listening on UDP: {}", m_Port);
     }
 
-    void NetworkServer::Shutdown() {
-        if (!m_IsListening) return;
+    NetworkServer::~NetworkServer() {
         if (m_ServerHost) {
             enet_host_destroy(m_ServerHost);
             m_ServerHost = nullptr;
         }
         enet_deinitialize();
-        m_IsListening = false;
         LOG_INFO("[Server] Stopped.");
     }
+
 
     void NetworkServer::Tick(Registry &registry,
                              PhysicsWorld &physics,
@@ -201,7 +194,7 @@ namespace Engine {
         stored.viewYaw = std::clamp(inp->view_yaw(), -360.f, 360.f);
         stored.viewPitch = std::clamp(inp->view_pitch(), -89.f, 89.f);
         stored.buttons = inp->buttons();
-        stored.jumpWasHeld = prevJump; // edge detection preserved across frames
+        stored.jumpWasHeld = prevJump;
     }
 
     void NetworkServer::HandleNewConnection(ENetPeer *peer) {

@@ -6,20 +6,18 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <Core/Logger.h>
 
-WorldScene::WorldScene(Engine::Renderer *r) : m_Renderer(r) {
+WorldScene::WorldScene(Engine::Renderer &r) : m_Renderer(r) {
 }
 
 void WorldScene::OnCreate() {
     m_Registry.RegisterComponent<Engine::TransformComponent>();
-    m_Registry.RegisterComponent<Engine::CameraComponent>();
     m_Registry.RegisterComponent<Engine::MeshRenderComponent>();
-    m_Registry.RegisterComponent<Engine::ColorComponent>();
     m_Registry.RegisterComponent<Engine::PlayerControllerComponent>();
-    m_Registry.RegisterComponent<Engine::RigidBodyComponent>();
-    m_Registry.RegisterComponent<Engine::StaticMeshTag>();
+    m_Registry.RegisterComponent<Engine::CameraComponent>();
+    m_Registry.RegisterComponent<Engine::ColorComponent>();
     m_Registry.RegisterComponent<Engine::JumpStateComponent>();
-
-    m_Physics.Initialize();
+    m_Registry.RegisterComponent<Engine::StaticMeshTag>();
+    m_Registry.RegisterComponent<Engine::RigidBodyComponent>();
 
     LoadMesh("crate", "assets/models/cube.obj");
     LoadMesh("ground", "assets/models/ground.obj");
@@ -72,9 +70,7 @@ void WorldScene::RegisterClientCallbacks(Engine::NetworkClient *client) {
     });
 }
 
-void WorldScene::OnUpdate(float dt,
-                          Engine::NetworkClient *net,
-                          const Engine::UserCmd &cmd) {
+void WorldScene::OnUpdate(float dt, const Engine::UserCmd &cmd) {
     m_MovementController->ProcessMovement({
         &m_Physics,
         m_Registry.GetComponent<Engine::RigidBodyComponent>(m_Player).BodyId,
@@ -84,11 +80,9 @@ void WorldScene::OnUpdate(float dt,
 
     m_Physics.Step(dt);
     SyncPhysics();
-
-    if (net) net->Tick(m_Registry, &m_Physics, cmd, dt);
 }
 
-void WorldScene::OnRender(Engine::Renderer *r) {
+void WorldScene::OnRender(Engine::Renderer &r) {
     auto &cam = m_Registry.GetComponent<Engine::CameraComponent>(m_Player);
     auto &t = m_Registry.GetComponent<Engine::TransformComponent>(m_Player);
 
@@ -96,7 +90,7 @@ void WorldScene::OnRender(Engine::Renderer *r) {
     float yR = glm::radians(cam.Yaw), pR = glm::radians(cam.Pitch);
     Engine::Vec3 front = glm::normalize(Engine::Vec3{cos(pR) * cos(yR), sin(pR), cos(pR) * sin(yR)});
 
-    const float aspect = r->GetAspectRatio();
+    const float aspect = r.GetAspectRatio();
     Engine::Mat4 proj = glm::perspective(glm::radians(cam.Fov), aspect, cam.NearClip, cam.FarClip);
     proj[1][1] *= -1; // TODO: wrap this directly into engine
     Engine::Mat4 vp = proj * glm::lookAt(eye, eye + front, {0, 1, 0});
@@ -111,18 +105,18 @@ void WorldScene::OnRender(Engine::Renderer *r) {
         Engine::Mat4 model = glm::scale(glm::translate(Engine::Mat4(1.f), tr.Position), tr.Scale);
 
         auto texIt = m_TextureIds.find(mc.MeshId);
-        r->BindTexture(texIt != m_TextureIds.end() ? texIt->second : 0);
+        r.BindTexture(texIt != m_TextureIds.end() ? texIt->second : Engine::TextureHandle{0});
 
-        r->SetTintColor(m_Registry.HasComponent<Engine::ColorComponent>(e)
+        r.SetTintColor(m_Registry.HasComponent<Engine::ColorComponent>(e)
                             ? m_Registry.GetComponent<Engine::ColorComponent>(e).Color
                             : Engine::Vec3{1.f, 1.f, 1.f});
 
-        r->DrawMesh(mc.MeshId, vp * model);
+        r.DrawMesh(mc.MeshId, vp * model);
     }
-    r->SetTintColor({1.f, 1.f, 1.f});
+    r.SetTintColor({1.f, 1.f, 1.f});
 }
 
-void WorldScene::OnDestroy() { m_Physics.Shutdown(); }
+void WorldScene::OnDestroy() { }
 
 void WorldScene::SetViewAngles(float yaw, float pitch) {
     if (!m_Registry.HasComponent<Engine::CameraComponent>(m_Player)) return;
@@ -185,12 +179,12 @@ void WorldScene::SyncPhysics() {
 void WorldScene::LoadMesh(const std::string &name, const std::string &path) {
     Engine::ModelData data;
     if (Engine::ModelLoader::Load(path, data)) {
-        Engine::u32 mid = m_Renderer->UploadMesh(data);
+        Engine::MeshHandle mid = m_Renderer.UploadMesh(data);
         m_MeshIds[name] = mid;
         if (!data.diffuseTexturePath.empty()) {
             Engine::TextureData tData;
             if (Engine::TextureLoader::Load(data.diffuseTexturePath, tData))
-                m_TextureIds[mid] = m_Renderer->UploadTexture(tData);
+                m_TextureIds[mid] = m_Renderer.UploadTexture(tData);
         }
     }
 }

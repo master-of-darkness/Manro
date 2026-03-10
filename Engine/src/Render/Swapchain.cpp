@@ -5,15 +5,16 @@
 #include <stdexcept>
 
 namespace Engine {
-    Swapchain::Swapchain(const VulkanContext &context)
+    Swapchain::Swapchain(const VulkanContext &context, u32 width, u32 height)
         : m_Context(context) {
+        Build(width, height);
     }
 
     Swapchain::~Swapchain() {
         Shutdown();
     }
 
-    void Swapchain::Initialize(u32 width, u32 height) {
+    void Swapchain::Build(u32 width, u32 height) {
         vkb::SwapchainBuilder swapchain_builder{
             m_Context.GetPhysicalDevice(), m_Context.GetDevice(), m_Context.GetSurface()
         };
@@ -40,7 +41,7 @@ namespace Engine {
     void Swapchain::Recreate(u32 width, u32 height) {
         vkDeviceWaitIdle(m_Context.GetDevice());
         Shutdown();
-        Initialize(width, height);
+        Build(width, height);
         m_NeedsRecreate = false;
     }
 

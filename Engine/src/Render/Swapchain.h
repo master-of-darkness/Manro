@@ -8,11 +8,13 @@ namespace Engine {
 
     class Swapchain {
     public:
-        Swapchain(const VulkanContext &context);
+        Swapchain(const VulkanContext &context, u32 width, u32 height);
 
         ~Swapchain();
 
-        void Initialize(u32 width, u32 height);
+        Swapchain(const Swapchain &) = delete;
+
+        Swapchain &operator=(const Swapchain &) = delete;
 
         void Recreate(u32 width, u32 height);
 
@@ -32,6 +34,8 @@ namespace Engine {
         VkImageView GetImageView(u32 index) const { return m_ImageViews[index]; }
 
     private:
+        void Build(u32 width, u32 height);
+
         const VulkanContext &m_Context;
 
         VkSwapchainKHR m_Swapchain{VK_NULL_HANDLE};

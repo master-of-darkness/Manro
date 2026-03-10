@@ -6,7 +6,6 @@
 
 namespace Engine {
     class Renderer;
-    class NetworkClient;
 
     class Scene {
     public:
@@ -16,9 +15,9 @@ namespace Engine {
 
         virtual void OnDestroy() = 0;
 
-        virtual void OnUpdate(float deltaTime, NetworkClient *client, const UserCmd &cmd) = 0;
+        virtual void OnUpdate(float deltaTime, const UserCmd &cmd) = 0;
 
-        virtual void OnRender(Renderer *renderer) = 0;
+        virtual void OnRender(Renderer &renderer) = 0;
 
         Registry &GetRegistry() { return m_Registry; }
 

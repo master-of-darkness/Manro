@@ -15,15 +15,15 @@
 
 class WorldScene : public Engine::Scene {
 public:
-    explicit WorldScene(Engine::Renderer *r);
+    explicit WorldScene(Engine::Renderer &r);
 
     void OnCreate() override;
 
     void OnDestroy() override;
 
-    void OnUpdate(float dt, Engine::NetworkClient *net, const Engine::UserCmd &cmd) override;
+    void OnUpdate(float dt, const Engine::UserCmd &cmd) override;
 
-    void OnRender(Engine::Renderer *r) override;
+    void OnRender(Engine::Renderer &r) override;
 
     void RegisterServerCallbacks(Engine::NetworkServer *server);
 
@@ -35,9 +35,9 @@ public:
     Engine::Entity GetPlayerEntity() const { return m_Player; }
     const std::vector<Engine::Entity> &GetProps() const { return m_Props; }
 
-    Engine::u32 GetMeshId(const std::string &name) const {
+    Engine::MeshHandle GetMeshId(const std::string &name) const {
         auto it = m_MeshIds.find(name);
-        return it != m_MeshIds.end() ? it->second : 0;
+        return it != m_MeshIds.end() ? it->second : Engine::MeshHandle{0};
     }
 
     CharacterMovementController &GetMovementController() { return *m_MovementController; }
@@ -55,13 +55,13 @@ private:
 
     void LoadMesh(const std::string &name, const std::string &path);
 
-    Engine::Renderer *m_Renderer;
+    Engine::Renderer &m_Renderer;
     Engine::Entity m_Player{Engine::NULL_ENTITY};
     Engine::PhysicsWorld m_Physics;
 
     std::unique_ptr<CharacterMovementController> m_MovementController;
 
     std::vector<Engine::Entity> m_Props;
-    std::unordered_map<std::string, Engine::u32> m_MeshIds;
-    std::unordered_map<Engine::u32, Engine::u32> m_TextureIds;
+    std::unordered_map<std::string, Engine::MeshHandle> m_MeshIds;
+    std::unordered_map<Engine::u32, Engine::TextureHandle> m_TextureIds;
 };

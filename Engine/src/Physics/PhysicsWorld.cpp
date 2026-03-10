@@ -105,13 +105,7 @@ namespace Engine {
         std::unordered_map<u32, u32> bodyToEntity;
     };
 
-    PhysicsWorld::PhysicsWorld() = default;
-
-    PhysicsWorld::~PhysicsWorld() { Shutdown(); }
-
-    void PhysicsWorld::Initialize() {
-        if (m_Initialized) return;
-
+    PhysicsWorld::PhysicsWorld() {
         JPH::RegisterDefaultAllocator();
 #ifdef JPH_ENABLE_ASSERTS
         JPH::AssertFailed = JoltAssertFailed;
@@ -131,22 +125,19 @@ namespace Engine {
             m_Impl->bpLayerInterface, m_Impl->objVsBroadPhase, m_Impl->objLayerFilter);
         m_Impl->physicsSystem->SetGravity(JPH::Vec3(0.f, -9.81f, 0.f));
 
-        m_Initialized = true;
         LOG_INFO("[PhysicsWorld] Jolt Physics initialized.");
     }
 
-    void PhysicsWorld::Shutdown() {
-        if (!m_Initialized) return;
+    PhysicsWorld::~PhysicsWorld() {
         m_Impl.reset();
         JPH::UnregisterTypes();
         delete JPH::Factory::sInstance;
         JPH::Factory::sInstance = nullptr;
-        m_Initialized = false;
         LOG_INFO("[PhysicsWorld] Jolt Physics shut down.");
     }
 
+
     void PhysicsWorld::Step(float deltaTime) {
-        if (!m_Initialized) return;
         m_Accumulator += (deltaTime > 0.25f) ? 0.25f : deltaTime;
 
         while (m_Accumulator >= FIXED_STEP) {
@@ -169,7 +160,6 @@ namespace Engine {
     }
 
     void PhysicsWorld::SetBodyUserData(PhysicsBodyHandle handle, u32 entityId) {
-        if (!m_Initialized) return;
         m_Impl->bodyToEntity[handle] = entityId;
     }
 
@@ -179,7 +169,7 @@ namespace Engine {
     }
 
     void PhysicsWorld::ForEachDynamicBody(const BodySyncCallback &cb) const {
-        if (!m_Initialized || !cb) return;
+        if (!cb) return;
 
         auto &bi = m_Impl->physicsSystem->GetBodyInterface();
 
@@ -267,7 +257,6 @@ namespace Engine {
     }
 
     PhysicsBodyHandle PhysicsWorld::AddDynamicCone(const Vec3 &position, float radius, float height, float mass) {
-        if (!m_Initialized) return kInvalidBodyHandle;
         auto &bi = m_Impl->physicsSystem->GetBodyInterface();
         std::vector<JPH::Vec3> points;
         points.push_back(JPH::Vec3(0, height * 0.5f, 0));
@@ -298,7 +287,6 @@ namespace Engine {
     }
 
     void PhysicsWorld::RemoveBody(PhysicsBodyHandle handle) {
-        if (!m_Initialized) return;
         JPH::BodyID id = fromHandle(handle);
         if (id.IsInvalid()) return;
         auto &bi = m_Impl->physicsSystem->GetBodyInterface();
@@ -308,7 +296,6 @@ namespace Engine {
     }
 
     bool PhysicsWorld::IsGrounded(PhysicsBodyHandle handle) const {
-        if (!m_Initialized) return false;
         JPH::BodyID id = fromHandle(handle);
         if (id.IsInvalid()) return false;
         auto &bi = m_Impl->physicsSystem->GetBodyInterface();
@@ -328,7 +315,6 @@ namespace Engine {
     }
 
     void PhysicsWorld::ApplyLinearImpulse(PhysicsBodyHandle handle, const Vec3 &impulse) {
-        if (!m_Initialized) return;
         JPH::BodyID id = fromHandle(handle);
         if (id.IsInvalid()) return;
         m_Impl->physicsSystem->GetBodyInterface().AddImpulse(id, JPH::Vec3(impulse.x, impulse.y, impulse.z));
@@ -342,7 +328,6 @@ namespace Engine {
     }
 
     void PhysicsWorld::SetBodyPosition(PhysicsBodyHandle handle, const Vec3 &position) {
-        if (!m_Initialized) return;
         JPH::BodyID id = fromHandle(handle);
         if (id.IsInvalid()) return;
         m_Impl->physicsSystem->GetBodyInterface().SetPosition(
@@ -350,7 +335,6 @@ namespace Engine {
     }
 
     Vec3 PhysicsWorld::GetBodyLinearVelocity(PhysicsBodyHandle handle) const {
-        if (!m_Initialized) return Vec3(0.f);
         JPH::BodyID id = fromHandle(handle);
         if (id.IsInvalid()) return Vec3(0.f);
         JPH::Vec3 vel = m_Impl->physicsSystem->GetBodyInterface().GetLinearVelocity(id);
@@ -358,7 +342,6 @@ namespace Engine {
     }
 
     void PhysicsWorld::SetLinearVelocity(PhysicsBodyHandle handle, const Vec3 &velocity) {
-        if (!m_Initialized) return;
         JPH::BodyID id = fromHandle(handle);
         if (id.IsInvalid()) return;
         m_Impl->physicsSystem->GetBodyInterface().SetLinearVelocity(
@@ -370,7 +353,6 @@ namespace Engine {
     }
 
     void PhysicsWorld::WakeBodyAndNeighbours(PhysicsBodyHandle handle, float radius) {
-        if (!m_Initialized) return;
         JPH::BodyID id = fromHandle(handle);
         if (id.IsInvalid()) return;
         auto &bi = m_Impl->physicsSystem->GetBodyInterface();

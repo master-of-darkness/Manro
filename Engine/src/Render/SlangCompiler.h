@@ -10,11 +10,11 @@ namespace Engine {
     public:
         SlangCompiler();
 
-        ~SlangCompiler();
+        ~SlangCompiler() = default;
 
-        void Initialize();
+        SlangCompiler(const SlangCompiler &) = delete;
 
-        void Shutdown();
+        SlangCompiler &operator=(const SlangCompiler &) = delete;
 
         bool CompileShaderToSPIRV(const char *filePath,
                                   const char *entryPointName,

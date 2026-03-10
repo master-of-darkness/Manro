@@ -3,11 +3,12 @@
 #include "Types.h"
 #include "JobSystem.h"
 #include <Platform/PlatformContext.h>
+#include <optional>
 
 namespace Engine {
     class EngineContext {
     public:
-        EngineContext();
+        explicit EngineContext(bool withPlatform = true);
 
         ~EngineContext();
 
@@ -15,16 +16,13 @@ namespace Engine {
 
         EngineContext &operator=(const EngineContext &) = delete;
 
-        void Initialize(bool withPlatform = true);
-
-        void Shutdown();
-
         JobSystem &GetJobSystem() { return m_JobSystem; }
-        PlatformContext &GetPlatform() { return m_Platform; }
+
+        bool HasPlatform() const { return m_Platform.has_value(); }
+        PlatformContext &GetPlatform() { return m_Platform.value(); }
 
     private:
         JobSystem m_JobSystem;
-        PlatformContext m_Platform;
-        bool m_IsRunning{false};
+        std::optional<PlatformContext> m_Platform;
     };
 } // namespace Engine

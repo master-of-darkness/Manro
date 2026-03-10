@@ -2,7 +2,7 @@
 #include "Sponza.h"
 
 int main(int argc, char **argv) {
-    SceneType scene = SceneType::Bistro;
+    SceneType scene = SceneType::Sponza;
 
     Sponza app(scene);
     app.Initialize();

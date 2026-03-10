@@ -9,13 +9,13 @@ namespace Engine {
 
     class VulkanContext {
     public:
-        VulkanContext();
+        VulkanContext(const char *appName, IWindow &window);
 
         ~VulkanContext();
 
-        void Initialize(const char *appName);
+        VulkanContext(const VulkanContext &) = delete;
 
-        void Shutdown();
+        VulkanContext &operator=(const VulkanContext &) = delete;
 
         VkInstance GetInstance() const { return m_Instance; }
         VkPhysicalDevice GetPhysicalDevice() const { return m_PhysicalDevice; }
@@ -23,15 +23,14 @@ namespace Engine {
         VkQueue GetGraphicsQueue() const { return m_GraphicsQueue; }
         u32 GetGraphicsQueueFamilyIndex() const { return m_GraphicsQueueFamilyIndex; }
         VmaAllocator GetAllocator() const { return m_Allocator; }
-
-        void CreateSurface(IWindow *window);
-
         VkSurfaceKHR GetSurface() const { return m_Surface; }
 
         VkSampleCountFlagBits GetMaxUsableSampleCount() const;
 
     private:
         void CreateInstance(const char *appName);
+
+        void CreateSurface(IWindow &window);
 
         void PickPhysicalDevice();
 
@@ -42,6 +41,7 @@ namespace Engine {
         VkDevice m_Device{nullptr};
 
         vkb::Instance vkb_Instance;
+        vkb::Device vkb_Device;
         vkb::PhysicalDevice vkb_PhysDev;
         VkQueue m_GraphicsQueue{nullptr};
         u32 m_GraphicsQueueFamilyIndex{0};

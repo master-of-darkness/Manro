@@ -22,13 +22,11 @@ namespace Engine {
     static std::string ResolveTexturePath(const ufbx_texture *tex, const std::string &baseDir) {
         if (!tex) return {};
 
-        // Prefer relative_filename (relative to the FBX file) with baseDir
         if (tex->relative_filename.length > 0) {
             return NormalisePath(baseDir + std::string(
-                tex->relative_filename.data, tex->relative_filename.length));
+                                     tex->relative_filename.data, tex->relative_filename.length));
         }
 
-        // Fall back to filename as-is (may be absolute or already correct)
         if (tex->filename.length > 0) {
             return NormalisePath(std::string(
                 tex->filename.data, tex->filename.length));
@@ -91,7 +89,8 @@ namespace Engine {
         };
 
         const ufbx_material *mat = (matIdx >= 0 && matIdx < static_cast<int>(mesh->materials.count))
-                                       ? mesh->materials.data[matIdx] : nullptr;
+                                       ? mesh->materials.data[matIdx]
+                                       : nullptr;
         Vec3 diffuseColor = GetMaterialDiffuseColor(mat);
         bool hasUV = mesh->vertex_uv.exists;
 
@@ -126,7 +125,7 @@ namespace Engine {
                     if (it != indexMap.end()) {
                         out.indices.push_back(it->second);
                     } else {
-                        ModelVertex vert{};
+                        Vertex vert{};
                         ufbx_vec3 p = mesh->vertices.data[posIdx];
                         vert.position = remap.Apply(Vec3{
                             static_cast<float>(p.x),
@@ -239,7 +238,7 @@ namespace Engine {
         }
 
         out.clear();
-        for (auto &b : buckets) {
+        for (auto &b: buckets) {
             if (!b.vertices.empty())
                 out.push_back(std::move(b));
         }

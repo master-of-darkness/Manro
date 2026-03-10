@@ -2,21 +2,10 @@
 #include "Core/Logger.h"
 
 namespace Engine {
-    SlangCompiler::SlangCompiler() = default;
-
-    SlangCompiler::~SlangCompiler() {
-        Shutdown();
-    }
-
-    void SlangCompiler::Initialize() {
+    SlangCompiler::SlangCompiler() {
         if (SLANG_FAILED(slang::createGlobalSession(m_GlobalSession.writeRef()))) {
             LOG_ERROR("Failed to create Slang Global Session!");
-            return;
         }
-    }
-
-    void SlangCompiler::Shutdown() {
-        m_GlobalSession.setNull();
     }
 
     bool SlangCompiler::CompileShaderToSPIRV(const char *filePath,

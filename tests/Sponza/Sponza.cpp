@@ -65,7 +65,8 @@ Engine::Mat4 FlyCamera::ViewProj(float fovDeg, float aspect, float nearZ, float 
 }
 
 void Sponza::Initialize() {
-    m_Engine.Initialize(true);
+    // EngineContext now initialized in constructor via RAII
+    // But we need to set up the window and renderer
 
     auto &wm = m_Engine.GetPlatform().GetWindowManager();
     Engine::WindowDesc desc;
@@ -76,7 +77,8 @@ void Sponza::Initialize() {
     if (m_Window == Engine::kInvalidWindow)
         throw std::runtime_error("[SponzaTest] Failed to create window.");
 
-    wm.Get(m_Window)->SetEventCallback(
+    auto* window = wm.Get(m_Window);
+    window->SetEventCallback(
         [this](Engine::WindowEvent ev, Engine::u32 w, Engine::u32 h) {
             if (ev == Engine::WindowEvent::Close) m_IsRunning = false;
             else if (ev == Engine::WindowEvent::Resized && m_Renderer)
@@ -84,12 +86,11 @@ void Sponza::Initialize() {
         });
 
     m_InputManager.SetBackend(&m_InputBackend);
-    wm.Get(m_Window)->CaptureMouse(true);
-    wm.Get(m_Window)->ShowCursor(false);
-    // wm.Get(m_Window)->SetFullscreen(true);
+    window->CaptureMouse(true);
+    window->ShowCursor(false);
 
-    m_Renderer = Engine::CreateScope<Engine::Renderer>();
-    m_Renderer->Initialize(wm.Get(m_Window), kWindowWidth, kWindowHeight, VK_SAMPLE_COUNT_8_BIT);
+    // Renderer ctor now does full init
+    m_Renderer = Engine::CreateScope<Engine::Renderer>(*window, kWindowWidth, kWindowHeight, VK_SAMPLE_COUNT_8_BIT);
     LOG_INFO("[SponzaTest] Renderer initialized.");
 
     LoadScene();
@@ -98,6 +99,7 @@ void Sponza::Initialize() {
     m_LastFrameTime = std::chrono::high_resolution_clock::now();
     LOG_INFO("[SponzaTest] Ready.  WASD=move  Mouse=look  Shift=sprint  Q/E=up/down  Escape=quit");
 }
+
 
 void Sponza::LoadScene() {
     std::vector<const char *> paths;
@@ -108,7 +110,7 @@ void Sponza::LoadScene() {
         paths.push_back(kSponzaPath);
     }
 
-    std::unordered_map<std::string, Engine::u32> textureCache;
+    std::unordered_map<std::string, Engine::TextureHandle> textureCache;
 
     for (const char *path : paths) {
         std::vector<Engine::SubMeshData> subMeshData;
@@ -136,6 +138,7 @@ void Sponza::LoadScene() {
 
             SubMesh sm;
             sm.meshId = m_Renderer->UploadMesh(md);
+            sm.textureId = Engine::TextureHandle{0}; // Fallback white
 
             if (!sd.diffuseTexturePath.empty()) {
                 auto cacheIt = textureCache.find(sd.diffuseTexturePath);
@@ -149,6 +152,7 @@ void Sponza::LoadScene() {
                     }
                 }
             }
+
 
             m_SubMeshes.push_back(sm);
         }
@@ -203,6 +207,6 @@ void Sponza::Render(float dt) {
 
 void Sponza::Shutdown() {
     m_Renderer.reset();
-    m_Engine.Shutdown();
     m_IsRunning = false;
 }
+

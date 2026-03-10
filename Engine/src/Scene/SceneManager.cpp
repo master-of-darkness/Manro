@@ -11,12 +11,12 @@ namespace Engine {
             m_ActiveScene->OnCreate();
     }
 
-    void SceneManager::Update(float deltaTime, NetworkClient *client, const UserCmd &cmd) {
+    void SceneManager::Update(float deltaTime, const UserCmd &cmd) {
         if (m_ActiveScene)
-            m_ActiveScene->OnUpdate(deltaTime, client, cmd);
+            m_ActiveScene->OnUpdate(deltaTime, cmd);
     }
 
-    void SceneManager::Render(Renderer *renderer) {
+    void SceneManager::Render(Renderer &renderer) {
         if (m_ActiveScene)
             m_ActiveScene->OnRender(renderer);
     }

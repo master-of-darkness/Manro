@@ -61,8 +61,8 @@ private:
     std::chrono::high_resolution_clock::time_point m_LastFrameTime;
 
     struct SubMesh {
-        Engine::u32 meshId{0};
-        Engine::u32 textureId{0};
+        Engine::MeshHandle meshId;
+        Engine::TextureHandle textureId;
     };
 
     std::vector<SubMesh> m_SubMeshes; // TODO: wrap this shit into engine

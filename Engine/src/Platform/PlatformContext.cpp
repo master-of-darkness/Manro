@@ -6,18 +6,10 @@
 #include <SDL3/SDL.h>
 
 namespace Engine {
-    PlatformContext::PlatformContext() = default;
-
-    PlatformContext::~PlatformContext() { Shutdown(); }
-
-    bool PlatformContext::Initialize() {
-        if (m_Initialized) return true;
-
-        // SDL_SetHint(SDL_HINT_VIDEO_WAYLAND_ALLOW_LIBDECOR, "0"); // TODO: Gnome requires special plugin for window decorations.
-
+    PlatformContext::PlatformContext() {
         if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) {
             LOG_ERROR("[PlatformContext] SDL_Init failed: {}", SDL_GetError());
-            return false;
+            return;
         }
 
         auto audioBackend = CreateScope<SDL3AudioBackend>();
@@ -25,19 +17,13 @@ namespace Engine {
             LOG_WARN("[PlatformContext] Audio backend failed – continuing without audio.");
         }
 
-        m_Initialized = true;
         LOG_INFO("[PlatformContext] SDL3 platform initialized.");
-        return true;
     }
 
-    void PlatformContext::Shutdown() {
-        if (!m_Initialized) return;
-
+    PlatformContext::~PlatformContext() {
         m_AudioManager.Shutdown();
         m_WindowManager.ShutdownAll();
         SDL_Quit();
-
-        m_Initialized = false;
         LOG_INFO("[PlatformContext] SDL3 platform shut down.");
     }
 

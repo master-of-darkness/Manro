@@ -36,13 +36,13 @@ namespace Engine {
 
     class NetworkServer {
     public:
-        NetworkServer();
+        explicit NetworkServer(u16 port);
 
         ~NetworkServer();
 
-        void Initialize(u16 port);
+        NetworkServer(const NetworkServer &) = delete;
 
-        void Shutdown();
+        NetworkServer &operator=(const NetworkServer &) = delete;
 
         void Tick(Registry &registry,
                   PhysicsWorld &physics,
@@ -69,7 +69,6 @@ namespace Engine {
         void ValidateAndStoreInput(u32 clientId, const Networking::ClientInput *inp);
 
         u16 m_Port{0};
-        bool m_IsListening{false};
         ENetHost *m_ServerHost{nullptr};
 
         std::unordered_map<u32, Connection> m_Connections;
