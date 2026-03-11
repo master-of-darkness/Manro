@@ -1,13 +1,13 @@
 #pragma once
 
-#include <Core/EngineContext.h>
-#include <Render/Renderer.h>
-#include <Render/TextureManager.h>
-#include <Render/Material/MaterialInstance.h>
-#include <Input/InputManager.h>
-#include <Platform/Input/SDL3InputBackend.h>
-#include <Platform/Window/WindowManager.h>
-#include <Input/InputAction.h>
+#include <Manro/Core/EngineContext.h>
+#include <Manro/Render/Renderer.h>
+#include <Manro/Render/TextureManager.h>
+#include <Manro/Render/Material/MaterialInstance.h>
+#include <Manro/Input/InputManager.h>
+#include <Manro/Platform/Input/SDL3InputBackend.h>
+#include <Manro/Platform/Window/WindowManager.h>
+#include <Manro/Input/InputAction.h>
 #include <chrono>
 #include <string>
 #include <unordered_map>
@@ -37,7 +37,8 @@ struct FlyCamera {
 
 class Sponza {
 public:
-    explicit Sponza(SceneType scene = SceneType::Sponza) : m_SceneType(scene) {}
+    explicit Sponza(SceneType scene = SceneType::Sponza) : m_SceneType(scene) {
+    }
 
     ~Sponza() { Shutdown(); }
 

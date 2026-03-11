@@ -1,9 +1,9 @@
 #include "Sponza.h"
 
-#include <Resource/ModelLoader.h>
-#include <Resource/FBXLoader.h>
-#include <Resource/TextureLoader.h>
-#include <Core/Logger.h>
+#include <Manro/Resource/ModelLoader.h>
+#include <Manro/Resource/FBXLoader.h>
+#include <Manro/Resource/TextureLoader.h>
+#include <Manro/Core/Logger.h>
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <algorithm>
@@ -74,7 +74,7 @@ void Sponza::Initialize() {
     if (m_Window == Engine::kInvalidWindow)
         throw std::runtime_error("[SponzaTest] Failed to create window.");
 
-    auto* window = wm.Get(m_Window);
+    auto *window = wm.Get(m_Window);
     window->SetEventCallback(
         [this](Engine::WindowEvent ev, Engine::u32 w, Engine::u32 h) {
             if (ev == Engine::WindowEvent::Close) m_IsRunning = false;
@@ -100,7 +100,7 @@ void Sponza::Initialize() {
 void Sponza::LoadScene() {
     std::vector<const char *> paths;
     if (m_SceneType == SceneType::Bistro) {
-        for (const char *p : kBistroPaths)
+        for (const char *p: kBistroPaths)
             paths.push_back(p);
     } else {
         paths.push_back(kSponzaPath);
@@ -108,7 +108,7 @@ void Sponza::LoadScene() {
 
     std::unordered_map<std::string, Engine::TextureHandle> textureCache;
 
-    for (const char *path : paths) {
+    for (const char *path: paths) {
         std::vector<Engine::SubMeshData> subMeshData;
         bool ok = false;
         switch (m_SceneType) {
@@ -124,7 +124,7 @@ void Sponza::LoadScene() {
             continue;
         }
 
-        for (auto &sd : subMeshData) {
+        for (auto &sd: subMeshData) {
             if (sd.vertices.empty()) continue;
 
             Engine::ModelData md;
@@ -201,7 +201,7 @@ void Sponza::Render(float dt) {
 }
 
 void Sponza::Shutdown() {
+    m_SubMeshes.clear();
     m_Renderer.reset();
     m_IsRunning = false;
 }
-

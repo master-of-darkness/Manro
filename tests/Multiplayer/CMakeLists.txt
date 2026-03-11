@@ -6,7 +6,6 @@ add_executable(MultiplayerTest
         Scene.cpp
 )
 
-target_include_directories(MultiplayerTest PRIVATE src)
 target_compile_definitions(MultiplayerTest PRIVATE VK_NO_PROTOTYPES)
 target_compile_options(MultiplayerTest PRIVATE ${ENGINE_FLAGS})
 target_link_libraries(MultiplayerTest PRIVATE Engine)

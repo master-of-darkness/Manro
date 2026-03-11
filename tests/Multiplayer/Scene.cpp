@@ -1,10 +1,15 @@
 #include "Scene.h"
-#include <Render/ModelLoader.h>
-#include <Render/TextureLoader.h>
-#include <Networking/NetworkServer.h>
-#include <Networking/NetworkClient.h>
+#include <Manro/Scene/Scene.h>
+#include <Manro/Resource/ModelLoader.h>
+#include <Manro/Resource/TextureLoader.h>
+#include <Manro/Networking/NetworkServer.h>
+#include <Manro/Networking/NetworkClient.h>
+#include <Manro/Core/Components.h>
+#include <Manro/Physics/PhysicsWorld.h>
+#include <Manro/Render/Renderer.h>
 #include <glm/gtc/matrix_transform.hpp>
-#include <Core/Logger.h>
+#include <Manro/Core/Logger.h>
+#include "CharacterMovementController.h"
 
 WorldScene::WorldScene(Engine::Renderer &r) : m_Renderer(r) {
 }
@@ -108,15 +113,16 @@ void WorldScene::OnRender(Engine::Renderer &r) {
         r.BindTexture(texIt != m_TextureIds.end() ? texIt->second : Engine::TextureHandle{0});
 
         r.SetTintColor(m_Registry.HasComponent<Engine::ColorComponent>(e)
-                            ? m_Registry.GetComponent<Engine::ColorComponent>(e).Color
-                            : Engine::Vec3{1.f, 1.f, 1.f});
+                           ? m_Registry.GetComponent<Engine::ColorComponent>(e).Color
+                           : Engine::Vec3{1.f, 1.f, 1.f});
 
         r.DrawMesh(mc.MeshId, vp * model);
     }
     r.SetTintColor({1.f, 1.f, 1.f});
 }
 
-void WorldScene::OnDestroy() { }
+void WorldScene::OnDestroy() {
+}
 
 void WorldScene::SetViewAngles(float yaw, float pitch) {
     if (!m_Registry.HasComponent<Engine::CameraComponent>(m_Player)) return;

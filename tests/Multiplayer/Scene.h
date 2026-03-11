@@ -1,12 +1,12 @@
 #pragma once
 
-#include <Scene/Scene.h>
-#include <Core/Components.h>
-#include <Render/Renderer.h>
-#include <Physics/PhysicsWorld.h>
-#include <Networking/NetworkServer.h>
-#include <Networking/NetworkClient.h>
-#include <Input/InputAction.h>
+#include <Manro/Scene/Scene.h>
+#include <Manro/Core/Components.h>
+#include <Manro/Render/Renderer.h>
+#include <Manro/Physics/PhysicsWorld.h>
+#include <Manro/Networking/NetworkServer.h>
+#include <Manro/Networking/NetworkClient.h>
+#include <Manro/Input/InputAction.h>
 #include <string>
 #include <unordered_map>
 #include <memory>

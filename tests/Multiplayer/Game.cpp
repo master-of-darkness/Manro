@@ -1,8 +1,10 @@
 #include "Game.h"
+#include <Manro/Scene/Scene.h>
 #include "Scene.h"
+#include <Manro/Render/Renderer.h>
 #include "PlayerActionMap.h"
 #include "CharacterMovementController.h"
-#include <Core/Logger.h>
+#include <Manro/Core/Logger.h>
 #include <stdexcept>
 #include <chrono>
 
@@ -30,7 +32,7 @@ void Game::Initialize() {
         if (m_MainWindow == Engine::kInvalidWindow)
             throw std::runtime_error("[Game] Failed to create main window.");
 
-        auto* window = wm.Get(m_MainWindow);
+        auto *window = wm.Get(m_MainWindow);
         window->SetEventCallback(
             [this](Engine::WindowEvent ev, Engine::u32 w, Engine::u32 h) {
                 if (ev == Engine::WindowEvent::Close)
@@ -116,7 +118,7 @@ void Game::UpdateLogic(float dt) {
     m_SceneManager.Update(dt, m_CurrentCmd);
 
     if (m_Client) {
-        auto& reg = m_SceneManager.GetActiveScene()->GetRegistry();
+        auto &reg = m_SceneManager.GetActiveScene()->GetRegistry();
         m_Client->Tick(reg, &m_WorldScene->GetPhysics(), m_CurrentCmd, dt);
     }
 
@@ -143,9 +145,9 @@ void Game::Render() {
 }
 
 void Game::Shutdown() {
+    m_SceneManager.LoadScene(nullptr); // Clears active scene and its registry (which holds materials)
     m_Renderer.reset();
     m_Server.reset();
     m_Client.reset();
     m_IsRunning = false;
 }
-

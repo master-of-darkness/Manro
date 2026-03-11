@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Input/InputAction.h>
-#include <Input/InputManager.h>
+#include <Manro/Input/InputAction.h>
+#include <Manro/Input/InputManager.h>
 #include <algorithm>
 #include <cmath>
 

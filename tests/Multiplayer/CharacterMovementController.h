@@ -1,22 +1,24 @@
 #pragma once
 
-#include <Physics/IMovementController.h>
-#include <Physics/PhysicsWorld.h>
-#include <ECS/Registry.h>
-#include <Core/Logger.h>
+#include <Manro/Physics/IMovementController.h>
+#include <Manro/Physics/PhysicsWorld.h>
+#include <Manro/ECS/Registry.h>
+#include <Manro/Core/Components.h>
+#include <Manro/Core/Logger.h>
 
 struct CharacterSettings {
-    float MaxSpeed    = 8.f;
+    float MaxSpeed = 8.f;
     float Acceleration = 40.f;
-    float Friction     = 15.f;
-    float JumpImpulse  = 7.f;
+    float Friction = 15.f;
+    float JumpImpulse = 7.f;
 };
 
 class CharacterMovementController final : public Engine::IMovementController {
 public:
     explicit CharacterMovementController(Engine::Registry &registry,
                                          CharacterSettings settings = {})
-        : m_Registry(registry), m_Settings(settings) {}
+        : m_Registry(registry), m_Settings(settings) {
+    }
 
     void ProcessMovement(const Engine::MovementContext &ctx) override {
         if (!ctx.Physics || !ctx.Cmd) return;
@@ -24,12 +26,12 @@ public:
         const Engine::PhysicsBodyHandle body = ctx.BodyHandle;
         if (body == Engine::kInvalidBodyHandle) return;
 
-        const float yR  = glm::radians(ctx.Cmd->ViewYaw);
+        const float yR = glm::radians(ctx.Cmd->ViewYaw);
         const Engine::Vec3 fwd{cosf(yR), 0.f, sinf(yR)};
         const Engine::Vec3 right = glm::normalize(glm::cross(fwd, Engine::Vec3{0.f, 1.f, 0.f}));
 
         Engine::Vec3 wishDir{0.f};
-        wishDir += fwd   * ctx.Cmd->MoveForward;
+        wishDir += fwd * ctx.Cmd->MoveForward;
         wishDir += right * ctx.Cmd->MoveRight;
         if (glm::length(wishDir) > 0.001f)
             wishDir = glm::normalize(wishDir);
@@ -38,7 +40,7 @@ public:
 
         Engine::Vec3 hVel{currentVel.x, 0.f, currentVel.z};
         Engine::Vec3 targetH = wishDir * m_Settings.MaxSpeed;
-        Engine::Vec3 accel   = (targetH - hVel) * m_Settings.Acceleration * ctx.DeltaTime;
+        Engine::Vec3 accel = (targetH - hVel) * m_Settings.Acceleration * ctx.DeltaTime;
         if (glm::length(wishDir) < 0.001f)
             accel = -hVel * m_Settings.Friction * ctx.DeltaTime;
 
@@ -54,7 +56,7 @@ public:
                 static_cast<Engine::Entity>(entityId))) {
             auto &js = m_Registry.GetComponent<Engine::JumpStateComponent>(
                 static_cast<Engine::Entity>(entityId));
-            jumpRising   = jumpPressed && !js.WasJumpPressed;
+            jumpRising = jumpPressed && !js.WasJumpPressed;
             js.WasJumpPressed = jumpPressed;
         }
 
@@ -63,6 +65,6 @@ public:
     }
 
 private:
-    Engine::Registry      &m_Registry;
-    CharacterSettings      m_Settings;
+    Engine::Registry &m_Registry;
+    CharacterSettings m_Settings;
 };

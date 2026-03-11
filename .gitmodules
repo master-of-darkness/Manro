@@ -1,12 +1,12 @@
-[submodule "Engine/deps/vk-bootstrap"]
-	path = Engine/deps/vk-bootstrap
+[submodule "deps/vk-bootstrap"]
+	path = deps/vk-bootstrap
 	url = https://github.com/charles-lunarg/vk-bootstrap
-[submodule "Engine/deps/volk"]
-	path = Engine/deps/volk
+[submodule "deps/volk"]
+	path = deps/volk
 	url = https://github.com/zeux/volk.git
-[submodule "Engine/deps/VulkanMemoryAllocator"]
-	path = Engine/deps/VulkanMemoryAllocator
+[submodule "deps/VulkanMemoryAllocator"]
+	path = deps/VulkanMemoryAllocator
 	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
-[submodule "Engine/deps/slang"]
-	path = Engine/deps/slang
+[submodule "deps/slang"]
+	path = deps/slang
 	url = https://github.com/shader-slang/slang.git

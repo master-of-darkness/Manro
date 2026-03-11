@@ -5,7 +5,6 @@ add_executable(SponzaTest
         Sponza.cpp
 )
 
-target_include_directories(SponzaTest PRIVATE src)
 target_compile_definitions(SponzaTest PRIVATE VK_NO_PROTOTYPES)
 target_compile_options(SponzaTest PRIVATE ${ENGINE_FLAGS})
 target_link_libraries(SponzaTest PRIVATE Engine)

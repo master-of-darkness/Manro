@@ -46,16 +46,16 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(SDL3 SDL3_mixer)
 
-add_subdirectory(Engine/deps/vk-bootstrap)
-add_subdirectory(Engine/deps/volk)
-add_subdirectory(Engine/deps/VulkanMemoryAllocator)
+add_subdirectory(deps/vk-bootstrap)
+add_subdirectory(deps/volk)
+add_subdirectory(deps/VulkanMemoryAllocator)
 
 set(SLANG_ENABLE_PCH OFF CACHE BOOL "" FORCE)
 set(SLANG_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
 set(SLANG_ENABLE_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(SLANG_ENABLE_SLANG_GLSLANG OFF CACHE BOOL "" FORCE)
 set(SLANG_LIB_TYPE "STATIC" CACHE STRING "" FORCE)
-add_subdirectory(Engine/deps/slang)
+add_subdirectory(deps/slang)
 
 FetchContent_Declare(
         flatbuffers
@@ -159,7 +159,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
     endforeach()
 endif()
 
-set(SCHEMA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Engine/src/Networking/Schema")
+set(SCHEMA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/Networking/Schema")
 set(SCHEMA_FILE "${SCHEMA_DIR}/NetworkMessage.fbs")
 set(GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 
@@ -179,7 +179,7 @@ set(SHADER_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders")
 set(SHADER_BIN_DIR "${SHADER_SRC_DIR}")
 file(MAKE_DIRECTORY "${SHADER_BIN_DIR}")
 
-set(SLANG_BIN_PKG_DIR "${CMAKE_CURRENT_BINARY_DIR}/Engine/deps/slang/slang-2026.3.1-linux-x86_64")
+set(SLANG_BIN_PKG_DIR "${CMAKE_CURRENT_BINARY_DIR}/deps/slang/slang-2026.3.1-linux-x86_64")
 set(SLANG_LIB_DIR "${SLANG_BIN_PKG_DIR}/lib")
 
 set(SLANGC_EXE "$<TARGET_FILE:slangc>")
@@ -207,39 +207,39 @@ add_custom_target(PrecompileShaders
 )
 
 add_library(Engine STATIC
-        Engine/src/Core/EngineContext.cpp
-        Engine/src/Core/Logger.cpp
-        Engine/src/Core/JobSystem.cpp
-        Engine/src/Scene/SceneManager.cpp
-        Engine/src/Input/InputManager.cpp
-        Engine/src/Networking/NetworkClient.cpp
-        Engine/src/Networking/NetworkServer.cpp
-        Engine/src/Render/Renderer.cpp
-        Engine/src/Render/Vulkan/Swapchain.cpp
-        Engine/src/Render/Vulkan/VulkanContext.cpp
-        Engine/src/Render/Vulkan/VulkanHelpers.cpp
-        Engine/src/Render/TextureManager.cpp
-        Engine/src/Render/MeshManager.cpp
-        Engine/src/Render/Vulkan/Buffer.cpp
-        Engine/src/Render/Vulkan/Pipeline.cpp
-        Engine/src/Resource/ModelLoader.cpp
-        Engine/src/Resource/FBXLoader.cpp
-        Engine/src/Resource/TextureLoader.cpp
-        Engine/src/Physics/PhysicsWorld.cpp
-        Engine/src/Platform/Audio/AudioManager.cpp
-        Engine/src/Platform/Audio/SDL3AudioBackend.cpp
-        Engine/src/Platform/Input/SDL3InputBackend.cpp
-        Engine/src/Platform/Window/SDL3Window.cpp
-        Engine/src/Platform/Window/WindowManager.cpp
-        Engine/src/Platform/PlatformContext.cpp
+        src/Core/EngineContext.cpp
+        src/Core/Logger.cpp
+        src/Core/JobSystem.cpp
+        src/Scene/SceneManager.cpp
+        src/Input/InputManager.cpp
+        src/Networking/NetworkClient.cpp
+        src/Networking/NetworkServer.cpp
+        src/Render/Renderer.cpp
+        src/Render/Vulkan/Swapchain.cpp
+        src/Render/Vulkan/VulkanContext.cpp
+        src/Render/Vulkan/VulkanHelpers.cpp
+        src/Render/TextureManager.cpp
+        src/Render/MeshManager.cpp
+        src/Render/Vulkan/Buffer.cpp
+        src/Render/Vulkan/Pipeline.cpp
+        src/Resource/ModelLoader.cpp
+        src/Resource/FBXLoader.cpp
+        src/Resource/TextureLoader.cpp
+        src/Physics/PhysicsWorld.cpp
+        src/Platform/Audio/AudioManager.cpp
+        src/Platform/Audio/SDL3AudioBackend.cpp
+        src/Platform/Input/SDL3InputBackend.cpp
+        src/Platform/Window/SDL3Window.cpp
+        src/Platform/Window/WindowManager.cpp
+        src/Platform/PlatformContext.cpp
         ${ufbx_SOURCE_DIR}/ufbx.c
 )
 
 add_dependencies(Engine GenerateNetworkSchema PrecompileShaders)
 
 target_include_directories(Engine PUBLIC
-        Engine/src
-        Engine/deps/vk-bootstrap/src
+        include
+        deps/vk-bootstrap/src
         ${GEN_DIR}
         ${SHADER_BIN_DIR}
         ${enet_SOURCE_DIR}/include
@@ -249,6 +249,7 @@ target_include_directories(Engine PUBLIC
 )
 
 target_include_directories(Engine PRIVATE
+        src
         ${joltphysics_SOURCE_DIR}
 )
 
