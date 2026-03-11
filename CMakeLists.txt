@@ -189,7 +189,7 @@ set(SHADER_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders")
 set(SHADER_BIN_DIR "${SHADER_SRC_DIR}")
 file(MAKE_DIRECTORY "${SHADER_BIN_DIR}")
 
-set(SLANG_BIN_PKG_DIR "${CMAKE_CURRENT_BINARY_DIR}/deps/slang/slang-2026.3.1-linux-x86_64")
+set(SLANG_BIN_PKG_DIR "${CMAKE_CURRENT_BINARY_DIR}/deps/slang/slang-2026.4.1-linux-x86_64") # todo: make it flexible, so it doesnt break on new version or on windows
 set(SLANG_LIB_DIR "${SLANG_BIN_PKG_DIR}/lib")
 
 set(SLANGC_EXE "$<TARGET_FILE:slangc>")
