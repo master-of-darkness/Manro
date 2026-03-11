@@ -36,12 +36,14 @@ FetchContent_Declare(
         GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
         GIT_TAG        main
         OVERRIDE_FIND_PACKAGE
+        SOURCE_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/deps/SDL3"
 )
 
 FetchContent_Declare(
         SDL3_mixer
         GIT_REPOSITORY https://github.com/libsdl-org/SDL_mixer.git
         GIT_TAG        main
+        SOURCE_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/deps/SDL3_mixer"
 )
 
 FetchContent_MakeAvailable(SDL3 SDL3_mixer)
@@ -61,6 +63,7 @@ FetchContent_Declare(
         flatbuffers
         GIT_REPOSITORY https://github.com/google/flatbuffers.git
         GIT_TAG        v23.5.26
+        SOURCE_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/deps/flatbuffers"
 )
 set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(flatbuffers)
@@ -69,6 +72,7 @@ FetchContent_Declare(
         glm
         GIT_REPOSITORY https://github.com/g-truc/glm.git
         GIT_TAG        0.9.9.8
+        SOURCE_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/deps/glm"
 )
 FetchContent_MakeAvailable(glm)
 
@@ -76,6 +80,7 @@ FetchContent_Declare(
         enet
         GIT_REPOSITORY https://github.com/lsalzman/enet.git
         GIT_TAG        v1.3.17
+        SOURCE_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/deps/enet"
 )
 FetchContent_MakeAvailable(enet)
 
@@ -83,6 +88,7 @@ FetchContent_Declare(
         tinyobjloader
         GIT_REPOSITORY https://github.com/tinyobjloader/tinyobjloader.git
         GIT_TAG        v2.0.0rc13
+        SOURCE_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/deps/tinyobjloader"
 )
 FetchContent_MakeAvailable(tinyobjloader)
 
@@ -90,6 +96,7 @@ FetchContent_Declare(
         stb
         GIT_REPOSITORY https://github.com/nothings/stb.git
         GIT_TAG        master
+        SOURCE_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/deps/stb"
 )
 FetchContent_MakeAvailable(stb)
 
@@ -97,6 +104,7 @@ FetchContent_Declare(
         ufbx
         GIT_REPOSITORY https://github.com/ufbx/ufbx.git
         GIT_TAG        v0.21.3
+        SOURCE_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/deps/ufbx"
 )
 FetchContent_MakeAvailable(ufbx)
 
@@ -105,6 +113,7 @@ FetchContent_Declare(
         GIT_REPOSITORY https://github.com/jrouwe/JoltPhysics.git
         GIT_TAG        v5.2.0
         SOURCE_SUBDIR  Build
+        SOURCE_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/deps/JoltPhysics"
 )
 set(DOUBLE_PRECISION                    OFF CACHE BOOL "" FORCE)
 set(GENERATE_DEBUG_SYMBOLS              ON  CACHE BOOL "" FORCE)
@@ -127,6 +136,7 @@ FetchContent_Declare(
         spdlog
         GIT_REPOSITORY https://github.com/gabime/spdlog.git
         GIT_TAG        v1.17.0
+        SOURCE_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/deps/spdlog"
 )
 FetchContent_MakeAvailable(spdlog)
 

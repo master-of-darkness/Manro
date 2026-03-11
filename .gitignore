@@ -1,5 +1,13 @@
 .idea
+.vscode
 build
 cmake-build-debug
 cmake-build-release
 *.a
+
+# Dependencies
+/deps/*
+!/deps/vk-bootstrap/
+!/deps/volk/
+!/deps/VulkanMemoryAllocator/
+!/deps/slang/
