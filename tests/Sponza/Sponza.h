@@ -2,6 +2,8 @@
 
 #include <Core/EngineContext.h>
 #include <Render/Renderer.h>
+#include <Render/TextureManager.h>
+#include <Render/Material/MaterialInstance.h>
 #include <Input/InputManager.h>
 #include <Platform/Input/SDL3InputBackend.h>
 #include <Platform/Window/WindowManager.h>
@@ -10,6 +12,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <memory>
 
 enum class SceneType {
     Sponza,
@@ -62,7 +65,7 @@ private:
 
     struct SubMesh {
         Engine::MeshHandle meshId;
-        Engine::TextureHandle textureId;
+        Engine::Scope<Engine::MaterialInstance> material;
     };
 
     std::vector<SubMesh> m_SubMeshes; // TODO: wrap this shit into engine

@@ -1,12 +1,14 @@
 #pragma once
 
-#include "VulkanContext.h"
-#include "VulkanHelpers.h"
-#include "Swapchain.h"
-#include "Pipeline.h"
-#include "SlangCompiler.h"
-#include "TextureManager.h"
-#include "MeshManager.h"
+#include <Render/Vulkan/VulkanContext.h>
+#include <Render/Vulkan/VulkanHelpers.h>
+#include <Render/Vulkan/Swapchain.h>
+#include <Render/Vulkan/Pipeline.h>
+#include <Render/Vulkan/Pipeline.h>
+#include <Render/TextureManager.h>
+#include <Render/MeshManager.h>
+#include <Render/Material/Material.h>
+#include <Render/Material/MaterialInstance.h>
 #include <Core/Types.h>
 #include <vector>
 
@@ -38,6 +40,7 @@ namespace Engine {
         void SetTintColor(const Vec3 &color) { m_TintColor = color; }
 
         void DrawMesh(MeshHandle meshId, const Mat4 &mvp);
+        void DrawMesh(MeshHandle meshId, const MaterialInstance &material, const Mat4 &mvp);
 
         float GetAspectRatio() const {
             if (!m_Swapchain) return 16.f / 9.f;
@@ -50,6 +53,7 @@ namespace Engine {
         VulkanContext &GetContext() { return m_Context; }
         TextureManager &GetTextureManager() { return m_Textures; }
         MeshManager &GetMeshManager() { return m_Meshes; }
+        Ref<Material> GetDefaultMaterial() { return m_DefaultMaterial; }
 
     private:
         void CreateDepthResources(u32 width, u32 height);
@@ -62,8 +66,7 @@ namespace Engine {
         VulkanContext m_Context;
         Scope<Swapchain> m_Swapchain;
 
-        SlangCompiler m_ShaderCompiler;
-        Scope<Pipeline> m_Pipeline;
+        Ref<Material> m_DefaultMaterial;
         TextureManager m_Textures;
         MeshManager m_Meshes;
 

@@ -174,6 +174,38 @@ add_custom_target(GenerateNetworkSchema
         DEPENDS "${GEN_DIR}/NetworkMessage_generated.h"
 )
 
+# Shader precompilation
+set(SHADER_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders")
+set(SHADER_BIN_DIR "${SHADER_SRC_DIR}")
+file(MAKE_DIRECTORY "${SHADER_BIN_DIR}")
+
+set(SLANG_BIN_PKG_DIR "${CMAKE_CURRENT_BINARY_DIR}/Engine/deps/slang/slang-2026.3.1-linux-x86_64")
+set(SLANG_LIB_DIR "${SLANG_BIN_PKG_DIR}/lib")
+
+set(SLANGC_EXE "$<TARGET_FILE:slangc>")
+
+macro(compile_shader SHADER_FILE ENTRY_POINT STAGE OUTPUT_FILE)
+    add_custom_command(
+        OUTPUT "${OUTPUT_FILE}"
+        COMMAND ${CMAKE_COMMAND} -E env "LD_LIBRARY_PATH=${SLANG_LIB_DIR}"
+                ${SLANGC_EXE} "${SHADER_SRC_DIR}/${SHADER_FILE}"
+                -entry ${ENTRY_POINT}
+                -stage ${STAGE}
+                -target spirv
+                -o "${OUTPUT_FILE}"
+        DEPENDS "${SHADER_SRC_DIR}/${SHADER_FILE}" slangc
+        COMMENT "Compiling shader: ${SHADER_FILE} [${ENTRY_POINT}]"
+    )
+    list(APPEND PRECOMPILED_SHADERS "${OUTPUT_FILE}")
+endmacro()
+
+compile_shader("cube.slang" "vertexMain" "vertex" "${SHADER_BIN_DIR}/cube.vert.spv")
+compile_shader("cube.slang" "fragmentMain" "fragment" "${SHADER_BIN_DIR}/cube.frag.spv")
+
+add_custom_target(PrecompileShaders
+    DEPENDS ${PRECOMPILED_SHADERS}
+)
+
 add_library(Engine STATIC
         Engine/src/Core/EngineContext.cpp
         Engine/src/Core/Logger.cpp
@@ -183,17 +215,16 @@ add_library(Engine STATIC
         Engine/src/Networking/NetworkClient.cpp
         Engine/src/Networking/NetworkServer.cpp
         Engine/src/Render/Renderer.cpp
-        Engine/src/Render/Swapchain.cpp
-        Engine/src/Render/VulkanContext.cpp
-        Engine/src/Render/VulkanHelpers.cpp
+        Engine/src/Render/Vulkan/Swapchain.cpp
+        Engine/src/Render/Vulkan/VulkanContext.cpp
+        Engine/src/Render/Vulkan/VulkanHelpers.cpp
         Engine/src/Render/TextureManager.cpp
         Engine/src/Render/MeshManager.cpp
-        Engine/src/Render/Buffer.cpp
-        Engine/src/Render/SlangCompiler.cpp
-        Engine/src/Render/Pipeline.cpp
-        Engine/src/Render/ModelLoader.cpp
-        Engine/src/Render/FBXLoader.cpp
-        Engine/src/Render/TextureLoader.cpp
+        Engine/src/Render/Vulkan/Buffer.cpp
+        Engine/src/Render/Vulkan/Pipeline.cpp
+        Engine/src/Resource/ModelLoader.cpp
+        Engine/src/Resource/FBXLoader.cpp
+        Engine/src/Resource/TextureLoader.cpp
         Engine/src/Physics/PhysicsWorld.cpp
         Engine/src/Platform/Audio/AudioManager.cpp
         Engine/src/Platform/Audio/SDL3AudioBackend.cpp
@@ -204,12 +235,13 @@ add_library(Engine STATIC
         ${ufbx_SOURCE_DIR}/ufbx.c
 )
 
-add_dependencies(Engine GenerateNetworkSchema)
+add_dependencies(Engine GenerateNetworkSchema PrecompileShaders)
 
 target_include_directories(Engine PUBLIC
         Engine/src
         Engine/deps/vk-bootstrap/src
         ${GEN_DIR}
+        ${SHADER_BIN_DIR}
         ${enet_SOURCE_DIR}/include
         ${tinyobjloader_SOURCE_DIR}
         ${stb_SOURCE_DIR}

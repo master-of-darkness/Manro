@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Buffer.h"
-#include "ModelLoader.h"
+#include <Render/Vulkan/Buffer.h>
+#include <Resource/ModelLoader.h>
 #include <Core/Types.h>
 #include <unordered_map>
 

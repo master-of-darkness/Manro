@@ -1,7 +1,7 @@
 #pragma once
 
-#include "VulkanHelpers.h"
-#include "TextureLoader.h"
+#include <Render/Vulkan/VulkanHelpers.h>
+#include <Resource/TextureLoader.h>
 #include <Core/Types.h>
 #include <unordered_map>
 

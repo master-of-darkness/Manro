@@ -3,6 +3,8 @@
 #include "VulkanContext.h"
 #include <Core/Logger.h>
 #include <stdexcept>
+#include <fstream>
+#include <vector>
 
 namespace Engine {
     AllocatedImage CreateImage(const VulkanContext &ctx, const ImageCreateParams &params,
@@ -95,5 +97,20 @@ namespace Engine {
         vkQueueWaitIdle(ctx.GetGraphicsQueue());
 
         vkDestroyCommandPool(ctx.GetDevice(), tmpPool, nullptr);
+    }
+
+    std::vector<u8> ReadBinaryFile(const std::string &filepath) {
+        std::ifstream file(filepath, std::ios::ate | std::ios::binary);
+        if (!file.is_open()) {
+            return {};
+        }
+
+        size_t fileSize = (size_t)file.tellg();
+        std::vector<u8> buffer(fileSize);
+        file.seekg(0);
+        file.read((char *)buffer.data(), fileSize);
+        file.close();
+
+        return buffer;
     }
 } // namespace Engine

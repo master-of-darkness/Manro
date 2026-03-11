@@ -1,9 +1,11 @@
 #include "TextureManager.h"
-#include <volk.h>
-#include "VulkanContext.h"
+#include <Render/Vulkan/VulkanContext.h>
+#include <Render/Vulkan/VulkanHelpers.h>
 #include <Core/Logger.h>
 #include <cstring>
 #include <stdexcept>
+
+#include "volk.h"
 
 namespace Engine {
     TextureManager::TextureManager(const VulkanContext &ctx) : m_Context(ctx) {

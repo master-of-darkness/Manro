@@ -1,4 +1,5 @@
 #include "Renderer.h"
+#include <Render/Vulkan/VulkanHelpers.h>
 #include <Core/Logger.h>
 #include <stdexcept>
 
@@ -30,6 +31,10 @@ namespace Engine {
         CreateSyncObjects();
         LoadShadersAndPipeline();
 
+        if (!m_DefaultMaterial) {
+            throw std::runtime_error("[Renderer] Failed to load default material (shaders missing?)");
+        }
+
         m_PendingWidth = width;
         m_PendingHeight = height;
     }
@@ -41,7 +46,7 @@ namespace Engine {
         DestroyImage(m_Context, m_ColorImage);
         DestroyImage(m_Context, m_DepthImage);
 
-        m_Pipeline.reset();
+        m_DefaultMaterial.reset();
 
         for (auto &frame: m_Frames) {
             if (frame.renderFinishedSemaphore)
@@ -211,7 +216,6 @@ namespace Engine {
         renderInfo.pDepthAttachment = &depthAttachment;
 
         vkCmdBeginRendering(cb, &renderInfo);
-        vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_Pipeline->GetHandle());
 
         VkViewport viewport{};
         viewport.width = static_cast<float>(m_Swapchain->GetExtent().width);
@@ -297,11 +301,39 @@ namespace Engine {
         pc.mvp = mvp;
         pc.tint = m_TintColor;
 
-        vkCmdPushConstants(cb, m_Pipeline->GetLayout(),
+        vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_DefaultMaterial->GetHandle());
+        vkCmdPushConstants(cb, m_DefaultMaterial->GetLayout(),
                            VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MeshPushConstants), &pc);
         VkDescriptorSet ds = m_Textures.GetActiveDescriptorSet();
         vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                m_Pipeline->GetLayout(), 0, 1, &ds, 0, nullptr);
+                                m_DefaultMaterial->GetLayout(), 0, 1, &ds, 0, nullptr);
+
+        VkBuffer vb[] = {mesh->vertexBuffer->GetHandle()};
+        VkDeviceSize offs[] = {0};
+        vkCmdBindVertexBuffers(cb, 0, 1, vb, offs);
+        vkCmdBindIndexBuffer(cb, mesh->indexBuffer->GetHandle(), 0, VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexed(cb, mesh->indexCount, 1, 0, 0, 0);
+    }
+
+    void Renderer::DrawMesh(MeshHandle meshId, const MaterialInstance &material, const Mat4 &mvp) {
+        const auto *mesh = m_Meshes.Get(meshId);
+        if (!mesh) return;
+
+        VkCommandBuffer cb = m_Frames[m_CurrentFrame].commandBuffer;
+
+        MeshPushConstants pc;
+        pc.mvp = mvp;
+        pc.tint = material.GetTintColor();
+
+        vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, material.GetMaterial().GetHandle());
+        vkCmdPushConstants(cb, material.GetMaterial().GetLayout(),
+                           VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MeshPushConstants), &pc);
+
+        // Bind material texture
+        m_Textures.Bind(material.GetTexture());
+        VkDescriptorSet ds = m_Textures.GetActiveDescriptorSet();
+        vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                material.GetMaterial().GetLayout(), 0, 1, &ds, 0, nullptr);
 
         VkBuffer vb[] = {mesh->vertexBuffer->GetHandle()};
         VkDeviceSize offs[] = {0};
@@ -352,17 +384,16 @@ namespace Engine {
     }
 
     void Renderer::LoadShadersAndPipeline() {
-        std::vector<u8> vertSpv, fragSpv;
-        if (!m_ShaderCompiler.CompileShaderToSPIRV("assets/shaders/cube.slang", "vertexMain", "sm_6_5", vertSpv)) {
-            LOG_ERROR("[Renderer] Failed to compile vertex shader!");
-            return;
-        }
-        if (!m_ShaderCompiler.CompileShaderToSPIRV("assets/shaders/cube.slang", "fragmentMain", "sm_6_5", fragSpv)) {
-            LOG_ERROR("[Renderer] Failed to compile fragment shader!");
+        std::vector<u8> vertSpv = ReadBinaryFile("assets/shaders/cube.vert.spv");
+        std::vector<u8> fragSpv = ReadBinaryFile("assets/shaders/cube.frag.spv");
+
+        if (vertSpv.empty() || fragSpv.empty()) {
+            LOG_ERROR("[Renderer] Failed to load precompiled shaders!");
+            // Fallback to runtime compilation if needed, but let's assume precompilation is mandatory now
             return;
         }
 
-        m_Pipeline = CreateScope<Pipeline>(m_Context);
+        auto pipeline = CreateScope<Pipeline>(m_Context);
         PipelineConfigParams config{};
         config.colorAttachmentFormat = m_Swapchain->GetImageFormat();
         config.depthAttachmentFormat = m_DepthFormat;
@@ -381,6 +412,7 @@ namespace Engine {
         config.pushConstantSize = sizeof(MeshPushConstants);
         config.msaaSamples = m_MsaaSamples;
 
-        m_Pipeline->BuildGraphics(vertSpv, fragSpv, config);
+        pipeline->BuildGraphics(vertSpv, fragSpv, config);
+        m_DefaultMaterial = CreateRef<Material>(std::move(pipeline));
     }
 } // namespace Engine

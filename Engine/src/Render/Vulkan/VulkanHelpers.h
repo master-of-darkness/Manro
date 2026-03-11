@@ -24,6 +24,8 @@ namespace Engine {
     AllocatedImage CreateImage(const VulkanContext &ctx, const ImageCreateParams &params,
                                VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT);
 
+    std::vector<u8> ReadBinaryFile(const std::string &filepath);
+
     void DestroyImage(const VulkanContext &ctx, AllocatedImage &img);
 
     using OneShotWork = std::function<void(VkCommandBuffer cmd)>;

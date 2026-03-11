@@ -1,8 +1,8 @@
 #include "Sponza.h"
 
-#include <Render/ModelLoader.h>
-#include <Render/FBXLoader.h>
-#include <Render/TextureLoader.h>
+#include <Resource/ModelLoader.h>
+#include <Resource/FBXLoader.h>
+#include <Resource/TextureLoader.h>
 #include <Core/Logger.h>
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -65,9 +65,6 @@ Engine::Mat4 FlyCamera::ViewProj(float fovDeg, float aspect, float nearZ, float 
 }
 
 void Sponza::Initialize() {
-    // EngineContext now initialized in constructor via RAII
-    // But we need to set up the window and renderer
-
     auto &wm = m_Engine.GetPlatform().GetWindowManager();
     Engine::WindowDesc desc;
     desc.Title = (m_SceneType == SceneType::Bistro) ? "Bistro Test" : "Sponza Test";
@@ -89,7 +86,6 @@ void Sponza::Initialize() {
     window->CaptureMouse(true);
     window->ShowCursor(false);
 
-    // Renderer ctor now does full init
     m_Renderer = Engine::CreateScope<Engine::Renderer>(*window, kWindowWidth, kWindowHeight, VK_SAMPLE_COUNT_8_BIT);
     LOG_INFO("[SponzaTest] Renderer initialized.");
 
@@ -138,23 +134,24 @@ void Sponza::LoadScene() {
 
             SubMesh sm;
             sm.meshId = m_Renderer->UploadMesh(md);
-            sm.textureId = Engine::TextureHandle{0}; // Fallback white
+            sm.material = Engine::CreateScope<Engine::MaterialInstance>(m_Renderer->GetDefaultMaterial());
 
             if (!sd.diffuseTexturePath.empty()) {
                 auto cacheIt = textureCache.find(sd.diffuseTexturePath);
                 if (cacheIt != textureCache.end()) {
-                    sm.textureId = cacheIt->second;
+                    sm.material->SetTexture(cacheIt->second);
                 } else {
                     Engine::TextureData td;
                     if (Engine::TextureLoader::Load(sd.diffuseTexturePath, td)) {
-                        sm.textureId = m_Renderer->UploadTexture(td);
-                        textureCache[sd.diffuseTexturePath] = sm.textureId;
+                        Engine::TextureHandle tex = m_Renderer->UploadTexture(td);
+                        sm.material->SetTexture(tex);
+                        textureCache[sd.diffuseTexturePath] = tex;
                     }
                 }
             }
 
 
-            m_SubMeshes.push_back(sm);
+            m_SubMeshes.push_back(std::move(sm));
         }
 
         LOG_INFO("[SponzaTest] Loaded '{}' — {} sub-meshes total so far", path, m_SubMeshes.size());
@@ -195,9 +192,7 @@ void Sponza::Render(float dt) {
     const Engine::Mat4 vp = m_Camera.ViewProj(kFov, aspect, kNearZ, kFarZ);
 
     for (const auto &sm: m_SubMeshes) {
-        m_Renderer->BindTexture(sm.textureId);
-        m_Renderer->SetTintColor({1.f, 1.f, 1.f});
-        m_Renderer->DrawMesh(sm.meshId, vp);
+        m_Renderer->DrawMesh(sm.meshId, *sm.material, vp);
     }
 
     m_Renderer->SetTintColor({1.f, 1.f, 1.f});
