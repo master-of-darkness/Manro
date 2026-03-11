@@ -3,11 +3,72 @@
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 
+#include <mikktspace.h>
 #include <Manro/Core/Logger.h>
 #include <algorithm>
 #include <unordered_map>
 
 namespace Engine {
+    // MikkTSpace interface
+    struct MikkContext {
+        std::vector<Vertex>* vertices;
+        const std::vector<u32>* indices;
+    };
+
+    static int MikkGetNumFaces(const SMikkTSpaceContext* context) {
+        MikkContext* ctx = (MikkContext*)context->m_pUserData;
+        return (int)(ctx->indices->size() / 3);
+    }
+
+    static int MikkGetNumVerticesOfFace(const SMikkTSpaceContext* context, const int iFace) {
+        return 3;
+    }
+
+    static void MikkGetPosition(const SMikkTSpaceContext* context, float fvPosOut[], const int iFace, const int iVert) {
+        MikkContext* ctx = (MikkContext*)context->m_pUserData;
+        u32 index = (*ctx->indices)[iFace * 3 + iVert];
+        const Vec3& pos = (*ctx->vertices)[index].position;
+        fvPosOut[0] = pos.x; fvPosOut[1] = pos.y; fvPosOut[2] = pos.z;
+    }
+
+    static void MikkGetNormal(const SMikkTSpaceContext* context, float fvNormOut[], const int iFace, const int iVert) {
+        MikkContext* ctx = (MikkContext*)context->m_pUserData;
+        u32 index = (*ctx->indices)[iFace * 3 + iVert];
+        const Vec3& norm = (*ctx->vertices)[index].normal;
+        fvNormOut[0] = norm.x; fvNormOut[1] = norm.y; fvNormOut[2] = norm.z;
+    }
+
+    static void MikkGetTexCoord(const SMikkTSpaceContext* context, float fvTexcOut[], const int iFace, const int iVert) {
+        MikkContext* ctx = (MikkContext*)context->m_pUserData;
+        u32 index = (*ctx->indices)[iFace * 3 + iVert];
+        const Vec2& uv = (*ctx->vertices)[index].uv;
+        fvTexcOut[0] = uv.x; fvTexcOut[1] = uv.y;
+    }
+
+    static void MikkSetTSpaceBasic(const SMikkTSpaceContext* context, const float fvTangent[], const float fSign, const int iFace, const int iVert) {
+        MikkContext* ctx = (MikkContext*)context->m_pUserData;
+        u32 index = (*ctx->indices)[iFace * 3 + iVert];
+        Vertex& v = (*ctx->vertices)[index];
+        v.tangent = { fvTangent[0], fvTangent[1], fvTangent[2], fSign };
+    }
+
+    static void GenerateTangents(std::vector<Vertex>& vertices, const std::vector<u32>& indices) {
+        MikkContext mikkCtx = { &vertices, &indices };
+        SMikkTSpaceInterface mikkInterface = {};
+        mikkInterface.m_getNumFaces = MikkGetNumFaces;
+        mikkInterface.m_getNumVerticesOfFace = MikkGetNumVerticesOfFace;
+        mikkInterface.m_getPosition = MikkGetPosition;
+        mikkInterface.m_getNormal = MikkGetNormal;
+        mikkInterface.m_getTexCoord = MikkGetTexCoord;
+        mikkInterface.m_setTSpaceBasic = MikkSetTSpaceBasic;
+
+        SMikkTSpaceContext context = {};
+        context.m_pInterface = &mikkInterface;
+        context.m_pUserData = &mikkCtx;
+
+        genTangSpaceDefault(&context);
+    }
+
     std::string ModelLoader::NormalisePath(const std::string &p) {
         std::string out = p;
         std::replace(out.begin(), out.end(), '\\', '/');
@@ -64,14 +125,6 @@ namespace Engine {
             }
         }
 
-        auto getDiffuseColor = [&](int matId) -> Vec3 {
-            if (matId >= 0 && matId < static_cast<int>(materials.size())) {
-                const auto &m = materials[matId];
-                return Vec3{m.diffuse[0], m.diffuse[1], m.diffuse[2]};
-            }
-            return Vec3{0.85f, 0.82f, 0.78f};
-        };
-
         std::unordered_map<VertKey, u32, VertKeyHash> indexMap;
 
         for (const auto &shape: shapes) {
@@ -94,7 +147,18 @@ namespace Engine {
                             attrib.vertices[3 * idx.vertex_index + 1],
                             attrib.vertices[3 * idx.vertex_index + 2],
                         };
-                        vert.color = getDiffuseColor(matId);
+                        
+                        if (idx.normal_index >= 0 &&
+                            3 * idx.normal_index + 2 < static_cast<int>(attrib.normals.size())) {
+                            vert.normal = {
+                                attrib.normals[3 * idx.normal_index + 0],
+                                attrib.normals[3 * idx.normal_index + 1],
+                                attrib.normals[3 * idx.normal_index + 2],
+                            };
+                        } else {
+                            vert.normal = {0.0f, 1.0f, 0.0f};
+                        }
+
                         if (idx.texcoord_index >= 0 &&
                             2 * idx.texcoord_index + 1 < static_cast<int>(attrib.texcoords.size())) {
                             vert.uv = {
@@ -102,6 +166,9 @@ namespace Engine {
                                 attrib.texcoords[2 * idx.texcoord_index + 1],
                             };
                         }
+                        
+                        vert.tangent = {1.0f, 0.0f, 0.0f, 1.0f};
+
                         u32 outIdx = static_cast<u32>(out.vertices.size());
                         out.vertices.push_back(vert);
                         indexMap[key] = outIdx;
@@ -111,6 +178,8 @@ namespace Engine {
                 indexOffset += faceVerts;
             }
         }
+
+        GenerateTangents(out.vertices, out.indices);
 
         if (!out.diffuseTexturePath.empty())
             LOG_INFO("[ModelLoader] Loaded '{}' - {} vertices, {} indices, texture: {}",
@@ -151,14 +220,6 @@ namespace Engine {
                 buckets[i].diffuseTexturePath = NormalisePath(baseDir + materials[i].diffuse_texname);
         }
 
-        auto getDiffuseColor = [&](int matId) -> Vec3 {
-            if (matId >= 0 && matId < static_cast<int>(materials.size())) {
-                const auto &m = materials[matId];
-                return Vec3{m.diffuse[0], m.diffuse[1], m.diffuse[2]};
-            }
-            return Vec3{0.85f, 0.82f, 0.78f};
-        };
-
         std::vector<std::unordered_map<VertKey, u32, VertKeyHash> > indexMaps(buckets.size());
 
         for (const auto &shape: shapes) {
@@ -185,7 +246,18 @@ namespace Engine {
                             attrib.vertices[3 * idx.vertex_index + 1],
                             attrib.vertices[3 * idx.vertex_index + 2],
                         };
-                        vert.color = getDiffuseColor(matId);
+                        
+                        if (idx.normal_index >= 0 &&
+                            3 * idx.normal_index + 2 < static_cast<int>(attrib.normals.size())) {
+                            vert.normal = {
+                                attrib.normals[3 * idx.normal_index + 0],
+                                attrib.normals[3 * idx.normal_index + 1],
+                                attrib.normals[3 * idx.normal_index + 2],
+                            };
+                        } else {
+                            vert.normal = {0.0f, 1.0f, 0.0f};
+                        }
+
                         if (idx.texcoord_index >= 0 &&
                             2 * idx.texcoord_index + 1 < static_cast<int>(attrib.texcoords.size())) {
                             vert.uv = {
@@ -193,6 +265,9 @@ namespace Engine {
                                 attrib.texcoords[2 * idx.texcoord_index + 1],
                             };
                         }
+
+                        vert.tangent = {1.0f, 0.0f, 0.0f, 1.0f};
+
                         u32 outIdx = static_cast<u32>(bucket.vertices.size());
                         bucket.vertices.push_back(vert);
                         imap[key] = outIdx;
@@ -205,8 +280,10 @@ namespace Engine {
 
         out.clear();
         for (auto &b: buckets) {
-            if (!b.vertices.empty())
+            if (!b.vertices.empty()) {
+                GenerateTangents(b.vertices, b.indices);
                 out.push_back(std::move(b));
+            }
         }
 
         LOG_INFO("[ModelLoader] LoadSubMeshes '{}' → {} sub-meshes", filepath, out.size());

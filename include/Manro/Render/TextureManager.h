@@ -25,18 +25,13 @@ namespace Engine {
 
         TextureHandle Upload(const u8 *pixels, int width, int height);
 
-        void Bind(TextureHandle handle);
-
         void ResetBinding();
-
-        VkDescriptorSet GetActiveDescriptorSet() const { return m_ActiveDescriptorSet; }
-        VkDescriptorSetLayout GetDescriptorSetLayout() const { return m_DescriptorSetLayout; }
+ 
+        VkImageView GetView(TextureHandle handle) const;
+        VkSampler GetSampler() const { return m_Sampler; }
+        TextureHandle GetWhiteTextureId() const { return m_WhiteTextureId; }
 
     private:
-        void CreateDescriptorPool();
-
-        void CreateDescriptorSetLayout();
-
         void CreateDefaultSampler();
 
         void CreateWhiteTexture();
@@ -47,17 +42,12 @@ namespace Engine {
             VkImage image{VK_NULL_HANDLE};
             VkImageView view{VK_NULL_HANDLE};
             VmaAllocation allocation{nullptr};
-            VkDescriptorSet descriptorSet{VK_NULL_HANDLE};
         };
 
         std::unordered_map<TextureHandle, LoadedTexture> m_Textures;
         TextureHandle m_NextId{1};
 
-        VkDescriptorPool m_DescriptorPool{VK_NULL_HANDLE};
-        VkDescriptorSetLayout m_DescriptorSetLayout{VK_NULL_HANDLE};
         VkSampler m_Sampler{VK_NULL_HANDLE};
-
         TextureHandle m_WhiteTextureId{kInvalidTexture};
-        VkDescriptorSet m_ActiveDescriptorSet{VK_NULL_HANDLE};
     };
 } // namespace Engine

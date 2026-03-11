@@ -17,6 +17,8 @@ namespace Engine {
         VkSampleCountFlagBits msaaSamples{VK_SAMPLE_COUNT_1_BIT};
 
         u32 pushConstantSize{0};
+        std::string vertexEntryPoint{"main"};
+        std::string fragmentEntryPoint{"main"};
     };
 
     class Pipeline {

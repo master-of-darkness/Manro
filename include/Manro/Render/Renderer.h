@@ -38,12 +38,18 @@ namespace Engine {
 
         MeshHandle UploadMesh(const ModelData &data) { return m_Meshes.Upload(data); }
         TextureHandle UploadTexture(const TextureData &data) { return m_Textures.Upload(data); }
-        void BindTexture(TextureHandle id) { m_Textures.Bind(id); }
+        void BindTexture(TextureHandle id);
         void SetTintColor(const Vec3 &color) { m_TintColor = color; }
-
-        void DrawMesh(MeshHandle meshId, const Mat4 &mvp);
-
-        void DrawMesh(MeshHandle meshId, const MaterialInstance &material, const Mat4 &mvp);
+        void SetViewProjection(const Mat4 &view, const Mat4 &proj) {
+            m_ViewMatrix = view;
+            m_ProjectionMatrix = proj;
+        }
+ 
+        Scope<MaterialInstance> CreateMaterialInstance(Ref<Material> material);
+ 
+        void DrawMesh(MeshHandle meshId, const Mat4 &model);
+ 
+        void DrawMesh(MeshHandle meshId, MaterialInstance &material, const Mat4 &model);
 
         float GetAspectRatio() const {
             if (!m_Swapchain) return 16.f / 9.f;
@@ -57,6 +63,7 @@ namespace Engine {
         TextureManager &GetTextureManager() { return m_Textures; }
         MeshManager &GetMeshManager() { return m_Meshes; }
         Ref<Material> GetDefaultMaterial() { return m_DefaultMaterial; }
+        VkDescriptorPool GetDescriptorPool() { return m_DescriptorPool; }
 
     private:
         void CreateDepthResources(u32 width, u32 height);
@@ -70,6 +77,8 @@ namespace Engine {
         void CreateSyncObjects();
 
         void LoadShadersAndPipeline();
+ 
+        void CreateDescriptorPool();
 
         VulkanContext m_Context;
         Scope<Swapchain> m_Swapchain;
@@ -77,6 +86,7 @@ namespace Engine {
         Ref<Material> m_DefaultMaterial;
         TextureManager m_Textures;
         MeshManager m_Meshes;
+        Scope<Buffer> m_InstanceBuffer;
 
         AllocatedImage m_DepthImage{};
         VkFormat m_DepthFormat{VK_FORMAT_D32_SFLOAT};
@@ -85,6 +95,11 @@ namespace Engine {
         AllocatedImage m_ColorImage{};
 
         Vec3 m_TintColor{1.0f, 1.0f, 1.0f};
+ 
+        Mat4 m_ViewMatrix{1.0f};
+        Mat4 m_ProjectionMatrix{1.0f};
+ 
+        Scope<MaterialInstance> m_DefaultMaterialInstance;
 
         struct FrameData {
             VkCommandPool commandPool{VK_NULL_HANDLE};
@@ -92,6 +107,7 @@ namespace Engine {
             VkSemaphore imageAvailableSemaphore{VK_NULL_HANDLE};
             VkSemaphore renderFinishedSemaphore{VK_NULL_HANDLE};
             VkFence inFlightFence{VK_NULL_HANDLE};
+            Scope<Buffer> uboBuffer;
         };
 
         static constexpr int MAX_FRAMES_IN_FLIGHT = 5;
@@ -100,6 +116,8 @@ namespace Engine {
         u32 m_CurrentImageIndex{0};
         u32 m_CurrentFrame{0};
 
+        VkDescriptorPool m_DescriptorPool{VK_NULL_HANDLE};
+ 
         u32 m_PendingWidth{0};
         u32 m_PendingHeight{0};
         bool m_PendingResize{false};

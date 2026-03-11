@@ -1,7 +1,6 @@
 #include "Sponza.h"
 
 #include <Manro/Resource/ModelLoader.h>
-#include <Manro/Resource/FBXLoader.h>
 #include <Manro/Resource/TextureLoader.h>
 #include <Manro/Core/Logger.h>
 #include <glm/gtc/matrix_transform.hpp>
@@ -11,11 +10,6 @@
 #include <stdexcept>
 
 static constexpr const char *kSponzaPath = "assets/models/sponza.obj";
-static constexpr const char *kBistroPaths[] = {
-    "assets/models/BistroExterior.fbx",
-    "assets/models/BistroInterior.fbx",
-    "assets/models/BistroInterior_Wine.fbx",
-};
 static constexpr float kFov = 100.f;
 static constexpr float kNearZ = 1.f;
 static constexpr float kFarZ = 10000.f;
@@ -56,12 +50,19 @@ void FlyCamera::Update(const Engine::InputManager &input, float dt) {
         Position += glm::normalize(move) * speed * dt;
 }
 
-Engine::Mat4 FlyCamera::ViewProj(float fovDeg, float aspect, float nearZ, float farZ) const {
-    Engine::Mat4 proj = glm::perspective(glm::radians(fovDeg), aspect, nearZ, farZ);
-    proj[1][1] *= -1;
+Engine::Mat4 FlyCamera::View() const {
     const Engine::Vec3 fwd = Forward();
-    const Engine::Mat4 view = glm::lookAt(Position, Position + fwd, {0.f, 1.f, 0.f});
-    return proj * view;
+    return glm::lookAt(Position, Position + fwd, {0.f, 1.f, 0.f});
+}
+
+Engine::Mat4 FlyCamera::Projection(float fovDeg, float aspect, float nearZ, float farZ) const {
+    return glm::perspective(glm::radians(fovDeg), aspect, nearZ, farZ);
+}
+
+Engine::Mat4 FlyCamera::ViewProj(float fovDeg, float aspect, float nearZ, float farZ) const {
+    Engine::Mat4 proj = Projection(fovDeg, aspect, nearZ, farZ);
+    proj[1][1] *= -1;
+    return proj * View();
 }
 
 void Sponza::Initialize() {
@@ -99,26 +100,14 @@ void Sponza::Initialize() {
 
 void Sponza::LoadScene() {
     std::vector<const char *> paths;
-    if (m_SceneType == SceneType::Bistro) {
-        for (const char *p: kBistroPaths)
-            paths.push_back(p);
-    } else {
-        paths.push_back(kSponzaPath);
-    }
+    paths.push_back(kSponzaPath);
 
     std::unordered_map<std::string, Engine::TextureHandle> textureCache;
 
     for (const char *path: paths) {
         std::vector<Engine::SubMeshData> subMeshData;
         bool ok = false;
-        switch (m_SceneType) {
-            case SceneType::Bistro:
-                ok = Engine::FBXLoader::LoadSubMeshes(path, subMeshData, Engine::AxisRemap::ZUpToYUp());
-                break;
-            case SceneType::Sponza:
-                ok = Engine::ModelLoader::LoadSubMeshes(path, subMeshData);
-                break;
-        }
+        ok = Engine::ModelLoader::LoadSubMeshes(path, subMeshData);
         if (!ok) {
             LOG_ERROR("[SponzaTest] Failed to load '{}'. Skipping.", path);
             continue;
@@ -134,7 +123,7 @@ void Sponza::LoadScene() {
 
             SubMesh sm;
             sm.meshId = m_Renderer->UploadMesh(md);
-            sm.material = Engine::CreateScope<Engine::MaterialInstance>(m_Renderer->GetDefaultMaterial());
+            sm.material = m_Renderer->CreateMaterialInstance(m_Renderer->GetDefaultMaterial());
 
             if (!sd.diffuseTexturePath.empty()) {
                 auto cacheIt = textureCache.find(sd.diffuseTexturePath);
@@ -189,13 +178,13 @@ void Sponza::Render(float dt) {
     m_Renderer->BeginRenderPass({0.05f, 0.05f, 0.08f, 1.f});
 
     const float aspect = m_Renderer->GetAspectRatio();
-    const Engine::Mat4 vp = m_Camera.ViewProj(kFov, aspect, kNearZ, kFarZ);
-
+    m_Renderer->SetViewProjection(m_Camera.View(), m_Camera.Projection(kFov, aspect, kNearZ, kFarZ));
+ 
     for (const auto &sm: m_SubMeshes) {
-        m_Renderer->DrawMesh(sm.meshId, *sm.material, vp);
+        m_Renderer->DrawMesh(sm.meshId, *sm.material, Engine::Mat4{1.0f});
     }
 
-    m_Renderer->SetTintColor({1.f, 1.f, 1.f});
+    // (Removed SetTintColor)
     m_Renderer->EndRenderPass();
     m_Renderer->EndFrameAndPresent();
 }

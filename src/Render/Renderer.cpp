@@ -3,13 +3,13 @@
 #include <Manro/Core/Logger.h>
 #include <stdexcept>
 
-struct MeshPushConstants {
-    Engine::Mat4 mvp;
-    Engine::Vec3 tint;
-    float _pad{0.0f};
+struct UniformBufferObject {
+    Engine::Mat4 model;
+    Engine::Mat4 view;
+    Engine::Mat4 proj;
 };
 
-static_assert(sizeof(MeshPushConstants) % 16 == 0);
+
 
 namespace Engine {
     Renderer::Renderer(IWindow &window, u32 width, u32 height,
@@ -28,7 +28,8 @@ namespace Engine {
 
         CreateColorResources(width, height);
         CreateDepthResources(width, height);
-        CreateCommandBuffers();
+        CreateDescriptorPool();
+        CreateCommandBuffers(); // Updated to create UBOs
         CreateSyncObjects();
         LoadShadersAndPipeline();
 
@@ -58,7 +59,10 @@ namespace Engine {
                 vkDestroyFence(m_Context.GetDevice(), frame.inFlightFence, nullptr);
             if (frame.commandPool)
                 vkDestroyCommandPool(m_Context.GetDevice(), frame.commandPool, nullptr);
+            frame.uboBuffer.reset();
         }
+ 
+        if (m_DescriptorPool) vkDestroyDescriptorPool(m_Context.GetDevice(), m_DescriptorPool, nullptr);
 
         if (m_Swapchain) m_Swapchain->Shutdown();
     }
@@ -170,7 +174,7 @@ namespace Engine {
         dep.imageMemoryBarrierCount = barrierCount;
         dep.pImageMemoryBarriers = barriers;
         vkCmdPipelineBarrier2(frame.commandBuffer, &dep);
-
+ 
         return true;
     }
 
@@ -228,8 +232,6 @@ namespace Engine {
         VkRect2D scissor{};
         scissor.extent = m_Swapchain->GetExtent();
         vkCmdSetScissor(cb, 0, 1, &scissor);
-
-        m_Textures.ResetBinding();
     }
 
     void Renderer::EndRenderPass() {
@@ -288,57 +290,89 @@ namespace Engine {
         bool needsRecreate = m_Swapchain->Present(m_CurrentImageIndex, frame.renderFinishedSemaphore);
         if (needsRecreate)
             m_PendingResize = true;
-
+ 
         m_CurrentFrame = (m_CurrentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
     }
 
-    void Renderer::DrawMesh(MeshHandle meshId, const Mat4 &mvp) {
-        const auto *mesh = m_Meshes.Get(meshId);
-        if (!mesh) return;
-
-        VkCommandBuffer cb = m_Frames[m_CurrentFrame].commandBuffer;
-
-        MeshPushConstants pc;
-        pc.mvp = mvp;
-        pc.tint = m_TintColor;
-
-        vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_DefaultMaterial->GetHandle());
-        vkCmdPushConstants(cb, m_DefaultMaterial->GetLayout(),
-                           VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MeshPushConstants), &pc);
-        VkDescriptorSet ds = m_Textures.GetActiveDescriptorSet();
-        vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                m_DefaultMaterial->GetLayout(), 0, 1, &ds, 0, nullptr);
-
-        VkBuffer vb[] = {mesh->vertexBuffer->GetHandle()};
-        VkDeviceSize offs[] = {0};
-        vkCmdBindVertexBuffers(cb, 0, 1, vb, offs);
-        vkCmdBindIndexBuffer(cb, mesh->indexBuffer->GetHandle(), 0, VK_INDEX_TYPE_UINT32);
-        vkCmdDrawIndexed(cb, mesh->indexCount, 1, 0, 0, 0);
+    void Renderer::BindTexture(TextureHandle id) {
+        if (!m_DefaultMaterialInstance) {
+            m_DefaultMaterialInstance = CreateMaterialInstance(m_DefaultMaterial);
+        }
+        m_DefaultMaterialInstance->SetTexture(id);
     }
 
-    void Renderer::DrawMesh(MeshHandle meshId, const MaterialInstance &material, const Mat4 &mvp) {
+    Scope<MaterialInstance> Renderer::CreateMaterialInstance(Ref<Material> material) {
+        auto inst = CreateScope<MaterialInstance>(material);
+        inst->CreateDescriptorSets(m_DescriptorPool, MAX_FRAMES_IN_FLIGHT);
+        return inst;
+    }
+ 
+    void Renderer::DrawMesh(MeshHandle meshId, const Mat4 &model) {
+        if (!m_DefaultMaterialInstance) {
+            m_DefaultMaterialInstance = CreateScope<MaterialInstance>(m_DefaultMaterial);
+            m_DefaultMaterialInstance->CreateDescriptorSets(m_DescriptorPool, MAX_FRAMES_IN_FLIGHT);
+        }
+        DrawMesh(meshId, *m_DefaultMaterialInstance, model);
+    }
+ 
+    void Renderer::DrawMesh(MeshHandle meshId, MaterialInstance &material, const Mat4 &model) {
         const auto *mesh = m_Meshes.Get(meshId);
         if (!mesh) return;
-
+ 
         VkCommandBuffer cb = m_Frames[m_CurrentFrame].commandBuffer;
-
-        MeshPushConstants pc;
-        pc.mvp = mvp;
-        pc.tint = material.GetTintColor();
-
+ 
+        // Update UBO
+        UniformBufferObject ubo{};
+        ubo.model = model;
+        ubo.view = m_ViewMatrix; // Need to ensure these are set
+        ubo.proj = m_ProjectionMatrix;
+        ubo.proj[1][1] *= -1; // GL to Vulkan
+ 
+        m_Frames[m_CurrentFrame].uboBuffer->LoadData(&ubo, sizeof(ubo));
+ 
+        // Update descriptor set with current UBO and texture
+        VkDescriptorSet ds = material.GetDescriptorSet(m_CurrentFrame);
+        
+        VkDescriptorBufferInfo bufferInfo{};
+        bufferInfo.buffer = m_Frames[m_CurrentFrame].uboBuffer->GetHandle();
+        bufferInfo.offset = 0;
+        bufferInfo.range = sizeof(UniformBufferObject);
+ 
+        VkDescriptorImageInfo imageInfo{};
+        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        imageInfo.imageView = m_Textures.GetView(material.GetTexture());
+        imageInfo.sampler = m_Textures.GetSampler();
+ 
+        VkWriteDescriptorSet writes[2]{};
+        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[0].dstSet = ds;
+        writes[0].dstBinding = 0;
+        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        writes[0].descriptorCount = 1;
+        writes[0].pBufferInfo = &bufferInfo;
+ 
+        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[1].dstSet = ds;
+        writes[1].dstBinding = 1;
+        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[1].descriptorCount = 1;
+        writes[1].pImageInfo = &imageInfo;
+ 
+        vkUpdateDescriptorSets(m_Context.GetDevice(), 2, writes, 0, nullptr);
+ 
         vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, material.GetMaterial().GetHandle());
-        vkCmdPushConstants(cb, material.GetMaterial().GetLayout(),
-                           VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MeshPushConstants), &pc);
-
-        // Bind material texture
-        m_Textures.Bind(material.GetTexture());
-        VkDescriptorSet ds = m_Textures.GetActiveDescriptorSet();
         vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 material.GetMaterial().GetLayout(), 0, 1, &ds, 0, nullptr);
-
+ 
         VkBuffer vb[] = {mesh->vertexBuffer->GetHandle()};
         VkDeviceSize offs[] = {0};
         vkCmdBindVertexBuffers(cb, 0, 1, vb, offs);
+        
+        // Per-instance data
+        VkBuffer instanceBuffers[] = { m_InstanceBuffer->GetHandle() };
+        VkDeviceSize instanceOffsets[] = { 0 };
+        vkCmdBindVertexBuffers(cb, 1, 1, instanceBuffers, instanceOffsets);
+ 
         vkCmdBindIndexBuffer(cb, mesh->indexBuffer->GetHandle(), 0, VK_INDEX_TYPE_UINT32);
         vkCmdDrawIndexed(cb, mesh->indexCount, 1, 0, 0, 0);
     }
@@ -354,16 +388,36 @@ namespace Engine {
         for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
             if (vkCreateCommandPool(m_Context.GetDevice(), &poolInfo, nullptr, &m_Frames[i].commandPool) != VK_SUCCESS)
                 throw std::runtime_error("Failed to create command pool!");
-
+ 
             VkCommandBufferAllocateInfo allocInfo{};
             allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
             allocInfo.commandPool = m_Frames[i].commandPool;
             allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
             allocInfo.commandBufferCount = 1;
-
+ 
             if (vkAllocateCommandBuffers(m_Context.GetDevice(), &allocInfo, &m_Frames[i].commandBuffer) != VK_SUCCESS)
                 throw std::runtime_error("Failed to allocate command buffers!");
+ 
+            m_Frames[i].uboBuffer = CreateScope<Buffer>(m_Context, sizeof(UniformBufferObject),
+                                                        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
         }
+
+        // Create dummy instance buffer (Identity matrix and identity normal matrix)
+        struct InstanceData {
+            Mat4 model;
+            Vec4 normal0;
+            Vec4 normal1;
+            Vec4 normal2;
+        };
+        InstanceData idata{};
+        idata.model = Mat4(1.0f);
+        idata.normal0 = { 1, 0, 0, 0 };
+        idata.normal1 = { 0, 1, 0, 0 };
+        idata.normal2 = { 0, 0, 1, 0 };
+
+        m_InstanceBuffer = CreateScope<Buffer>(m_Context, sizeof(InstanceData),
+                                               VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+        m_InstanceBuffer->LoadData(&idata, sizeof(InstanceData));
     }
 
     void Renderer::CreateSyncObjects() {
@@ -384,35 +438,91 @@ namespace Engine {
         }
     }
 
+    void Renderer::CreateDescriptorPool() {
+        VkDescriptorPoolSize poolSizes[2]{};
+        poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        poolSizes[0].descriptorCount = 1024;
+        poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        poolSizes[1].descriptorCount = 1024;
+ 
+        VkDescriptorPoolCreateInfo poolInfo{};
+        poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        poolInfo.poolSizeCount = 2;
+        poolInfo.pPoolSizes = poolSizes;
+        poolInfo.maxSets = 1024;
+ 
+        if (vkCreateDescriptorPool(m_Context.GetDevice(), &poolInfo, nullptr, &m_DescriptorPool) != VK_SUCCESS)
+            throw std::runtime_error("Failed to create descriptor pool!");
+    }
+ 
     void Renderer::LoadShadersAndPipeline() {
-        std::vector<u8> vertSpv = ReadBinaryFile("assets/shaders/cube.vert.spv");
-        std::vector<u8> fragSpv = ReadBinaryFile("assets/shaders/cube.frag.spv");
-
+        std::vector<u8> vertSpv = ReadBinaryFile("assets/shaders/texturedMesh.vert.spv");
+        std::vector<u8> fragSpv = ReadBinaryFile("assets/shaders/texturedMesh.frag.spv");
+ 
         if (vertSpv.empty() || fragSpv.empty()) {
             LOG_ERROR("[Renderer] Failed to load precompiled shaders!");
             return;
         }
-
+ 
+        // Create Descriptor Set Layout for the material
+        VkDescriptorSetLayoutBinding bindings[2]{};
+        bindings[0].binding = 0;
+        bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        bindings[0].descriptorCount = 1;
+        bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+ 
+        bindings[1].binding = 1;
+        bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        bindings[1].descriptorCount = 1;
+        bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+ 
+        VkDescriptorSetLayoutCreateInfo layoutInfo{};
+        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        layoutInfo.bindingCount = 2;
+        layoutInfo.pBindings = bindings;
+ 
+        VkDescriptorSetLayout descriptorSetLayout;
+        if (vkCreateDescriptorSetLayout(m_Context.GetDevice(), &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS)
+            throw std::runtime_error("Failed to create material descriptor set layout!");
+ 
         auto pipeline = CreateScope<Pipeline>(m_Context);
         PipelineConfigParams config{};
+        config.vertexEntryPoint = "main";
+        config.fragmentEntryPoint = "main";
         config.colorAttachmentFormat = m_Swapchain->GetImageFormat();
         config.depthAttachmentFormat = m_DepthFormat;
-        config.descriptorSetLayout = m_Textures.GetDescriptorSetLayout();
-
-        config.vertexInputBindings.resize(1);
+        config.descriptorSetLayout = descriptorSetLayout;
+ 
+        config.vertexInputBindings.resize(2);
         config.vertexInputBindings[0].binding = 0;
         config.vertexInputBindings[0].stride = sizeof(Vertex);
         config.vertexInputBindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-        config.vertexInputAttributes.resize(3);
+        config.vertexInputBindings[1].binding = 1;
+        config.vertexInputBindings[1].stride = 16 * 4 + 16 * 3; // mat4 + 3 * vec4
+        config.vertexInputBindings[1].inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
+
+        config.vertexInputAttributes.resize(11);
         config.vertexInputAttributes[0] = {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, position)};
-        config.vertexInputAttributes[1] = {1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, color)};
+        config.vertexInputAttributes[1] = {1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, normal)};
         config.vertexInputAttributes[2] = {2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, uv)};
+        config.vertexInputAttributes[3] = {3, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(Vertex, tangent)};
 
-        config.pushConstantSize = sizeof(MeshPushConstants);
+        // Instance model matrix (locations 4, 5, 6, 7)
+        config.vertexInputAttributes[4] = { 4, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 0 };
+        config.vertexInputAttributes[5] = { 5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 16 };
+        config.vertexInputAttributes[6] = { 6, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 32 };
+        config.vertexInputAttributes[7] = { 7, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 48 };
+
+        // Instance normal matrix (locations 8, 9, 10)
+        config.vertexInputAttributes[8] = { 8, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 64 };
+        config.vertexInputAttributes[9] = { 9, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 80 };
+        config.vertexInputAttributes[10] = { 10, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 96 };
+
+ 
         config.msaaSamples = m_MsaaSamples;
-
+ 
         pipeline->BuildGraphics(vertSpv, fragSpv, config);
-        m_DefaultMaterial = CreateRef<Material>(std::move(pipeline));
+        m_DefaultMaterial = CreateRef<Material>(m_Context, std::move(pipeline), descriptorSetLayout);
     }
 } // namespace Engine

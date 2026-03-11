@@ -36,14 +36,12 @@ FetchContent_Declare(
         GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
         GIT_TAG        main
         OVERRIDE_FIND_PACKAGE
-        SOURCE_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/deps/SDL3"
 )
 
 FetchContent_Declare(
         SDL3_mixer
         GIT_REPOSITORY https://github.com/libsdl-org/SDL_mixer.git
         GIT_TAG        main
-        SOURCE_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/deps/SDL3_mixer"
 )
 
 FetchContent_MakeAvailable(SDL3 SDL3_mixer)
@@ -100,13 +98,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(stb)
 
-FetchContent_Declare(
-        ufbx
-        GIT_REPOSITORY https://github.com/ufbx/ufbx.git
-        GIT_TAG        v0.21.3
-        SOURCE_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/deps/ufbx"
-)
-FetchContent_MakeAvailable(ufbx)
+
 
 FetchContent_Declare(
         JoltPhysics
@@ -209,8 +201,8 @@ macro(compile_shader SHADER_FILE ENTRY_POINT STAGE OUTPUT_FILE)
     list(APPEND PRECOMPILED_SHADERS "${OUTPUT_FILE}")
 endmacro()
 
-compile_shader("cube.slang" "vertexMain" "vertex" "${SHADER_BIN_DIR}/cube.vert.spv")
-compile_shader("cube.slang" "fragmentMain" "fragment" "${SHADER_BIN_DIR}/cube.frag.spv")
+compile_shader("texturedMesh.slang" "VSMain" "vertex" "${SHADER_BIN_DIR}/texturedMesh.vert.spv")
+compile_shader("texturedMesh.slang" "PSMain" "fragment" "${SHADER_BIN_DIR}/texturedMesh.frag.spv")
 
 add_custom_target(PrecompileShaders
     DEPENDS ${PRECOMPILED_SHADERS}
@@ -233,7 +225,6 @@ add_library(Engine STATIC
         src/Render/Vulkan/Buffer.cpp
         src/Render/Vulkan/Pipeline.cpp
         src/Resource/ModelLoader.cpp
-        src/Resource/FBXLoader.cpp
         src/Resource/TextureLoader.cpp
         src/Physics/PhysicsWorld.cpp
         src/Platform/Audio/AudioManager.cpp
@@ -242,7 +233,7 @@ add_library(Engine STATIC
         src/Platform/Window/SDL3Window.cpp
         src/Platform/Window/WindowManager.cpp
         src/Platform/PlatformContext.cpp
-        ${ufbx_SOURCE_DIR}/ufbx.c
+        deps/mikktspace/mikktspace.c
 )
 
 add_dependencies(Engine GenerateNetworkSchema PrecompileShaders)
@@ -255,7 +246,8 @@ target_include_directories(Engine PUBLIC
         ${enet_SOURCE_DIR}/include
         ${tinyobjloader_SOURCE_DIR}
         ${stb_SOURCE_DIR}
-        ${ufbx_SOURCE_DIR}
+        ${stb_SOURCE_DIR}
+        deps/mikktspace
 )
 
 target_include_directories(Engine PRIVATE

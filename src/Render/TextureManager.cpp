@@ -9,11 +9,8 @@
 
 namespace Engine {
     TextureManager::TextureManager(const VulkanContext &ctx) : m_Context(ctx) {
-        CreateDescriptorPool();
-        CreateDescriptorSetLayout();
         CreateDefaultSampler();
         CreateWhiteTexture();
-        ResetBinding();
     }
 
     TextureManager::~TextureManager() {
@@ -24,40 +21,6 @@ namespace Engine {
         m_Textures.clear();
 
         if (m_Sampler) vkDestroySampler(m_Context.GetDevice(), m_Sampler, nullptr);
-        if (m_DescriptorSetLayout) vkDestroyDescriptorSetLayout(m_Context.GetDevice(), m_DescriptorSetLayout, nullptr);
-        if (m_DescriptorPool) vkDestroyDescriptorPool(m_Context.GetDevice(), m_DescriptorPool, nullptr);
-    }
-
-    void TextureManager::CreateDescriptorPool() {
-        VkDescriptorPoolSize poolSize{};
-        poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        poolSize.descriptorCount = 1024;
-
-        VkDescriptorPoolCreateInfo poolInfo{};
-        poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        poolInfo.poolSizeCount = 1;
-        poolInfo.pPoolSizes = &poolSize;
-        poolInfo.maxSets = 1024;
-
-        if (vkCreateDescriptorPool(m_Context.GetDevice(), &poolInfo, nullptr, &m_DescriptorPool) != VK_SUCCESS)
-            throw std::runtime_error("[TextureManager] Failed to create descriptor pool!");
-    }
-
-    void TextureManager::CreateDescriptorSetLayout() {
-        VkDescriptorSetLayoutBinding binding{};
-        binding.binding = 0;
-        binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        binding.descriptorCount = 1;
-        binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-        VkDescriptorSetLayoutCreateInfo layoutInfo{};
-        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.bindingCount = 1;
-        layoutInfo.pBindings = &binding;
-
-        if (vkCreateDescriptorSetLayout(m_Context.GetDevice(), &layoutInfo, nullptr, &m_DescriptorSetLayout) !=
-            VK_SUCCESS)
-            throw std::runtime_error("[TextureManager] Failed to create descriptor set layout!");
     }
 
     void TextureManager::CreateDefaultSampler() {
@@ -183,45 +146,19 @@ namespace Engine {
             return kInvalidTexture;
         }
 
-        // Descriptor set
-        VkDescriptorSetAllocateInfo dsAllocInfo{};
-        dsAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        dsAllocInfo.descriptorPool = m_DescriptorPool;
-        dsAllocInfo.descriptorSetCount = 1;
-        dsAllocInfo.pSetLayouts = &m_DescriptorSetLayout;
-        vkAllocateDescriptorSets(m_Context.GetDevice(), &dsAllocInfo, &tex.descriptorSet);
-
-        VkDescriptorImageInfo imgInfo{};
-        imgInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imgInfo.imageView = tex.view;
-        imgInfo.sampler = m_Sampler;
-
-        VkWriteDescriptorSet write{};
-        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet = tex.descriptorSet;
-        write.dstBinding = 0;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        write.descriptorCount = 1;
-        write.pImageInfo = &imgInfo;
-        vkUpdateDescriptorSets(m_Context.GetDevice(), 1, &write, 0, nullptr);
-
         TextureHandle id = m_NextId++;
         m_Textures.emplace(id, std::move(tex));
         return id;
     }
 
-    void TextureManager::Bind(TextureHandle handle) {
-        if (handle == kInvalidTexture) {
-            ResetBinding();
-            return;
-        }
+    VkImageView TextureManager::GetView(TextureHandle handle) const {
         auto it = m_Textures.find(handle);
-        m_ActiveDescriptorSet = (it != m_Textures.end())
-                                    ? it->second.descriptorSet
-                                    : m_Textures[m_WhiteTextureId].descriptorSet;
+        if (it != m_Textures.end()) return it->second.view;
+        
+        auto whiteIt = m_Textures.find(m_WhiteTextureId);
+        return (whiteIt != m_Textures.end()) ? whiteIt->second.view : VK_NULL_HANDLE;
     }
 
     void TextureManager::ResetBinding() {
-        m_ActiveDescriptorSet = m_Textures[m_WhiteTextureId].descriptorSet;
     }
 } // namespace Engine

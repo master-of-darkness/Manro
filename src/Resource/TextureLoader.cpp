@@ -210,7 +210,7 @@ namespace Engine {
                 src += blockSize;
 
                 for (int row = 0; row < 4; ++row) {
-                    int py = (h - 1) - (by * 4 + row);
+                    int py = by * 4 + row;
                     if (py < 0) break;
                     for (int col = 0; col < 4; ++col) {
                         int px = bx * 4 + col;
@@ -242,7 +242,7 @@ namespace Engine {
             return true;
         }
 
-        stbi_set_flip_vertically_on_load(true);
+        stbi_set_flip_vertically_on_load(false);
 
         int width = 0, height = 0, srcChannels = 0;
         stbi_uc *data = stbi_load(filepath.c_str(), &width, &height, &srcChannels, STBI_rgb_alpha);

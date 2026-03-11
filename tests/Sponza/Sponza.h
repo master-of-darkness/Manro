@@ -32,6 +32,8 @@ struct FlyCamera {
 
     void Update(const Engine::InputManager &input, float dt);
 
+    Engine::Mat4 View() const;
+    Engine::Mat4 Projection(float fovDeg, float aspect, float nearZ, float farZ) const;
     Engine::Mat4 ViewProj(float fovDeg, float aspect, float nearZ, float farZ) const;
 };
 
