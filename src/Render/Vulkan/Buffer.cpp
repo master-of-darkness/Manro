@@ -5,7 +5,7 @@
 #include <stdexcept>
 #include <cstring>
 
-namespace Engine {
+namespace Manro {
     Buffer::Buffer(const VulkanContext &context, VkDeviceSize size, VkBufferUsageFlags usage,
                    VmaMemoryUsage memoryUsage)
         : m_Context(context), m_Size(size) {
@@ -65,4 +65,4 @@ namespace Engine {
         addressInfo.buffer = m_Buffer;
         return vkGetBufferDeviceAddress(m_Context.GetDevice(), &addressInfo);
     }
-} // namespace Engine
+} // namespace Manro

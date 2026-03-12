@@ -3,7 +3,7 @@
 #include <Manro/Core/Types.h>
 #include <string>
 
-namespace Engine {
+namespace Manro {
     using SoundHandle = u32;
     inline constexpr SoundHandle kInvalidSound = 0;
 
@@ -43,4 +43,4 @@ namespace Engine {
 
         virtual void SetMusicVolume(f32 volume) = 0;
     };
-} // namespace Engine
+} // namespace Manro

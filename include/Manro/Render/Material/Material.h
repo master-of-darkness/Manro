@@ -4,7 +4,7 @@
 #include <Manro/Core/Types.h>
 #include <Manro/Render/Vulkan/VulkanContext.h> // Added this include for VulkanContext
 
-namespace Engine {
+namespace Manro {
     class Material {
     public:
         Material(const VulkanContext &ctx, Scope<Pipeline> pipeline, VkDescriptorSetLayout layout)
@@ -28,4 +28,4 @@ namespace Engine {
         Scope<Pipeline> m_Pipeline;
         VkDescriptorSetLayout m_DescriptorSetLayout{VK_NULL_HANDLE};
     };
-} // namespace Engine
+} // namespace Manro

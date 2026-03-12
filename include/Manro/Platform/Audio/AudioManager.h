@@ -5,7 +5,7 @@
 #include <memory>
 #include <string>
 
-namespace Engine {
+namespace Manro {
     class AudioManager {
     public:
         AudioManager() = default;
@@ -52,4 +52,4 @@ namespace Engine {
         Scope<IAudioBackend> m_Backend;
         bool m_Initialized{false};
     };
-} // namespace Engine
+} // namespace Manro

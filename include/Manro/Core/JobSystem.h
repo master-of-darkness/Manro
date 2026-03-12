@@ -9,7 +9,7 @@
 #include <queue>
 #include <atomic>
 
-namespace Engine {
+namespace Manro {
     class JobSystem {
     public:
         explicit JobSystem(u32 numThreads = 0);
@@ -37,4 +37,4 @@ namespace Engine {
         std::atomic<u32> m_JobsInFlight{0};
         std::atomic<bool> m_Running{false};
     };
-} // namespace Engine
+} // namespace Manro

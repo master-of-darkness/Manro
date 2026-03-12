@@ -2,7 +2,7 @@
 #include <Manro/Platform/Window/SDL3Window.h>
 #include <Manro/Core/Logger.h>
 
-namespace Engine {
+namespace Manro {
     WindowHandle WindowManager::AddWindow(const WindowDesc &desc) {
         auto window = CreateScope<SDL3Window>();
         if (!window->Initialize(desc)) {
@@ -79,4 +79,4 @@ namespace Engine {
 
         static_cast<SDL3Window *>(window)->OnSDLEvent(eventType, data1, data2);
     }
-} // namespace Engine
+} // namespace Manro

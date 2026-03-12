@@ -2,7 +2,7 @@
 #include <Manro/Core/Logger.h>
 #include <algorithm>
 
-namespace Engine {
+namespace Manro {
     bool SDL3AudioBackend::Initialize() {
         if (m_Initialized) return true;
 
@@ -189,4 +189,4 @@ namespace Engine {
             MIX_SetTrackGain(m_MusicTrack, std::clamp(volume, 0.f, 1.f));
         }
     }
-} // namespace Engine
+} // namespace Manro

@@ -4,7 +4,7 @@
 #include <Manro/ECS/Registry.h>
 #include <Manro/Input/InputAction.h>
 
-namespace Engine {
+namespace Manro {
     class Renderer;
 
     class Scene {
@@ -24,4 +24,4 @@ namespace Engine {
     protected:
         Registry m_Registry;
     };
-} // namespace Engine
+} // namespace Manro

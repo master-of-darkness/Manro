@@ -12,7 +12,7 @@
 #include <Manro/Core/Types.h>
 #include <vector>
 
-namespace Engine {
+namespace Manro {
     class IWindow;
 
     class Renderer {
@@ -107,19 +107,24 @@ namespace Engine {
             VkSemaphore imageAvailableSemaphore{VK_NULL_HANDLE};
             VkSemaphore renderFinishedSemaphore{VK_NULL_HANDLE};
             VkFence inFlightFence{VK_NULL_HANDLE};
-            Scope<Buffer> uboBuffer;
+            Scope<Buffer> uboBuffer; // Now holds many UBOs
         };
 
         static constexpr int MAX_FRAMES_IN_FLIGHT = 5;
+        static constexpr u32 MAX_DRAWS_PER_FRAME = 1024;
         std::vector<FrameData> m_Frames;
 
         u32 m_CurrentImageIndex{0};
         u32 m_CurrentFrame{0};
 
         VkDescriptorPool m_DescriptorPool{VK_NULL_HANDLE};
+        std::vector<VkDescriptorPool> m_DynamicDescriptorPools;
  
+        u32 m_CurrentUboOffset{0};
+        VkDeviceSize m_UboAlignment{256};
+
         u32 m_PendingWidth{0};
         u32 m_PendingHeight{0};
         bool m_PendingResize{false};
     };
-} // namespace Engine
+} // namespace Manro

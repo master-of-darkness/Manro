@@ -6,7 +6,7 @@
 #include <vector>
 #include <functional>
 
-namespace Engine {
+namespace Manro {
     class Registry;
 
     using PhysicsBodyHandle = u32;
@@ -73,4 +73,4 @@ namespace Engine {
 
         std::vector<KinematicMove> m_PendingKinematicMoves;
     };
-} // namespace Engine
+} // namespace Manro

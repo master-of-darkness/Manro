@@ -8,7 +8,7 @@
 #include <Manro/Core/Logger.h>
 #include <volk.h>
 
-namespace Engine {
+namespace Manro {
     VulkanContext::VulkanContext(const char *appName, IWindow &window) {
         if (volkInitialize() != VK_SUCCESS) {
             LOG_ERROR("Failed to initialize volk!");
@@ -142,4 +142,4 @@ namespace Engine {
 
         return VK_SAMPLE_COUNT_1_BIT;
     }
-} // namespace Engine
+} // namespace Manro

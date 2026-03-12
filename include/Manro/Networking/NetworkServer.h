@@ -9,7 +9,7 @@
 #include <functional>
 #include "NetworkMessage_generated.h"
 
-namespace Engine {
+namespace Manro {
     class Registry;
     class PhysicsWorld;
 
@@ -83,4 +83,4 @@ namespace Engine {
         f32 m_LastSnapshotTime{0.f};
         static constexpr f32 SNAPSHOT_RATE = 0.05f;
     };
-} // namespace Engine
+} // namespace Manro

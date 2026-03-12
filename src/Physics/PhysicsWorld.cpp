@@ -88,11 +88,11 @@ namespace {
     static constexpr JPH::uint MAX_BODY_PAIRS = 4096;
     static constexpr JPH::uint MAX_CONTACT_CONSTRAINTS = 2048;
 
-    inline Engine::u32 toHandle(JPH::BodyID id) { return id.GetIndexAndSequenceNumber(); }
-    inline JPH::BodyID fromHandle(Engine::u32 h) { return JPH::BodyID(h); }
+    inline Manro::u32 toHandle(JPH::BodyID id) { return id.GetIndexAndSequenceNumber(); }
+    inline JPH::BodyID fromHandle(Manro::u32 h) { return JPH::BodyID(h); }
 } // anonymous namespace
 
-namespace Engine {
+namespace Manro {
     struct PhysicsWorld::Impl {
         std::unique_ptr<JPH::TempAllocatorImpl> tempAllocator;
         std::unique_ptr<JPH::JobSystemThreadPool> jobSystem;
@@ -372,4 +372,4 @@ namespace Engine {
             if (!bi.IsActive(hit)) bi.ActivateBody(hit);
         }
     }
-} // namespace Engine
+} // namespace Manro

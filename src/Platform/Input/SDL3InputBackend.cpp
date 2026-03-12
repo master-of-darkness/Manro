@@ -2,7 +2,7 @@
 #include <SDL3/SDL.h>
 #include <Manro/Core/Logger.h>
 
-namespace Engine {
+namespace Manro {
     Key SDL3InputBackend::SdlScancodeToKey(int sc) {
         switch (static_cast<SDL_Scancode>(sc)) {
             case SDL_SCANCODE_W: return Key::W;
@@ -95,4 +95,4 @@ namespace Engine {
         if (btn < 0 || btn >= 32) return false;
         return (m_GamepadButtons >> btn) & 1u;
     }
-} // namespace Engine
+} // namespace Manro

@@ -8,7 +8,7 @@
 #include <unordered_map>
 #include <functional>
 
-namespace Engine {
+namespace Manro {
     class Registry;
     class PhysicsWorld;
 
@@ -89,4 +89,4 @@ namespace Engine {
         static constexpr f32 INTERPOLATION_DELAY = 0.1f;
         static constexpr f32 RECONCILE_THRESHOLD = 0.3f;
     };
-} // namespace Engine
+} // namespace Manro

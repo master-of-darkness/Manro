@@ -5,7 +5,7 @@
 #include <Manro/Core/Logger.h>
 #include <SDL3/SDL.h>
 
-namespace Engine {
+namespace Manro {
     PlatformContext::PlatformContext() {
         if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) {
             LOG_ERROR("[PlatformContext] SDL_Init failed: {}", SDL_GetError());
@@ -56,4 +56,4 @@ namespace Engine {
         }
         return true;
     }
-} // namespace Engine
+} // namespace Manro

@@ -5,7 +5,7 @@
 #include <Manro/Platform/PlatformContext.h>
 #include <optional>
 
-namespace Engine {
+namespace Manro {
     class EngineContext {
     public:
         explicit EngineContext(bool withPlatform = true);
@@ -25,4 +25,4 @@ namespace Engine {
         JobSystem m_JobSystem;
         std::optional<PlatformContext> m_Platform;
     };
-} // namespace Engine
+} // namespace Manro

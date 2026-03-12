@@ -4,7 +4,7 @@
 #include <Manro/Platform/Audio/AudioManager.h>
 #include <Manro/Core/Types.h>
 
-namespace Engine {
+namespace Manro {
     class InputManager;
 
     class PlatformContext {
@@ -26,4 +26,4 @@ namespace Engine {
         WindowManager m_WindowManager;
         AudioManager m_AudioManager;
     };
-} // namespace Engine
+} // namespace Manro

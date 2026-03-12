@@ -2,7 +2,7 @@
 #include <Manro/Platform/Input/IInputBackend.h>
 #include <Manro/Platform/Input/SDL3InputBackend.h>
 
-namespace Engine {
+namespace Manro {
     UserCmd InputManager::Poll() {
         UserCmd cmd{};
         if (m_ActionMap)
@@ -24,4 +24,4 @@ namespace Engine {
         if (m_Backend)
             m_Backend->ProcessEvent(event);
     }
-} // namespace Engine
+} // namespace Manro

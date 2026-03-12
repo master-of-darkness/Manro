@@ -6,7 +6,7 @@
 #include "NetworkMessage_generated.h"
 #include <algorithm>
 
-namespace Engine {
+namespace Manro {
     NetworkClient::NetworkClient() = default;
 
     NetworkClient::~NetworkClient() { Disconnect(); }
@@ -236,4 +236,4 @@ namespace Engine {
         const f32 t = std::clamp((renderTime - interp.previousTime) / timeDiff, 0.f, 1.f);
         return glm::mix(interp.previousPosition, interp.targetPosition, t);
     }
-} // namespace Engine
+} // namespace Manro

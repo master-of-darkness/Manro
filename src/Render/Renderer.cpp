@@ -4,14 +4,14 @@
 #include <stdexcept>
 
 struct UniformBufferObject {
-    Engine::Mat4 model;
-    Engine::Mat4 view;
-    Engine::Mat4 proj;
+    Manro::Mat4 model;
+    Manro::Mat4 view;
+    Manro::Mat4 proj;
 };
 
 
 
-namespace Engine {
+namespace Manro {
     Renderer::Renderer(IWindow &window, u32 width, u32 height,
                        VkSampleCountFlagBits msaaSamples)
         : m_Context("GameEngine", window),
@@ -39,6 +39,30 @@ namespace Engine {
 
         m_PendingWidth = width;
         m_PendingHeight = height;
+
+        // Get UBO alignment
+        VkPhysicalDeviceProperties props;
+        vkGetPhysicalDeviceProperties(m_Context.GetPhysicalDevice(), &props);
+        m_UboAlignment = props.limits.minUniformBufferOffsetAlignment;
+
+        // Create dynamic descriptor pools
+        m_DynamicDescriptorPools.resize(MAX_FRAMES_IN_FLIGHT);
+        VkDescriptorPoolSize poolSizes[2]{};
+        poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        poolSizes[0].descriptorCount = MAX_DRAWS_PER_FRAME;
+        poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        poolSizes[1].descriptorCount = MAX_DRAWS_PER_FRAME;
+
+        VkDescriptorPoolCreateInfo poolInfo{};
+        poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        poolInfo.poolSizeCount = 2;
+        poolInfo.pPoolSizes = poolSizes;
+        poolInfo.maxSets = MAX_DRAWS_PER_FRAME;
+
+        for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+            if (vkCreateDescriptorPool(m_Context.GetDevice(), &poolInfo, nullptr, &m_DynamicDescriptorPools[i]) != VK_SUCCESS)
+                throw std::runtime_error("Failed to create dynamic descriptor pool!");
+        }
     }
 
     Renderer::~Renderer() {
@@ -63,6 +87,9 @@ namespace Engine {
         }
  
         if (m_DescriptorPool) vkDestroyDescriptorPool(m_Context.GetDevice(), m_DescriptorPool, nullptr);
+        for (auto p : m_DynamicDescriptorPools) {
+            if (p) vkDestroyDescriptorPool(m_Context.GetDevice(), p, nullptr);
+        }
 
         if (m_Swapchain) m_Swapchain->Shutdown();
     }
@@ -133,6 +160,10 @@ namespace Engine {
 
         vkResetFences(m_Context.GetDevice(), 1, &frame.inFlightFence);
         vkResetCommandBuffer(frame.commandBuffer, 0);
+
+        // Reset dynamic resources for this frame
+        vkResetDescriptorPool(m_Context.GetDevice(), m_DynamicDescriptorPools[m_CurrentFrame], 0);
+        m_CurrentUboOffset = 0;
 
         VkCommandBufferBeginInfo beginInfo{};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -321,21 +352,32 @@ namespace Engine {
  
         VkCommandBuffer cb = m_Frames[m_CurrentFrame].commandBuffer;
  
-        // Update UBO
         UniformBufferObject ubo{};
         ubo.model = model;
-        ubo.view = m_ViewMatrix; // Need to ensure these are set
+        ubo.view = m_ViewMatrix;
         ubo.proj = m_ProjectionMatrix;
-        ubo.proj[1][1] *= -1; // GL to Vulkan
+        ubo.proj[1][1] *= -1; // Vulkan Y-flip
  
-        m_Frames[m_CurrentFrame].uboBuffer->LoadData(&ubo, sizeof(ubo));
- 
-        // Update descriptor set with current UBO and texture
-        VkDescriptorSet ds = material.GetDescriptorSet(m_CurrentFrame);
+        u32 uboOffset = (m_CurrentUboOffset + m_UboAlignment - 1) & ~(m_UboAlignment - 1);
+        m_Frames[m_CurrentFrame].uboBuffer->LoadData(&ubo, sizeof(ubo), uboOffset);
+        m_CurrentUboOffset = uboOffset + sizeof(ubo);
+
+        VkDescriptorSet ds;
+        VkDescriptorSetLayout layout = material.GetMaterial().GetDescriptorSetLayout();
+        VkDescriptorSetAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocInfo.descriptorPool = m_DynamicDescriptorPools[m_CurrentFrame];
+        allocInfo.descriptorSetCount = 1;
+        allocInfo.pSetLayouts = &layout;
+
+        if (vkAllocateDescriptorSets(m_Context.GetDevice(), &allocInfo, &ds) != VK_SUCCESS) {
+            LOG_ERROR("Failed to allocate dynamic descriptor set!");
+            return;
+        }
         
         VkDescriptorBufferInfo bufferInfo{};
         bufferInfo.buffer = m_Frames[m_CurrentFrame].uboBuffer->GetHandle();
-        bufferInfo.offset = 0;
+        bufferInfo.offset = uboOffset;
         bufferInfo.range = sizeof(UniformBufferObject);
  
         VkDescriptorImageInfo imageInfo{};
@@ -362,13 +404,12 @@ namespace Engine {
  
         vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, material.GetMaterial().GetHandle());
         vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                material.GetMaterial().GetLayout(), 0, 1, &ds, 0, nullptr);
+                                 material.GetMaterial().GetLayout(), 0, 1, &ds, 0, nullptr);
  
         VkBuffer vb[] = {mesh->vertexBuffer->GetHandle()};
         VkDeviceSize offs[] = {0};
         vkCmdBindVertexBuffers(cb, 0, 1, vb, offs);
-        
-        // Per-instance data
+
         VkBuffer instanceBuffers[] = { m_InstanceBuffer->GetHandle() };
         VkDeviceSize instanceOffsets[] = { 0 };
         vkCmdBindVertexBuffers(cb, 1, 1, instanceBuffers, instanceOffsets);
@@ -398,11 +439,11 @@ namespace Engine {
             if (vkAllocateCommandBuffers(m_Context.GetDevice(), &allocInfo, &m_Frames[i].commandBuffer) != VK_SUCCESS)
                 throw std::runtime_error("Failed to allocate command buffers!");
  
-            m_Frames[i].uboBuffer = CreateScope<Buffer>(m_Context, sizeof(UniformBufferObject),
+            VkDeviceSize uboSize = MAX_DRAWS_PER_FRAME * 256; // Use 256 to be safe for alignment
+            m_Frames[i].uboBuffer = CreateScope<Buffer>(m_Context, uboSize,
                                                         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
         }
 
-        // Create dummy instance buffer (Identity matrix and identity normal matrix)
         struct InstanceData {
             Mat4 model;
             Vec4 normal0;
@@ -525,4 +566,4 @@ namespace Engine {
         pipeline->BuildGraphics(vertSpv, fragSpv, config);
         m_DefaultMaterial = CreateRef<Material>(m_Context, std::move(pipeline), descriptorSetLayout);
     }
-} // namespace Engine
+} // namespace Manro

@@ -3,7 +3,7 @@
 #include <Manro/Core/Types.h>
 #include <Manro/Input/InputAction.h>
 
-namespace Engine {
+namespace Manro {
     class SceneManager {
     public:
         SceneManager() = default;
@@ -21,4 +21,4 @@ namespace Engine {
     private:
         Scope<Scene> m_ActiveScene;
     };
-} // namespace Engine
+} // namespace Manro

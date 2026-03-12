@@ -13,32 +13,32 @@ static constexpr const char *kSponzaPath = "assets/models/sponza.obj";
 static constexpr float kFov = 100.f;
 static constexpr float kNearZ = 1.f;
 static constexpr float kFarZ = 10000.f;
-static constexpr Engine::u32 kWindowWidth = 1920;
-static constexpr Engine::u32 kWindowHeight = 1080;
+static constexpr Manro::u32 kWindowWidth = 1920;
+static constexpr Manro::u32 kWindowHeight = 1080;
 
-Engine::Vec3 FlyCamera::Forward() const {
+Manro::Vec3 FlyCamera::Forward() const {
     const float yR = glm::radians(Yaw);
     const float pR = glm::radians(Pitch);
-    return glm::normalize(Engine::Vec3{
+    return glm::normalize(Manro::Vec3{
         cosf(pR) * cosf(yR),
         sinf(pR),
         cosf(pR) * sinf(yR)
     });
 }
 
-void FlyCamera::Update(const Engine::InputManager &input, float dt) {
-    using K = Engine::Key;
+void FlyCamera::Update(const Manro::InputManager &input, float dt) {
+    using K = Manro::Key;
 
-    Engine::RawMouseDelta delta = const_cast<Engine::InputManager &>(input).ConsumeMouseDelta();
+    Manro::RawMouseDelta delta = const_cast<Manro::InputManager &>(input).ConsumeMouseDelta();
     Yaw += delta.x * MouseSensitivity;
     Pitch = std::clamp(Pitch - delta.y * MouseSensitivity, -89.f, 89.f);
 
-    const Engine::Vec3 fwd = Forward();
-    const Engine::Vec3 right = glm::normalize(glm::cross(fwd, Engine::Vec3{0.f, 1.f, 0.f}));
-    const Engine::Vec3 up = {0.f, 1.f, 0.f};
+    const Manro::Vec3 fwd = Forward();
+    const Manro::Vec3 right = glm::normalize(glm::cross(fwd, Manro::Vec3{0.f, 1.f, 0.f}));
+    const Manro::Vec3 up = {0.f, 1.f, 0.f};
     const float speed = input.IsKeyDown(K::LeftShift) ? SprintSpeed : NormalSpeed;
 
-    Engine::Vec3 move{0.f};
+    Manro::Vec3 move{0.f};
     if (input.IsKeyDown(K::W)) move += fwd;
     if (input.IsKeyDown(K::S)) move -= fwd;
     if (input.IsKeyDown(K::D)) move += right;
@@ -50,36 +50,36 @@ void FlyCamera::Update(const Engine::InputManager &input, float dt) {
         Position += glm::normalize(move) * speed * dt;
 }
 
-Engine::Mat4 FlyCamera::View() const {
-    const Engine::Vec3 fwd = Forward();
+Manro::Mat4 FlyCamera::View() const {
+    const Manro::Vec3 fwd = Forward();
     return glm::lookAt(Position, Position + fwd, {0.f, 1.f, 0.f});
 }
 
-Engine::Mat4 FlyCamera::Projection(float fovDeg, float aspect, float nearZ, float farZ) const {
+Manro::Mat4 FlyCamera::Projection(float fovDeg, float aspect, float nearZ, float farZ) const {
     return glm::perspective(glm::radians(fovDeg), aspect, nearZ, farZ);
 }
 
-Engine::Mat4 FlyCamera::ViewProj(float fovDeg, float aspect, float nearZ, float farZ) const {
-    Engine::Mat4 proj = Projection(fovDeg, aspect, nearZ, farZ);
+Manro::Mat4 FlyCamera::ViewProj(float fovDeg, float aspect, float nearZ, float farZ) const {
+    Manro::Mat4 proj = Projection(fovDeg, aspect, nearZ, farZ);
     proj[1][1] *= -1;
     return proj * View();
 }
 
 void Sponza::Initialize() {
     auto &wm = m_Engine.GetPlatform().GetWindowManager();
-    Engine::WindowDesc desc;
+    Manro::WindowDesc desc;
     desc.Title = (m_SceneType == SceneType::Bistro) ? "Bistro Test" : "Sponza Test";
     desc.Width = kWindowWidth;
     desc.Height = kWindowHeight;
     m_Window = wm.AddWindow(desc);
-    if (m_Window == Engine::kInvalidWindow)
+    if (m_Window == Manro::kInvalidWindow)
         throw std::runtime_error("[SponzaTest] Failed to create window.");
 
     auto *window = wm.Get(m_Window);
     window->SetEventCallback(
-        [this](Engine::WindowEvent ev, Engine::u32 w, Engine::u32 h) {
-            if (ev == Engine::WindowEvent::Close) m_IsRunning = false;
-            else if (ev == Engine::WindowEvent::Resized && m_Renderer)
+        [this](Manro::WindowEvent ev, Manro::u32 w, Manro::u32 h) {
+            if (ev == Manro::WindowEvent::Close) m_IsRunning = false;
+            else if (ev == Manro::WindowEvent::Resized && m_Renderer)
                 m_Renderer->OnResize(w, h);
         });
 
@@ -87,7 +87,7 @@ void Sponza::Initialize() {
     window->CaptureMouse(true);
     window->ShowCursor(false);
 
-    m_Renderer = Engine::CreateScope<Engine::Renderer>(*window, kWindowWidth, kWindowHeight, VK_SAMPLE_COUNT_8_BIT);
+    m_Renderer = Manro::CreateScope<Manro::Renderer>(*window, kWindowWidth, kWindowHeight, VK_SAMPLE_COUNT_8_BIT);
     LOG_INFO("[SponzaTest] Renderer initialized.");
 
     LoadScene();
@@ -102,12 +102,12 @@ void Sponza::LoadScene() {
     std::vector<const char *> paths;
     paths.push_back(kSponzaPath);
 
-    std::unordered_map<std::string, Engine::TextureHandle> textureCache;
+    std::unordered_map<std::string, Manro::TextureHandle> textureCache;
 
     for (const char *path: paths) {
-        std::vector<Engine::SubMeshData> subMeshData;
+        std::vector<Manro::SubMeshData> subMeshData;
         bool ok = false;
-        ok = Engine::ModelLoader::LoadSubMeshes(path, subMeshData);
+        ok = Manro::ModelLoader::LoadSubMeshes(path, subMeshData);
         if (!ok) {
             LOG_ERROR("[SponzaTest] Failed to load '{}'. Skipping.", path);
             continue;
@@ -116,7 +116,7 @@ void Sponza::LoadScene() {
         for (auto &sd: subMeshData) {
             if (sd.vertices.empty()) continue;
 
-            Engine::ModelData md;
+            Manro::ModelData md;
             md.vertices = std::move(sd.vertices);
             md.indices = std::move(sd.indices);
             md.diffuseTexturePath = sd.diffuseTexturePath;
@@ -130,9 +130,9 @@ void Sponza::LoadScene() {
                 if (cacheIt != textureCache.end()) {
                     sm.material->SetTexture(cacheIt->second);
                 } else {
-                    Engine::TextureData td;
-                    if (Engine::TextureLoader::Load(sd.diffuseTexturePath, td)) {
-                        Engine::TextureHandle tex = m_Renderer->UploadTexture(td);
+                    Manro::TextureData td;
+                    if (Manro::TextureLoader::Load(sd.diffuseTexturePath, td)) {
+                        Manro::TextureHandle tex = m_Renderer->UploadTexture(td);
                         sm.material->SetTexture(tex);
                         textureCache[sd.diffuseTexturePath] = tex;
                     }
@@ -162,7 +162,7 @@ void Sponza::Run() {
         if (!platform.PollEvents(&m_InputManager))
             m_IsRunning = false;
 
-        if (m_InputManager.IsKeyDown(Engine::Key::Escape))
+        if (m_InputManager.IsKeyDown(Manro::Key::Escape))
             m_IsRunning = false;
 
         m_Camera.Update(m_InputManager, dt);
@@ -181,7 +181,7 @@ void Sponza::Render(float dt) {
     m_Renderer->SetViewProjection(m_Camera.View(), m_Camera.Projection(kFov, aspect, kNearZ, kFarZ));
  
     for (const auto &sm: m_SubMeshes) {
-        m_Renderer->DrawMesh(sm.meshId, *sm.material, Engine::Mat4{1.0f});
+        m_Renderer->DrawMesh(sm.meshId, *sm.material, Manro::Mat4{1.0f});
     }
 
     // (Removed SetTintColor)

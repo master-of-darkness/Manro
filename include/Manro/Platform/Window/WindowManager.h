@@ -5,7 +5,7 @@
 #include <unordered_map>
 #include <string>
 
-namespace Engine {
+namespace Manro {
     using WindowHandle = u32;
     inline constexpr WindowHandle kInvalidWindow = 0;
 
@@ -43,4 +43,4 @@ namespace Engine {
         WindowHandle m_NextHandle{1};
         WindowHandle m_PrimaryHandle{kInvalidWindow};
     };
-} // namespace Engine
+} // namespace Manro

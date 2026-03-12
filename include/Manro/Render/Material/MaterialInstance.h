@@ -4,7 +4,7 @@
 #include <Manro/Render/TextureManager.h>
 #include <Manro/Core/Types.h>
 
-namespace Engine {
+namespace Manro {
     class MaterialInstance {
     public:
         MaterialInstance(Ref<Material> material) : m_Material(material) {
@@ -40,4 +40,4 @@ namespace Engine {
         TextureHandle m_Texture{kInvalidTexture};
         std::vector<VkDescriptorSet> m_DescriptorSets;
     };
-} // namespace Engine
+} // namespace Manro

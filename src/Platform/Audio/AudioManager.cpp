@@ -1,7 +1,7 @@
 #include <Manro/Platform/Audio/AudioManager.h>
 #include <Manro/Core/Logger.h>
 
-namespace Engine {
+namespace Manro {
     bool AudioManager::Initialize(Scope<IAudioBackend> backend) {
         if (m_Initialized) return true;
         if (!backend) {
@@ -85,4 +85,4 @@ namespace Engine {
     void AudioManager::SetMusicVolume(f32 volume) {
         if (m_Initialized) m_Backend->SetMusicVolume(volume);
     }
-} // namespace Engine
+} // namespace Manro

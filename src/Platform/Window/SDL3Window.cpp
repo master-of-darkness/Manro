@@ -2,7 +2,7 @@
 #include <Manro/Core/Logger.h>
 #include <SDL3/SDL.h>
 
-namespace Engine {
+namespace Manro {
     bool SDL3Window::Initialize(const WindowDesc &desc) {
         m_Title = desc.Title;
         m_Width = desc.Width;
@@ -104,4 +104,4 @@ namespace Engine {
                 break;
         }
     }
-} // namespace Engine
+} // namespace Manro

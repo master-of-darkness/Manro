@@ -4,7 +4,7 @@
 
 union SDL_Event;
 
-namespace Engine {
+namespace Manro {
     class IInputBackend;
 
     class InputManager {
@@ -32,4 +32,4 @@ namespace Engine {
         IInputBackend *m_Backend{nullptr};
         IInputActionMap *m_ActionMap{nullptr};
     };
-} // namespace Engine
+} // namespace Manro

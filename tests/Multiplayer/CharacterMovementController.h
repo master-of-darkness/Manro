@@ -13,49 +13,49 @@ struct CharacterSettings {
     float JumpImpulse = 7.f;
 };
 
-class CharacterMovementController final : public Engine::IMovementController {
+class CharacterMovementController final : public Manro::IMovementController {
 public:
-    explicit CharacterMovementController(Engine::Registry &registry,
+    explicit CharacterMovementController(Manro::Registry &registry,
                                          CharacterSettings settings = {})
         : m_Registry(registry), m_Settings(settings) {
     }
 
-    void ProcessMovement(const Engine::MovementContext &ctx) override {
+    void ProcessMovement(const Manro::MovementContext &ctx) override {
         if (!ctx.Physics || !ctx.Cmd) return;
 
-        const Engine::PhysicsBodyHandle body = ctx.BodyHandle;
-        if (body == Engine::kInvalidBodyHandle) return;
+        const Manro::PhysicsBodyHandle body = ctx.BodyHandle;
+        if (body == Manro::kInvalidBodyHandle) return;
 
         const float yR = glm::radians(ctx.Cmd->ViewYaw);
-        const Engine::Vec3 fwd{cosf(yR), 0.f, sinf(yR)};
-        const Engine::Vec3 right = glm::normalize(glm::cross(fwd, Engine::Vec3{0.f, 1.f, 0.f}));
+        const Manro::Vec3 fwd{cosf(yR), 0.f, sinf(yR)};
+        const Manro::Vec3 right = glm::normalize(glm::cross(fwd, Manro::Vec3{0.f, 1.f, 0.f}));
 
-        Engine::Vec3 wishDir{0.f};
+        Manro::Vec3 wishDir{0.f};
         wishDir += fwd * ctx.Cmd->MoveForward;
         wishDir += right * ctx.Cmd->MoveRight;
         if (glm::length(wishDir) > 0.001f)
             wishDir = glm::normalize(wishDir);
 
-        Engine::Vec3 currentVel = ctx.Physics->GetBodyLinearVelocity(body);
+        Manro::Vec3 currentVel = ctx.Physics->GetBodyLinearVelocity(body);
 
-        Engine::Vec3 hVel{currentVel.x, 0.f, currentVel.z};
-        Engine::Vec3 targetH = wishDir * m_Settings.MaxSpeed;
-        Engine::Vec3 accel = (targetH - hVel) * m_Settings.Acceleration * ctx.DeltaTime;
+        Manro::Vec3 hVel{currentVel.x, 0.f, currentVel.z};
+        Manro::Vec3 targetH = wishDir * m_Settings.MaxSpeed;
+        Manro::Vec3 accel = (targetH - hVel) * m_Settings.Acceleration * ctx.DeltaTime;
         if (glm::length(wishDir) < 0.001f)
             accel = -hVel * m_Settings.Friction * ctx.DeltaTime;
 
-        Engine::Vec3 newVel{currentVel.x + accel.x, currentVel.y, currentVel.z + accel.z};
+        Manro::Vec3 newVel{currentVel.x + accel.x, currentVel.y, currentVel.z + accel.z};
         ctx.Physics->SetLinearVelocity(body, newVel);
 
-        const Engine::u32 entityId = ctx.Physics->GetBodyUserData(body);
+        const Manro::u32 entityId = ctx.Physics->GetBodyUserData(body);
         const bool entityValid = (entityId != 0xFFFFFFFFu);
 
-        const bool jumpPressed = (ctx.Cmd->Buttons & (1 << Engine::ButtonBit::Jump)) != 0;
+        const bool jumpPressed = (ctx.Cmd->Buttons & (1 << Manro::ButtonBit::Jump)) != 0;
         bool jumpRising = false;
-        if (entityValid && m_Registry.HasComponent<Engine::JumpStateComponent>(
-                static_cast<Engine::Entity>(entityId))) {
-            auto &js = m_Registry.GetComponent<Engine::JumpStateComponent>(
-                static_cast<Engine::Entity>(entityId));
+        if (entityValid && m_Registry.HasComponent<Manro::JumpStateComponent>(
+                static_cast<Manro::Entity>(entityId))) {
+            auto &js = m_Registry.GetComponent<Manro::JumpStateComponent>(
+                static_cast<Manro::Entity>(entityId));
             jumpRising = jumpPressed && !js.WasJumpPressed;
             js.WasJumpPressed = jumpPressed;
         }
@@ -65,6 +65,6 @@ public:
     }
 
 private:
-    Engine::Registry &m_Registry;
+    Manro::Registry &m_Registry;
     CharacterSettings m_Settings;
 };

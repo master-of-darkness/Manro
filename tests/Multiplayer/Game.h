@@ -35,26 +35,26 @@ private:
 
     void Render();
 
-    Engine::Scope<Engine::Renderer> m_Renderer;
-    Engine::EngineContext m_Engine;
-    Engine::SceneManager m_SceneManager;
+    Manro::Scope<Manro::Renderer> m_Renderer;
+    Manro::EngineContext m_Engine;
+    Manro::SceneManager m_SceneManager;
 
-    Engine::SDL3InputBackend m_InputBackend;
-    Engine::InputManager m_InputManager;
+    Manro::SDL3InputBackend m_InputBackend;
+    Manro::InputManager m_InputManager;
 
 
-    Engine::Scope<Engine::NetworkServer> m_Server;
-    Engine::Scope<Engine::NetworkClient> m_Client;
+    Manro::Scope<Manro::NetworkServer> m_Server;
+    Manro::Scope<Manro::NetworkClient> m_Client;
 
     std::unique_ptr<PlayerActionMap> m_ActionMap;
 
     WorldScene *m_WorldScene{nullptr};
 
-    Engine::WindowHandle m_MainWindow{Engine::kInvalidWindow};
+    Manro::WindowHandle m_MainWindow{Manro::kInvalidWindow};
 
     GameMode m_Mode;
     bool m_IsRunning{false};
 
-    Engine::UserCmd m_CurrentCmd{};
+    Manro::UserCmd m_CurrentCmd{};
     std::chrono::high_resolution_clock::time_point m_LastFrameTime;
 };

@@ -5,7 +5,7 @@
 #include <Manro/Core/Types.h>
 #include <unordered_map>
 
-namespace Engine {
+namespace Manro {
     class VulkanContext;
 
     using MeshHandle = u32;
@@ -36,4 +36,4 @@ namespace Engine {
         std::unordered_map<MeshHandle, LoadedMesh> m_Meshes;
         MeshHandle m_NextId{1};
     };
-} // namespace Engine
+} // namespace Manro

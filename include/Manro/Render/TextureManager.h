@@ -5,7 +5,7 @@
 #include <Manro/Core/Types.h>
 #include <unordered_map>
 
-namespace Engine {
+namespace Manro {
     class VulkanContext;
 
     using TextureHandle = u32;
@@ -50,4 +50,4 @@ namespace Engine {
         VkSampler m_Sampler{VK_NULL_HANDLE};
         TextureHandle m_WhiteTextureId{kInvalidTexture};
     };
-} // namespace Engine
+} // namespace Manro

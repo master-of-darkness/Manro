@@ -4,7 +4,7 @@
 #include <string>
 #include <functional>
 
-namespace Engine {
+namespace Manro {
     enum class WindowEvent {
         Close,
         Resized,
@@ -15,7 +15,7 @@ namespace Engine {
     };
 
     struct WindowDesc {
-        std::string Title = "Engine";
+        std::string Title = "Manro";
         u32 Width = 1280;
         u32 Height = 720;
         bool Resizable = true;
@@ -58,4 +58,4 @@ namespace Engine {
 
         virtual void CaptureMouse(bool capture) = 0;
     };
-} // namespace Engine
+} // namespace Manro

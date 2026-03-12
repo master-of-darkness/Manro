@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-namespace Engine {
+namespace Manro {
     struct TextureData {
         std::vector<u8> pixels;
         int width{0};
@@ -16,4 +16,4 @@ namespace Engine {
     public:
         static bool Load(const std::string &filepath, TextureData &out);
     };
-} // namespace Engine
+} // namespace Manro

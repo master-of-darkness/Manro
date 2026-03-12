@@ -3,7 +3,7 @@
 #include <spdlog/spdlog.h>
 #include <memory>
 
-namespace Engine {
+namespace Manro {
     class Logger {
     public:
         static void Init();
@@ -13,10 +13,10 @@ namespace Engine {
     private:
         static std::shared_ptr<spdlog::logger> s_CoreLogger;
     };
-} // namespace Engine
+} // namespace Manro
 
-#define LOG_TRACE(...)    ::Engine::Logger::GetCoreLogger()->trace(__VA_ARGS__)
-#define LOG_INFO(...)     ::Engine::Logger::GetCoreLogger()->info(__VA_ARGS__)
-#define LOG_WARN(...)     ::Engine::Logger::GetCoreLogger()->warn(__VA_ARGS__)
-#define LOG_ERROR(...)    ::Engine::Logger::GetCoreLogger()->error(__VA_ARGS__)
-#define LOG_CRITICAL(...) ::Engine::Logger::GetCoreLogger()->critical(__VA_ARGS__)
+#define LOG_TRACE(...)    ::Manro::Logger::GetCoreLogger()->trace(__VA_ARGS__)
+#define LOG_INFO(...)     ::Manro::Logger::GetCoreLogger()->info(__VA_ARGS__)
+#define LOG_WARN(...)     ::Manro::Logger::GetCoreLogger()->warn(__VA_ARGS__)
+#define LOG_ERROR(...)    ::Manro::Logger::GetCoreLogger()->error(__VA_ARGS__)
+#define LOG_CRITICAL(...) ::Manro::Logger::GetCoreLogger()->critical(__VA_ARGS__)

@@ -3,7 +3,7 @@
 #include <Manro/Core/Types.h>
 #include <bitset>
 
-namespace Engine {
+namespace Manro {
     using Entity = u32;
 
     constexpr Entity NULL_ENTITY = 0xFFFFFFFF;
@@ -11,4 +11,4 @@ namespace Engine {
     constexpr u32 MAX_COMPONENTS = 32;
 
     using Signature = std::bitset<MAX_COMPONENTS>;
-} // namespace Engine
+} // namespace Manro

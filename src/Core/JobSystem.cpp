@@ -1,7 +1,7 @@
 #include <Manro/Core/JobSystem.h>
 #include <algorithm>
 
-namespace Engine {
+namespace Manro {
     JobSystem::JobSystem(u32 numThreads) {
         if (numThreads == 0) {
             numThreads = std::max(1u, std::thread::hardware_concurrency() - 1u);
@@ -71,4 +71,4 @@ namespace Engine {
             }
         }
     }
-} // namespace Engine
+} // namespace Manro

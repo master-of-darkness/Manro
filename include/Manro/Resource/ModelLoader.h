@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-namespace Engine {
+namespace Manro {
     struct Vertex {
         Vec3 position;
         Vec3 normal;
@@ -34,4 +34,4 @@ namespace Engine {
     private:
         static std::string NormalisePath(const std::string &p);
     };
-} // namespace Engine
+} // namespace Manro

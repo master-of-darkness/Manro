@@ -3,7 +3,7 @@
 #include <Manro/Core/Types.h>
 #include <Manro/Input/InputAction.h>
 
-namespace Engine {
+namespace Manro {
     class PhysicsWorld;
 
     struct MovementContext {
@@ -19,4 +19,4 @@ namespace Engine {
 
         virtual void ProcessMovement(const MovementContext &ctx) = 0;
     };
-} // namespace Engine
+} // namespace Manro

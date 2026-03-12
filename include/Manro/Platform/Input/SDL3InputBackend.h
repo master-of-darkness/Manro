@@ -6,7 +6,7 @@
 
 union SDL_Event;
 
-namespace Engine {
+namespace Manro {
     class SDL3InputBackend final : public IInputBackend {
     public:
         void ProcessEvent(const SDL_Event &event) override;
@@ -30,4 +30,4 @@ namespace Engine {
 
         static Key SdlScancodeToKey(int scancode);
     };
-} // namespace Engine
+} // namespace Manro

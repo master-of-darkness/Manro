@@ -5,7 +5,7 @@
 #include <array>
 #include <cassert>
 
-namespace Engine {
+namespace Manro {
     class IComponentArray {
     public:
         virtual ~IComponentArray() = default;
@@ -72,4 +72,4 @@ namespace Engine {
         std::array<Entity, MAX_ENTITIES> m_DenseToEntityMap;
         size_t m_Size{0};
     };
-} // namespace Engine
+} // namespace Manro

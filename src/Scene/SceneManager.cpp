@@ -1,6 +1,6 @@
 #include <Manro/Scene/SceneManager.h>
 
-namespace Engine {
+namespace Manro {
     void SceneManager::LoadScene(Scope<Scene> scene) {
         if (m_ActiveScene)
             m_ActiveScene->OnDestroy();
@@ -20,4 +20,4 @@ namespace Engine {
         if (m_ActiveScene)
             m_ActiveScene->OnRender(renderer);
     }
-} // namespace Engine
+} // namespace Manro

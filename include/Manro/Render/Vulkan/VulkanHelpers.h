@@ -4,7 +4,7 @@
 #include <vk_mem_alloc.h>
 #include <functional>
 
-namespace Engine {
+namespace Manro {
     class VulkanContext;
 
     struct ImageCreateParams {
@@ -31,4 +31,4 @@ namespace Engine {
     using OneShotWork = std::function<void(VkCommandBuffer cmd)>;
 
     void ExecuteOneShot(const VulkanContext &ctx, const OneShotWork &work);
-} // namespace Engine
+} // namespace Manro

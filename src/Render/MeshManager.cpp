@@ -4,7 +4,7 @@
 
 #include <Manro/Resource/ModelLoader.h>
 
-namespace Engine {
+namespace Manro {
     MeshManager::MeshManager(const VulkanContext &ctx) : m_Context(ctx) {
     }
 
@@ -33,4 +33,4 @@ namespace Engine {
         auto it = m_Meshes.find(handle);
         return it != m_Meshes.end() ? &it->second : nullptr;
     }
-} // namespace Engine
+} // namespace Manro

@@ -4,7 +4,7 @@
 
 union SDL_Event;
 
-namespace Engine {
+namespace Manro {
     class IInputBackend {
     public:
         virtual ~IInputBackend() = default;
@@ -18,4 +18,4 @@ namespace Engine {
 
         virtual RawMouseDelta ConsumeMouseDelta() = 0;
     };
-} // namespace Engine
+} // namespace Manro

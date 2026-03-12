@@ -4,7 +4,7 @@
 #include <memory>
 #include <string>
 
-namespace Engine {
+namespace Manro {
     using u8 = std::uint8_t;
     using u16 = std::uint16_t;
     using u32 = std::uint32_t;
@@ -33,15 +33,15 @@ namespace Engine {
     constexpr Ref<T> CreateRef(Args &&... args) {
         return std::make_shared<T>(std::forward<Args>(args)...);
     }
-} // namespace Engine
+} // namespace Manro
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
-namespace Engine {
+namespace Manro {
     using Vec2 = glm::vec2;
     using Vec3 = glm::vec3;
     using Vec4 = glm::vec4;
     using Mat4 = glm::mat4;
     using Quat = glm::quat;
-} // namespace Engine
+} // namespace Manro

@@ -20,7 +20,7 @@ enum class SceneType {
 };
 
 struct FlyCamera {
-    Engine::Vec3 Position{0.f, 150.f, 0.f};
+    Manro::Vec3 Position{0.f, 150.f, 0.f};
     float Yaw{-90.f};
     float Pitch{-10.f};
 
@@ -28,13 +28,13 @@ struct FlyCamera {
     float SprintSpeed{800.f};
     float MouseSensitivity{0.1f};
 
-    Engine::Vec3 Forward() const;
+    Manro::Vec3 Forward() const;
 
-    void Update(const Engine::InputManager &input, float dt);
+    void Update(const Manro::InputManager &input, float dt);
 
-    Engine::Mat4 View() const;
-    Engine::Mat4 Projection(float fovDeg, float aspect, float nearZ, float farZ) const;
-    Engine::Mat4 ViewProj(float fovDeg, float aspect, float nearZ, float farZ) const;
+    Manro::Mat4 View() const;
+    Manro::Mat4 Projection(float fovDeg, float aspect, float nearZ, float farZ) const;
+    Manro::Mat4 ViewProj(float fovDeg, float aspect, float nearZ, float farZ) const;
 };
 
 class Sponza {
@@ -55,20 +55,20 @@ private:
 
     void Render(float dt);
 
-    Engine::EngineContext m_Engine;
-    Engine::SDL3InputBackend m_InputBackend;
-    Engine::InputManager m_InputManager;
+    Manro::EngineContext m_Engine;
+    Manro::SDL3InputBackend m_InputBackend;
+    Manro::InputManager m_InputManager;
 
-    Engine::Scope<Engine::Renderer> m_Renderer;
+    Manro::Scope<Manro::Renderer> m_Renderer;
 
-    Engine::WindowHandle m_Window{Engine::kInvalidWindow};
+    Manro::WindowHandle m_Window{Manro::kInvalidWindow};
     bool m_IsRunning{false};
 
     std::chrono::high_resolution_clock::time_point m_LastFrameTime;
 
     struct SubMesh {
-        Engine::MeshHandle meshId;
-        Engine::Scope<Engine::MaterialInstance> material;
+        Manro::MeshHandle meshId;
+        Manro::Scope<Manro::MaterialInstance> material;
     };
 
     std::vector<SubMesh> m_SubMeshes; // TODO: wrap this shit into engine

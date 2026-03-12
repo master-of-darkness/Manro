@@ -3,7 +3,7 @@
 #include <Manro/Core/Types.h>
 #include <vector>
 
-namespace Engine {
+namespace Manro {
     class VulkanContext;
 
     struct PipelineConfigParams {
@@ -43,4 +43,4 @@ namespace Engine {
         VkPipeline m_Pipeline{VK_NULL_HANDLE};
         VkPipelineLayout m_PipelineLayout{VK_NULL_HANDLE};
     };
-} // namespace Engine
+} // namespace Manro

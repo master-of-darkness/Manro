@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <unordered_map>
 
-namespace Engine {
+namespace Manro {
     // MikkTSpace interface
     struct MikkContext {
         std::vector<Vertex>* vertices;
@@ -289,4 +289,4 @@ namespace Engine {
         LOG_INFO("[ModelLoader] LoadSubMeshes '{}' → {} sub-meshes", filepath, out.size());
         return true;
     }
-} // namespace Engine
+} // namespace Manro

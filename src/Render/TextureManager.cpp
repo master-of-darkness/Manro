@@ -7,7 +7,7 @@
 
 #include "volk.h"
 
-namespace Engine {
+namespace Manro {
     TextureManager::TextureManager(const VulkanContext &ctx) : m_Context(ctx) {
         CreateDefaultSampler();
         CreateWhiteTexture();
@@ -161,4 +161,4 @@ namespace Engine {
 
     void TextureManager::ResetBinding() {
     }
-} // namespace Engine
+} // namespace Manro

@@ -4,7 +4,7 @@
 #include <Manro/Core/Logger.h>
 #include <stdexcept>
 
-namespace Engine {
+namespace Manro {
     Swapchain::Swapchain(const VulkanContext &context, u32 width, u32 height)
         : m_Context(context) {
         Build(width, height);
@@ -91,4 +91,4 @@ namespace Engine {
 
         return false;
     }
-} // namespace Engine
+} // namespace Manro

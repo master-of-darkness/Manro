@@ -1,7 +1,7 @@
 #include <Manro/Core/EngineContext.h>
 #include <Manro/Core/Logger.h>
 
-namespace Engine {
+namespace Manro {
     EngineContext::EngineContext(bool withPlatform) {
         Logger::Init();
         LOG_INFO("[EngineContext] Initializing...");
@@ -17,4 +17,4 @@ namespace Engine {
         LOG_INFO("[EngineContext] Shutting down...");
         m_Platform.reset();
     }
-} // namespace Engine
+} // namespace Manro

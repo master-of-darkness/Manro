@@ -3,7 +3,7 @@
 #include <iostream>
 #include <stdexcept>
 
-namespace Engine {
+namespace Manro {
     Pipeline::Pipeline(const VulkanContext &context) : m_Context(context) {
     }
 
@@ -159,4 +159,4 @@ namespace Engine {
             throw std::runtime_error("Failed to create shader module!");
         return module;
     }
-} // namespace Engine
+} // namespace Manro

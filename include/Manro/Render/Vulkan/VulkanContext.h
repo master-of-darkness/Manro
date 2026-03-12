@@ -4,7 +4,7 @@
 
 #include "VkBootstrap.h"
 
-namespace Engine {
+namespace Manro {
     class IWindow;
 
     class VulkanContext {
@@ -48,4 +48,4 @@ namespace Engine {
         VkSurfaceKHR m_Surface{nullptr};
         VmaAllocator m_Allocator{nullptr};
     };
-} // namespace Engine
+} // namespace Manro

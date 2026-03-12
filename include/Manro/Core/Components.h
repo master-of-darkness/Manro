@@ -2,7 +2,7 @@
 #include <Manro/Core/Types.h>
 #include <cstdint>
 
-namespace Engine {
+namespace Manro {
     struct TransformComponent {
         Vec3 Position;
         Vec3 Rotation;

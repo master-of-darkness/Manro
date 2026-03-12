@@ -3,7 +3,7 @@
 #include <Manro/Core/Types.h>
 #include <vector>
 
-namespace Engine {
+namespace Manro {
     class VulkanContext;
 
     class Swapchain {
@@ -47,4 +47,4 @@ namespace Engine {
 
         bool m_NeedsRecreate{false};
     };
-} // namespace Engine
+} // namespace Manro

@@ -4,7 +4,7 @@
 
 struct SDL_Window;
 
-namespace Engine {
+namespace Manro {
     class SDL3Window final : public IWindow {
     public:
         SDL3Window() = default;
@@ -49,4 +49,4 @@ namespace Engine {
         bool m_Open{false};
         bool m_Fullscreen{false};
     };
-} // namespace Engine
+} // namespace Manro

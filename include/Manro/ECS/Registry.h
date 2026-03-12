@@ -9,7 +9,7 @@
 #include <cassert>
 #include <functional>
 
-namespace Engine {
+namespace Manro {
     class Registry {
     public:
         Registry() {
@@ -115,4 +115,4 @@ namespace Engine {
 
         std::unordered_map<std::string, std::shared_ptr<IComponentArray> > m_ComponentArrays;
     };
-} // namespace Engine
+} // namespace Manro

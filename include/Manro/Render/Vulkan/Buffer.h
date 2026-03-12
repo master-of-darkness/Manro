@@ -2,7 +2,7 @@
 #include <Manro/Core/Types.h>
 #include <vk_mem_alloc.h>
 
-namespace Engine {
+namespace Manro {
     class VulkanContext;
 
     class Buffer {
@@ -29,4 +29,4 @@ namespace Engine {
         VmaAllocationInfo m_AllocationInfo{};
         VkDeviceSize m_Size{0};
     };
-} // namespace Engine
+} // namespace Manro

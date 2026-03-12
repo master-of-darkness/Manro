@@ -6,7 +6,7 @@
 #include <unordered_map>
 #include <string>
 
-namespace Engine {
+namespace Manro {
     class SDL3AudioBackend final : public IAudioBackend {
     public:
         SDL3AudioBackend() = default;
@@ -62,4 +62,4 @@ namespace Engine {
         bool m_Initialized{false};
         float m_MasterVolume{1.0f};
     };
-} // namespace Engine
+} // namespace Manro

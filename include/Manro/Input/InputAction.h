@@ -5,7 +5,7 @@
 #include <unordered_map>
 #include <functional>
 
-namespace Engine {
+namespace Manro {
     enum class Key : u16 {
         Unknown = 0,
         W, A, S, D, Q, E,
@@ -59,4 +59,4 @@ namespace Engine {
         virtual void OnFocusLost() {
         }
     };
-} // namespace Engine
+} // namespace Manro

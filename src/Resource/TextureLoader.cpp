@@ -8,7 +8,7 @@
 #include <cstring>
 #include <algorithm>
 
-namespace Engine {
+namespace Manro {
     static constexpr u32 kDDSMagic = 0x20534444;
     static constexpr u32 kFourCC_DXT1 = 0x31545844;
     static constexpr u32 kFourCC_DXT5 = 0x35545844;
@@ -263,4 +263,4 @@ namespace Engine {
         LOG_INFO("[TextureLoader] Loaded '{}' - {}x{} ({} src channels)", filepath, width, height, srcChannels);
         return true;
     }
-} // namespace Engine
+} // namespace Manro

@@ -18,26 +18,26 @@ Game::~Game() {
 
 void Game::Initialize() {
     const bool needsPlatform = (m_Mode != GameMode::DedicatedServer);
-    LOG_INFO("[Game] Engine initialized.");
+    LOG_INFO("[Game] Manro initialized.");
 
     if (needsPlatform) {
         auto &platform = m_Engine.GetPlatform();
         auto &wm = platform.GetWindowManager();
 
-        Engine::WindowDesc desc;
-        desc.Title = "Manro Engine";
+        Manro::WindowDesc desc;
+        desc.Title = "Manro Manro";
         desc.Width = 1280;
         desc.Height = 720;
         m_MainWindow = wm.AddWindow(desc);
-        if (m_MainWindow == Engine::kInvalidWindow)
+        if (m_MainWindow == Manro::kInvalidWindow)
             throw std::runtime_error("[Game] Failed to create main window.");
 
         auto *window = wm.Get(m_MainWindow);
         window->SetEventCallback(
-            [this](Engine::WindowEvent ev, Engine::u32 w, Engine::u32 h) {
-                if (ev == Engine::WindowEvent::Close)
+            [this](Manro::WindowEvent ev, Manro::u32 w, Manro::u32 h) {
+                if (ev == Manro::WindowEvent::Close)
                     m_IsRunning = false;
-                else if (ev == Engine::WindowEvent::Resized && m_Renderer)
+                else if (ev == Manro::WindowEvent::Resized && m_Renderer)
                     m_Renderer->OnResize(w, h);
             });
 
@@ -46,22 +46,22 @@ void Game::Initialize() {
         window->CaptureMouse(true);
         window->ShowCursor(false);
 
-        m_Renderer = Engine::CreateScope<Engine::Renderer>(
+        m_Renderer = Manro::CreateScope<Manro::Renderer>(
             *window, 1280, 720);
         LOG_INFO("[Game] Renderer initialized.");
 
         if (m_Mode == GameMode::Client) {
-            m_Client = Engine::CreateScope<Engine::NetworkClient>();
+            m_Client = Manro::CreateScope<Manro::NetworkClient>();
             m_Client->Connect("127.0.0.1", 7777);
         }
     }
 
     if (m_Mode == GameMode::DedicatedServer || m_Mode == GameMode::ListenServer) {
-        m_Server = Engine::CreateScope<Engine::NetworkServer>(7777);
+        m_Server = Manro::CreateScope<Manro::NetworkServer>(7777);
         LOG_INFO("[Game] Server initialized.");
     }
 
-    auto worldScene = Engine::CreateScope<WorldScene>(*m_Renderer);
+    auto worldScene = Manro::CreateScope<WorldScene>(*m_Renderer);
 
     m_WorldScene = worldScene.get();
     m_SceneManager.LoadScene(std::move(worldScene));
@@ -104,10 +104,11 @@ void Game::Run() {
         if (m_Mode != GameMode::DedicatedServer)
             Render();
     }
+    this->Shutdown();
 }
 
 void Game::UpdateLogic(float dt) {
-    if (m_MainWindow != Engine::kInvalidWindow) {
+    if (m_MainWindow != Manro::kInvalidWindow) {
         m_CurrentCmd = m_InputManager.Poll();
 
         if (m_ActionMap && m_WorldScene)

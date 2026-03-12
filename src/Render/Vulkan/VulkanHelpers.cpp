@@ -6,7 +6,7 @@
 #include <fstream>
 #include <vector>
 
-namespace Engine {
+namespace Manro {
     AllocatedImage CreateImage(const VulkanContext &ctx, const ImageCreateParams &params,
                                VkImageAspectFlags aspect) {
         VkImageCreateInfo imageInfo{};
@@ -113,4 +113,4 @@ namespace Engine {
 
         return buffer;
     }
-} // namespace Engine
+} // namespace Manro
