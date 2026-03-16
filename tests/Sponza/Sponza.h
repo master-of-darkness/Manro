@@ -65,6 +65,8 @@ private:
     bool m_IsRunning{false};
 
     std::chrono::high_resolution_clock::time_point m_LastFrameTime;
+    float m_FpsTimer{0.f};
+    int m_FrameCount{0};
 
     struct SubMesh {
         Manro::MeshHandle meshId;

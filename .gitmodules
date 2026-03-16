@@ -10,3 +10,6 @@
 [submodule "deps/slang"]
 	path = deps/slang
 	url = https://github.com/shader-slang/slang.git
+[submodule "deps/imgui"]
+	path = deps/imgui
+	url = https://github.com/ocornut/imgui.git

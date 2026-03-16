@@ -11,3 +11,4 @@ cmake-build-release
 !/deps/volk/
 !/deps/VulkanMemoryAllocator/
 !/deps/slang/
+!/deps/imgui/

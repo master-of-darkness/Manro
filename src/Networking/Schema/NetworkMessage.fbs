@@ -1,4 +1,4 @@
-namespace Engine.Networking;
+namespace Manro.Networking;
 
 struct Vec3 {
   x: float;

@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <stdexcept>
 
 static constexpr const char *kSponzaPath = "assets/models/sponza.obj";
@@ -159,6 +160,21 @@ void Sponza::Run() {
         m_LastFrameTime = now;
         if (dt > 0.1f) dt = 0.1f;
 
+        m_FpsTimer += dt;
+        m_FrameCount++;
+        if (m_FpsTimer >= 1.0f) {
+            float fps = static_cast<float>(m_FrameCount) / m_FpsTimer;
+            auto *window = platform.GetWindowManager().Get(m_Window);
+            if (window) {
+                char title[256];
+                const char *baseTitle = (m_SceneType == SceneType::Bistro) ? "Bistro Test" : "Sponza Test";
+                snprintf(title, sizeof(title), "%s - FPS: %.2f", baseTitle, fps);
+                window->SetTitle(title);
+            }
+            m_FpsTimer = 0.0f;
+            m_FrameCount = 0;
+        }
+
         if (!platform.PollEvents(&m_InputManager))
             m_IsRunning = false;
 
@@ -184,7 +200,6 @@ void Sponza::Render(float dt) {
         m_Renderer->DrawMesh(sm.meshId, *sm.material, Manro::Mat4{1.0f});
     }
 
-    // (Removed SetTintColor)
     m_Renderer->EndRenderPass();
     m_Renderer->EndFrameAndPresent();
 }

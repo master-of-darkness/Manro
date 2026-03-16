@@ -20,7 +20,9 @@ namespace Manro {
         };
         auto vkb_swapchain_ret = swapchain_builder
                 .use_default_format_selection()
-                .set_desired_present_mode(VK_PRESENT_MODE_FIFO_KHR)
+                .set_desired_present_mode(VK_PRESENT_MODE_MAILBOX_KHR)
+                .add_fallback_present_mode(VK_PRESENT_MODE_IMMEDIATE_KHR)
+                .add_fallback_present_mode(VK_PRESENT_MODE_FIFO_KHR)
                 .set_desired_extent(width, height)
                 .add_image_usage_flags(VK_IMAGE_USAGE_TRANSFER_DST_BIT)
                 .build();
