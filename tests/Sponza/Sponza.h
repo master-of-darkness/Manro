@@ -7,6 +7,7 @@
 #include <Manro/Input/InputManager.h>
 #include <Manro/Platform/Input/SDL3InputBackend.h>
 #include <Manro/Platform/Window/WindowManager.h>
+#include <Manro/Render/Model.h>
 #include <Manro/Input/InputAction.h>
 #include <chrono>
 #include <string>
@@ -68,12 +69,7 @@ private:
     float m_FpsTimer{0.f};
     int m_FrameCount{0};
 
-    struct SubMesh {
-        Manro::MeshHandle meshId;
-        Manro::Scope<Manro::MaterialInstance> material;
-    };
-
-    std::vector<SubMesh> m_SubMeshes; // TODO: wrap this shit into engine
+    Manro::Scope<Manro::Model> m_Model;
 
     SceneType m_SceneType{SceneType::Bistro};
     FlyCamera m_Camera;

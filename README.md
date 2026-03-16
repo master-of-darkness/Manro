@@ -6,9 +6,9 @@ The engine is designed with a focus on embedded network support and rendering th
 
 ## Features
 
-- Redner: Vulkan API and slang shaders
-- Entity system
-- Basic UDP game network layer 
+- Renderer: Vulkan API, Slang shaders, and GPU-driven bindless system
+- Entity-Component System (ECS)
+- Basic UDP game network layer
 - Jolt physics
 - Linux and Windows support with SDL3
 

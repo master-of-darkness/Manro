@@ -105,6 +105,8 @@ namespace Manro {
 
         void DrawMesh(MeshHandle meshId, MaterialInstance &material, const Mat4 &model);
 
+        void DrawModel(const class Model &model, const Mat4 &transform);
+
         float GetAspectRatio() const {
             if (!m_Swapchain) return 16.f / 9.f;
             auto ext = m_Swapchain->GetExtent();

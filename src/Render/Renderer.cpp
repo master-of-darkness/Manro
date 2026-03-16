@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include <fstream>
 #include <glm/gtc/matrix_transform.hpp>
+#include <Manro/Render/Model.h>
 
 namespace Manro {
 
@@ -397,6 +398,12 @@ namespace Manro {
         inst.flags = 0;
 
         m_CurrentFrameInstances.push_back(inst);
+    }
+
+    void Renderer::DrawModel(const Model &model, const Mat4 &transform) {
+        for (const auto &sm : model.GetSubMeshes()) {
+            DrawMesh(sm.meshId, *sm.material, transform);
+        }
     }
 
     void Renderer::CreateGpuBuffers() {

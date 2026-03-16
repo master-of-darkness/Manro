@@ -100,55 +100,13 @@ void Sponza::Initialize() {
 
 
 void Sponza::LoadScene() {
-    std::vector<const char *> paths;
-    paths.push_back(kSponzaPath);
-
-    std::unordered_map<std::string, Manro::TextureHandle> textureCache;
-
-    for (const char *path: paths) {
-        std::vector<Manro::SubMeshData> subMeshData;
-        bool ok = false;
-        ok = Manro::ModelLoader::LoadSubMeshes(path, subMeshData);
-        if (!ok) {
-            LOG_ERROR("[SponzaTest] Failed to load '{}'. Skipping.", path);
-            continue;
-        }
-
-        for (auto &sd: subMeshData) {
-            if (sd.vertices.empty()) continue;
-
-            Manro::ModelData md;
-            md.vertices = std::move(sd.vertices);
-            md.indices = std::move(sd.indices);
-            md.diffuseTexturePath = sd.diffuseTexturePath;
-
-            SubMesh sm;
-            sm.meshId = m_Renderer->UploadMesh(md);
-            sm.material = m_Renderer->CreateMaterialInstance(m_Renderer->GetDefaultMaterial());
-
-            if (!sd.diffuseTexturePath.empty()) {
-                auto cacheIt = textureCache.find(sd.diffuseTexturePath);
-                if (cacheIt != textureCache.end()) {
-                    sm.material->SetTexture(cacheIt->second);
-                } else {
-                    Manro::TextureData td;
-                    if (Manro::TextureLoader::Load(sd.diffuseTexturePath, td)) {
-                        Manro::TextureHandle tex = m_Renderer->UploadTexture(td);
-                        sm.material->SetTexture(tex);
-                        textureCache[sd.diffuseTexturePath] = tex;
-                    }
-                }
-            }
-
-
-            m_SubMeshes.push_back(std::move(sm));
-        }
-
-        LOG_INFO("[SponzaTest] Loaded '{}' — {} sub-meshes total so far", path, m_SubMeshes.size());
+    m_Model = Manro::Model::Load(kSponzaPath, *m_Renderer);
+    if (!m_Model) {
+        LOG_ERROR("[SponzaTest] Failed to load Sponza model!");
+        return;
     }
 
-    LOG_INFO("[SponzaTest] Scene loaded: {} sub-meshes, {} unique textures",
-             m_SubMeshes.size(), textureCache.size());
+    LOG_INFO("[SponzaTest] Scene loaded: {} sub-meshes", m_Model->GetSubMeshes().size());
 }
 
 void Sponza::Run() {
@@ -194,8 +152,8 @@ void Sponza::Render(float dt) {
     const float aspect = m_Renderer->GetAspectRatio();
     m_Renderer->SetViewProjection(m_Camera.View(), m_Camera.Projection(kFov, aspect, kNearZ, kFarZ));
  
-    for (const auto &sm: m_SubMeshes) {
-        m_Renderer->DrawMesh(sm.meshId, *sm.material, Manro::Mat4{1.0f});
+    if (m_Model) {
+        m_Renderer->DrawModel(*m_Model, Manro::Mat4{1.0f});
     }
 
     m_Renderer->BeginRendering({0.05f, 0.05f, 0.08f, 1.f});
@@ -205,7 +163,7 @@ void Sponza::Render(float dt) {
 }
 
 void Sponza::Shutdown() {
-    m_SubMeshes.clear();
+    m_Model.reset();
     m_Renderer.reset();
     m_IsRunning = false;
 }

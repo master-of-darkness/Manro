@@ -231,6 +231,7 @@ add_library(Engine STATIC
         src/Render/Vulkan/VulkanHelpers.cpp
         src/Render/TextureManager.cpp
         src/Render/MeshManager.cpp
+        src/Render/Model.cpp
         src/Render/Vulkan/Buffer.cpp
         src/Render/Vulkan/Pipeline.cpp
         src/Resource/ModelLoader.cpp
