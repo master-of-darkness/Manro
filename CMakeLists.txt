@@ -178,7 +178,7 @@ add_custom_target(GenerateNetworkSchema
 
 # Shader precompilation
 set(SHADER_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders")
-set(SHADER_BIN_DIR "${SHADER_SRC_DIR}")
+set(SHADER_BIN_DIR "${SHADER_SRC_DIR}/spv")
 file(MAKE_DIRECTORY "${SHADER_BIN_DIR}")
 
 set(SLANG_BIN_PKG_DIR "${CMAKE_CURRENT_BINARY_DIR}/deps/slang/slang-2026.4.1-linux-x86_64") # todo: make it flexible, so it doesnt break on new version or on windows
@@ -194,6 +194,7 @@ macro(compile_shader SHADER_FILE ENTRY_POINT STAGE OUTPUT_FILE)
                 -entry ${ENTRY_POINT}
                 -stage ${STAGE}
                 -target spirv
+                -I "${SHADER_SRC_DIR}"
                 -o "${OUTPUT_FILE}"
         DEPENDS "${SHADER_SRC_DIR}/${SHADER_FILE}" slangc
         COMMENT "Compiling shader: ${SHADER_FILE} [${ENTRY_POINT}]"
@@ -203,6 +204,14 @@ endmacro()
 
 compile_shader("texturedMesh.slang" "VSMain" "vertex" "${SHADER_BIN_DIR}/texturedMesh.vert.spv")
 compile_shader("texturedMesh.slang" "PSMain" "fragment" "${SHADER_BIN_DIR}/texturedMesh.frag.spv")
+
+compile_shader("pbr.slang" "VSMain" "vertex" "${SHADER_BIN_DIR}/pbr.vert.spv")
+compile_shader("pbr.slang" "PSMain" "fragment" "${SHADER_BIN_DIR}/pbr.frag.spv")
+compile_shader("pbr.slang" "GlassPSMain" "fragment" "${SHADER_BIN_DIR}/pbr_glass.frag.spv")
+
+compile_shader("forward_plus_cull.slang" "main" "compute" "${SHADER_BIN_DIR}/forward_plus_cull.comp.spv")
+compile_shader("composite.slang" "VSMain" "vertex" "${SHADER_BIN_DIR}/composite.vert.spv")
+compile_shader("composite.slang" "PSMain" "fragment" "${SHADER_BIN_DIR}/composite.frag.spv")
 
 add_custom_target(PrecompileShaders
     DEPENDS ${PRECOMPILED_SHADERS}

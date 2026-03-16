@@ -2,16 +2,11 @@
 #include <Manro/Render/Vulkan/VulkanHelpers.h>
 #include <Manro/Core/Logger.h>
 #include <stdexcept>
-
-struct UniformBufferObject {
-    Manro::Mat4 model;
-    Manro::Mat4 view;
-    Manro::Mat4 proj;
-};
-
-
+#include <fstream>
+#include <glm/gtc/matrix_transform.hpp>
 
 namespace Manro {
+
     Renderer::Renderer(IWindow &window, u32 width, u32 height,
                        VkSampleCountFlagBits msaaSamples)
         : m_Context("GameEngine", window),
@@ -26,43 +21,18 @@ namespace Manro {
         LOG_INFO("[Renderer] MSAA samples: {} (requested: {}, max: {})",
                  (int)m_MsaaSamples, (int)msaaSamples, (int)maxSamples);
 
-        CreateColorResources(width, height);
-        CreateDepthResources(width, height);
-        CreateDescriptorPool();
-        CreateCommandBuffers(); // Updated to create UBOs
-        CreateSyncObjects();
-        LoadShadersAndPipeline();
-
-        if (!m_DefaultMaterial) {
-            throw std::runtime_error("[Renderer] Failed to load default material (shaders missing?)");
-        }
-
         m_PendingWidth = width;
         m_PendingHeight = height;
 
-        // Get UBO alignment
-        VkPhysicalDeviceProperties props;
-        vkGetPhysicalDeviceProperties(m_Context.GetPhysicalDevice(), &props);
-        m_UboAlignment = props.limits.minUniformBufferOffsetAlignment;
+        CreateColorResources(width, height);
+        CreateDepthResources(width, height);
+        CreateDescriptorPool();
+        CreateGpuBuffers();
+        LoadShadersAndPipeline();
+        CreateCommandBuffers();
+        CreateSyncObjects();
 
-        // Create dynamic descriptor pools
-        m_DynamicDescriptorPools.resize(MAX_FRAMES_IN_FLIGHT);
-        VkDescriptorPoolSize poolSizes[2]{};
-        poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        poolSizes[0].descriptorCount = MAX_DRAWS_PER_FRAME;
-        poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        poolSizes[1].descriptorCount = MAX_DRAWS_PER_FRAME;
-
-        VkDescriptorPoolCreateInfo poolInfo{};
-        poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        poolInfo.poolSizeCount = 2;
-        poolInfo.pPoolSizes = poolSizes;
-        poolInfo.maxSets = MAX_DRAWS_PER_FRAME;
-
-        for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-            if (vkCreateDescriptorPool(m_Context.GetDevice(), &poolInfo, nullptr, &m_DynamicDescriptorPools[i]) != VK_SUCCESS)
-                throw std::runtime_error("Failed to create dynamic descriptor pool!");
-        }
+        m_Materials.push_back(MaterialData{});
     }
 
     Renderer::~Renderer() {
@@ -70,26 +40,26 @@ namespace Manro {
         vkDeviceWaitIdle(m_Context.GetDevice());
 
         m_DefaultMaterial.reset();
-        
+        m_CullPipeline.reset();
+        m_IndirectPipeline.reset();
+
         DestroyImage(m_Context, m_ColorImage);
         DestroyImage(m_Context, m_DepthImage);
 
         for (auto &frame: m_Frames) {
-            if (frame.renderFinishedSemaphore)
-                vkDestroySemaphore(m_Context.GetDevice(), frame.renderFinishedSemaphore, nullptr);
-            if (frame.imageAvailableSemaphore)
-                vkDestroySemaphore(m_Context.GetDevice(), frame.imageAvailableSemaphore, nullptr);
             if (frame.inFlightFence)
                 vkDestroyFence(m_Context.GetDevice(), frame.inFlightFence, nullptr);
             if (frame.commandPool)
                 vkDestroyCommandPool(m_Context.GetDevice(), frame.commandPool, nullptr);
-            frame.uboBuffer.reset();
         }
- 
+
+        for (auto semaphore : m_ImageAvailableSemaphores)
+            vkDestroySemaphore(m_Context.GetDevice(), semaphore, nullptr);
+        for (auto semaphore : m_RenderFinishedSemaphores)
+            vkDestroySemaphore(m_Context.GetDevice(), semaphore, nullptr);
+
         if (m_DescriptorPool) vkDestroyDescriptorPool(m_Context.GetDevice(), m_DescriptorPool, nullptr);
-        for (auto p : m_DynamicDescriptorPools) {
-            if (p) vkDestroyDescriptorPool(m_Context.GetDevice(), p, nullptr);
-        }
+        if (m_GlobalSetLayout) vkDestroyDescriptorSetLayout(m_Context.GetDevice(), m_GlobalSetLayout, nullptr);
 
         if (m_Swapchain) m_Swapchain->Shutdown();
     }
@@ -108,6 +78,22 @@ namespace Manro {
         if (w == 0 || h == 0) return;
 
         m_Swapchain->Recreate(w, h);
+
+        // Update render finished semaphores if image count changed
+        if (m_RenderFinishedSemaphores.size() != m_Swapchain->GetImageCount()) {
+            for (auto semaphore : m_RenderFinishedSemaphores)
+                vkDestroySemaphore(m_Context.GetDevice(), semaphore, nullptr);
+
+            VkSemaphoreCreateInfo semaphoreInfo{};
+            semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+            m_RenderFinishedSemaphores.resize(m_Swapchain->GetImageCount());
+            for (size_t i = 0; i < m_RenderFinishedSemaphores.size(); i++) {
+                if (vkCreateSemaphore(m_Context.GetDevice(), &semaphoreInfo, nullptr, &m_RenderFinishedSemaphores[i]) != VK_SUCCESS) {
+                    throw std::runtime_error("Failed to create render finished semaphore during swapchain recreation!");
+                }
+            }
+        }
 
         DestroyImage(m_Context, m_ColorImage);
         CreateColorResources(w, h);
@@ -153,7 +139,7 @@ namespace Manro {
 
         vkWaitForFences(m_Context.GetDevice(), 1, &frame.inFlightFence, VK_TRUE, UINT64_MAX);
 
-        m_CurrentImageIndex = m_Swapchain->AcquireNextImage(frame.imageAvailableSemaphore);
+        m_CurrentImageIndex = m_Swapchain->AcquireNextImage(m_ImageAvailableSemaphores[m_CurrentFrame]);
         if (m_CurrentImageIndex == UINT32_MAX) {
             return false;
         }
@@ -161,14 +147,19 @@ namespace Manro {
         vkResetFences(m_Context.GetDevice(), 1, &frame.inFlightFence);
         vkResetCommandBuffer(frame.commandBuffer, 0);
 
-        // Reset dynamic resources for this frame
-        vkResetDescriptorPool(m_Context.GetDevice(), m_DynamicDescriptorPools[m_CurrentFrame], 0);
-        m_CurrentUboOffset = 0;
+        m_CurrentFrameInstances.clear();
 
         VkCommandBufferBeginInfo beginInfo{};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         if (vkBeginCommandBuffer(frame.commandBuffer, &beginInfo) != VK_SUCCESS)
             throw std::runtime_error("Failed to begin recording command buffer!");
+
+        return true;
+    }
+
+    void Renderer::BeginRendering(Vec4 clearColor) {
+        FrameData &frame = m_Frames[m_CurrentFrame];
+        VkCommandBuffer cb = frame.commandBuffer;
 
         VkImageMemoryBarrier2 barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
@@ -180,38 +171,12 @@ namespace Manro {
         barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         barrier.image = m_Swapchain->GetImage(m_CurrentImageIndex);
         barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-
-        VkImageMemoryBarrier2 barriers[2];
-        u32 barrierCount = 1;
-        barriers[0] = barrier;
-
-        if (m_MsaaSamples != VK_SAMPLE_COUNT_1_BIT) {
-            VkImageMemoryBarrier2 msaaBarrier{};
-            msaaBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-            msaaBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-            msaaBarrier.srcAccessMask = 0;
-            msaaBarrier.dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-            msaaBarrier.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-            msaaBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-            msaaBarrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            msaaBarrier.image = m_ColorImage.image;
-            msaaBarrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-            barriers[1] = msaaBarrier;
-            barrierCount = 2;
-        }
-
+        
         VkDependencyInfo dep{};
         dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        dep.imageMemoryBarrierCount = barrierCount;
-        dep.pImageMemoryBarriers = barriers;
-        vkCmdPipelineBarrier2(frame.commandBuffer, &dep);
- 
-        return true;
-    }
-
-    void Renderer::BeginRenderPass(Vec4 clearColor) {
-        FrameData &frame = m_Frames[m_CurrentFrame];
-        VkCommandBuffer cb = frame.commandBuffer;
+        dep.imageMemoryBarrierCount = 1;
+        dep.pImageMemoryBarriers = &barrier;
+        vkCmdPipelineBarrier2(cb, &dep);
 
         VkClearValue cv{};
         cv.color = {clearColor.r, clearColor.g, clearColor.b, clearColor.a};
@@ -224,15 +189,14 @@ namespace Manro {
         if (m_MsaaSamples != VK_SAMPLE_COUNT_1_BIT) {
             colorAttachment.imageView = m_ColorImage.view;
             colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
             colorAttachment.resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
             colorAttachment.resolveImageView = m_Swapchain->GetImageView(m_CurrentImageIndex);
             colorAttachment.resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         } else {
             colorAttachment.imageView = m_Swapchain->GetImageView(m_CurrentImageIndex);
             colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         }
+        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 
         VkRenderingAttachmentInfo depthAttachment{};
         depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -244,7 +208,6 @@ namespace Manro {
 
         VkRenderingInfo renderInfo{};
         renderInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-        renderInfo.renderArea.offset = {0, 0};
         renderInfo.renderArea.extent = m_Swapchain->GetExtent();
         renderInfo.layerCount = 1;
         renderInfo.colorAttachmentCount = 1;
@@ -252,20 +215,63 @@ namespace Manro {
         renderInfo.pDepthAttachment = &depthAttachment;
 
         vkCmdBeginRendering(cb, &renderInfo);
-
-        VkViewport viewport{};
-        viewport.width = static_cast<float>(m_Swapchain->GetExtent().width);
-        viewport.height = static_cast<float>(m_Swapchain->GetExtent().height);
-        viewport.minDepth = 0.0f;
-        viewport.maxDepth = 1.0f;
+ 
+        VkViewport viewport{0.0f, 0.0f, (float)m_Swapchain->GetExtent().width, (float)m_Swapchain->GetExtent().height, 0.0f, 1.0f};
         vkCmdSetViewport(cb, 0, 1, &viewport);
-
-        VkRect2D scissor{};
-        scissor.extent = m_Swapchain->GetExtent();
+        VkRect2D scissor{{0, 0}, m_Swapchain->GetExtent()};
         vkCmdSetScissor(cb, 0, 1, &scissor);
+ 
+        // Update UBO
+        UniformBufferObject ubo{};
+        ubo.view = m_ViewMatrix;
+        ubo.proj = m_ProjectionMatrix;
+        ubo.proj[1][1] *= -1;
+        ubo.camPos = Vec4(0, 0, 0, 1); 
+        ubo.screenDimensions = Vec2(viewport.width, viewport.height);
+        frame.uboBuffer->LoadData(&ubo, sizeof(ubo));
+    }
+ 
+    void Renderer::RenderQueue() {
+        FrameData &frame = m_Frames[m_CurrentFrame];
+        VkCommandBuffer cb = frame.commandBuffer;
+
+        if (m_CurrentFrameInstances.empty()) return;
+
+        u32 instanceCount = static_cast<u32>(m_CurrentFrameInstances.size());
+        frame.instanceBuffer->LoadData(m_CurrentFrameInstances.data(), sizeof(GpuMeshInstance) * instanceCount);
+
+        std::vector<GpuDrawCommand> cmds;
+        for(u32 i=0; i<instanceCount; ++i) {
+            GpuDrawCommand cmd{};
+            cmd.indexCount = m_CurrentFrameInstances[i].indexCount;
+            cmd.instanceCount = 1;
+            cmd.firstIndex = m_CurrentFrameInstances[i].firstIndex;
+            cmd.vertexOffset = (int)m_CurrentFrameInstances[i].firstVertex;
+            cmd.firstInstance = i;
+            cmds.push_back(cmd);
+        }
+        frame.indirectBuffer->LoadData(cmds.data(), sizeof(GpuDrawCommand) * instanceCount);
+        u32 count = instanceCount;
+        frame.countBuffer->LoadData(&count, 4);
+
+        UpdateGlobalDescriptorSet(cb);
+
+        vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_IndirectPipeline->GetHandle());
+        
+        VkDescriptorSet sets[] = { frame.globalSet, m_Textures.GetBindlessSet() };
+        vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_IndirectPipeline->GetLayout(), 0, 2, sets, 0, nullptr);
+        
+        vkCmdBindIndexBuffer(cb, m_Meshes.GetIndexBuffer()->GetHandle(), 0, VK_INDEX_TYPE_UINT32);
+
+        // Also bind the instance buffer as a vertex buffer if the shader uses it via attributes
+        VkDeviceSize offsets[2] = { 0, 0 };
+        VkBuffer vertexBuffers[2] = { m_Meshes.GetVertexBuffer()->GetHandle(), frame.instanceBuffer->GetHandle() };
+        vkCmdBindVertexBuffers(cb, 0, 2, vertexBuffers, offsets);
+
+        vkCmdDrawIndexedIndirectCount(cb, frame.indirectBuffer->GetHandle(), 0, frame.countBuffer->GetHandle(), 0, MAX_INSTANCES, sizeof(GpuDrawCommand));
     }
 
-    void Renderer::EndRenderPass() {
+    void Renderer::EndRendering() {
         vkCmdEndRendering(m_Frames[m_CurrentFrame].commandBuffer);
     }
 
@@ -298,12 +304,12 @@ namespace Manro {
 
         VkSemaphoreSubmitInfo waitInfo{};
         waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-        waitInfo.semaphore = frame.imageAvailableSemaphore;
+        waitInfo.semaphore = m_ImageAvailableSemaphores[m_CurrentFrame];
         waitInfo.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
 
         VkSemaphoreSubmitInfo signalInfo{};
         signalInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-        signalInfo.semaphore = frame.renderFinishedSemaphore;
+        signalInfo.semaphore = m_RenderFinishedSemaphores[m_CurrentImageIndex];
         signalInfo.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
 
         VkSubmitInfo2 submitInfo{};
@@ -318,7 +324,7 @@ namespace Manro {
         if (vkQueueSubmit2(m_Context.GetGraphicsQueue(), 1, &submitInfo, frame.inFlightFence) != VK_SUCCESS)
             throw std::runtime_error("Failed to submit draw command buffer!");
 
-        bool needsRecreate = m_Swapchain->Present(m_CurrentImageIndex, frame.renderFinishedSemaphore);
+        bool needsRecreate = m_Swapchain->Present(m_CurrentImageIndex, m_RenderFinishedSemaphores[m_CurrentImageIndex]);
         if (needsRecreate)
             m_PendingResize = true;
  
@@ -349,73 +355,53 @@ namespace Manro {
     void Renderer::DrawMesh(MeshHandle meshId, MaterialInstance &material, const Mat4 &model) {
         const auto *mesh = m_Meshes.Get(meshId);
         if (!mesh) return;
- 
-        VkCommandBuffer cb = m_Frames[m_CurrentFrame].commandBuffer;
- 
-        UniformBufferObject ubo{};
-        ubo.model = model;
-        ubo.view = m_ViewMatrix;
-        ubo.proj = m_ProjectionMatrix;
-        ubo.proj[1][1] *= -1; // Vulkan Y-flip
- 
-        u32 uboOffset = (m_CurrentUboOffset + m_UboAlignment - 1) & ~(m_UboAlignment - 1);
-        m_Frames[m_CurrentFrame].uboBuffer->LoadData(&ubo, sizeof(ubo), uboOffset);
-        m_CurrentUboOffset = uboOffset + sizeof(ubo);
 
-        VkDescriptorSet ds;
-        VkDescriptorSetLayout layout = material.GetMaterial().GetDescriptorSetLayout();
-        VkDescriptorSetAllocateInfo allocInfo{};
-        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        allocInfo.descriptorPool = m_DynamicDescriptorPools[m_CurrentFrame];
-        allocInfo.descriptorSetCount = 1;
-        allocInfo.pSetLayouts = &layout;
+        GpuMeshInstance inst{};
+        inst.modelMatrix = model;
+        
+        glm::mat3 model3 = glm::mat3(model);
+        glm::mat3 normalMat = glm::transpose(glm::inverse(model3));
+        for(int i=0; i<3; ++i) {
+            for(int j=0; j<3; ++j) {
+                inst.normalMatrix[i][j] = normalMat[i][j];
+            }
+            inst.normalMatrix[i][3] = 0.0f;
+        }
 
-        if (vkAllocateDescriptorSets(m_Context.GetDevice(), &allocInfo, &ds) != VK_SUCCESS) {
-            LOG_ERROR("Failed to allocate dynamic descriptor set!");
-            return;
+        u32 matIndex = 0;
+        MaterialData matData = material.GetData();
+        bool found = false;
+        
+        for(u32 i=0; i < (u32)m_Materials.size(); ++i) {
+            if (std::memcmp(&m_Materials[i], &matData, sizeof(MaterialData)) == 0) {
+                matIndex = i;
+                found = true;
+                break;
+            }
         }
         
-        VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = m_Frames[m_CurrentFrame].uboBuffer->GetHandle();
-        bufferInfo.offset = uboOffset;
-        bufferInfo.range = sizeof(UniformBufferObject);
- 
-        VkDescriptorImageInfo imageInfo{};
-        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfo.imageView = m_Textures.GetView(material.GetTexture());
-        imageInfo.sampler = m_Textures.GetSampler();
- 
-        VkWriteDescriptorSet writes[2]{};
-        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[0].dstSet = ds;
-        writes[0].dstBinding = 0;
-        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        writes[0].descriptorCount = 1;
-        writes[0].pBufferInfo = &bufferInfo;
- 
-        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[1].dstSet = ds;
-        writes[1].dstBinding = 1;
-        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[1].descriptorCount = 1;
-        writes[1].pImageInfo = &imageInfo;
- 
-        vkUpdateDescriptorSets(m_Context.GetDevice(), 2, writes, 0, nullptr);
- 
-        vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, material.GetMaterial().GetHandle());
-        vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                 material.GetMaterial().GetLayout(), 0, 1, &ds, 0, nullptr);
- 
-        VkBuffer vb[] = {mesh->vertexBuffer->GetHandle()};
-        VkDeviceSize offs[] = {0};
-        vkCmdBindVertexBuffers(cb, 0, 1, vb, offs);
+        if (!found) {
+            if (m_Materials.size() < 1024) {
+                matIndex = (u32)m_Materials.size();
+                m_Materials.push_back(matData);
+                m_MaterialBuffer->LoadData(m_Materials.data(), sizeof(MaterialData) * m_Materials.size());
+            } else {
+                LOG_WARN("[Renderer] Material buffer overflow (max 1024)!");
+            }
+        }
 
-        VkBuffer instanceBuffers[] = { m_InstanceBuffer->GetHandle() };
-        VkDeviceSize instanceOffsets[] = { 0 };
-        vkCmdBindVertexBuffers(cb, 1, 1, instanceBuffers, instanceOffsets);
- 
-        vkCmdBindIndexBuffer(cb, mesh->indexBuffer->GetHandle(), 0, VK_INDEX_TYPE_UINT32);
-        vkCmdDrawIndexed(cb, mesh->indexCount, 1, 0, 0, 0);
+        inst.firstVertex = mesh->firstVertex;
+        inst.firstIndex = mesh->firstIndex;
+        inst.indexCount = mesh->indexCount;
+        inst.materialIndex = matIndex;
+        inst.flags = 0;
+
+        m_CurrentFrameInstances.push_back(inst);
+    }
+
+    void Renderer::CreateGpuBuffers() {
+        m_MaterialBuffer = CreateScope<Buffer>(m_Context, sizeof(MaterialData) * 1024,
+                                               VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
     }
 
     void Renderer::CreateCommandBuffers() {
@@ -429,83 +415,145 @@ namespace Manro {
         for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
             if (vkCreateCommandPool(m_Context.GetDevice(), &poolInfo, nullptr, &m_Frames[i].commandPool) != VK_SUCCESS)
                 throw std::runtime_error("Failed to create command pool!");
- 
+
             VkCommandBufferAllocateInfo allocInfo{};
             allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
             allocInfo.commandPool = m_Frames[i].commandPool;
             allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
             allocInfo.commandBufferCount = 1;
- 
+
             if (vkAllocateCommandBuffers(m_Context.GetDevice(), &allocInfo, &m_Frames[i].commandBuffer) != VK_SUCCESS)
                 throw std::runtime_error("Failed to allocate command buffers!");
- 
-            VkDeviceSize uboSize = MAX_DRAWS_PER_FRAME * 256; // Use 256 to be safe for alignment
-            m_Frames[i].uboBuffer = CreateScope<Buffer>(m_Context, uboSize,
+
+            m_Frames[i].uboBuffer = CreateScope<Buffer>(m_Context, sizeof(UniformBufferObject),
                                                         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+            m_Frames[i].instanceBuffer = CreateScope<Buffer>(m_Context, sizeof(GpuMeshInstance) * MAX_INSTANCES,
+                                                             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                                                             VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+            m_Frames[i].indirectBuffer = CreateScope<Buffer>(m_Context, sizeof(GpuDrawCommand) * MAX_INSTANCES,
+                                                             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
+                                                             VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+            m_Frames[i].countBuffer = CreateScope<Buffer>(m_Context, sizeof(u32),
+                                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
+                                                          VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+            m_Frames[i].statsBuffer = CreateScope<Buffer>(m_Context, 16,
+                                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+            VkDescriptorSetAllocateInfo dsAllocInfo{};
+            dsAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+            dsAllocInfo.descriptorPool = m_DescriptorPool;
+            dsAllocInfo.descriptorSetCount = 1;
+            dsAllocInfo.pSetLayouts = &m_GlobalSetLayout;
+
+            if (vkAllocateDescriptorSets(m_Context.GetDevice(), &dsAllocInfo, &m_Frames[i].globalSet) != VK_SUCCESS)
+                throw std::runtime_error("Failed to allocate global descriptor sets!");
         }
-
-        struct InstanceData {
-            Mat4 model;
-            Vec4 normal0;
-            Vec4 normal1;
-            Vec4 normal2;
-        };
-        InstanceData idata{};
-        idata.model = Mat4(1.0f);
-        idata.normal0 = { 1, 0, 0, 0 };
-        idata.normal1 = { 0, 1, 0, 0 };
-        idata.normal2 = { 0, 0, 1, 0 };
-
-        m_InstanceBuffer = CreateScope<Buffer>(m_Context, sizeof(InstanceData),
-                                               VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-        m_InstanceBuffer->LoadData(&idata, sizeof(InstanceData));
     }
 
     void Renderer::CreateSyncObjects() {
-        VkSemaphoreCreateInfo semInfo{};
-        semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+        VkSemaphoreCreateInfo semaphoreInfo{};
+        semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
         VkFenceCreateInfo fenceInfo{};
         fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
         fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-        for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-            if (vkCreateSemaphore(m_Context.GetDevice(), &semInfo, nullptr, &m_Frames[i].imageAvailableSemaphore) !=
-                VK_SUCCESS ||
-                vkCreateSemaphore(m_Context.GetDevice(), &semInfo, nullptr, &m_Frames[i].renderFinishedSemaphore) !=
-                VK_SUCCESS ||
-                vkCreateFence(m_Context.GetDevice(), &fenceInfo, nullptr, &m_Frames[i].inFlightFence) != VK_SUCCESS)
-                throw std::runtime_error("Failed to create sync objects!");
+        m_ImageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+        for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+            if (vkCreateSemaphore(m_Context.GetDevice(), &semaphoreInfo, nullptr, &m_ImageAvailableSemaphores[i]) != VK_SUCCESS ||
+                vkCreateFence(m_Context.GetDevice(), &fenceInfo, nullptr, &m_Frames[i].inFlightFence) != VK_SUCCESS) {
+                throw std::runtime_error("Failed to create synchronization objects for a frame!");
+            }
+        }
+
+        m_RenderFinishedSemaphores.resize(m_Swapchain->GetImageCount());
+        for (size_t i = 0; i < m_RenderFinishedSemaphores.size(); i++) {
+            if (vkCreateSemaphore(m_Context.GetDevice(), &semaphoreInfo, nullptr, &m_RenderFinishedSemaphores[i]) != VK_SUCCESS) {
+                throw std::runtime_error("Failed to create render finished semaphore for a swapchain image!");
+            }
         }
     }
 
     void Renderer::CreateDescriptorPool() {
-        VkDescriptorPoolSize poolSizes[2]{};
-        poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        poolSizes[0].descriptorCount = 1024;
-        poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        poolSizes[1].descriptorCount = 1024;
- 
+        VkDescriptorPoolSize poolSizes[] = {
+            {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 10},
+            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 100}
+        };
+
         VkDescriptorPoolCreateInfo poolInfo{};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         poolInfo.poolSizeCount = 2;
         poolInfo.pPoolSizes = poolSizes;
-        poolInfo.maxSets = 1024;
- 
+        poolInfo.maxSets = 10;
+
         if (vkCreateDescriptorPool(m_Context.GetDevice(), &poolInfo, nullptr, &m_DescriptorPool) != VK_SUCCESS)
             throw std::runtime_error("Failed to create descriptor pool!");
     }
+
+    void Renderer::UpdateGlobalDescriptorSet(VkCommandBuffer cb) {
+        FrameData &frame = m_Frames[m_CurrentFrame];
+
+        VkDescriptorBufferInfo uboInfo{};
+        uboInfo.buffer = frame.uboBuffer->GetHandle();
+        uboInfo.offset = 0;
+        uboInfo.range = sizeof(UniformBufferObject);
+
+        VkDescriptorBufferInfo matInfo{};
+        matInfo.buffer = m_MaterialBuffer->GetHandle();
+        matInfo.offset = 0;
+        matInfo.range = VK_WHOLE_SIZE;
+
+        VkWriteDescriptorSet writes[2]{};
+        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[0].dstSet = frame.globalSet;
+        writes[0].dstBinding = 0;
+        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        writes[0].descriptorCount = 1;
+        writes[0].pBufferInfo = &uboInfo;
+
+        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[1].dstSet = frame.globalSet;
+        writes[1].dstBinding = 1;
+        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        writes[1].descriptorCount = 1;
+        writes[1].pBufferInfo = &matInfo;
+
+        vkUpdateDescriptorSets(m_Context.GetDevice(), 2, writes, 0, nullptr);
+    }
  
     void Renderer::LoadShadersAndPipeline() {
-        std::vector<u8> vertSpv = ReadBinaryFile("assets/shaders/texturedMesh.vert.spv");
-        std::vector<u8> fragSpv = ReadBinaryFile("assets/shaders/texturedMesh.frag.spv");
+        std::vector<u8> vertSpv = ReadBinaryFile("assets/shaders/spv/texturedMesh.vert.spv");
+        std::vector<u8> fragSpv = ReadBinaryFile("assets/shaders/spv/texturedMesh.frag.spv");
  
         if (vertSpv.empty() || fragSpv.empty()) {
             LOG_ERROR("[Renderer] Failed to load precompiled shaders!");
             return;
         }
  
-        // Create Descriptor Set Layout for the material
+        // Create Global Descriptor Set Layout
+        VkDescriptorSetLayoutBinding globalBindings[2]{};
+        globalBindings[0].binding = 0; // UBO
+        globalBindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        globalBindings[0].descriptorCount = 1;
+        globalBindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        globalBindings[1].binding = 1; // Material Buffer
+        globalBindings[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        globalBindings[1].descriptorCount = 1;
+        globalBindings[1].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        VkDescriptorSetLayoutCreateInfo globalLayoutInfo{};
+        globalLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        globalLayoutInfo.bindingCount = 2;
+        globalLayoutInfo.pBindings = globalBindings;
+
+        if (vkCreateDescriptorSetLayout(m_Context.GetDevice(), &globalLayoutInfo, nullptr, &m_GlobalSetLayout) != VK_SUCCESS)
+            throw std::runtime_error("Failed to create global descriptor set layout!");
+
         VkDescriptorSetLayoutBinding bindings[2]{};
         bindings[0].binding = 0;
         bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -532,7 +580,7 @@ namespace Manro {
         config.fragmentEntryPoint = "main";
         config.colorAttachmentFormat = m_Swapchain->GetImageFormat();
         config.depthAttachmentFormat = m_DepthFormat;
-        config.descriptorSetLayout = descriptorSetLayout;
+        config.descriptorSetLayouts = { m_GlobalSetLayout, m_Textures.GetBindlessLayout() };
  
         config.vertexInputBindings.resize(2);
         config.vertexInputBindings[0].binding = 0;
@@ -540,7 +588,7 @@ namespace Manro {
         config.vertexInputBindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
         config.vertexInputBindings[1].binding = 1;
-        config.vertexInputBindings[1].stride = 16 * 4 + 16 * 3; // mat4 + 3 * vec4
+        config.vertexInputBindings[1].stride = sizeof(GpuMeshInstance); 
         config.vertexInputBindings[1].inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
 
         config.vertexInputAttributes.resize(11);
@@ -560,10 +608,15 @@ namespace Manro {
         config.vertexInputAttributes[9] = { 9, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 80 };
         config.vertexInputAttributes[10] = { 10, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 96 };
 
+        // Material index (location 11)
+        config.vertexInputAttributes.resize(12);
+        config.vertexInputAttributes[11] = { 11, 1, VK_FORMAT_R32_UINT, 112 };
+
  
         config.msaaSamples = m_MsaaSamples;
  
         pipeline->BuildGraphics(vertSpv, fragSpv, config);
-        m_DefaultMaterial = CreateRef<Material>(m_Context, std::move(pipeline), descriptorSetLayout);
+        m_IndirectPipeline = std::move(pipeline);
+        m_DefaultMaterial = CreateRef<Material>(m_Context, nullptr, descriptorSetLayout); // Material holds the legacy layout for now
     }
 } // namespace Manro

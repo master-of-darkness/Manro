@@ -191,8 +191,6 @@ void Sponza::Render(float dt) {
 
     if (!m_Renderer->BeginFrame())
         return;
-    m_Renderer->BeginRenderPass({0.05f, 0.05f, 0.08f, 1.f});
-
     const float aspect = m_Renderer->GetAspectRatio();
     m_Renderer->SetViewProjection(m_Camera.View(), m_Camera.Projection(kFov, aspect, kNearZ, kFarZ));
  
@@ -200,7 +198,9 @@ void Sponza::Render(float dt) {
         m_Renderer->DrawMesh(sm.meshId, *sm.material, Manro::Mat4{1.0f});
     }
 
-    m_Renderer->EndRenderPass();
+    m_Renderer->BeginRendering({0.05f, 0.05f, 0.08f, 1.f});
+    m_Renderer->RenderQueue();
+    m_Renderer->EndRendering();
     m_Renderer->EndFrameAndPresent();
 }
 

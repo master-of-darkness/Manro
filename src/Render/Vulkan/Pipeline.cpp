@@ -88,16 +88,16 @@ namespace Manro {
         depthStencil.stencilTestEnable = VK_FALSE;
 
         VkPushConstantRange pushRange{};
-        pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        pushRange.stageFlags = VK_SHADER_STAGE_ALL;
         pushRange.offset = 0;
         pushRange.size = config.pushConstantSize;
 
         VkPipelineLayoutCreateInfo layoutInfo{};
         layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 
-        if (config.descriptorSetLayout != VK_NULL_HANDLE) {
-            layoutInfo.setLayoutCount = 1;
-            layoutInfo.pSetLayouts = &config.descriptorSetLayout;
+        if (!config.descriptorSetLayouts.empty()) {
+            layoutInfo.setLayoutCount = static_cast<u32>(config.descriptorSetLayouts.size());
+            layoutInfo.pSetLayouts = config.descriptorSetLayouts.data();
         }
         if (config.pushConstantSize > 0) {
             layoutInfo.pushConstantRangeCount = 1;
@@ -135,6 +135,43 @@ namespace Manro {
 
         vkDestroyShaderModule(m_Context.GetDevice(), fragModule, nullptr);
         vkDestroyShaderModule(m_Context.GetDevice(), vertModule, nullptr);
+    }
+
+    void Pipeline::BuildCompute(const std::vector<u8> &computeSpv,
+                                const PipelineConfigParams &config) {
+        VkShaderModule compModule = CreateShaderModule(computeSpv);
+
+        VkPushConstantRange pushRange{};
+        pushRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+        pushRange.offset = 0;
+        pushRange.size = config.pushConstantSize;
+
+        VkPipelineLayoutCreateInfo layoutInfo{};
+        layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        if (!config.descriptorSetLayouts.empty()) {
+            layoutInfo.setLayoutCount = static_cast<u32>(config.descriptorSetLayouts.size());
+            layoutInfo.pSetLayouts = config.descriptorSetLayouts.data();
+        }
+        if (config.pushConstantSize > 0) {
+            layoutInfo.pushConstantRangeCount = 1;
+            layoutInfo.pPushConstantRanges = &pushRange;
+        }
+
+        if (vkCreatePipelineLayout(m_Context.GetDevice(), &layoutInfo, nullptr, &m_PipelineLayout) != VK_SUCCESS)
+            throw std::runtime_error("Failed to create compute pipeline layout!");
+
+        VkComputePipelineCreateInfo pipelineInfo{};
+        pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+        pipelineInfo.layout = m_PipelineLayout;
+        pipelineInfo.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        pipelineInfo.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+        pipelineInfo.stage.module = compModule;
+        pipelineInfo.stage.pName = config.computeEntryPoint.c_str();
+
+        if (vkCreateComputePipelines(m_Context.GetDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_Pipeline) != VK_SUCCESS)
+            throw std::runtime_error("Failed to create compute pipeline!");
+
+        vkDestroyShaderModule(m_Context.GetDevice(), compModule, nullptr);
     }
 
     void Pipeline::Shutdown() {

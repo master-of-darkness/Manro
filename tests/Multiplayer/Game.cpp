@@ -138,9 +138,9 @@ void Game::Render() {
     if (m_Renderer) {
         if (!m_Renderer->BeginFrame())
             return;
-        m_Renderer->BeginRenderPass({0.01f, 0.01f, 0.033f, 1.f});
+        m_Renderer->BeginRendering({0.01f, 0.01f, 0.033f, 1.f});
         m_SceneManager.Render(*m_Renderer);
-        m_Renderer->EndRenderPass();
+        m_Renderer->EndRendering();
         m_Renderer->EndFrameAndPresent();
     }
 }

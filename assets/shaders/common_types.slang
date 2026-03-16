@@ -121,44 +121,38 @@ struct GeometryInfo {
 
 struct MaterialData {
     float3 albedo;
-    float metallic;
+    float  metallic;
     float3 emissive;
-    float roughness;
-    float ao;
-    float ior;
-    float emissiveStrength;
-    float alpha;
-    float transmissionFactor;
-    float alphaCutoff;
-    int alphaMode; // 0=OPAQUE, 1=MASK, 2=BLEND (matches glTF)
-    uint isGlass;
-    uint isLiquid;
-
-    // Thick-glass parameters (RQ-only)
-    float3 absorptionColor;      // Color after traveling absorptionDistance in the medium (1=none)
-    float absorptionDistance;    // Distance at which absorptionColor applies (meters)
-    uint thinWalled;             // 1 = thin surface (no thickness), 0 = thick volume
-
-    // Raster parity: texture-set flags (-1 = no texture; 0 = sample from texture table)
-    int baseColorTextureSet;
-    int physicalDescriptorTextureSet;
-    int normalTextureSet;
-    int occlusionTextureSet;
-    int emissiveTextureSet;
-
-    // Ray Query texture table indices (binding 6)
-    int baseColorTexIndex;
-    int normalTexIndex;
-    int physicalTexIndex;
-    int occlusionTexIndex;
-    int emissiveTexIndex;
-
-    // Specular-glossiness workflow support
-    int useSpecGlossWorkflow;
-    float glossinessFactor;
+    float  roughness;
+    float  ao;
+    float  ior;
+    float  emissiveStrength;
+    float  alpha;
+    float  transmissionFactor;
+    float  alphaCutoff;
+    int    alphaMode;
+    uint   isGlass;
+    uint   isLiquid;
+    uint   _pad0[3];
+    float3 absorptionColor;
+    float  absorptionDistance;
+    uint   thinWalled;
+    int    baseColorTextureSet;
+    int    physicalDescriptorTextureSet;
+    int    normalTextureSet;
+    int    occlusionTextureSet;
+    int    emissiveTextureSet;
+    int    baseColorTexIndex;
+    int    normalTexIndex;
+    int    physicalTexIndex;
+    int    occlusionTexIndex;
+    int    emissiveTexIndex;
+    int    useSpecGlossWorkflow;
+    float  glossinessFactor;
+    uint   _pad1[3];
     float3 specularFactor;
-    int hasEmissiveStrengthExt;
-    uint _padMat[3];
+    int    hasEmissiveStrengthExt;
+    uint   _padMat[4];
 };
 
 // Constants

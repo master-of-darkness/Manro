@@ -13,12 +13,13 @@ namespace Manro {
         std::vector<VkVertexInputBindingDescription> vertexInputBindings;
         std::vector<VkVertexInputAttributeDescription> vertexInputAttributes;
 
-        VkDescriptorSetLayout descriptorSetLayout{VK_NULL_HANDLE};
+        std::vector<VkDescriptorSetLayout> descriptorSetLayouts;
         VkSampleCountFlagBits msaaSamples{VK_SAMPLE_COUNT_1_BIT};
 
         u32 pushConstantSize{0};
         std::string vertexEntryPoint{"main"};
         std::string fragmentEntryPoint{"main"};
+        std::string computeEntryPoint{"main"};
     };
 
     class Pipeline {
@@ -30,6 +31,9 @@ namespace Manro {
         void BuildGraphics(const std::vector<u8> &vertexSpv,
                            const std::vector<u8> &fragmentSpv,
                            const PipelineConfigParams &config);
+
+        void BuildCompute(const std::vector<u8> &computeSpv,
+                          const PipelineConfigParams &config);
 
         void Shutdown();
 

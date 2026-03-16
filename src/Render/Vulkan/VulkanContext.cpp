@@ -74,17 +74,28 @@ namespace Manro {
         VkPhysicalDeviceVulkan12Features features12{};
         features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
         features12.bufferDeviceAddress = VK_TRUE;
+        features12.descriptorIndexing = VK_TRUE;
+        features12.descriptorBindingPartiallyBound = VK_TRUE;
+        features12.descriptorBindingVariableDescriptorCount = VK_TRUE;
+        features12.runtimeDescriptorArray = VK_TRUE;
+        features12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+        features12.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
+        features12.descriptorBindingStorageBufferUpdateAfterBind = VK_TRUE;
+        features12.drawIndirectCount = VK_TRUE;
 
         VkPhysicalDeviceVulkan13Features features13{};
         features13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
         features13.dynamicRendering = VK_TRUE;
         features13.synchronization2 = VK_TRUE;
+        features13.maintenance4 = VK_TRUE;
 
         auto phys_ret = selector
                 .set_surface(m_Surface)
                 .set_required_features_12(features12)
                 .set_required_features_13(features13)
                 .add_required_extension("VK_KHR_buffer_device_address")
+                .add_required_extension("VK_KHR_dynamic_rendering")
+                .add_required_extension("VK_KHR_synchronization2")
                 .select();
 
         if (!phys_ret) {

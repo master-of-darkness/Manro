@@ -10,6 +10,7 @@
 namespace Manro {
     TextureManager::TextureManager(const VulkanContext &ctx) : m_Context(ctx) {
         CreateDefaultSampler();
+        CreateBindlessResources();
         CreateWhiteTexture();
     }
 
@@ -21,6 +22,81 @@ namespace Manro {
         m_Textures.clear();
 
         if (m_Sampler) vkDestroySampler(m_Context.GetDevice(), m_Sampler, nullptr);
+
+        if (m_BindlessLayout) vkDestroyDescriptorSetLayout(m_Context.GetDevice(), m_BindlessLayout, nullptr);
+        if (m_BindlessPool) vkDestroyDescriptorPool(m_Context.GetDevice(), m_BindlessPool, nullptr);
+    }
+
+    void TextureManager::CreateBindlessResources() {
+        VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kMaxBindlessTextures};
+        VkDescriptorPoolCreateInfo poolInfo{};
+        poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
+        poolInfo.maxSets = 1;
+        poolInfo.poolSizeCount = 1;
+        poolInfo.pPoolSizes = &poolSize;
+
+        if (vkCreateDescriptorPool(m_Context.GetDevice(), &poolInfo, nullptr, &m_BindlessPool) != VK_SUCCESS)
+            throw std::runtime_error("[TextureManager] Failed to create bindless pool");
+
+        VkDescriptorSetLayoutBinding binding{};
+        binding.binding = 0;
+        binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        binding.descriptorCount = kMaxBindlessTextures;
+        binding.stageFlags = VK_SHADER_STAGE_ALL;
+
+        VkDescriptorBindingFlags flags = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
+                                         VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT |
+                                         VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT;
+
+        VkDescriptorSetLayoutBindingFlagsCreateInfo bindingFlags{};
+        bindingFlags.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
+        bindingFlags.bindingCount = 1;
+        bindingFlags.pBindingFlags = &flags;
+
+        VkDescriptorSetLayoutCreateInfo layoutInfo{};
+        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
+        layoutInfo.bindingCount = 1;
+        layoutInfo.pBindings = &binding;
+        layoutInfo.pNext = &bindingFlags;
+
+        if (vkCreateDescriptorSetLayout(m_Context.GetDevice(), &layoutInfo, nullptr, &m_BindlessLayout) != VK_SUCCESS)
+            throw std::runtime_error("[TextureManager] Failed to create bindless layout");
+
+        VkDescriptorSetVariableDescriptorCountAllocateInfo variableCountInfo{};
+        variableCountInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO;
+        variableCountInfo.descriptorSetCount = 1;
+        u32 counts = kMaxBindlessTextures;
+        variableCountInfo.pDescriptorCounts = &counts;
+
+        VkDescriptorSetAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocInfo.descriptorPool = m_BindlessPool;
+        allocInfo.descriptorSetCount = 1;
+        allocInfo.pSetLayouts = &m_BindlessLayout;
+        allocInfo.pNext = &variableCountInfo;
+
+        if (vkAllocateDescriptorSets(m_Context.GetDevice(), &allocInfo, &m_BindlessSet) != VK_SUCCESS)
+            throw std::runtime_error("[TextureManager] Failed to allocate bindless set");
+    }
+
+    void TextureManager::UpdateBindlessSet(u32 index, VkImageView view) {
+        VkDescriptorImageInfo imageInfo{};
+        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        imageInfo.imageView = view;
+        imageInfo.sampler = m_Sampler;
+
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet = m_BindlessSet;
+        write.dstBinding = 0;
+        write.dstArrayElement = index;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        write.descriptorCount = 1;
+        write.pImageInfo = &imageInfo;
+
+        vkUpdateDescriptorSets(m_Context.GetDevice(), 1, &write, 0, nullptr);
     }
 
     void TextureManager::CreateDefaultSampler() {
@@ -148,6 +224,7 @@ namespace Manro {
 
         TextureHandle id = m_NextId++;
         m_Textures.emplace(id, std::move(tex));
+        UpdateBindlessSet(id, m_Textures[id].view);
         return id;
     }
 

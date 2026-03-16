@@ -4,40 +4,37 @@
 #include <Manro/Render/TextureManager.h>
 #include <Manro/Core/Types.h>
 
+#include <Manro/Render/Material/MaterialData.h>
+
 namespace Manro {
     class MaterialInstance {
     public:
         MaterialInstance(Ref<Material> material) : m_Material(material) {
         }
 
-        void SetTexture(TextureHandle texture) { m_Texture = texture; }
-        TextureHandle GetTexture() const { return m_Texture; }
+        void SetTexture(TextureHandle texture) {
+            m_Data.baseColorTexIndex = (int)texture;
+            m_Data.baseColorTextureSet = (texture == kInvalidTexture) ? -1 : 0;
+        }
+
+        TextureHandle GetTexture() const { return (TextureHandle)m_Data.baseColorTexIndex; }
 
         const Material &GetMaterial() const { return *m_Material; }
         Ref<Material> GetMaterialRef() const { return m_Material; }
 
+        MaterialData &GetData() { return m_Data; }
+        const MaterialData &GetData() const { return m_Data; }
+
         void CreateDescriptorSets(VkDescriptorPool pool, uint32_t count) {
-            m_DescriptorSets.resize(count);
-            std::vector<VkDescriptorSetLayout> layouts(count, m_Material->GetDescriptorSetLayout());
-            
-            VkDescriptorSetAllocateInfo allocInfo{};
-            allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-            allocInfo.descriptorPool = pool;
-            allocInfo.descriptorSetCount = count;
-            allocInfo.pSetLayouts = layouts.data();
-            
-            if (vkAllocateDescriptorSets(m_Material->GetContext().GetDevice(), &allocInfo, m_DescriptorSets.data()) != VK_SUCCESS) {
-                throw std::runtime_error("Failed to allocate material descriptor sets!");
-            }
+            // No longer needed for GPU-driven
         }
- 
+
         VkDescriptorSet GetDescriptorSet(uint32_t frameIndex) const {
-            return m_DescriptorSets[frameIndex];
+            return VK_NULL_HANDLE;
         }
 
     private:
         Ref<Material> m_Material;
-        TextureHandle m_Texture{kInvalidTexture};
-        std::vector<VkDescriptorSet> m_DescriptorSets;
+        MaterialData m_Data;
     };
 } // namespace Manro
