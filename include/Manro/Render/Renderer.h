@@ -10,6 +10,7 @@
 #include <Manro/Render/Material/MaterialInstance.h>
 #include <Manro/Core/Types.h>
 #include <vector>
+#include <unordered_map>
 #include <Manro/Render/Material/MaterialData.h>
 
 namespace Manro {
@@ -183,6 +184,8 @@ namespace Manro {
 
         void BuildCompositePipeline();
 
+        void BuildCullPipeline();
+
         void CreateDescriptorLayouts();
 
         void CreateDescriptorPool();
@@ -229,6 +232,7 @@ namespace Manro {
             Scope<Buffer> countBuffer;
             VkDescriptorSet pbrSet{VK_NULL_HANDLE};
             VkDescriptorSet compositeSet{VK_NULL_HANDLE};
+            VkDescriptorSet cullSet{VK_NULL_HANDLE};
         };
 
         static constexpr int MAX_FRAMES_IN_FLIGHT = 2;
@@ -251,15 +255,17 @@ namespace Manro {
 
         VkDescriptorSetLayout m_PbrSetLayout{VK_NULL_HANDLE};
         VkDescriptorSetLayout m_CompositeSetLayout{VK_NULL_HANDLE};
+        VkDescriptorSetLayout m_CullSetLayout{VK_NULL_HANDLE};
 
         Scope<Buffer> m_MaterialBuffer;
         std::vector<MaterialData> m_Materials;
+        std::unordered_map<MaterialData, u32, MaterialDataHash> m_MaterialCache;
 
         std::vector<GpuMeshInstance> m_CurrentFrameInstances;
-        std::vector<PbrPushConstants> m_CurrentFramePushConstants;
 
         Scope<Pipeline> m_PbrPipeline;
         Scope<Pipeline> m_CompositePipeline;
+        Scope<Pipeline> m_CullPipeline;
 
         u32 m_PendingWidth{0};
         u32 m_PendingHeight{0};

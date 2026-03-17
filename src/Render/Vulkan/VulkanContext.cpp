@@ -92,6 +92,11 @@ namespace Manro {
         features11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
         features11.shaderDrawParameters = VK_TRUE;
 
+        VkPhysicalDeviceFeatures baseFeatures{};
+        baseFeatures.multiDrawIndirect = VK_TRUE;
+        baseFeatures.drawIndirectFirstInstance = VK_TRUE;
+        baseFeatures.samplerAnisotropy = VK_TRUE;
+
         VkPhysicalDeviceRayQueryFeaturesKHR rayQueryFeatures{};
         rayQueryFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR;
         rayQueryFeatures.rayQuery = VK_TRUE;
@@ -102,6 +107,7 @@ namespace Manro {
 
         auto phys_ret = selector
                 .set_surface(m_Surface)
+                .set_required_features(baseFeatures)
                 .set_required_features_11(features11)
                 .set_required_features_12(features12)
                 .set_required_features_13(features13)

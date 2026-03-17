@@ -40,7 +40,7 @@ struct FlyCamera {
 
 class Sponza {
 public:
-    explicit Sponza(SceneType scene = SceneType::Sponza) : m_SceneType(scene) {
+    explicit Sponza() {
     }
 
     ~Sponza() { Shutdown(); }
@@ -71,6 +71,5 @@ private:
 
     Manro::Scope<Manro::Model> m_Model;
 
-    SceneType m_SceneType{SceneType::Bistro};
     FlyCamera m_Camera;
 };

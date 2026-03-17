@@ -34,6 +34,7 @@ struct VSInput {
     [[vk::location(8)]] float4 InstanceNormal0;                     // normal matrix column 0
     [[vk::location(9)]] float4 InstanceNormal1;                     // normal matrix column 1
     [[vk::location(10)]] float4 InstanceNormal2;                    // normal matrix column 2
+    [[vk::location(11)]] uint MaterialIndex;                        // material index for this instance
 };
 
 // Output from vertex shader / Input to fragment shader
@@ -44,6 +45,7 @@ struct VSOutput {
     float3 GeometricNormal : NORMAL1;
     float2 UV : TEXCOORD0;
     float4 Tangent : TANGENT;
+    uint MaterialIndex : TEXCOORD1;
 };
 
 [[vk::binding(0, 0)]] ConstantBuffer<UniformBufferObject> ubo;
@@ -120,6 +122,7 @@ VSOutput VSMain(VSInput input)
     float3 worldTangent = normalize(mul(model3x3, mul(instNormal, input.Tangent.xyz)));
     output.UV = input.UV;
     output.Tangent = float4(worldTangent, input.Tangent.w);
+    output.MaterialIndex = input.MaterialIndex;
     return output;
 }
 
@@ -129,14 +132,15 @@ float4 PSMain(VSOutput input) : SV_TARGET
 {
     // --- 1. Material Properties ---
     float2 uv = float2(input.UV.x, 1.0 - input.UV.y);
-    float4 baseColor = (material.baseColorTextureSet < 0) ? material.baseColorFactor : globalTextures[material.baseColorTextureSet].Sample(uv) * material.baseColorFactor;
-    float4 mrOrSpecGloss = (material.physicalDescriptorTextureSet < 0) ? float4(1.0, 1.0, 1.0, 1.0) : globalTextures[material.physicalDescriptorTextureSet].Sample(uv);
+    MaterialData mat = materialBuffer[NonUniformResourceIndex(input.MaterialIndex)];
+    float4 baseColor = (mat.baseColorTexIndex < 0) ? float4(mat.albedo, mat.alpha) : globalTextures[NonUniformResourceIndex(mat.baseColorTexIndex)].Sample(uv) * float4(mat.albedo, mat.alpha);
+    float4 mrOrSpecGloss = (mat.physicalTexIndex < 0) ? float4(1.0, 1.0, 1.0, 1.0) : globalTextures[NonUniformResourceIndex(mat.physicalTexIndex)].Sample(uv);
     float metallic = 0.0, roughness = 1.0;
     float3 F0, albedo;
 
-    if (material.useSpecGlossWorkflow != 0) {
-        float3 specColorSG = mrOrSpecGloss.rgb * material.specularFactor;
-        float gloss = clamp(mrOrSpecGloss.a * material.glossinessFactor, 0.0, 1.0);
+    if (mat.useSpecGlossWorkflow != 0) {
+        float3 specColorSG = mrOrSpecGloss.rgb * mat.specularFactor;
+        float gloss = clamp(mrOrSpecGloss.a * mat.glossinessFactor, 0.0, 1.0);
         roughness = clamp(1.0 - gloss, 0.0, 1.0);
         F0 = specColorSG;
         albedo = baseColor.rgb * (1.0 - max(F0.r, max(F0.g, F0.b)));
@@ -144,28 +148,28 @@ float4 PSMain(VSOutput input) : SV_TARGET
         // glTF metallic-roughness texture packs metallic in B, roughness in G (linear space)
         float metallicTex = mrOrSpecGloss.b;
         float roughnessTex = mrOrSpecGloss.g;
-        metallic = clamp(metallicTex * material.metallicFactor, 0.0, 1.0);
-        roughness = clamp(roughnessTex * material.roughnessFactor, 0.0, 1.0);
+        metallic = clamp(metallicTex * mat.metallic, 0.0, 1.0);
+        roughness = clamp(roughnessTex * mat.roughness, 0.0, 1.0);
         F0 = lerp(float3(0.04, 0.04, 0.04), baseColor.rgb, metallic);
         albedo = baseColor.rgb * (1.0 - metallic);
     }
 
-    float ao = (material.occlusionTextureSet < 0) ? 1.0 : globalTextures[material.occlusionTextureSet].Sample(uv).r;
+    float ao = (mat.occlusionTexIndex < 0) ? 1.0 : globalTextures[NonUniformResourceIndex(mat.occlusionTexIndex)].Sample(uv).r;
 
     // Emissive: default to constant white when no emissive texture so authored emissiveFactor works per glTF spec.
     // If a texture is present but factor is zero, assume (1,1,1) to preserve emissive textures by default.
-    float3 emissiveTex = (material.emissiveTextureSet < 0) ? float3(1.0, 1.0, 1.0) : globalTextures[material.emissiveTextureSet].Sample(uv).rgb;
-    float3 emissiveFactor = material.emissiveFactor;
+    float3 emissiveTex = (mat.emissiveTexIndex < 0) ? float3(1.0, 1.0, 1.0) : globalTextures[NonUniformResourceIndex(mat.emissiveTexIndex)].Sample(uv).rgb;
+    float3 emissiveFactor = mat.emissive;
     float3 emissive = emissiveTex * emissiveFactor;
-    if (material.hasEmissiveStrengthExt)
-      emissive *= material.emissiveStrength;
+    if (mat.hasEmissiveStrengthExt != 0)
+      emissive *= mat.emissiveStrength;
 
-    if (material.alphaMask > 0.5 && baseColor.a < material.alphaMaskCutoff) { discard; }
+    if (mat.alphaMode == 1 && baseColor.a < mat.alphaCutoff) { discard; }
 
     // --- 2. Normal Calculation ---
     float3 N = normalize(input.Normal);
-    if (material.normalTextureSet >= 0) {
-        float3 tangentNormal = globalTextures[material.normalTextureSet].Sample(uv).xyz * 2.0 - 1.0;
+    if (mat.normalTexIndex >= 0) {
+        float3 tangentNormal = globalTextures[NonUniformResourceIndex(mat.normalTexIndex)].Sample(uv).xyz * 2.0 - 1.0;
         float3 T = normalize(input.Tangent.xyz);
         // We flip the V coordinate for all textures (uv.y -> 1-uv.y). In
         // tangent space, this corresponds to inverting the bitangent.
@@ -212,8 +216,8 @@ float4 PSMain(VSOutput input) : SV_TARGET
 
     uint tileId = (slice * tilesY + tileY) * tilesX + tileX;
 
-    // CPU toggles Forward+ via ubo.padding1 (0 = disabled, non-zero = enabled)
-    bool useForwardPlus = (ubo.padding1 != 0.0);
+    // Use Forward+ by default (fall back to global loop if lists are empty)
+    bool useForwardPlus = true;
 
     uint base = 0u;
     uint count = 0u;
@@ -226,144 +230,42 @@ float4 PSMain(VSOutput input) : SV_TARGET
     bool forceGlobal = false;
 
     // Accumulate per-light diffuse and specular terms using GGX microfacet BRDF.
-    if (useForwardPlus && !forceGlobal && count > 0) {
+    if (useForwardPlus && count > 0) {
         // Use Forward+ culled list
         for (uint li = 0u; li < count; ++li) {
             uint lightIndex = tileLightIndices[base + li];
             LightData light = lightBuffer[lightIndex];
-            float3 L, radiance;
-            float distToLight = 10000.0;
-            if (light.lightType == 1) {
-                // Directional
-                L = normalize(-light.position.xyz);
-                radiance = light.color.rgb;
-            } else {
-                // Point/spot/emissive: position.xyz is light position in world space
-                float3 toLight = light.position.xyz - input.WorldPos;
-                float d = length(toLight);
-                L = (d > 1e-5) ? toLight / d : float3(0,0,1);
-                distToLight = d;
-
-                float attenuation = 1.0;
-                if (light.lightType == 3) {
-                    // Emissive: soft falloff using range as a characteristic radius
-                    float r = max(light.range, 0.001);
-                    attenuation = 1.0 / (1.0 + (d / r) * (d / r));
-                } else {
-                    attenuation = 1.0 / max(d * d, 0.0001);
-                    // GLTF style range attenuation
-                    if (light.range > 0.0) {
-                        attenuation *= pow(saturate(1.0 - pow(d / light.range, 4.0)), 2.0);
-                    }
-                }
-                radiance = light.color.rgb * attenuation;
-
-                if (light.lightType == 2) {
-                    // Spot light cone attenuation
-                    float3 D = normalize(light.direction.xyz);
-                    float cd = dot(D, -L);
-                    float cosInner = cos(light.innerConeAngle);
-                    float cosOuter = cos(light.outerConeAngle);
-                    float spotAttenuation = saturate((cd - cosOuter) / max(cosInner - cosOuter, 0.0001));
-                    spotAttenuation *= spotAttenuation;
-                    radiance *= spotAttenuation;
-                }
-            }
-            // For emissive lights, treat lighting as two-sided to avoid glass/self-occlusion issues
-            float rawDot = dot(N, L);
-            float NdotL = (light.lightType == 3) ? abs(rawDot) : max(rawDot, 0.0);
-
-            if (NdotL > 0.0) {
+            
+            LightEvaluation eval = evaluateLight(light, input.WorldPos, N);
+            if (eval.valid) {
                 float visibility = 1.0;
-                // Raster ray-query shadows are expensive. In Bistro, most lights are emissive
-                // and casting per-light shadows drops FPS drastically. Shadow only the directional
-                // light (sun) for now.
+                // Raster ray-query shadows are expensive. Shadow only the directional light (sun) for now.
                 if (ubo.padding2 != 0.0 && light.lightType == 1) {
-                    float tMaxShadow = (light.lightType == 1) ? 10000.0 : max(distToLight - RASTER_SHADOW_EPS, RASTER_SHADOW_EPS);
+                    float tMaxShadow = 10000.0;
                     float3 shadowOrigin = input.WorldPos + N * RASTER_SHADOW_EPS;
-                    bool occluded = traceShadowOccluded(shadowOrigin, L, RASTER_SHADOW_EPS, tMaxShadow);
+                    bool occluded = traceShadowOccluded(shadowOrigin, eval.L, RASTER_SHADOW_EPS, tMaxShadow);
                     visibility = occluded ? 0.0 : 1.0;
                 }
-
-                float3 H = normalize(V + L);
-                float NdotV = max(dot(N, V), 0.0);
-                float NdotH = max(dot(N, H), 0.0);
-                float HdotV = max(dot(H, V), 0.0);
-                float D      = DistributionGGX(NdotH, roughness);
-                float G      = GeometrySmith(NdotV, NdotL, roughness);
-                float3 F     = FresnelSchlick(HdotV, F0);
-                float3 spec  = (D * G * F) / max(4.0 * NdotV * NdotL, 0.0001);
-                float3 kD    = (1.0 - F) * (1.0 - metallic);
-                specularLighting += spec * radiance * NdotL * visibility;
-                diffuseLighting  += (kD * albedo / PI) * radiance * NdotL * visibility;
+                
+                eval.radiance *= visibility;
+                accumulateLighting(eval, N, V, albedo, metallic, roughness, F0, diffuseLighting, specularLighting);
             }
         }
     }
-    // Global light loop (fallback or forced debug)
-    // Fallback when Forward+ list is empty but lights exist and not in single-tile mode,
-    // OR always when forceGlobal flag is enabled.
-    // If Forward+ is disabled, always use global lights.
-    // If Forward+ is enabled but lists are empty (e.g., before first dispatch), fall back to global.
-    if (forceGlobal || !useForwardPlus || (count == 0 && ubo.lightCount > 0)) {
-        // Fallback path when Forward+ is disabled or lists are not populated yet
+    // Global light loop (fallback)
+    if (count == 0 && ubo.lightCount > 0) {
         for (uint li = 0u; li < (uint)ubo.lightCount; ++li) {
             LightData light = lightBuffer[li];
-            float3 L, radiance;
-            float distToLight = 10000.0;
-            if (light.lightType == 1) {
-                L = normalize(-light.position.xyz);
-                radiance = light.color.rgb;
-            } else {
-                float3 toLight = light.position.xyz - input.WorldPos;
-                float d = length(toLight);
-                L = (d > 1e-5) ? toLight / d : float3(0,0,1);
-                distToLight = d;
-
-                float attenuation = 1.0;
-                if (light.lightType == 3) {
-                    float r = max(light.range, 0.001);
-                    attenuation = 1.0 / (1.0 + (d / r) * (d / r));
-                } else {
-                    attenuation = 1.0 / max(d * d, 0.0001);
-                    // GLTF style range attenuation
-                    if (light.range > 0.0) {
-                        attenuation *= pow(saturate(1.0 - pow(d / light.range, 4.0)), 2.0);
-                    }
-                }
-                radiance = light.color.rgb * attenuation;
-
-                if (light.lightType == 2) {
-                    // Spot light cone attenuation
-                    float3 D = normalize(light.direction.xyz);
-                    float cd = dot(D, -L);
-                    float cosInner = cos(light.innerConeAngle);
-                    float cosOuter = cos(light.outerConeAngle);
-                    float spotAttenuation = saturate((cd - cosOuter) / max(cosInner - cosOuter, 0.0001));
-                    spotAttenuation *= spotAttenuation;
-                    radiance *= spotAttenuation;
-                }
-            }
-            float NdotL = (light.lightType == 3) ? abs(dot(N, L)) : max(dot(N, L), 0.0);
-            if (NdotL > 0.0) {
-                float visibility = 1.0;
-                if (ubo.padding2 != 0.0 && light.lightType == 1) {
-                    float tMaxShadow = (light.lightType == 1) ? 10000.0 : max(distToLight - RASTER_SHADOW_EPS, RASTER_SHADOW_EPS);
+            LightEvaluation eval = evaluateLight(light, input.WorldPos, N);
+            if (eval.valid) {
+                 float visibility = 1.0;
+                 if (ubo.padding2 != 0.0 && light.lightType == 1) {
                     float3 shadowOrigin = input.WorldPos + N * RASTER_SHADOW_EPS;
-                    bool occluded = traceShadowOccluded(shadowOrigin, L, RASTER_SHADOW_EPS, tMaxShadow);
+                    bool occluded = traceShadowOccluded(shadowOrigin, eval.L, RASTER_SHADOW_EPS, 10000.0);
                     visibility = occluded ? 0.0 : 1.0;
-                }
-
-                float3 H = normalize(V + L);
-                float NdotV = max(dot(N, V), 0.0);
-                float NdotH = max(dot(N, H), 0.0);
-                float HdotV = max(dot(H, V), 0.0);
-                float D      = DistributionGGX(NdotH, roughness);
-                float G      = GeometrySmith(NdotV, NdotL, roughness);
-                float3 F     = FresnelSchlick(HdotV, F0);
-                float3 spec  = (D * G * F) / max(4.0 * NdotV * NdotL, 0.0001);
-                float3 kD    = (1.0 - F) * (1.0 - metallic);
-                specularLighting += spec * radiance * NdotL * visibility;
-                diffuseLighting  += (kD * albedo / PI) * radiance * NdotL * visibility;
+                 }
+                 eval.radiance *= visibility;
+                 accumulateLighting(eval, N, V, albedo, metallic, roughness, F0, diffuseLighting, specularLighting);
             }
         }
     }
@@ -401,21 +303,22 @@ float4 GlassPSMain(VSOutput input) : SV_TARGET
     // --- 1. Material / texture sampling (minimal subset) ---
     float2 uv = float2(input.UV.x, 1.0 - input.UV.y);
 
-    float4 baseColor = (material.baseColorTextureSet < 0)
-        ? material.baseColorFactor
-        : globalTextures[material.baseColorTextureSet].Sample(uv) * material.baseColorFactor;
+    MaterialData mat = materialBuffer[NonUniformResourceIndex(input.MaterialIndex)];
+    float4 baseColor = (mat.baseColorTexIndex < 0)
+        ? float4(mat.albedo, mat.alpha)
+        : globalTextures[NonUniformResourceIndex(mat.baseColorTexIndex)].Sample(uv) * float4(mat.albedo, mat.alpha);
 
     // Emissive (same logic as PSMain)
-    float3 emissiveTex = (material.emissiveTextureSet < 0)
+    float3 emissiveTex = (mat.emissiveTexIndex < 0)
         ? float3(1.0, 1.0, 1.0)
-        : globalTextures[material.emissiveTextureSet].Sample(uv).rgb;
-    float3 emissiveFactor = material.emissiveFactor;
+        : globalTextures[NonUniformResourceIndex(mat.emissiveTexIndex)].Sample(uv).rgb;
+    float3 emissiveFactor = mat.emissive;
     float3 emissive = emissiveTex * emissiveFactor;
-    if (material.hasEmissiveStrengthExt)
-        emissive *= material.emissiveStrength;
+    if (mat.hasEmissiveStrengthExt != 0)
+        emissive *= mat.emissiveStrength;
 
     // Alpha mask discard as in PSMain
-    if (material.alphaMask > 0.5 && baseColor.a < material.alphaMaskCutoff) {
+    if (mat.alphaMode == 1 && baseColor.a < mat.alphaCutoff) {
         discard;
     }
 
@@ -434,7 +337,7 @@ float4 GlassPSMain(VSOutput input) : SV_TARGET
     // Some assets flag “glass” via engine-side heuristics but may not author
     // `KHR_materials_transmission`. Since this shader is only used for glass,
     // derive a robust effective transmission so glass never goes black.
-    float T_auth = clamp(material.transmissionFactor, 0.0, 1.0);
+    float T_auth = clamp(mat.transmissionFactor, 0.0, 1.0);
     float opacity = clamp(baseColor.a, 0.0, 1.0);
     float T_fromAlpha = 1.0 - opacity;
     float T_eff = max(T_auth, T_fromAlpha);
@@ -495,7 +398,7 @@ float4 GlassPSMain(VSOutput input) : SV_TARGET
         // Restore Fresnel-blended mixing with boosted visibility for debugging/tuning.
         float3 F_view2 = FresnelSchlick(NdotV, float3(0.06, 0.06, 0.06));
         float F_avg2 = (F_view2.r + F_view2.g + F_view2.b) / 3.0;
-        float reflStrength = saturate(0.20 + (1.5 * F_avg2) * (1.0 - material.roughnessFactor));
+        float reflStrength = saturate(0.20 + (1.5 * F_avg2) * (1.0 - mat.roughness));
         // Scale by user-controlled intensity
         reflStrength *= max(0.0, ubo.reflectionIntensity);
         color = lerp(color, refl, reflStrength);

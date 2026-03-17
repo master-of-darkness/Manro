@@ -69,7 +69,7 @@ Manro::Mat4 FlyCamera::ViewProj(float fovDeg, float aspect, float nearZ, float f
 void Sponza::Initialize() {
     auto &wm = m_Engine.GetPlatform().GetWindowManager();
     Manro::WindowDesc desc;
-    desc.Title = (m_SceneType == SceneType::Bistro) ? "Bistro Test" : "Sponza Test";
+    desc.Title = "Sponza Test";
     desc.Width = kWindowWidth;
     desc.Height = kWindowHeight;
     m_Window = wm.AddWindow(desc);
@@ -125,7 +125,7 @@ void Sponza::Run() {
             auto *window = platform.GetWindowManager().Get(m_Window);
             if (window) {
                 char title[256];
-                const char *baseTitle = (m_SceneType == SceneType::Bistro) ? "Bistro Test" : "Sponza Test";
+                const char *baseTitle = "Sponza Test";
                 snprintf(title, sizeof(title), "%s - FPS: %.2f", baseTitle, fps);
                 window->SetTitle(title);
             }

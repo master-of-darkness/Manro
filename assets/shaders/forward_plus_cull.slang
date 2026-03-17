@@ -38,7 +38,7 @@ struct FPParams {
 // radius from its world-space range using the projection matrix. A light is included in
 // a tile if the circle intersects the tile rectangle. Depth/cluster slicing can be added later.
 
-[numthreads(1, 1, 1)]
+[numthreads(16, 16, 1)]
 void main(uint3 DTid : SV_DispatchThreadID)
 {
     uint tilesX = params.counts.z;
