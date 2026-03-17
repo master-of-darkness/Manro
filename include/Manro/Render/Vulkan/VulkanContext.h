@@ -1,8 +1,8 @@
 #pragma once
 #include <vk_mem_alloc.h>
 #include <Manro/Core/Types.h>
-
 #include "VkBootstrap.h"
+#include "volk.h"
 
 namespace Manro {
     class IWindow;
@@ -26,6 +26,12 @@ namespace Manro {
         VkSurfaceKHR GetSurface() const { return m_Surface; }
 
         VkSampleCountFlagBits GetMaxUsableSampleCount() const;
+
+        u64 GetTimelineSemaphoreCounterValue(VkSemaphore semaphore) const {
+            u64 value = 0;
+            vkGetSemaphoreCounterValue(m_Device, semaphore, &value);
+            return value;
+        }
 
     private:
         void CreateInstance(const char *appName);

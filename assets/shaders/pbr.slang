@@ -46,28 +46,18 @@ struct VSOutput {
     float4 Tangent : TANGENT;
 };
 
-[[vk::binding(0, 1)]] Sampler2D opaqueSceneColor;
-
-// Bindings
 [[vk::binding(0, 0)]] ConstantBuffer<UniformBufferObject> ubo;
-[[vk::binding(1, 0)]] Sampler2D baseColorMap;
-[[vk::binding(2, 0)]] Sampler2D metallicRoughnessMap;
-[[vk::binding(3, 0)]] Sampler2D normalMap;
-[[vk::binding(4, 0)]] Sampler2D occlusionMap;
-[[vk::binding(5, 0)]] Sampler2D emissiveMap;
+[[vk::binding(1, 0)]] Sampler2D baseColorMapStub; // Stub for validation, not used in bindless path
 [[vk::binding(6, 0)]] StructuredBuffer<LightData> lightBuffer;
-// Forward+ per-tile light lists (same set 0 to keep pipeline layouts compact)
 [[vk::binding(7, 0)]] StructuredBuffer<TileHeader> tileHeaders;
 [[vk::binding(8, 0)]] StructuredBuffer<uint> tileLightIndices;
-// Planar reflection sampler (bound only when reflections are enabled)
+[[vk::binding(9, 0)]] StructuredBuffer<GeometryInfo> instanceBuffer; // instanceBuffer used as geometryInfoBuffer in some contexts
 [[vk::binding(10, 0)]] Sampler2D reflectionMap;
-
-// Raster ray-query shadows: TLAS
 [[vk::binding(11, 0)]] RaytracingAccelerationStructure tlas;
-
-// Ray-query shared buffers (used for material-aware raster shadow queries)
 [[vk::binding(12, 0)]] StructuredBuffer<GeometryInfo> geometryInfoBuffer;
 [[vk::binding(13, 0)]] StructuredBuffer<MaterialData> materialBuffer;
+
+[[vk::binding(0, 1)]] Sampler2D globalTextures[];
 
 [[vk::push_constant]] PushConstants material;
 
@@ -139,8 +129,8 @@ float4 PSMain(VSOutput input) : SV_TARGET
 {
     // --- 1. Material Properties ---
     float2 uv = float2(input.UV.x, 1.0 - input.UV.y);
-    float4 baseColor = (material.baseColorTextureSet < 0) ? material.baseColorFactor : baseColorMap.Sample(uv) * material.baseColorFactor;
-    float4 mrOrSpecGloss = (material.physicalDescriptorTextureSet < 0) ? float4(1.0, 1.0, 1.0, 1.0) : metallicRoughnessMap.Sample(uv);
+    float4 baseColor = (material.baseColorTextureSet < 0) ? material.baseColorFactor : globalTextures[material.baseColorTextureSet].Sample(uv) * material.baseColorFactor;
+    float4 mrOrSpecGloss = (material.physicalDescriptorTextureSet < 0) ? float4(1.0, 1.0, 1.0, 1.0) : globalTextures[material.physicalDescriptorTextureSet].Sample(uv);
     float metallic = 0.0, roughness = 1.0;
     float3 F0, albedo;
 
@@ -160,11 +150,11 @@ float4 PSMain(VSOutput input) : SV_TARGET
         albedo = baseColor.rgb * (1.0 - metallic);
     }
 
-    float ao = (material.occlusionTextureSet < 0) ? 1.0 : occlusionMap.Sample(uv).r;
+    float ao = (material.occlusionTextureSet < 0) ? 1.0 : globalTextures[material.occlusionTextureSet].Sample(uv).r;
 
     // Emissive: default to constant white when no emissive texture so authored emissiveFactor works per glTF spec.
     // If a texture is present but factor is zero, assume (1,1,1) to preserve emissive textures by default.
-    float3 emissiveTex = (material.emissiveTextureSet < 0) ? float3(1.0, 1.0, 1.0) : emissiveMap.Sample(uv).rgb;
+    float3 emissiveTex = (material.emissiveTextureSet < 0) ? float3(1.0, 1.0, 1.0) : globalTextures[material.emissiveTextureSet].Sample(uv).rgb;
     float3 emissiveFactor = material.emissiveFactor;
     float3 emissive = emissiveTex * emissiveFactor;
     if (material.hasEmissiveStrengthExt)
@@ -175,7 +165,7 @@ float4 PSMain(VSOutput input) : SV_TARGET
     // --- 2. Normal Calculation ---
     float3 N = normalize(input.Normal);
     if (material.normalTextureSet >= 0) {
-        float3 tangentNormal = normalMap.Sample(uv).xyz * 2.0 - 1.0;
+        float3 tangentNormal = globalTextures[material.normalTextureSet].Sample(uv).xyz * 2.0 - 1.0;
         float3 T = normalize(input.Tangent.xyz);
         // We flip the V coordinate for all textures (uv.y -> 1-uv.y). In
         // tangent space, this corresponds to inverting the bitangent.
@@ -413,12 +403,12 @@ float4 GlassPSMain(VSOutput input) : SV_TARGET
 
     float4 baseColor = (material.baseColorTextureSet < 0)
         ? material.baseColorFactor
-        : baseColorMap.Sample(uv) * material.baseColorFactor;
+        : globalTextures[material.baseColorTextureSet].Sample(uv) * material.baseColorFactor;
 
     // Emissive (same logic as PSMain)
     float3 emissiveTex = (material.emissiveTextureSet < 0)
         ? float3(1.0, 1.0, 1.0)
-        : emissiveMap.Sample(uv).rgb;
+        : globalTextures[material.emissiveTextureSet].Sample(uv).rgb;
     float3 emissiveFactor = material.emissiveFactor;
     float3 emissive = emissiveTex * emissiveFactor;
     if (material.hasEmissiveStrengthExt)
@@ -460,7 +450,7 @@ float4 GlassPSMain(VSOutput input) : SV_TARGET
         // Transmission/background sample (refraction approximation): sample the opaque scene behind glass.
         float2 uvR = input.Position.xy / ubo.screenDimensions;
         uvR = clamp(uvR, float2(0.0, 0.0), float2(1.0, 1.0));
-        float3 bg = opaqueSceneColor.Sample(uvR).rgb;
+        float3 bg = float3(0,0,0); // opaqueSceneColor not bound in PBR pass
         // Tint the background by albedo to approximate colored glass.
         bg *= lerp(float3(1.0, 1.0, 1.0), max(albedo, 0.6), 0.8);
 

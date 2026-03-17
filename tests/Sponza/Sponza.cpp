@@ -152,11 +152,24 @@ void Sponza::Render(float dt) {
     const float aspect = m_Renderer->GetAspectRatio();
     m_Renderer->SetViewProjection(m_Camera.View(), m_Camera.Projection(kFov, aspect, kNearZ, kFarZ));
  
+    m_Renderer->ClearLights();
+    Manro::LightData sun{};
+    sun.lightType = 1; // Directional
+    sun.position  = {-0.8f, -0.6f, -0.2f, 0.0f};
+    sun.color     = {1.0f, 0.98f, 0.95f, 6.0f};
+    m_Renderer->AddLight(sun);
+
+    Manro::LightData fill{};
+    fill.lightType = 1;
+    fill.position  = {0.5f, -0.7f, 0.5f, 0.0f};
+    fill.color     = {0.5f, 0.6f, 0.8f, 1.5f};
+    m_Renderer->AddLight(fill);
+
     if (m_Model) {
         m_Renderer->DrawModel(*m_Model, Manro::Mat4{1.0f});
     }
 
-    m_Renderer->BeginRendering({0.05f, 0.05f, 0.08f, 1.f});
+    m_Renderer->BeginRendering({0.02f, 0.02f, 0.05f, 1.f});
     m_Renderer->RenderQueue();
     m_Renderer->EndRendering();
     m_Renderer->EndFrameAndPresent();

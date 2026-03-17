@@ -42,11 +42,11 @@ namespace Manro {
 
         u32 count = 0;
         const char *const *extensions = SDL_Vulkan_GetInstanceExtensions(&count);
-        for (u32 i = 0; i < count; ++i) {
+        for (u32 i = 0; i < count; ++i)
             builder.enable_extension(extensions[i]);
-        }
 
-        auto inst_ret = builder.set_app_name(appName)
+        auto inst_ret = builder
+                .set_app_name(appName)
                 .request_validation_layers(true)
                 .require_api_version(1, 4, 0)
                 .use_default_debug_messenger()
@@ -61,10 +61,8 @@ namespace Manro {
 
     void VulkanContext::CreateSurface(IWindow &window) {
         SDL_Window *sdlWindow = static_cast<SDL_Window *>(window.GetNativeHandle());
-
         if (!SDL_Vulkan_CreateSurface(sdlWindow, m_Instance, nullptr, &m_Surface)) {
             LOG_ERROR("Failed to create SDL3 Vulkan surface: {}", SDL_GetError());
-            return;
         }
     }
 
@@ -82,6 +80,7 @@ namespace Manro {
         features12.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
         features12.descriptorBindingStorageBufferUpdateAfterBind = VK_TRUE;
         features12.drawIndirectCount = VK_TRUE;
+        features12.timelineSemaphore = VK_TRUE;
 
         VkPhysicalDeviceVulkan13Features features13{};
         features13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
@@ -89,13 +88,31 @@ namespace Manro {
         features13.synchronization2 = VK_TRUE;
         features13.maintenance4 = VK_TRUE;
 
+        VkPhysicalDeviceVulkan11Features features11{};
+        features11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+        features11.shaderDrawParameters = VK_TRUE;
+
+        VkPhysicalDeviceRayQueryFeaturesKHR rayQueryFeatures{};
+        rayQueryFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR;
+        rayQueryFeatures.rayQuery = VK_TRUE;
+
+        VkPhysicalDeviceAccelerationStructureFeaturesKHR asFeatures{};
+        asFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+        asFeatures.accelerationStructure = VK_TRUE;
+
         auto phys_ret = selector
                 .set_surface(m_Surface)
+                .set_required_features_11(features11)
                 .set_required_features_12(features12)
                 .set_required_features_13(features13)
                 .add_required_extension("VK_KHR_buffer_device_address")
                 .add_required_extension("VK_KHR_dynamic_rendering")
                 .add_required_extension("VK_KHR_synchronization2")
+                .add_required_extension("VK_KHR_ray_query")
+                .add_required_extension("VK_KHR_acceleration_structure")
+                .add_required_extension("VK_KHR_deferred_host_operations")
+                .add_required_extension_features(rayQueryFeatures)
+                .add_required_extension_features(asFeatures)
                 .select();
 
         if (!phys_ret) {
@@ -123,14 +140,14 @@ namespace Manro {
         m_GraphicsQueue = vkb_Device.get_queue(vkb::QueueType::graphics).value();
         m_GraphicsQueueFamilyIndex = vkb_Device.get_queue_index(vkb::QueueType::graphics).value();
 
-        VmaAllocatorCreateInfo allocatorInfo = {};
+        VmaAllocatorCreateInfo allocatorInfo{};
         allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_4;
         allocatorInfo.physicalDevice = m_PhysicalDevice;
         allocatorInfo.device = m_Device;
         allocatorInfo.instance = m_Instance;
         allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
 
-        VmaVulkanFunctions vulkanFunctions = {};
+        VmaVulkanFunctions vulkanFunctions{};
         vulkanFunctions.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
         vulkanFunctions.vkGetDeviceProcAddr = vkGetDeviceProcAddr;
         allocatorInfo.pVulkanFunctions = &vulkanFunctions;
@@ -139,18 +156,17 @@ namespace Manro {
     }
 
     VkSampleCountFlagBits VulkanContext::GetMaxUsableSampleCount() const {
-        VkPhysicalDeviceProperties physicalDeviceProperties;
-        vkGetPhysicalDeviceProperties(m_PhysicalDevice, &physicalDeviceProperties);
-
-        VkSampleCountFlags counts = physicalDeviceProperties.limits.framebufferColorSampleCounts &
-                                    physicalDeviceProperties.limits.framebufferDepthSampleCounts;
-        if (counts & VK_SAMPLE_COUNT_64_BIT) { return VK_SAMPLE_COUNT_64_BIT; }
-        if (counts & VK_SAMPLE_COUNT_32_BIT) { return VK_SAMPLE_COUNT_32_BIT; }
-        if (counts & VK_SAMPLE_COUNT_16_BIT) { return VK_SAMPLE_COUNT_16_BIT; }
-        if (counts & VK_SAMPLE_COUNT_8_BIT) { return VK_SAMPLE_COUNT_8_BIT; }
-        if (counts & VK_SAMPLE_COUNT_4_BIT) { return VK_SAMPLE_COUNT_4_BIT; }
-        if (counts & VK_SAMPLE_COUNT_2_BIT) { return VK_SAMPLE_COUNT_2_BIT; }
-
+        VkPhysicalDeviceProperties props;
+        vkGetPhysicalDeviceProperties(m_PhysicalDevice, &props);
+        VkSampleCountFlags counts =
+                props.limits.framebufferColorSampleCounts &
+                props.limits.framebufferDepthSampleCounts;
+        if (counts & VK_SAMPLE_COUNT_64_BIT) return VK_SAMPLE_COUNT_64_BIT;
+        if (counts & VK_SAMPLE_COUNT_32_BIT) return VK_SAMPLE_COUNT_32_BIT;
+        if (counts & VK_SAMPLE_COUNT_16_BIT) return VK_SAMPLE_COUNT_16_BIT;
+        if (counts & VK_SAMPLE_COUNT_8_BIT) return VK_SAMPLE_COUNT_8_BIT;
+        if (counts & VK_SAMPLE_COUNT_4_BIT) return VK_SAMPLE_COUNT_4_BIT;
+        if (counts & VK_SAMPLE_COUNT_2_BIT) return VK_SAMPLE_COUNT_2_BIT;
         return VK_SAMPLE_COUNT_1_BIT;
     }
 } // namespace Manro

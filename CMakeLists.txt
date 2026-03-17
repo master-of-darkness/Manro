@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.24)
 cmake_policy(SET CMP0091 NEW)
 project(GameEngine VERSION 0.1 LANGUAGES C CXX)
 
@@ -13,7 +13,7 @@ endif()
 
 if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-    add_compile_options(/DNOMINMAX)
+    add_compile_options(/DNOMINMAX /utf-8)
 endif()
 
 include(FetchContent)
@@ -23,13 +23,12 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(SDL_SHARED OFF CACHE BOOL "" FORCE)
 set(SDL_STATIC ON CACHE BOOL "" FORCE)
 set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(SDL_X11_XTEST OFF CACHE BOOL "" FORCE)
 
 set(SDL3MIXER_VENDORED ON CACHE BOOL "" FORCE)
 set(SDL3MIXER_SAMPLES OFF CACHE BOOL "" FORCE)
-set(SDL3MIXER_OPUS OFF CACHE BOOL "" FORCE)
-set(SDL3MIXER_FLAC OFF CACHE BOOL "" FORCE)
-set(SDL3MIXER_VORBIS OFF CACHE BOOL "" FORCE)
+set(SDL3MIXER_OPUS ON CACHE BOOL "" FORCE)
+set(SDL3MIXER_FLAC ON CACHE BOOL "" FORCE)
+set(SDL3MIXER_VORBIS ON CACHE BOOL "" FORCE)
 
 FetchContent_Declare(
         SDL3
@@ -44,23 +43,19 @@ FetchContent_Declare(
         GIT_TAG        main
 )
 
-FetchContent_MakeAvailable(SDL3 SDL3_mixer)
-
 add_subdirectory(deps/vk-bootstrap)
 add_subdirectory(deps/volk)
 add_subdirectory(deps/VulkanMemoryAllocator)
 
 set(SLANG_ENABLE_PCH OFF CACHE BOOL "" FORCE)
 set(SLANG_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
-set(SLANG_ENABLE_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(SLANG_ENABLE_SLANG_GLSLANG OFF CACHE BOOL "" FORCE)
 set(SLANG_LIB_TYPE "STATIC" CACHE STRING "" FORCE)
 add_subdirectory(deps/slang)
 
 FetchContent_Declare(
         flatbuffers
         GIT_REPOSITORY https://github.com/google/flatbuffers.git
-        GIT_TAG        v23.5.26
+        GIT_TAG v25.12.19
         SOURCE_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/deps/flatbuffers"
 )
 set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -69,7 +64,7 @@ FetchContent_MakeAvailable(flatbuffers)
 FetchContent_Declare(
         glm
         GIT_REPOSITORY https://github.com/g-truc/glm.git
-        GIT_TAG        0.9.9.8
+        GIT_TAG 1.0.3
         SOURCE_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/deps/glm"
 )
 FetchContent_MakeAvailable(glm)
@@ -77,7 +72,7 @@ FetchContent_MakeAvailable(glm)
 FetchContent_Declare(
         enet
         GIT_REPOSITORY https://github.com/lsalzman/enet.git
-        GIT_TAG        v1.3.17
+        GIT_TAG v1.3.18
         SOURCE_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/deps/enet"
 )
 FetchContent_MakeAvailable(enet)
@@ -98,25 +93,15 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(stb)
 
-
-
 FetchContent_Declare(
         JoltPhysics
         GIT_REPOSITORY https://github.com/jrouwe/JoltPhysics.git
-        GIT_TAG        v5.2.0
+        GIT_TAG v5.5.0
         SOURCE_SUBDIR  Build
         SOURCE_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/deps/JoltPhysics"
 )
-set(DOUBLE_PRECISION                    OFF CACHE BOOL "" FORCE)
-set(GENERATE_DEBUG_SYMBOLS              ON  CACHE BOOL "" FORCE)
-set(DEBUG_RENDERER_IN_DEBUG_AND_RELEASE OFF CACHE BOOL "" FORCE)
-set(PROFILER_IN_DEBUG_AND_RELEASE       OFF CACHE BOOL "" FORCE)
-set(ENABLE_ASSERTS                      OFF CACHE BOOL "" FORCE)
-set(USE_STD_VECTOR                      ON  CACHE BOOL "" FORCE)
-set(TARGET_UNIT_TESTS                   OFF CACHE BOOL "" FORCE)
-set(TARGET_HELLO_WORLD                  OFF CACHE BOOL "" FORCE)
-set(TARGET_PERFORMANCE_TEST             OFF CACHE BOOL "" FORCE)
-set(TARGET_SAMPLES                      OFF CACHE BOOL "" FORCE)
+set(USE_STD_VECTOR OFF CACHE BOOL "" FORCE)
+set(TARGET_UNIT_TESTS OFF CACHE BOOL "" FORCE)
 set(USE_STATIC_MSVC_RUNTIME ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(JoltPhysics)
 
@@ -131,6 +116,8 @@ FetchContent_Declare(
         SOURCE_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/deps/spdlog"
 )
 FetchContent_MakeAvailable(spdlog)
+
+FetchContent_MakeAvailable(SDL3 SDL3_mixer)
 
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     foreach(_target
@@ -147,13 +134,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
                     )
                 else()
                     target_compile_options(${_target} PRIVATE
-                            -O3 -DNDEBUG
-                            -fvisibility=hidden
-                            -fvisibility-inlines-hidden
-                            -ffunction-sections
-                            -fdata-sections
-                            -fno-unwind-tables
-                            -fno-asynchronous-unwind-tables
+                            -O3 -DNDEBUG -fvisibility=hidden
                     )
                 endif()
             endif()
@@ -176,45 +157,54 @@ add_custom_target(GenerateNetworkSchema
         DEPENDS "${GEN_DIR}/NetworkMessage_generated.h"
 )
 
-# Shader precompilation
+file(GLOB _SLANG_PKG_DIRS "${CMAKE_CURRENT_BINARY_DIR}/deps/slang/slang-*")
+if (_SLANG_PKG_DIRS)
+    list(GET _SLANG_PKG_DIRS 0 _SLANG_PKG_DIR)
+    set(SLANG_EXTRA_LIB_DIR "${_SLANG_PKG_DIR}/lib")
+else ()
+    set(SLANG_EXTRA_LIB_DIR "")
+endif ()
+
 set(SHADER_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders")
-set(SHADER_BIN_DIR "${SHADER_SRC_DIR}/spv")
+set(SHADER_BIN_DIR "${CMAKE_CURRENT_BINARY_DIR}/assets/shaders/spv")
 file(MAKE_DIRECTORY "${SHADER_BIN_DIR}")
 
-set(SLANG_BIN_PKG_DIR "${CMAKE_CURRENT_BINARY_DIR}/deps/slang/slang-2026.4.1-linux-x86_64") # todo: make it flexible, so it doesnt break on new version or on windows
-set(SLANG_LIB_DIR "${SLANG_BIN_PKG_DIR}/lib")
-
-set(SLANGC_EXE "$<TARGET_FILE:slangc>")
+if (WIN32)
+    set(_SLANG_ENV_VAR "PATH")
+    set(_SLANG_ENV_SEP ";")
+else ()
+    set(_SLANG_ENV_VAR "LD_LIBRARY_PATH")
+    set(_SLANG_ENV_SEP ":")
+endif ()
 
 macro(compile_shader SHADER_FILE ENTRY_POINT STAGE OUTPUT_FILE)
     add_custom_command(
-        OUTPUT "${OUTPUT_FILE}"
-        COMMAND ${CMAKE_COMMAND} -E env "LD_LIBRARY_PATH=${SLANG_LIB_DIR}"
-                ${SLANGC_EXE} "${SHADER_SRC_DIR}/${SHADER_FILE}"
-                -entry ${ENTRY_POINT}
-                -stage ${STAGE}
-                -target spirv
-                -I "${SHADER_SRC_DIR}"
-                -o "${OUTPUT_FILE}"
-        DEPENDS "${SHADER_SRC_DIR}/${SHADER_FILE}" slangc
-        COMMENT "Compiling shader: ${SHADER_FILE} [${ENTRY_POINT}]"
+            OUTPUT "${OUTPUT_FILE}"
+            COMMAND ${CMAKE_COMMAND} -E env
+            "${_SLANG_ENV_VAR}=$<TARGET_FILE_DIR:slangc>${_SLANG_ENV_SEP}${SLANG_EXTRA_LIB_DIR}"
+            $<TARGET_FILE:slangc> "${SHADER_SRC_DIR}/${SHADER_FILE}"
+            -entry ${ENTRY_POINT}
+            -stage ${STAGE}
+            -target spirv
+            -I "${SHADER_SRC_DIR}"
+            -o "${OUTPUT_FILE}"
+            DEPENDS "${SHADER_SRC_DIR}/${SHADER_FILE}" slangc
+            COMMENT "Compiling shader: ${SHADER_FILE} [${ENTRY_POINT}]"
     )
     list(APPEND PRECOMPILED_SHADERS "${OUTPUT_FILE}")
 endmacro()
 
 compile_shader("texturedMesh.slang" "VSMain" "vertex" "${SHADER_BIN_DIR}/texturedMesh.vert.spv")
 compile_shader("texturedMesh.slang" "PSMain" "fragment" "${SHADER_BIN_DIR}/texturedMesh.frag.spv")
-
 compile_shader("pbr.slang" "VSMain" "vertex" "${SHADER_BIN_DIR}/pbr.vert.spv")
 compile_shader("pbr.slang" "PSMain" "fragment" "${SHADER_BIN_DIR}/pbr.frag.spv")
 compile_shader("pbr.slang" "GlassPSMain" "fragment" "${SHADER_BIN_DIR}/pbr_glass.frag.spv")
-
 compile_shader("forward_plus_cull.slang" "main" "compute" "${SHADER_BIN_DIR}/forward_plus_cull.comp.spv")
 compile_shader("composite.slang" "VSMain" "vertex" "${SHADER_BIN_DIR}/composite.vert.spv")
 compile_shader("composite.slang" "PSMain" "fragment" "${SHADER_BIN_DIR}/composite.frag.spv")
 
 add_custom_target(PrecompileShaders
-    DEPENDS ${PRECOMPILED_SHADERS}
+        DEPENDS ${PRECOMPILED_SHADERS}
 )
 
 add_library(Engine STATIC
@@ -256,13 +246,7 @@ target_include_directories(Engine PUBLIC
         ${enet_SOURCE_DIR}/include
         ${tinyobjloader_SOURCE_DIR}
         ${stb_SOURCE_DIR}
-        ${stb_SOURCE_DIR}
         deps/mikktspace
-)
-
-target_include_directories(Engine PRIVATE
-        src
-        ${joltphysics_SOURCE_DIR}
 )
 
 target_compile_definitions(Engine PUBLIC VK_NO_PROTOTYPES)
@@ -292,24 +276,17 @@ target_compile_options(Engine PRIVATE
         $<$<CXX_COMPILER_ID:MSVC>:
         /W4 /WX /utf-8
         /wd4865 /wd5105 /wd4201 /wd4100 /wd4324 /wd4189 /wd4267
+        $<$<CONFIG:Release>:/O2 /Ob3 /GL /DNDEBUG /GS->
         >
-        $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra -Wno-unused-parameter>
-
-        $<$<AND:$<CONFIG:Debug>,$<CXX_COMPILER_ID:MSVC>>:/Od /Zi /RTC1>
-        $<$<AND:$<CONFIG:Debug>,$<NOT:$<CXX_COMPILER_ID:MSVC>>>:-O0 -g3>
-
-        $<$<AND:$<CONFIG:RelWithDebInfo>,$<CXX_COMPILER_ID:MSVC>>:/O2 /Zi /Ob2 /DNDEBUG>
-        $<$<AND:$<CONFIG:RelWithDebInfo>,$<NOT:$<CXX_COMPILER_ID:MSVC>>>:-O2 -g -DNDEBUG>
-
-        $<$<AND:$<CONFIG:Release>,$<CXX_COMPILER_ID:MSVC>>:/O2 /Ob3 /GL /DNDEBUG /GS->
-        $<$<AND:$<CONFIG:Release>,$<NOT:$<CXX_COMPILER_ID:MSVC>>>:
+        $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:
+        -Wall -Wextra -Wno-unused-parameter
+        $<$<CONFIG:Release>:
         -O3 -DNDEBUG
         -fvisibility=hidden
         -fvisibility-inlines-hidden
         -ffunction-sections
         -fdata-sections
-        -fno-unwind-tables
-        -fno-asynchronous-unwind-tables
+        >
         >
 )
 
@@ -325,11 +302,7 @@ else()
             -Wl,--gc-sections
             -Wl,--strip-all
             >
-            $<$<CONFIG:RelWithDebInfo>:
-            -Wl,--build-id
-            >
     )
 endif()
 
-add_subdirectory(tests/Multiplayer)
 add_subdirectory(tests/Sponza)
