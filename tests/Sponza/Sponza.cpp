@@ -3,6 +3,7 @@
 #include <Manro/Resource/ModelLoader.h>
 #include <Manro/Resource/TextureLoader.h>
 #include <Manro/Core/Logger.h>
+#include <Manro/Core/VirtualFS.h>
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <algorithm>
@@ -87,6 +88,9 @@ void Sponza::Initialize() {
     m_InputManager.SetBackend(&m_InputBackend);
     window->CaptureMouse(true);
     window->ShowCursor(false);
+
+    Manro::VirtualFS::Get().SetBaseDir(MANRO_ASSETS_DIR);
+    Manro::RegisterEmbeddedShaders();
 
     m_Renderer = Manro::CreateScope<Manro::Renderer>(*window, kWindowWidth, kWindowHeight, VK_SAMPLE_COUNT_8_BIT);
     LOG_INFO("[SponzaTest] Renderer initialized.");

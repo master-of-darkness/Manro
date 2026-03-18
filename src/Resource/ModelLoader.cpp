@@ -5,10 +5,38 @@
 
 #include <mikktspace.h>
 #include <Manro/Core/Logger.h>
+#include <Manro/Core/VirtualFS.h>
 #include <algorithm>
 #include <unordered_map>
+#include <sstream>
 
 namespace Manro {
+    class VirtualFSMaterialReader : public tinyobj::MaterialReader {
+    public:
+        explicit VirtualFSMaterialReader(std::string baseDir) : m_BaseDir(std::move(baseDir)) {}
+
+        bool operator()(const std::string &matId,
+                        std::vector<tinyobj::material_t> *materials,
+                        std::map<std::string, int> *matMap, std::string *warn,
+                        std::string *err) override {
+            std::string filepath = m_BaseDir + matId;
+            auto &vfs = VirtualFS::Get();
+            std::vector<u8> data = vfs.ReadFile(filepath);
+            if (data.empty()) {
+                if (err) (*err) += "Failed to load material file: " + filepath + "\n";
+                return false;
+            }
+
+            std::string content(reinterpret_cast<const char *>(data.data()), data.size());
+            std::stringstream ss(content);
+            tinyobj::LoadMtl(matMap, materials, &ss, warn, err);
+            return true;
+        }
+
+    private:
+        std::string m_BaseDir;
+    };
+
     // MikkTSpace interface
     struct MikkContext {
         std::vector<Vertex>* vertices;
@@ -104,9 +132,13 @@ namespace Manro {
         if (slash != std::string::npos)
             baseDir = filepath.substr(0, slash + 1);
 
-        bool ok = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err,
-                                   filepath.c_str(),
-                                   baseDir.empty() ? nullptr : baseDir.c_str());
+        std::vector<u8> objData = VirtualFS::Get().ReadFile(filepath);
+        if (objData.empty()) return false;
+        std::string objContent(reinterpret_cast<const char *>(objData.data()), objData.size());
+        std::stringstream ss(objContent);
+
+        VirtualFSMaterialReader matReader(baseDir);
+        bool ok = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, &ss, &matReader);
 
         if (!warn.empty())
             LOG_WARN("[ModelLoader] Warning ({}): {}", filepath, warn);
@@ -202,9 +234,13 @@ namespace Manro {
         if (slash != std::string::npos)
             baseDir = filepath.substr(0, slash + 1);
 
-        bool ok = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err,
-                                   filepath.c_str(),
-                                   baseDir.empty() ? nullptr : baseDir.c_str());
+        std::vector<u8> objData = VirtualFS::Get().ReadFile(filepath);
+        if (objData.empty()) return false;
+        std::string objContent(reinterpret_cast<const char *>(objData.data()), objData.size());
+        std::stringstream ss(objContent);
+
+        VirtualFSMaterialReader matReader(baseDir);
+        bool ok = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, &ss, &matReader);
 
         if (!warn.empty())
             LOG_WARN("[ModelLoader] Warning ({}): {}", filepath, warn);

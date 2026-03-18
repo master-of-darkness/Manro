@@ -7,6 +7,7 @@ The engine is designed with a focus on embedded network support and rendering th
 ## Features
 
 - Renderer: Vulkan API, Slang shaders, and GPU-driven bindless system
+- Virtual File System (VFS) with URI scheme support (e.g., shaders://)
 - Entity-Component System (ECS)
 - Basic UDP game network layer
 - Jolt physics

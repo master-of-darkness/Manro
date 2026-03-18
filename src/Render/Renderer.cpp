@@ -1,6 +1,7 @@
 #include <Manro/Render/Renderer.h>
 #include <Manro/Render/Vulkan/VulkanHelpers.h>
 #include <Manro/Core/Logger.h>
+#include <Manro/Core/VirtualFS.h>
 #include <Manro/Render/Model.h>
 #include <stdexcept>
 #include <glm/gtc/matrix_transform.hpp>
@@ -650,7 +651,6 @@ namespace Manro {
             matIndex = (u32)m_Materials.size();
             m_Materials.push_back(md);
             m_MaterialCache[md] = matIndex;
-            LOG_INFO("[Renderer] New Material added at index {} - texture: {}", matIndex, md.pbrBaseColorTexture);
         }
 
         inst.firstVertex = mesh->firstVertex;
@@ -1101,11 +1101,11 @@ namespace Manro {
     }
 
     void Renderer::BuildPbrPipeline() {
-        std::vector<u8> vertSpv = ReadBinaryFile("assets/shaders/spv/pbr.vert.spv");
-        std::vector<u8> fragSpv = ReadBinaryFile("assets/shaders/spv/pbr.frag.spv");
+        std::vector<u8> vertSpv = VirtualFS::Get().ReadFile("shaders://pbr.vert.spv");
+        std::vector<u8> fragSpv = VirtualFS::Get().ReadFile("shaders://pbr.frag.spv");
         if (vertSpv.empty() || fragSpv.empty()) {
             LOG_ERROR("[Renderer] PBR shaders not found");
-            return; 
+            return;
         }
 
         PipelineConfigParams cfg{};
@@ -1164,8 +1164,8 @@ namespace Manro {
     }
 
     void Renderer::BuildCompositePipeline() {
-        std::vector<u8> vertSpv = ReadBinaryFile("assets/shaders/spv/composite.vert.spv");
-        std::vector<u8> fragSpv = ReadBinaryFile("assets/shaders/spv/composite.frag.spv");
+        std::vector<u8> vertSpv = VirtualFS::Get().ReadFile("shaders://composite.vert.spv");
+        std::vector<u8> fragSpv = VirtualFS::Get().ReadFile("shaders://composite.frag.spv");
         if (vertSpv.empty() || fragSpv.empty()) {
             LOG_ERROR("[Renderer] Composite shaders not found");
             return;
@@ -1185,7 +1185,7 @@ namespace Manro {
     }
 
     void Renderer::BuildCullPipeline() {
-        std::vector<u8> compSpv = ReadBinaryFile("assets/shaders/spv/forward_plus_cull.comp.spv");
+        std::vector<u8> compSpv = VirtualFS::Get().ReadFile("shaders://forward_plus_cull.comp.spv");
         if (compSpv.empty()) {
             LOG_ERROR("[Renderer] Cull shader not found");
             return;

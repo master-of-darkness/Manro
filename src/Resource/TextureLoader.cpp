@@ -1,5 +1,5 @@
 #include <Manro/Resource/TextureLoader.h>
-
+#include <Manro/Core/VirtualFS.h>
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
@@ -149,21 +149,15 @@ namespace Manro {
             }
     }
 
-    static bool LoadDDS(const std::string &filepath, TextureData &out) {
-        FILE *f = fopen(filepath.c_str(), "rb");
-        if (!f) return false;
+    static bool LoadDDS(const std::vector<u8>& data, TextureData &out) {
+        if (data.size() < 4 + sizeof(DDSHeader)) return false;
 
         u32 magic;
-        if (fread(&magic, 4, 1, f) != 1 || magic != kDDSMagic) {
-            fclose(f);
-            return false;
-        }
+        std::memcpy(&magic, data.data(), 4);
+        if (magic != kDDSMagic) return false;
 
         DDSHeader hdr{};
-        if (fread(&hdr, sizeof(hdr), 1, f) != 1) {
-            fclose(f);
-            return false;
-        }
+        std::memcpy(&hdr, data.data() + 4, sizeof(hdr));
 
         u32 fourCC = hdr.ddspf.fourCC;
         int blockSize;
@@ -179,8 +173,7 @@ namespace Manro {
             blockSize = 16;
             decodeBlock = DecodeATI2Block;
         } else {
-            fclose(f);
-            LOG_WARN("[TextureLoader] Unsupported DDS fourCC: 0x{:08X} in '{}'", fourCC, filepath);
+            LOG_WARN("[TextureLoader] Unsupported DDS fourCC: 0x{:08X}", fourCC);
             return false;
         }
 
@@ -190,19 +183,15 @@ namespace Manro {
         int bh = (h + 3) / 4;
         size_t dataSize = static_cast<size_t>(bw) * bh * blockSize;
 
-        std::vector<u8> compressed(dataSize);
-        if (fread(compressed.data(), 1, dataSize, f) != dataSize) {
-            fclose(f);
-            return false;
-        }
-        fclose(f);
+        if (data.size() < 4 + sizeof(hdr) + dataSize) return false;
+        const u8* compressedData = data.data() + 4 + sizeof(hdr);
 
         out.width = w;
         out.height = h;
         out.channels = 4;
         out.pixels.resize(static_cast<size_t>(w) * h * 4);
 
-        const u8 *src = compressed.data();
+        const u8 *src = compressedData;
         for (int by = 0; by < bh; ++by) {
             for (int bx = 0; bx < bw; ++bx) {
                 u8 blockPixels[4][4][4];
@@ -233,8 +222,14 @@ namespace Manro {
     }
 
     bool TextureLoader::Load(const std::string &filepath, TextureData &out) {
+        auto &vfs = VirtualFS::Get();
+        std::vector<u8> fileData = vfs.ReadFile(filepath);
+        if (fileData.empty()) {
+            return false;
+        }
+
         if (HasExtension(filepath, ".dds")) {
-            if (!LoadDDS(filepath, out)) {
+            if (!LoadDDS(fileData, out)) {
                 LOG_ERROR("[TextureLoader] Failed to load DDS: {}", filepath);
                 return false;
             }
@@ -245,7 +240,8 @@ namespace Manro {
         stbi_set_flip_vertically_on_load(false);
 
         int width = 0, height = 0, srcChannels = 0;
-        stbi_uc *data = stbi_load(filepath.c_str(), &width, &height, &srcChannels, STBI_rgb_alpha);
+        stbi_uc *data = stbi_load_from_memory(fileData.data(), static_cast<int>(fileData.size()),
+                                              &width, &height, &srcChannels, STBI_rgb_alpha);
 
         if (!data) {
             LOG_ERROR("[TextureLoader] Failed to load image: {} - {}", filepath, stbi_failure_reason());

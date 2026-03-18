@@ -247,10 +247,36 @@ add_custom_target(PrecompileShaders
         DEPENDS ${PRECOMPILED_SHADERS}
 )
 
+macro(embed_shader SHADER_SPV_FILE VAR_NAME)
+    set(_header "${SHADER_BIN_DIR}/${VAR_NAME}.h")
+    add_custom_command(
+            OUTPUT "${_header}"
+            COMMAND xxd -i -n ${VAR_NAME} "${SHADER_SPV_FILE}" > "${_header}"
+            DEPENDS "${SHADER_SPV_FILE}" PrecompileShaders
+            COMMENT "Embedding shader: ${VAR_NAME}"
+    )
+    list(APPEND EMBEDDED_SHADER_HEADERS "${_header}")
+endmacro()
+
+embed_shader("${SHADER_BIN_DIR}/pbr.vert.spv"                         pbr_vert_spv)
+embed_shader("${SHADER_BIN_DIR}/pbr.frag.spv"                         pbr_frag_spv)
+embed_shader("${SHADER_BIN_DIR}/forward_plus_cull.comp.spv"           forward_plus_cull_comp_spv)
+embed_shader("${SHADER_BIN_DIR}/composite.vert.spv"                   composite_vert_spv)
+embed_shader("${SHADER_BIN_DIR}/composite.frag.spv"                   composite_frag_spv)
+embed_shader("${SHADER_BIN_DIR}/tonemapper.comp.spv"                   tonemapper_comp_spv)
+embed_shader("${SHADER_BIN_DIR}/tonemapper_histogram.comp.spv"         tonemapper_histogram_comp_spv)
+embed_shader("${SHADER_BIN_DIR}/tonemapper_autoexposure.comp.spv"      tonemapper_autoexposure_comp_spv)
+
+add_custom_target(EmbedShaders
+        DEPENDS ${EMBEDDED_SHADER_HEADERS}
+)
+
 add_library(Engine STATIC
         src/Core/EngineContext.cpp
         src/Core/Logger.cpp
         src/Core/JobSystem.cpp
+        src/Core/VirtualFS.cpp
+        src/Core/EmbeddedShaders.cpp
         src/Scene/SceneManager.cpp
         src/Input/InputManager.cpp
         src/Networking/NetworkClient.cpp
@@ -276,7 +302,7 @@ add_library(Engine STATIC
         deps/mikktspace/mikktspace.c
 )
 
-add_dependencies(Engine GenerateNetworkSchema PrecompileShaders)
+add_dependencies(Engine GenerateNetworkSchema PrecompileShaders EmbedShaders)
 
 target_include_directories(Engine PUBLIC
         include

@@ -5,20 +5,9 @@ add_executable(SponzaTest
         Sponza.cpp
 )
 
-target_compile_definitions(SponzaTest PRIVATE VK_NO_PROTOTYPES)
+target_compile_definitions(SponzaTest PRIVATE
+        VK_NO_PROTOTYPES
+        MANRO_ASSETS_DIR="${CMAKE_SOURCE_DIR}"
+)
 target_compile_options(SponzaTest PRIVATE ${ENGINE_FLAGS})
 target_link_libraries(SponzaTest PRIVATE Engine)
-
-add_custom_command(TARGET SponzaTest POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_SOURCE_DIR}/assets"
-        "$<TARGET_FILE_DIR:SponzaTest>/assets"
-        COMMENT "Copying assets -> SponzaTest output dir"
-)
-
-add_custom_command(TARGET SponzaTest POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_BINARY_DIR}/assets/shaders/spv"
-        "$<TARGET_FILE_DIR:SponzaTest>/assets/shaders/spv"
-        COMMENT "Copying compiled shaders -> SponzaTest output dir"
-)
