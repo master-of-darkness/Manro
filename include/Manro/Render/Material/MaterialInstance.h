@@ -9,15 +9,21 @@
 namespace Manro {
     class MaterialInstance {
     public:
-        MaterialInstance(Ref<Material> material) : m_Material(material) {
+        MaterialInstance(Ref<Material> material)
+            : m_Material(material), m_Data(shaderio::defaultGltfMaterial()) {
         }
 
         void SetTexture(TextureHandle texture) {
-            m_Data.baseColorTexIndex = (int)texture;
-            m_Data.baseColorTextureSet = (texture == kInvalidTexture) ? -1 : 0;
+            m_Data.pbrBaseColorTexture = (texture == kInvalidTexture)
+                ? static_cast<uint16_t>(0)
+                : static_cast<uint16_t>(texture + 1); // nvshaders uses 0 = no texture
         }
 
-        TextureHandle GetTexture() const { return (TextureHandle)m_Data.baseColorTexIndex; }
+        TextureHandle GetTexture() const {
+            return (m_Data.pbrBaseColorTexture == 0)
+                ? kInvalidTexture
+                : static_cast<TextureHandle>(m_Data.pbrBaseColorTexture - 1);
+        }
 
         const Material &GetMaterial() const { return *m_Material; }
         Ref<Material> GetMaterialRef() const { return m_Material; }

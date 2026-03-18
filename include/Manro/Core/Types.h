@@ -43,5 +43,6 @@ namespace Manro {
     using Vec3 = glm::vec3;
     using Vec4 = glm::vec4;
     using Mat4 = glm::mat4;
+    using Mat3x2 = glm::mat3x2;
     using Quat = glm::quat;
 } // namespace Manro

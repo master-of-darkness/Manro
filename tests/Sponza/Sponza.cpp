@@ -154,15 +154,17 @@ void Sponza::Render(float dt) {
  
     m_Renderer->ClearLights();
     Manro::LightData sun{};
-    sun.lightType = 1; // Directional
-    sun.position  = {-0.8f, -0.6f, -0.2f, 0.0f};
-    sun.color     = {1.0f, 0.98f, 0.95f, 6.0f};
+    sun.type       = shaderio::eLightTypeDirectional;
+    sun.direction  = {-0.8f, -0.6f, -0.2f};
+    sun.color      = {1.0f, 0.98f, 0.95f};
+    sun.intensity  = 6.0f;
     m_Renderer->AddLight(sun);
 
     Manro::LightData fill{};
-    fill.lightType = 1;
-    fill.position  = {0.5f, -0.7f, 0.5f, 0.0f};
-    fill.color     = {0.5f, 0.6f, 0.8f, 1.5f};
+    fill.type      = shaderio::eLightTypeDirectional;
+    fill.direction = {0.5f, -0.7f, 0.5f};
+    fill.color     = {0.5f, 0.6f, 0.8f};
+    fill.intensity = 1.5f;
     m_Renderer->AddLight(fill);
 
     if (m_Model) {

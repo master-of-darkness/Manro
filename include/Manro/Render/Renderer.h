@@ -16,16 +16,8 @@
 namespace Manro {
     class IWindow;
 
-    struct LightData {
-        Vec4 position;
-        Vec4 color;
-        Mat4 lightSpaceMatrix;
-        Vec4 direction;
-        int lightType;
-        float range;
-        float innerConeAngle;
-        float outerConeAngle;
-    };
+    // Use nvshaders GltfLight as the engine's light type
+    using LightData = shaderio::GltfLight;
 
     struct UniformBufferObject {
         Mat4 model;
@@ -258,6 +250,7 @@ namespace Manro {
         VkDescriptorSetLayout m_CullSetLayout{VK_NULL_HANDLE};
 
         Scope<Buffer> m_MaterialBuffer;
+        Scope<Buffer> m_TextureInfoBuffer;
         std::vector<MaterialData> m_Materials;
         std::unordered_map<MaterialData, u32, MaterialDataHash> m_MaterialCache;
 

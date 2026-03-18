@@ -91,11 +91,14 @@ namespace Manro {
         VkPhysicalDeviceVulkan11Features features11{};
         features11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
         features11.shaderDrawParameters = VK_TRUE;
+        features11.storageBuffer16BitAccess = VK_TRUE;
+        features11.uniformAndStorageBuffer16BitAccess = VK_TRUE;
 
         VkPhysicalDeviceFeatures baseFeatures{};
         baseFeatures.multiDrawIndirect = VK_TRUE;
         baseFeatures.drawIndirectFirstInstance = VK_TRUE;
         baseFeatures.samplerAnisotropy = VK_TRUE;
+        baseFeatures.shaderInt16 = VK_TRUE;
 
         VkPhysicalDeviceRayQueryFeaturesKHR rayQueryFeatures{};
         rayQueryFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR;

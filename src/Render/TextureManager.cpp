@@ -28,7 +28,7 @@ namespace Manro {
     }
 
     void TextureManager::CreateBindlessResources() {
-        VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kMaxBindlessTextures};
+        VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, kMaxBindlessTextures};
         VkDescriptorPoolCreateInfo poolInfo{};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
@@ -41,7 +41,7 @@ namespace Manro {
 
         VkDescriptorSetLayoutBinding binding{};
         binding.binding = 0;
-        binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        binding.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
         binding.descriptorCount = kMaxBindlessTextures;
         binding.stageFlags = VK_SHADER_STAGE_ALL;
 
@@ -85,14 +85,13 @@ namespace Manro {
         VkDescriptorImageInfo imageInfo{};
         imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         imageInfo.imageView = view;
-        imageInfo.sampler = m_Sampler;
 
         VkWriteDescriptorSet write{};
         write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         write.dstSet = m_BindlessSet;
         write.dstBinding = 0;
         write.dstArrayElement = index;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
         write.descriptorCount = 1;
         write.pImageInfo = &imageInfo;
 
@@ -115,7 +114,7 @@ namespace Manro {
     }
 
     void TextureManager::CreateWhiteTexture() {
-        const u8 whitePixel[4] = {255, 255, 255, 255};
+        const u8 whitePixel[4] = {255, 0, 255, 255}; // Purple stub
         m_WhiteTextureId = Upload(whitePixel, 1, 1);
     }
 
@@ -127,27 +126,27 @@ namespace Manro {
     TextureHandle TextureManager::Upload(const u8 *pixels, int width, int height) {
         VkDeviceSize imageSize = static_cast<VkDeviceSize>(width) * height * 4;
 
-        // Staging buffer
-        VkBufferCreateInfo stagingBufInfo{};
-        stagingBufInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        stagingBufInfo.size = imageSize;
-        stagingBufInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-        stagingBufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        VkBuffer stagingBuf;
+        VmaAllocation stagingAlloc;
+        VmaAllocationInfo stagingAllocInfo{};
+        
+        VkBufferCreateInfo stagingInfo{};
+        stagingInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        stagingInfo.size = imageSize;
+        stagingInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        stagingInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE; // Keep this from original
 
-        VmaAllocationCreateInfo stagingAllocInfo{};
-        stagingAllocInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY;
-        stagingAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
-
-        VkBuffer stagingBuf{};
-        VmaAllocation stagingAlloc{};
-        VmaAllocationInfo stagingAllocRes{};
-
-        if (vmaCreateBuffer(m_Context.GetAllocator(), &stagingBufInfo, &stagingAllocInfo,
-                            &stagingBuf, &stagingAlloc, &stagingAllocRes) != VK_SUCCESS) {
-            LOG_ERROR("[TextureManager] Failed to create texture staging buffer!");
+        VmaAllocationCreateInfo stagingAllocCreateInfo{};
+        stagingAllocCreateInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+        stagingAllocCreateInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+        
+        if (vmaCreateBuffer(m_Context.GetAllocator(), &stagingInfo, &stagingAllocCreateInfo, &stagingBuf, &stagingAlloc, &stagingAllocInfo) != VK_SUCCESS) {
+            LOG_ERROR("[TextureManager] Failed to create staging buffer");
             return kInvalidTexture;
         }
-        std::memcpy(stagingAllocRes.pMappedData, pixels, imageSize);
+        
+        std::memcpy(stagingAllocInfo.pMappedData, pixels, imageSize);
+        vmaFlushAllocation(m_Context.GetAllocator(), stagingAlloc, 0, imageSize);
 
         // GPU image
         VkImageCreateInfo imageInfo{};
@@ -156,7 +155,7 @@ namespace Manro {
         imageInfo.extent = {static_cast<u32>(width), static_cast<u32>(height), 1};
         imageInfo.mipLevels = 1;
         imageInfo.arrayLayers = 1;
-        imageInfo.format = VK_FORMAT_R8G8B8A8_SRGB;
+        imageInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
         imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
         imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
@@ -214,7 +213,7 @@ namespace Manro {
         viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
         viewInfo.image = tex.image;
         viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        viewInfo.format = VK_FORMAT_R8G8B8A8_SRGB;
+        viewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
         viewInfo.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
         if (vkCreateImageView(m_Context.GetDevice(), &viewInfo, nullptr, &tex.view) != VK_SUCCESS) {

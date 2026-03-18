@@ -57,6 +57,16 @@ namespace {
         JPH::uint GetNumBroadPhaseLayers() const override { return BroadPhaseLayers::NUM_LAYERS; }
         JPH::BroadPhaseLayer GetBroadPhaseLayer(JPH::ObjectLayer l) const override { return m_Map[l]; }
 
+#if defined(JPH_EXTERNAL_PROFILE) || defined(JPH_PROFILE_ENABLED)
+        const char *GetBroadPhaseLayerName(JPH::BroadPhaseLayer l) const override {
+            switch ((JPH::BroadPhaseLayer::Type)l) {
+                case (JPH::BroadPhaseLayer::Type)BroadPhaseLayers::NON_MOVING: return "NON_MOVING";
+                case (JPH::BroadPhaseLayer::Type)BroadPhaseLayers::MOVING: return "MOVING";
+                default: return "INVALID";
+            }
+        }
+#endif
+
     private:
         JPH::BroadPhaseLayer m_Map[Layers::NUM_LAYERS];
     };

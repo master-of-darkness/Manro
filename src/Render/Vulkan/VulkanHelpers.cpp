@@ -102,6 +102,7 @@ namespace Manro {
     std::vector<u8> ReadBinaryFile(const std::string &filepath) {
         std::ifstream file(filepath, std::ios::ate | std::ios::binary);
         if (!file.is_open()) {
+            LOG_ERROR("[VulkanHelpers] Failed to open file: {}", filepath);
             return {};
         }
 

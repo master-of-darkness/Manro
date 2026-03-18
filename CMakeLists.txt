@@ -23,6 +23,7 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(SDL_SHARED OFF CACHE BOOL "" FORCE)
 set(SDL_STATIC ON CACHE BOOL "" FORCE)
 set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(SDL_X11_XTEST OFF CACHE BOOL "" FORCE)
 
 set(SDL3MIXER_VENDORED ON CACHE BOOL "" FORCE)
 set(SDL3MIXER_SAMPLES OFF CACHE BOOL "" FORCE)
@@ -47,16 +48,57 @@ add_subdirectory(deps/vk-bootstrap)
 add_subdirectory(deps/volk)
 add_subdirectory(deps/VulkanMemoryAllocator)
 
-set(SLANG_ENABLE_PCH OFF CACHE BOOL "" FORCE)
-set(SLANG_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
-set(SLANG_LIB_TYPE "STATIC" CACHE STRING "" FORCE)
-add_subdirectory(deps/slang)
+# --- Slang Binary Fetching ---
+if(WIN32)
+    set(SLANG_OS "windows")
+    set(SLANG_ARCH "x86_64")
+    set(SLANG_EXT "zip")
+elseif(APPLE)
+    set(SLANG_OS "macos")
+    if(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+        set(SLANG_ARCH "aarch64")
+    else()
+        set(SLANG_ARCH "x86_64")
+    endif()
+    set(SLANG_EXT "tar.gz")
+else()
+    set(SLANG_OS "linux")
+    set(SLANG_ARCH "x86_64")
+    set(SLANG_EXT "tar.gz")
+endif()
+
+set(SLANG_BINARY_VERSION "2026.4.2")
+set(SLANG_BINARY_URL "https://github.com/shader-slang/slang/releases/download/v${SLANG_BINARY_VERSION}/slang-${SLANG_BINARY_VERSION}-${SLANG_OS}-${SLANG_ARCH}.${SLANG_EXT}")
+
+FetchContent_Declare(
+        slang_bin
+        URL ${SLANG_BINARY_URL}
+)
+FetchContent_MakeAvailable(slang_bin)
+
+add_executable(slangc IMPORTED GLOBAL)
+add_library(slang SHARED IMPORTED GLOBAL)
+
+if(WIN32)
+    set_target_properties(slangc PROPERTIES IMPORTED_LOCATION "${slang_bin_SOURCE_DIR}/bin/slangc.exe")
+    set_target_properties(slang PROPERTIES 
+            IMPORTED_LOCATION "${slang_bin_SOURCE_DIR}/bin/slang.dll"
+            IMPORTED_IMPLIB "${slang_bin_SOURCE_DIR}/lib/slang.lib"
+    )
+else()
+    set_target_properties(slangc PROPERTIES IMPORTED_LOCATION "${slang_bin_SOURCE_DIR}/bin/slangc")
+    if(EXISTS "${slang_bin_SOURCE_DIR}/lib/libslang.so")
+        set_target_properties(slang PROPERTIES IMPORTED_LOCATION "${slang_bin_SOURCE_DIR}/lib/libslang.so")
+    else()
+        set_target_properties(slang PROPERTIES IMPORTED_LOCATION "${slang_bin_SOURCE_DIR}/bin/libslang.so")
+    endif()
+endif()
+target_include_directories(slang INTERFACE "${slang_bin_SOURCE_DIR}/include")
 
 FetchContent_Declare(
         flatbuffers
         GIT_REPOSITORY https://github.com/google/flatbuffers.git
         GIT_TAG v25.12.19
-        SOURCE_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/deps/flatbuffers"
 )
 set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(flatbuffers)
@@ -65,7 +107,6 @@ FetchContent_Declare(
         glm
         GIT_REPOSITORY https://github.com/g-truc/glm.git
         GIT_TAG 1.0.3
-        SOURCE_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/deps/glm"
 )
 FetchContent_MakeAvailable(glm)
 
@@ -73,7 +114,6 @@ FetchContent_Declare(
         enet
         GIT_REPOSITORY https://github.com/lsalzman/enet.git
         GIT_TAG v1.3.18
-        SOURCE_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/deps/enet"
 )
 FetchContent_MakeAvailable(enet)
 
@@ -81,7 +121,6 @@ FetchContent_Declare(
         tinyobjloader
         GIT_REPOSITORY https://github.com/tinyobjloader/tinyobjloader.git
         GIT_TAG        v2.0.0rc13
-        SOURCE_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/deps/tinyobjloader"
 )
 FetchContent_MakeAvailable(tinyobjloader)
 
@@ -89,7 +128,6 @@ FetchContent_Declare(
         stb
         GIT_REPOSITORY https://github.com/nothings/stb.git
         GIT_TAG        master
-        SOURCE_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/deps/stb"
 )
 FetchContent_MakeAvailable(stb)
 
@@ -98,7 +136,6 @@ FetchContent_Declare(
         GIT_REPOSITORY https://github.com/jrouwe/JoltPhysics.git
         GIT_TAG v5.5.0
         SOURCE_SUBDIR  Build
-        SOURCE_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/deps/JoltPhysics"
 )
 set(USE_STD_VECTOR OFF CACHE BOOL "" FORCE)
 set(TARGET_UNIT_TESTS OFF CACHE BOOL "" FORCE)
@@ -113,7 +150,6 @@ FetchContent_Declare(
         spdlog
         GIT_REPOSITORY https://github.com/gabime/spdlog.git
         GIT_TAG        v1.17.0
-        SOURCE_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/deps/spdlog"
 )
 FetchContent_MakeAvailable(spdlog)
 
@@ -127,7 +163,8 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
     )
         if(TARGET ${_target})
             get_target_property(_type ${_target} TYPE)
-            if(NOT _type STREQUAL "INTERFACE_LIBRARY")
+            get_target_property(_imported ${_target} IMPORTED)
+            if(NOT _type STREQUAL "INTERFACE_LIBRARY" AND NOT _imported)
                 if(MSVC)
                     target_compile_options(${_target} PRIVATE
                             /O2 /Ob3 /GL /DNDEBUG /GS-
@@ -157,12 +194,14 @@ add_custom_target(GenerateNetworkSchema
         DEPENDS "${GEN_DIR}/NetworkMessage_generated.h"
 )
 
-file(GLOB _SLANG_PKG_DIRS "${CMAKE_CURRENT_BINARY_DIR}/deps/slang/slang-*")
-if (_SLANG_PKG_DIRS)
-    list(GET _SLANG_PKG_DIRS 0 _SLANG_PKG_DIR)
-    set(SLANG_EXTRA_LIB_DIR "${_SLANG_PKG_DIR}/lib")
+if (WIN32)
+    set(SLANG_EXTRA_LIB_DIR "${slang_bin_SOURCE_DIR}/bin")
 else ()
-    set(SLANG_EXTRA_LIB_DIR "")
+    if(EXISTS "${slang_bin_SOURCE_DIR}/lib")
+        set(SLANG_EXTRA_LIB_DIR "${slang_bin_SOURCE_DIR}/lib")
+    else()
+        set(SLANG_EXTRA_LIB_DIR "${slang_bin_SOURCE_DIR}/bin")
+    endif()
 endif ()
 
 set(SHADER_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders")
@@ -194,14 +233,15 @@ macro(compile_shader SHADER_FILE ENTRY_POINT STAGE OUTPUT_FILE)
     list(APPEND PRECOMPILED_SHADERS "${OUTPUT_FILE}")
 endmacro()
 
-compile_shader("texturedMesh.slang" "VSMain" "vertex" "${SHADER_BIN_DIR}/texturedMesh.vert.spv")
-compile_shader("texturedMesh.slang" "PSMain" "fragment" "${SHADER_BIN_DIR}/texturedMesh.frag.spv")
 compile_shader("pbr.slang" "VSMain" "vertex" "${SHADER_BIN_DIR}/pbr.vert.spv")
 compile_shader("pbr.slang" "PSMain" "fragment" "${SHADER_BIN_DIR}/pbr.frag.spv")
-compile_shader("pbr.slang" "GlassPSMain" "fragment" "${SHADER_BIN_DIR}/pbr_glass.frag.spv")
 compile_shader("forward_plus_cull.slang" "main" "compute" "${SHADER_BIN_DIR}/forward_plus_cull.comp.spv")
 compile_shader("composite.slang" "VSMain" "vertex" "${SHADER_BIN_DIR}/composite.vert.spv")
 compile_shader("composite.slang" "PSMain" "fragment" "${SHADER_BIN_DIR}/composite.frag.spv")
+
+compile_shader("nvshaders/tonemapper.slang" "Tonemap" "compute" "${SHADER_BIN_DIR}/tonemapper.comp.spv")
+compile_shader("nvshaders/tonemapper.slang" "Histogram" "compute" "${SHADER_BIN_DIR}/tonemapper_histogram.comp.spv")
+compile_shader("nvshaders/tonemapper.slang" "AutoExposure" "compute" "${SHADER_BIN_DIR}/tonemapper_autoexposure.comp.spv")
 
 add_custom_target(PrecompileShaders
         DEPENDS ${PRECOMPILED_SHADERS}
@@ -243,6 +283,7 @@ target_include_directories(Engine PUBLIC
         deps/vk-bootstrap/src
         ${GEN_DIR}
         ${SHADER_BIN_DIR}
+        ${SHADER_SRC_DIR}
         ${enet_SOURCE_DIR}/include
         ${tinyobjloader_SOURCE_DIR}
         ${stb_SOURCE_DIR}
@@ -255,7 +296,6 @@ target_link_libraries(Engine PUBLIC
         vk-bootstrap::vk-bootstrap
         volk::volk
         GPUOpen::VulkanMemoryAllocator
-        slang
         flatbuffers
         glm::glm
         enet

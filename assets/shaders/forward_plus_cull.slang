@@ -1,136 +1,149 @@
-/* Copyright (c) 2025 Holochip Corporation
- *
- * SPDX-License-Identifier: Apache-2.0
- *
- * Licensed under the Apache License, Version 2.0 the "License";
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-// Forward+ tiled light culling (2D tiles)
+#include "nvshaders/gltf_scene_io.h.slang"
 
-// Use the shared `LightData`/`TileHeader` definitions
-import common_types;
-
-// Params packed by the engine (see updateForwardPlusParams)
-struct FPParams {
-    column_major float4x4 view;
-    column_major float4x4 proj;
-    float4 screenTile; // x=width,y=height,z=tileX,w=tileY
-    uint4 counts;      // x=lightCount,y=maxPerTile,z=tilesX,w=tilesY
-    float4 zParams;    // x=nearZ, y=farZ, z=slicesZ, w=0
+struct CullPushConstants {
+    float4x4 view;
+    float4x4 proj;
+    float4   screenTile;  // x,y = screen dims, z,w = tile size
+    uint     lightCount;
+    uint     maxPerTile;
+    uint     tilesX;
+    uint     tilesY;
+    float4   zParams;     // x = near, y = far
 };
 
-[[vk::binding(0, 0)]] StructuredBuffer<LightData> lightsRO;
-[[vk::binding(1, 0)]] RWStructuredBuffer<TileHeader> tileHeadersRW;
-[[vk::binding(2, 0)]] RWStructuredBuffer<uint> tileLightIndicesRW;
-[[vk::binding(3, 0)]] ConstantBuffer<FPParams> params;
+struct TileHeader {
+    uint offset;
+    uint count;
+    uint pad0;
+    uint pad1;
+};
 
-// NOTE: This implementation performs a conservative 2D geometric test per tile:
-// it projects each point light to screen-space and computes an approximate screen-space
-// radius from its world-space range using the projection matrix. A light is included in
-// a tile if the circle intersects the tile rectangle. Depth/cluster slicing can be added later.
+layout(push_constant) ConstantBuffer<CullPushConstants> pc;
+layout(binding = 0) StructuredBuffer<GltfLight>         lights;
+layout(binding = 1) RWStructuredBuffer<TileHeader>       tileHeaders;
+layout(binding = 2) RWStructuredBuffer<uint>             tileLightIndices;
 
-[numthreads(16, 16, 1)]
-void main(uint3 DTid : SV_DispatchThreadID)
+// ---------------------------------------------------------------------------
+// Build a frustum plane through the camera origin from two view-space rays.
+// The returned normal points INWARD (toward the frustum interior).
+// ---------------------------------------------------------------------------
+float4 makePlane(float3 a, float3 b)
 {
-    uint tilesX = params.counts.z;
-    uint tilesY = params.counts.w;
-    uint slicesZ = (uint)params.zParams.z;
-    uint maxPerTile = params.counts.y;
-    uint lightCount = params.counts.x;
+    // Plane through origin: nx*x + ny*y + nz*z = 0  =>  w = 0
+    float3 n = normalize(cross(a, b));
+    return float4(n, 0.0);
+}
 
-    uint cx = min(DTid.x, (tilesX > 0) ? tilesX - 1 : 0);
-    uint cy = min(DTid.y, (tilesY > 0) ? tilesY - 1 : 0);
-    uint cz = (slicesZ > 0) ? min(DTid.z, slicesZ - 1) : 0;
+// Signed distance of a point from a plane (w component is the plane d-term).
+float signedDist(float4 plane, float3 p)
+{
+    return dot(plane.xyz, p) + plane.w;
+}
 
-    uint tileId = (cz * tilesY + cy) * tilesX + cx;
+// ---------------------------------------------------------------------------
+// Per-tile compute shader – one thread per tile.
+// ---------------------------------------------------------------------------
+[shader("compute")]
+[numthreads(16, 16, 1)]
+void main(uint3 gid : SV_DispatchThreadID)
+{
+    uint tx = gid.x;
+    uint ty = gid.y;
+    if (tx >= pc.tilesX || ty >= pc.tilesY)
+        return;
 
-    // Screen and tile metrics
-    float2 screenSize = params.screenTile.xy;
-    float2 tileSize   = params.screenTile.zw; // (tileXSize, tileYSize)
-    float2 tileMin = float2(cx, cy) * tileSize;
-    float2 tileMax = tileMin + tileSize;
+    uint tileIdx = ty * pc.tilesX + tx;
+    uint offset  = tileIdx * pc.maxPerTile;
 
-    uint base = tileId * maxPerTile;
+    float screenW  = pc.screenTile.x;
+    float screenH  = pc.screenTile.y;
+    float tileSize = pc.screenTile.z;
+    float near     = pc.zParams.x;
+    float far      = pc.zParams.y;
+
+    // -------------------------------------------------------------------------
+    // 1. Compute tile screen-space bounds (clamp to screen edges for last tiles)
+    // -------------------------------------------------------------------------
+    float minPX = float(tx)       * tileSize;
+    float maxPX = min(float(tx + 1) * tileSize, screenW);
+    float minPY = float(ty)       * tileSize;
+    float maxPY = min(float(ty + 1) * tileSize, screenH);
+
+    // -------------------------------------------------------------------------
+    // 2. Convert to NDC [-1, 1]
+    // -------------------------------------------------------------------------
+    float minNX = minPX / screenW * 2.0 - 1.0;
+    float maxNX = maxPX / screenW * 2.0 - 1.0;
+    float minNY = minPY / screenH * 2.0 - 1.0;
+    float maxNY = maxPY / screenH * 2.0 - 1.0;
+
+    // -------------------------------------------------------------------------
+    // 3. Unproject NDC to view-space at z = -1 plane.
+    //    For a standard perspective matrix: view_x = NDC_x / proj[0][0]
+    //    (proj[1][1] is already negated in Renderer.cpp for Vulkan conventions)
+    // -------------------------------------------------------------------------
+    float p00 = pc.proj[0][0];   // 2*n / (r - l)
+    float p11 = pc.proj[1][1];   // -2*n / (t - b)  (negated)
+
+    // Four corner rays in view space (at z = -1 depth plane)
+    float3 TL = float3(minNX / p00,  maxNY / p11, -1.0);  // top-left
+    float3 TR = float3(maxNX / p00,  maxNY / p11, -1.0);  // top-right
+    float3 BL = float3(minNX / p00,  minNY / p11, -1.0);  // bottom-left
+    float3 BR = float3(maxNX / p00,  minNY / p11, -1.0);  // bottom-right
+
+    // -------------------------------------------------------------------------
+    // 4. Build 4 frustum planes through origin, normals pointing inward.
+    //    Winding: cross(a, b) with a,b chosen so the normal faces the frustum interior.
+    // -------------------------------------------------------------------------
+    float4 planeLeft   = makePlane(BL, TL);  // left edge: BL->TL, normal points right (+x)
+    float4 planeRight  = makePlane(TR, BR);  // right edge: TR->BR, normal points left (−x)
+    float4 planeBottom = makePlane(BR, BL);  // bottom edge: BR->BL, normal points up (+y)
+    float4 planeTop    = makePlane(TL, TR);  // top edge: TL->TR, normal points down (−y)
+
+    // -------------------------------------------------------------------------
+    // 5. Cull each light against the tile frustum.
+    // -------------------------------------------------------------------------
     uint count = 0;
 
-    // Precompute projection scaling terms to estimate screen-space radius
-    // For a perspective matrix, proj[0][0] and proj[1][1] scale x/y by f/z.
-    float projXX = params.proj[0][0];
-    float projYY = params.proj[1][1];
-
-    // Log-sliced depth range for this cluster (positive distances)
-    float nearZ = max(params.zParams.x, 1e-3);
-    float farZ  = max(params.zParams.y, nearZ + 1e-3);
-    float fcz0 = (slicesZ > 0) ? (float(cz) / float(slicesZ)) : 0.0;
-    float fcz1 = (slicesZ > 0) ? (float(cz + 1) / float(slicesZ)) : 1.0;
-    float sliceNear = exp(lerp(log(nearZ), log(farZ), fcz0));
-    float sliceFar  = exp(lerp(log(nearZ), log(farZ), fcz1));
-
-    // Iterate over all lights and append those intersecting this tile
-    [loop]
-    for (uint li = 0; li < lightCount; ++li)
+    for (uint i = 0; i < pc.lightCount && count < pc.maxPerTile; ++i)
     {
-        if (count >= maxPerTile) { break; }
+        GltfLight light = lights[i];
 
-        LightData L = lightsRO[li];
-
-        // Only point and spot lights have finite range spheres; treat directional as global (include all tiles/slices)
-        bool isDirectional = (L.lightType == 1);
-        bool includeAll = isDirectional;
-
-        float2 centerPx = float2(0.0, 0.0);
-        float radiusPx = 1e9; // huge for directional
-        bool zOverlap = true;
-
-        if (!includeAll)
+        // Directional lights are infinite – they affect every tile.
+        if (light.type == int(LightType::eLightTypeDirectional))
         {
-            // Transform light center to view space
-            float4 posVS = mul(params.view, float4(L.position.xyz, 1.0));
-
-            // Use positive depth distance
-            float z = max(1e-3, abs(posVS.z));
-
-            // Z overlap test with this slice
-            float zMin = max(0.0, z - L.range);
-            float zMax = z + L.range;
-            zOverlap = (zMax >= sliceNear) && (zMin <= sliceFar);
-
-            // Project to clip then NDC
-            float4 clip = mul(params.proj, float4(posVS.xyz, 1.0));
-            float invW = (clip.w != 0.0) ? rcp(clip.w) : 0.0;
-            float2 ndc = clip.xy * invW;            // [-1,1]
-            centerPx = (ndc * 0.5 + 0.5) * screenSize; // pixels
-
-            // Approximate screen-space radius from world radius (range)
-            float rx = abs(L.range * projXX / z) * (screenSize.x * 0.5);
-            float ry = abs(L.range * projYY / z) * (screenSize.y * 0.5);
-            radiusPx = max(rx, ry);
-        }
-
-        // Circle vs axis-aligned rectangle overlap test (conservative)
-        float2 closest = clamp(centerPx, tileMin, tileMax);
-        float2 d = closest - centerPx;
-        float dist2 = dot(d, d);
-        if (zOverlap && dist2 <= radiusPx * radiusPx)
-        {
-            tileLightIndicesRW[base + count] = li;
+            tileLightIndices[offset + count] = i;
             count++;
+            continue;
         }
+
+        // ----- Positional light (point or spot) -----
+
+        // Transform world-space position to view space.
+        float3 viewPos = mul(pc.view, float4(light.position, 1.0)).xyz;
+
+        // Influence radius from angularSizeOrInvRange (= 1/range for positional lights).
+        // Guard against nearly-zero to avoid enormous radii.
+        float invRange = light.angularSizeOrInvRange;
+        float radius   = (invRange > 1e-4) ? (1.0 / invRange) : 1000.0;
+
+        // --- Z-range test (view space: camera looks toward -Z) ---
+        // The sphere must overlap the [−far, −near] range on the Z axis.
+        if (viewPos.z + radius < -far)  continue;
+        if (viewPos.z - radius > -near) continue;
+
+        // --- Tile frustum plane tests ---
+        // A sphere is outside a plane when the signed distance of its centre
+        // is more negative than its radius (i.e. entirely in the "outside" half-space).
+        if (signedDist(planeLeft,   viewPos) + radius < 0.0) continue;
+        if (signedDist(planeRight,  viewPos) + radius < 0.0) continue;
+        if (signedDist(planeBottom, viewPos) + radius < 0.0) continue;
+        if (signedDist(planeTop,    viewPos) + radius < 0.0) continue;
+
+        tileLightIndices[offset + count] = i;
+        count++;
     }
 
-    // Write header
-    TileHeader hdr;
-    hdr.offset = base;
-    hdr.count = count;
-    hdr.pad0 = 0; hdr.pad1 = 0;
-    tileHeadersRW[tileId] = hdr;
+    tileHeaders[tileIdx].offset = offset;
+    tileHeaders[tileIdx].count  = count;
 }

@@ -37,7 +37,7 @@ namespace Manro {
         CreateCommandBuffers();
         CreateSyncObjects();
 
-        m_Materials.push_back(MaterialData{});
+        m_Materials.push_back(shaderio::defaultGltfMaterial());
         m_MaterialBuffer->LoadData(m_Materials.data(), sizeof(MaterialData));
     }
 
@@ -225,7 +225,6 @@ namespace Manro {
             throw std::runtime_error("Failed to begin command buffer");
 
         UploadLights(m_CurrentFrame);
-        UpdatePbrDescriptorSet(m_CurrentFrame);
 
         return true;
     }
@@ -358,6 +357,77 @@ namespace Manro {
         depthAtt.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
         depthAtt.clearValue.depthStencil = {1.0f, 0};
 
+
+        UniformBufferObject ubo{};
+        ubo.model = Mat4(1.0f);
+        ubo.view = m_ViewMatrix;
+        ubo.proj = m_ProjectionMatrix;
+        ubo.proj[1][1] *= -1;
+        ubo.camPos = Vec4(m_CameraPosition, 1.f);
+        ubo.exposure = 1.0f;
+        ubo.gamma = 2.2f;
+        ubo.prefilteredCubeMipLevels = 1.0f;
+        ubo.scaleIBLAmbient = 1.0f;
+        ubo.lightCount = (int) m_PendingLights.size();
+        ubo.padding0 = 0;
+        ubo.padding1 = 1.0f;
+        ubo.padding2 = 0.0f;
+        ubo.screenDimensions = Vec2((float) ext.width, (float) ext.height);
+        ubo.nearZ = 0.1f;
+        ubo.farZ = 10000.0f;
+        ubo.slicesZ = 1.0f;
+        ubo._pad3 = 0.0f;
+        ubo.reflectionVP = Mat4(1.0f);
+        ubo.reflectionEnabled = 0;
+        ubo.reflectionPass = 0;
+        ubo._reflectPad0 = Vec2(0.0f);
+        ubo.clipPlaneWS = Vec4(0.0f);
+        ubo.reflectionIntensity = 1.0f;
+        ubo.enableRayQueryReflections = 0;
+        ubo.enableRayQueryTransparency = 0;
+        ubo.geometryInfoCount = 0;
+        ubo._rqReservedWorldPos = Vec4(0.0f);
+        ubo.materialCount = (int) m_Materials.size();
+
+        frame.uboBuffer->LoadData(&ubo, sizeof(ubo));
+
+        if (!m_Materials.empty()) {
+            m_MaterialBuffer->LoadData(m_Materials.data(), sizeof(MaterialData) * m_Materials.size());
+        }
+
+        {
+            VkBufferMemoryBarrier2 b[5]{};
+            b[0].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+            b[0].srcStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
+            b[0].srcAccessMask = VK_ACCESS_2_HOST_WRITE_BIT;
+            b[0].dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+            b[0].dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+            b[0].buffer = m_MaterialBuffer->GetHandle();
+            b[0].offset = 0;
+            b[0].size = VK_WHOLE_SIZE;
+
+            b[1] = b[0];
+            b[1].buffer = m_TextureInfoBuffer->GetHandle();
+
+            b[2] = b[0];
+            b[2].dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+            b[2].buffer = frame.uboBuffer->GetHandle();
+
+            b[3] = b[0];
+            b[3].dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+            b[3].buffer = frame.instanceBuffer->GetHandle();
+
+            b[4] = b[0];
+            b[4].dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+            b[4].buffer = frame.lightBuffer->GetHandle();
+
+            VkDependencyInfo dep{};
+            dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+            dep.bufferMemoryBarrierCount = 5;
+            dep.pBufferMemoryBarriers = b;
+            vkCmdPipelineBarrier2(cb, &dep);
+        }
+
         VkRenderingInfo ri{};
         ri.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
         ri.renderArea.extent = ext;
@@ -371,23 +441,6 @@ namespace Manro {
         vkCmdSetViewport(cb, 0, 1, &vp);
         VkRect2D scissor{{0, 0}, ext};
         vkCmdSetScissor(cb, 0, 1, &scissor);
-
-        UniformBufferObject ubo{};
-        ubo.model = Mat4(1.0f);
-        ubo.view = m_ViewMatrix;
-        ubo.proj = m_ProjectionMatrix;
-        ubo.proj[1][1] *= -1;
-        ubo.camPos = Vec4(m_CameraPosition, 1.f);
-        ubo.exposure = 1.0f;
-        ubo.gamma = 2.2f;
-        ubo.lightCount = (int) m_PendingLights.size();
-        ubo.padding1 = 1.0f;
-        ubo.padding2 = 0.0f;
-        ubo.screenDimensions = Vec2((float) ext.width, (float) ext.height);
-        ubo.nearZ = 0.1f;
-        ubo.farZ = 10000.0f;
-        ubo.slicesZ = 1.0f;
-        frame.uboBuffer->LoadData(&ubo, sizeof(ubo));
     }
 
     void Renderer::RenderQueue() {
@@ -594,12 +647,10 @@ namespace Manro {
         if (it != m_MaterialCache.end()) {
             matIndex = it->second;
         } else {
-            if (m_Materials.size() < 1024) {
-                matIndex = (u32)m_Materials.size();
-                m_Materials.push_back(md);
-                m_MaterialCache[md] = matIndex;
-                m_MaterialBuffer->LoadData(m_Materials.data(), sizeof(MaterialData) * m_Materials.size());
-            }
+            matIndex = (u32)m_Materials.size();
+            m_Materials.push_back(md);
+            m_MaterialCache[md] = matIndex;
+            LOG_INFO("[Renderer] New Material added at index {} - texture: {}", matIndex, md.pbrBaseColorTexture);
         }
 
         inst.firstVertex = mesh->firstVertex;
@@ -617,7 +668,7 @@ namespace Manro {
 
     void Renderer::CreateDescriptorLayouts() {
         {
-            VkDescriptorSetLayoutBinding b[10]{};
+            VkDescriptorSetLayoutBinding b[11]{};
 
             b[0].binding = 0;
             b[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -625,7 +676,7 @@ namespace Manro {
             b[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 
             b[1].binding = 1;
-            b[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            b[1].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
             b[1].descriptorCount = 1;
             b[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
@@ -650,7 +701,7 @@ namespace Manro {
             b[5].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 
             b[6].binding = 10;
-            b[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            b[6].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
             b[6].descriptorCount = 1;
             b[6].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
@@ -669,19 +720,24 @@ namespace Manro {
             b[9].descriptorCount = 1;
             b[9].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-            VkDescriptorBindingFlags flags[10];
-            for (int i = 0; i < 10; ++i) {
+            b[10].binding = 14;
+            b[10].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            b[10].descriptorCount = 1;
+            b[10].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+            VkDescriptorBindingFlags flags[11];
+            for (int i = 0; i < 11; ++i) {
                 flags[i] = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
             }
 
             VkDescriptorSetLayoutBindingFlagsCreateInfo bindingFlags{};
             bindingFlags.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
-            bindingFlags.bindingCount = 10;
+            bindingFlags.bindingCount = 11;
             bindingFlags.pBindingFlags = flags;
 
             VkDescriptorSetLayoutCreateInfo ci{};
             ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-            ci.bindingCount = 10;
+            ci.bindingCount = 11;
             ci.pBindings = b;
             ci.pNext = &bindingFlags;
             if (vkCreateDescriptorSetLayout(m_Context.GetDevice(), &ci, nullptr,
@@ -739,17 +795,19 @@ namespace Manro {
 
     void Renderer::CreateDescriptorPool() {
         VkDescriptorPoolSize sizes[] = {
-            {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, u32(MAX_FRAMES_IN_FLIGHT * 2)},
-            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, u32(MAX_FRAMES_IN_FLIGHT * 15)},
+            {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, u32(MAX_FRAMES_IN_FLIGHT * 5)},
+            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, u32(MAX_FRAMES_IN_FLIGHT * 20)},
             {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, u32(MAX_FRAMES_IN_FLIGHT * 10)},
             {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, u32(MAX_FRAMES_IN_FLIGHT * 2)},
+            {VK_DESCRIPTOR_TYPE_SAMPLER, u32(MAX_FRAMES_IN_FLIGHT * 5)},
+            {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, u32(MAX_FRAMES_IN_FLIGHT * 5)}
         };
 
         VkDescriptorPoolCreateInfo ci{};
         ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        ci.poolSizeCount = 4;
+        ci.poolSizeCount = 6;
         ci.pPoolSizes = sizes;
-        ci.maxSets = u32(MAX_FRAMES_IN_FLIGHT * 10);
+        ci.maxSets = u32(MAX_FRAMES_IN_FLIGHT * 20);
         if (vkCreateDescriptorPool(m_Context.GetDevice(), &ci, nullptr,
                                    &m_DescriptorPool) != VK_SUCCESS)
             throw std::runtime_error("Failed to create descriptor pool");
@@ -759,6 +817,19 @@ namespace Manro {
         m_MaterialBuffer = CreateScope<Buffer>(
             m_Context, sizeof(MaterialData) * 1024,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+        m_TextureInfoBuffer = CreateScope<Buffer>(
+            m_Context, sizeof(shaderio::GltfTextureInfo) * 1024,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+        // Initialize with default texture info
+        std::vector<shaderio::GltfTextureInfo> tis(1024);
+        for (int i = 0; i < 1024; ++i) {
+            tis[i].uvTransform = Mat3x2(1.0f);
+            tis[i].index = i - 1;
+            tis[i].texCoord = 0;
+        }
+        m_TextureInfoBuffer->LoadData(tis.data(), sizeof(shaderio::GltfTextureInfo) * 1024);
     }
 
     void Renderer::UpdatePbrDescriptorSet(u32 fi) {
@@ -794,8 +865,13 @@ namespace Manro {
         matI.offset = 0;
         matI.range = VK_WHOLE_SIZE;
 
+        VkDescriptorBufferInfo texInfoI{};
+        texInfoI.buffer = m_TextureInfoBuffer->GetHandle();
+        texInfoI.offset = 0;
+        texInfoI.range = VK_WHOLE_SIZE;
+
         // PBR set
-        VkWriteDescriptorSet writes[8]{};
+        VkWriteDescriptorSet writes[9]{};
         writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[0].dstSet = frame.pbrSet;
         writes[0].dstBinding = 0;
@@ -838,26 +914,35 @@ namespace Manro {
         writes[5].descriptorCount = 1;
         writes[5].pBufferInfo = &matI;
 
+        VkDescriptorImageInfo samplerInfo{};
+        samplerInfo.sampler = m_Textures.GetSampler();
+
         VkDescriptorImageInfo stubImg{};
         stubImg.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         stubImg.imageView = m_Textures.GetView(m_Textures.GetWhiteTextureId());
-        stubImg.sampler = m_Textures.GetSampler();
 
         writes[6].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[6].dstSet = frame.pbrSet;
         writes[6].dstBinding = 1;
-        writes[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[6].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
         writes[6].descriptorCount = 1;
-        writes[6].pImageInfo = &stubImg;
+        writes[6].pImageInfo = &samplerInfo;
 
         writes[7].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[7].dstSet = frame.pbrSet;
         writes[7].dstBinding = 10;
-        writes[7].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[7].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
         writes[7].descriptorCount = 1;
         writes[7].pImageInfo = &stubImg;
 
-        vkUpdateDescriptorSets(m_Context.GetDevice(), 8, writes, 0, nullptr);
+        writes[8].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[8].dstSet = frame.pbrSet;
+        writes[8].dstBinding = 14;
+        writes[8].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        writes[8].descriptorCount = 1;
+        writes[8].pBufferInfo = &texInfoI;
+
+        vkUpdateDescriptorSets(m_Context.GetDevice(), 9, writes, 0, nullptr);
 
         // Cull set
         VkWriteDescriptorSet cullWrites[4]{};
@@ -982,6 +1067,7 @@ namespace Manro {
             f.cullSet = sets[2];
 
             UpdateCompositeDescriptorSet(i);
+            UpdatePbrDescriptorSet(i);
         }
     }
 
@@ -1019,7 +1105,7 @@ namespace Manro {
         std::vector<u8> fragSpv = ReadBinaryFile("assets/shaders/spv/pbr.frag.spv");
         if (vertSpv.empty() || fragSpv.empty()) {
             LOG_ERROR("[Renderer] PBR shaders not found");
-            return;
+            return; 
         }
 
         PipelineConfigParams cfg{};
