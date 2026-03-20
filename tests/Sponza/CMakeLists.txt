@@ -7,7 +7,7 @@ add_executable(SponzaTest
 
 target_compile_definitions(SponzaTest PRIVATE
         VK_NO_PROTOTYPES
-        MANRO_ASSETS_DIR="${CMAKE_SOURCE_DIR}"
+        MANRO_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets"
 )
 target_compile_options(SponzaTest PRIVATE ${ENGINE_FLAGS})
 target_link_libraries(SponzaTest PRIVATE Engine)

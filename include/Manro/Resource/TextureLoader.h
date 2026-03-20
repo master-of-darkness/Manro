@@ -12,8 +12,9 @@ namespace Manro {
         int channels{4};
     };
 
+    class JobSystem;
     class TextureLoader {
     public:
-        static bool Load(const std::string &filepath, TextureData &out);
+        static std::vector<TextureData> Load(const std::vector<std::string> &filepaths, JobSystem &jobs);
     };
 } // namespace Manro

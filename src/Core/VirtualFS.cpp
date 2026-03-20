@@ -53,6 +53,21 @@ namespace Manro {
         file.read(reinterpret_cast<char *>(buffer.data()), static_cast<std::streamsize>(fileSize));
         return buffer;
     }
+ 
+    bool VirtualFS::GetFileSize(std::string_view path, size_t &size) const {
+        auto it = m_Blobs.find(std::string(path));
+        if (it != m_Blobs.end()) {
+            size = it->second.size;
+            return true;
+        }
+ 
+        std::string resolved = ResolvePath(path);
+        if (std::filesystem::exists(resolved)) {
+            size = std::filesystem::file_size(resolved);
+            return true;
+        }
+        return false;
+    }
 
     bool VirtualFS::FileExists(std::string_view path) const {
         if (m_Blobs.find(std::string(path)) != m_Blobs.end()) {

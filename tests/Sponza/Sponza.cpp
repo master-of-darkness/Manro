@@ -11,7 +11,7 @@
 #include <cstdio>
 #include <stdexcept>
 
-static constexpr const char *kSponzaPath = "assets/models/sponza.obj";
+static constexpr const char *kSponzaPath = "models/gltf/Sponza.gltf";
 static constexpr float kFov = 100.f;
 static constexpr float kNearZ = 1.f;
 static constexpr float kFarZ = 10000.f;
@@ -104,11 +104,12 @@ void Sponza::Initialize() {
 
 
 void Sponza::LoadScene() {
-    m_Model = Manro::Model::Load(kSponzaPath, *m_Renderer);
-    if (!m_Model) {
+    auto models = Manro::Model::Load({kSponzaPath}, *m_Renderer, m_Engine.GetJobSystem());
+    if (models.empty() || !models[0]) {
         LOG_ERROR("[SponzaTest] Failed to load Sponza model!");
         return;
     }
+    m_Model = std::move(models[0]);
 
     LOG_INFO("[SponzaTest] Scene loaded: {} sub-meshes", m_Model->GetSubMeshes().size());
 }
@@ -122,21 +123,8 @@ void Sponza::Run() {
         m_LastFrameTime = now;
         if (dt > 0.1f) dt = 0.1f;
 
-        m_FpsTimer += dt;
         m_AccumulatedTime += dt;
         m_FrameCount++;
-        if (m_FpsTimer >= 1.0f) {
-            float fps = static_cast<float>(m_FrameCount) / m_FpsTimer;
-            auto *window = platform.GetWindowManager().Get(m_Window);
-            if (window) {
-                char title[256];
-                const char *baseTitle = "Sponza Test";
-                snprintf(title, sizeof(title), "%s - FPS: %.2f", baseTitle, fps);
-                window->SetTitle(title);
-            }
-            m_FpsTimer = 0.0f;
-            m_FrameCount = 0;
-        }
 
         if (!platform.PollEvents(&m_InputManager))
             m_IsRunning = false;
@@ -192,24 +180,24 @@ void Sponza::Render(float dt) {
         m_Renderer->DrawModel(*m_Model, Manro::Mat4{1.0f});
     }
 
-    for (int i = 0; i < 60; ++i) {
-        for (int j = 0; j < 2; ++j) {
-            float x = (j == 0) ? -600.f : 600.f;
-            float z = -1500.f + i * 50.f;
-            float y = 200.f + sinf(m_AccumulatedTime * 2.0f + i * 0.5f) * 100.f;
-
-            Manro::LightData p{};
-            p.type = shaderio::eLightTypePoint;
-            p.position = {x, y, z};
-            if (i % 3 == 0)      p.color = {1.0f, 0.2f, 0.2f}; // Red
-            else if (i % 3 == 1) p.color = {0.2f, 1.0f, 0.2f}; // Green
-            else                 p.color = {0.2f, 0.2f, 1.0f}; // Blue
-
-            p.intensity = 500.f;
-            p.angularSizeOrInvRange = 1.0f / 300.0f;
-            m_Renderer->AddLight(p);
-        }
-    }
+    // for (int i = 0; i < 60; ++i) {
+    //     for (int j = 0; j < 2; ++j) {
+    //         float x = (j == 0) ? -600.f : 600.f;
+    //         float z = -1500.f + i * 50.f;
+    //         float y = 200.f + sinf(m_AccumulatedTime * 2.0f + i * 0.5f) * 100.f;
+    //
+    //         Manro::LightData p{};
+    //         p.type = shaderio::eLightTypePoint;
+    //         p.position = {x, y, z};
+    //         if (i % 3 == 0)      p.color = {1.0f, 0.2f, 0.2f}; // Red
+    //         else if (i % 3 == 1) p.color = {0.2f, 1.0f, 0.2f}; // Green
+    //         else                 p.color = {0.2f, 0.2f, 1.0f}; // Blue
+    //
+    //         p.intensity = 500.f;
+    //         p.angularSizeOrInvRange = 1.0f / 300.0f;
+    //         m_Renderer->AddLight(p);
+    //     }
+    // }
 
     m_Renderer->BeginRendering({0.02f, 0.02f, 0.05f, 1.f});
     m_Renderer->RenderQueue();

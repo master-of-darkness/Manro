@@ -132,6 +132,13 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(stb)
 
 FetchContent_Declare(
+        tinygltf
+        GIT_REPOSITORY https://github.com/syoyo/tinygltf.git
+        GIT_TAG        v2.9.3
+)
+FetchContent_MakeAvailable(tinygltf)
+
+FetchContent_Declare(
         JoltPhysics
         GIT_REPOSITORY https://github.com/jrouwe/JoltPhysics.git
         GIT_TAG v5.5.0
@@ -346,6 +353,7 @@ target_link_libraries(Engine PUBLIC
         spdlog::spdlog
         SDL3::SDL3-static
         SDL3_mixer::SDL3_mixer-static
+        tinygltf
 )
 
 if(WIN32)

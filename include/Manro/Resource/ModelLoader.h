@@ -28,14 +28,14 @@ namespace Manro {
         float radius;
     };
 
+    class JobSystem;
     class ModelLoader {
     public:
-        static bool Load(const std::string &filepath, ModelData &out);
+        static std::vector<ModelData> Load(const std::vector<std::string> &filepaths, JobSystem &jobs);
 
-        static bool LoadSubMeshes(const std::string &filepath,
-                                  std::vector<SubMeshData> &out);
+        static std::vector<std::vector<SubMeshData>> LoadSubMeshes(const std::vector<std::string> &filepaths,
+                                                                  JobSystem &jobs);
 
-    private:
         static std::string NormalisePath(const std::string &p);
     };
 } // namespace Manro

@@ -1,14 +1,24 @@
 #include <Manro/Resource/ModelLoader.h>
+#include <Manro/Core/JobSystem.h>
+#include <Manro/Core/Logger.h>
+#include <Manro/Core/VirtualFS.h>
 
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 
+#define TINYGLTF_IMPLEMENTATION
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#define TINYGLTF_NO_INCLUDE_STB_IMAGE
+#include <stb_image.h>
+#include <tiny_gltf.h>
+
 #include <mikktspace.h>
-#include <Manro/Core/Logger.h>
-#include <Manro/Core/VirtualFS.h>
 #include <algorithm>
 #include <unordered_map>
 #include <sstream>
+#include <filesystem>
+
+#include <glm/gtc/type_ptr.hpp>
 
 namespace Manro {
     class VirtualFSMaterialReader : public tinyobj::MaterialReader {
@@ -36,6 +46,36 @@ namespace Manro {
     private:
         std::string m_BaseDir;
     };
+
+    // tinygltf VirtualFS callbacks
+    static bool VfsFileExists(const std::string &abs_filename, void *user_data) {
+        return VirtualFS::Get().FileExists(abs_filename);
+    }
+
+    static std::string VfsExpandFilePath(const std::string &filepath, void *user_data) {
+        return filepath;
+    }
+
+    static bool VfsReadWholeFile(std::vector<unsigned char> *out, std::string *err,
+                                 const std::string &filepath, void *user_data) {
+        auto data = VirtualFS::Get().ReadFile(filepath);
+        if (data.empty()) {
+            if (err) *err = "Failed to read file: " + filepath;
+            return false;
+        }
+        *out = std::move(data);
+        return true;
+    }
+
+    static bool VfsWriteWholeFile(std::string *err, const std::string &filepath,
+                                  const std::vector<unsigned char> &contents, void *user_data) {
+        return false;
+    }
+
+    static bool VfsGetFileSizeInBytes(size_t *filesize_out, std::string *err,
+                                      const std::string &abs_filename, void *userdata) {
+        return VirtualFS::Get().GetFileSize(abs_filename, *filesize_out);
+    }
 
     // MikkTSpace interface
     struct MikkContext {
@@ -81,6 +121,7 @@ namespace Manro {
     }
 
     static void GenerateTangents(std::vector<Vertex>& vertices, const std::vector<u32>& indices) {
+        if (indices.empty()) return;
         MikkContext mikkCtx = { &vertices, &indices };
         SMikkTSpaceInterface mikkInterface = {};
         mikkInterface.m_getNumFaces = MikkGetNumFaces;
@@ -121,128 +162,14 @@ namespace Manro {
         }
     };
 
-    bool ModelLoader::Load(const std::string &filepath, ModelData &out) {
-        tinyobj::attrib_t attrib;
-        std::vector<tinyobj::shape_t> shapes;
-        std::vector<tinyobj::material_t> materials;
-        std::string warn, err;
-
-        std::string baseDir;
-        auto slash = filepath.find_last_of("/\\");
-        if (slash != std::string::npos)
-            baseDir = filepath.substr(0, slash + 1);
-
-        std::vector<u8> objData = VirtualFS::Get().ReadFile(filepath);
-        if (objData.empty()) return false;
-        std::string objContent(reinterpret_cast<const char *>(objData.data()), objData.size());
-        std::stringstream ss(objContent);
-
-        VirtualFSMaterialReader matReader(baseDir);
-        bool ok = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, &ss, &matReader);
-
-        if (!warn.empty())
-            LOG_WARN("[ModelLoader] Warning ({}): {}", filepath, warn);
-        if (!err.empty())
-            LOG_ERROR("[ModelLoader] Error ({}): {}", filepath, err);
-        if (!ok) return false;
-
-        out.vertices.clear();
-        out.indices.clear();
-        out.diffuseTexturePath.clear();
-
-        for (const auto &mat: materials) {
-            if (!mat.diffuse_texname.empty()) {
-                out.diffuseTexturePath = NormalisePath(baseDir + mat.diffuse_texname);
-                break;
-            }
-        }
-
-        std::unordered_map<VertKey, u32, VertKeyHash> indexMap;
-
-        for (const auto &shape: shapes) {
-            size_t indexOffset = 0;
-            for (size_t f = 0; f < shape.mesh.num_face_vertices.size(); ++f) {
-                int faceVerts = shape.mesh.num_face_vertices[f];
-                int matId = shape.mesh.material_ids.empty() ? -1 : shape.mesh.material_ids[f];
-
-                for (int v = 0; v < faceVerts; ++v) {
-                    tinyobj::index_t idx = shape.mesh.indices[indexOffset + v];
-                    VertKey key{idx.vertex_index, idx.normal_index, idx.texcoord_index, matId};
-
-                    auto it = indexMap.find(key);
-                    if (it != indexMap.end()) {
-                        out.indices.push_back(it->second);
-                    } else {
-                        Vertex vert{};
-                        vert.position = {
-                            attrib.vertices[3 * idx.vertex_index + 0],
-                            attrib.vertices[3 * idx.vertex_index + 1],
-                            attrib.vertices[3 * idx.vertex_index + 2],
-                        };
-                        
-                        if (idx.normal_index >= 0 &&
-                            3 * idx.normal_index + 2 < static_cast<int>(attrib.normals.size())) {
-                            vert.normal = {
-                                attrib.normals[3 * idx.normal_index + 0],
-                                attrib.normals[3 * idx.normal_index + 1],
-                                attrib.normals[3 * idx.normal_index + 2],
-                            };
-                        } else {
-                            vert.normal = {0.0f, 1.0f, 0.0f};
-                        }
-
-                        if (idx.texcoord_index >= 0 &&
-                            2 * idx.texcoord_index + 1 < static_cast<int>(attrib.texcoords.size())) {
-                            vert.uv = {
-                                attrib.texcoords[2 * idx.texcoord_index + 0],
-                                attrib.texcoords[2 * idx.texcoord_index + 1],
-                            };
-                        }
-                        
-                        vert.tangent = {1.0f, 0.0f, 0.0f, 1.0f};
-
-                        u32 outIdx = static_cast<u32>(out.vertices.size());
-                        out.vertices.push_back(vert);
-                        indexMap[key] = outIdx;
-                        out.indices.push_back(outIdx);
-                    }
-                }
-                indexOffset += faceVerts;
-            }
-        }
-
-        GenerateTangents(out.vertices, out.indices);
-
-        if (out.vertices.empty()) {
-            out.center = Vec3(0.0f);
-            out.radius = 0.0f;
-        } else {
-            Vec3 min = out.vertices[0].position;
-            Vec3 max = out.vertices[0].position;
-            for (const auto& v : out.vertices) {
-                min = glm::min(min, v.position);
-                max = glm::max(max, v.position);
-            }
-            out.center = (min + max) * 0.5f;
-            float maxDistSq = 0.0f;
-            for (const auto& v : out.vertices) {
-                Vec3 diff = v.position - out.center;
-                maxDistSq = std::max(maxDistSq, glm::dot(diff, diff));
-            }
-            out.radius = std::sqrt(maxDistSq);
-        }
-
-        if (!out.diffuseTexturePath.empty())
-            LOG_INFO("[ModelLoader] Loaded '{}' - {} vertices, {} indices, texture: {}",
-                 filepath, out.vertices.size(), out.indices.size(), out.diffuseTexturePath);
-        else
-            LOG_INFO("[ModelLoader] Loaded '{}' - {} vertices, {} indices",
-                 filepath, out.vertices.size(), out.indices.size());
-        return true;
+    static bool HasExtension(const std::string &path, const std::string &ext) {
+        if (path.size() < ext.size()) return false;
+        std::string tail = path.substr(path.size() - ext.size());
+        std::transform(tail.begin(), tail.end(), tail.begin(), ::tolower);
+        return tail == ext;
     }
 
-    bool ModelLoader::LoadSubMeshes(const std::string &filepath,
-                                    std::vector<SubMeshData> &out) {
+    static void LoadObj(const std::string &filepath, std::vector<SubMeshData> &out) {
         tinyobj::attrib_t attrib;
         std::vector<tinyobj::shape_t> shapes;
         std::vector<tinyobj::material_t> materials;
@@ -254,25 +181,24 @@ namespace Manro {
             baseDir = filepath.substr(0, slash + 1);
 
         std::vector<u8> objData = VirtualFS::Get().ReadFile(filepath);
-        if (objData.empty()) return false;
+        if (objData.empty()) return;
         std::string objContent(reinterpret_cast<const char *>(objData.data()), objData.size());
         std::stringstream ss(objContent);
 
         VirtualFSMaterialReader matReader(baseDir);
         bool ok = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, &ss, &matReader);
 
-        if (!warn.empty())
-            LOG_WARN("[ModelLoader] Warning ({}): {}", filepath, warn);
-        if (!err.empty())
-            LOG_ERROR("[ModelLoader] Error ({}): {}", filepath, err);
-        if (!ok) return false;
+        if (!ok) {
+            LOG_ERROR("[ModelLoader] Failed to load OBJ: {} - {}", filepath, err);
+            return;
+        }
 
         const int kNoMat = static_cast<int>(materials.size());
         std::vector<SubMeshData> buckets(materials.size() + 1);
 
         for (int i = 0; i < static_cast<int>(materials.size()); ++i) {
             if (!materials[i].diffuse_texname.empty())
-                buckets[i].diffuseTexturePath = NormalisePath(baseDir + materials[i].diffuse_texname);
+                buckets[i].diffuseTexturePath = ModelLoader::NormalisePath(baseDir + materials[i].diffuse_texname);
         }
 
         std::vector<std::unordered_map<VertKey, u32, VertKeyHash> > indexMaps(buckets.size());
@@ -333,7 +259,6 @@ namespace Manro {
             }
         }
 
-        out.clear();
         for (auto &b: buckets) {
             if (!b.vertices.empty()) {
                 GenerateTangents(b.vertices, b.indices);
@@ -355,8 +280,188 @@ namespace Manro {
                 out.push_back(std::move(b));
             }
         }
-
-        LOG_INFO("[ModelLoader] LoadSubMeshes '{}' → {} sub-meshes", filepath, out.size());
-        return true;
     }
+
+    static void LoadGltf(const std::string &filepath, std::vector<SubMeshData> &out) {
+        std::string baseDir;
+        auto slash = filepath.find_last_of("/\\");
+        if (slash != std::string::npos)
+            baseDir = filepath.substr(0, slash + 1);
+
+        tinygltf::Model model;
+        tinygltf::TinyGLTF loader;
+        std::string err, warn;
+
+        tinygltf::FsCallbacks callbacks{};
+        callbacks.FileExists = VfsFileExists;
+        callbacks.ExpandFilePath = VfsExpandFilePath;
+        callbacks.ReadWholeFile = VfsReadWholeFile;
+        callbacks.WriteWholeFile = VfsWriteWholeFile;
+        callbacks.GetFileSizeInBytes = VfsGetFileSizeInBytes;
+        callbacks.user_data = nullptr;
+        loader.SetFsCallbacks(callbacks);
+
+        bool ret = false;
+        if (HasExtension(filepath, ".glb")) {
+            ret = loader.LoadBinaryFromFile(&model, &err, &warn, filepath);
+        } else {
+            ret = loader.LoadASCIIFromFile(&model, &err, &warn, filepath);
+        }
+
+        if (!warn.empty()) LOG_WARN("[ModelLoader] GLTF Warning ({}): {}", filepath, warn);
+        if (!err.empty()) LOG_ERROR("[ModelLoader] GLTF Error ({}): {}", filepath, err);
+        if (!ret) return;
+
+        for (const auto& gltfMesh : model.meshes) {
+            for (const auto& primitive : gltfMesh.primitives) {
+                SubMeshData smd;
+
+                // Position
+                if (primitive.attributes.count("POSITION") > 0) {
+                    const tinygltf::Accessor& accessor = model.accessors[primitive.attributes.at("POSITION")];
+                    const tinygltf::BufferView& bufferView = model.bufferViews[accessor.bufferView];
+                    const tinygltf::Buffer& buffer = model.buffers[bufferView.buffer];
+                    const float* positions = reinterpret_cast<const float*>(&buffer.data[bufferView.byteOffset + accessor.byteOffset]);
+
+                    smd.vertices.resize(accessor.count);
+                    for (size_t i = 0; i < accessor.count; ++i) {
+                        smd.vertices[i].position = { positions[i * 3 + 0], positions[i * 3 + 1], positions[i * 3 + 2] };
+                    }
+                }
+
+                // Normal
+                if (primitive.attributes.count("NORMAL") > 0) {
+                    const tinygltf::Accessor& accessor = model.accessors[primitive.attributes.at("NORMAL")];
+                    const tinygltf::BufferView& bufferView = model.bufferViews[accessor.bufferView];
+                    const tinygltf::Buffer& buffer = model.buffers[bufferView.buffer];
+                    const float* normals = reinterpret_cast<const float*>(&buffer.data[bufferView.byteOffset + accessor.byteOffset]);
+
+                    for (size_t i = 0; i < accessor.count; ++i) {
+                        smd.vertices[i].normal = { normals[i * 3 + 0], normals[i * 3 + 1], normals[i * 3 + 2] };
+                    }
+                } else {
+                    for (auto& v : smd.vertices) v.normal = {0, 1, 0};
+                }
+
+                // UV
+                if (primitive.attributes.count("TEXCOORD_0") > 0) {
+                    const tinygltf::Accessor& accessor = model.accessors[primitive.attributes.at("TEXCOORD_0")];
+                    const tinygltf::BufferView& bufferView = model.bufferViews[accessor.bufferView];
+                    const tinygltf::Buffer& buffer = model.buffers[bufferView.buffer];
+                    const float* uvs = reinterpret_cast<const float*>(&buffer.data[bufferView.byteOffset + accessor.byteOffset]);
+
+                    for (size_t i = 0; i < accessor.count; ++i) {
+                        smd.vertices[i].uv = { uvs[i * 2 + 0], 1.0f - uvs[i * 2 + 1] };
+                    }
+                }
+
+                // Indices
+                const tinygltf::Accessor& indexAccessor = model.accessors[primitive.indices];
+                const tinygltf::BufferView& indexBufferView = model.bufferViews[indexAccessor.bufferView];
+                const tinygltf::Buffer& indexBuffer = model.buffers[indexBufferView.buffer];
+
+                smd.indices.resize(indexAccessor.count);
+                if (indexAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) {
+                    const u32* buf = reinterpret_cast<const u32*>(&indexBuffer.data[indexBufferView.byteOffset + indexAccessor.byteOffset]);
+                    for (size_t i = 0; i < indexAccessor.count; ++i) smd.indices[i] = buf[i];
+                } else if (indexAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
+                    const u16* buf = reinterpret_cast<const u16*>(&indexBuffer.data[indexBufferView.byteOffset + indexAccessor.byteOffset]);
+                    for (size_t i = 0; i < indexAccessor.count; ++i) smd.indices[i] = buf[i];
+                }
+
+                // Material
+                if (primitive.material >= 0) {
+                    const auto& mat = model.materials[primitive.material];
+                    if (mat.pbrMetallicRoughness.baseColorTexture.index >= 0) {
+                        const auto& tex = model.textures[mat.pbrMetallicRoughness.baseColorTexture.index];
+                        const auto& img = model.images[tex.source];
+                        if (!img.uri.empty()) {
+                            smd.diffuseTexturePath = ModelLoader::NormalisePath(baseDir + img.uri);
+                        }
+                    }
+                }
+
+                GenerateTangents(smd.vertices, smd.indices);
+
+                Vec3 min = smd.vertices[0].position;
+                Vec3 max = smd.vertices[0].position;
+                for (const auto& v : smd.vertices) {
+                    min = glm::min(min, v.position);
+                    max = glm::max(max, v.position);
+                }
+                smd.center = (min + max) * 0.5f;
+                float maxDistSq = 0.0f;
+                for (const auto& v : smd.vertices) {
+                    Vec3 diff = v.position - smd.center;
+                    maxDistSq = std::max(maxDistSq, glm::dot(diff, diff));
+                }
+                smd.radius = std::sqrt(maxDistSq);
+
+                out.push_back(std::move(smd));
+            }
+        }
+    }
+
+    std::vector<std::vector<SubMeshData>> ModelLoader::LoadSubMeshes(const std::vector<std::string> &filepaths, JobSystem &jobs) {
+        std::vector<std::vector<SubMeshData>> allResults(filepaths.size());
+
+        for (size_t i = 0; i < filepaths.size(); ++i) {
+            jobs.Execute([&filepaths, &allResults, i]() {
+                const std::string& path = filepaths[i];
+                if (HasExtension(path, ".obj")) {
+                    LoadObj(path, allResults[i]);
+                } else if (HasExtension(path, ".gltf") || HasExtension(path, ".glb")) {
+                    LoadGltf(path, allResults[i]);
+                } else {
+                    LOG_ERROR("[ModelLoader] Unsupported extension: {}", path);
+                }
+            });
+        }
+        jobs.WaitAll();
+        return allResults;
+    }
+
+    std::vector<ModelData> ModelLoader::Load(const std::vector<std::string> &filepaths, JobSystem &jobs) {
+        auto subMeshes = LoadSubMeshes(filepaths, jobs);
+        std::vector<ModelData> results(filepaths.size());
+
+        for (size_t i = 0; i < filepaths.size(); ++i) {
+            ModelData& md = results[i];
+            u32 vertexOffset = 0;
+            for (const auto& sm : subMeshes[i]) {
+                for (auto v : sm.vertices) {
+                    md.vertices.push_back(v);
+                }
+                for (auto idx : sm.indices) {
+                    md.indices.push_back(idx + vertexOffset);
+                }
+                vertexOffset = static_cast<u32>(md.vertices.size());
+                if (!sm.diffuseTexturePath.empty() && md.diffuseTexturePath.empty()) {
+                    md.diffuseTexturePath = sm.diffuseTexturePath;
+                }
+            }
+
+            if (md.vertices.empty()) {
+                md.center = Vec3(0.0f);
+                md.radius = 0.0f;
+            } else {
+                Vec3 min = md.vertices[0].position;
+                Vec3 max = md.vertices[0].position;
+                for (const auto& v : md.vertices) {
+                    min = glm::min(min, v.position);
+                    max = glm::max(max, v.position);
+                }
+                md.center = (min + max) * 0.5f;
+                float maxDistSq = 0.0f;
+                for (const auto& v : md.vertices) {
+                    Vec3 diff = v.position - md.center;
+                    maxDistSq = std::max(maxDistSq, glm::dot(diff, diff));
+                }
+                md.radius = std::sqrt(maxDistSq);
+            }
+        }
+
+        return results;
+    }
+
 } // namespace Manro

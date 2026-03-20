@@ -31,7 +31,26 @@ namespace Manro {
     bool PlatformContext::PollEvents(InputManager *inputManager) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
-            ImGui_ImplSDL3_ProcessEvent(&event);
+            bool passToImGui = true;
+            if (event.type == SDL_EVENT_MOUSE_MOTION ||
+                event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+                event.type == SDL_EVENT_MOUSE_BUTTON_UP ||
+                event.type == SDL_EVENT_MOUSE_WHEEL) {
+
+                SDL_WindowID windowID = 0;
+                if (event.type == SDL_EVENT_MOUSE_MOTION) windowID = event.motion.windowID;
+                else if (event.type == SDL_EVENT_MOUSE_WHEEL) windowID = event.wheel.windowID;
+                else windowID = event.button.windowID;
+
+                SDL_Window *window = SDL_GetWindowFromID(windowID);
+                if (window && SDL_GetWindowRelativeMouseMode(window)) {
+                    passToImGui = false;
+                }
+            }
+
+            if (passToImGui) {
+                ImGui_ImplSDL3_ProcessEvent(&event);
+            }
             switch (event.type) {
                 case SDL_EVENT_QUIT:
                     return false;

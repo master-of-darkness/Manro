@@ -1,5 +1,6 @@
 #include <Manro/Resource/TextureLoader.h>
 #include <Manro/Core/VirtualFS.h>
+#include <Manro/Core/JobSystem.h>
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
@@ -7,6 +8,7 @@
 #include <cstdio>
 #include <cstring>
 #include <algorithm>
+#include <mutex>
 
 namespace Manro {
     static constexpr u32 kDDSMagic = 0x20534444;
@@ -173,7 +175,6 @@ namespace Manro {
             blockSize = 16;
             decodeBlock = DecodeATI2Block;
         } else {
-            LOG_WARN("[TextureLoader] Unsupported DDS fourCC: 0x{:08X}", fourCC);
             return false;
         }
 
@@ -200,10 +201,10 @@ namespace Manro {
 
                 for (int row = 0; row < 4; ++row) {
                     int py = by * 4 + row;
-                    if (py < 0) break;
+                    if (py >= h) continue;
                     for (int col = 0; col < 4; ++col) {
                         int px = bx * 4 + col;
-                        if (px >= w) break;
+                        if (px >= w) continue;
                         size_t dstOff = (static_cast<size_t>(py) * w + px) * 4;
                         std::memcpy(&out.pixels[dstOff], blockPixels[row][col], 4);
                     }
@@ -221,7 +222,7 @@ namespace Manro {
         return tail == ext;
     }
 
-    bool TextureLoader::Load(const std::string &filepath, TextureData &out) {
+    static bool LoadIndividual(const std::string &filepath, TextureData &out) {
         auto &vfs = VirtualFS::Get();
         std::vector<u8> fileData = vfs.ReadFile(filepath);
         if (fileData.empty()) {
@@ -256,7 +257,20 @@ namespace Manro {
 
         stbi_image_free(data);
 
-        LOG_INFO("[TextureLoader] Loaded '{}' - {}x{} ({} src channels)", filepath, width, height, srcChannels);
+        LOG_INFO("[TextureLoader] Loaded '{}' - {}x{}", filepath, width, height);
         return true;
+    }
+
+    std::vector<TextureData> TextureLoader::Load(const std::vector<std::string> &filepaths, JobSystem &jobs) {
+        std::vector<TextureData> results(filepaths.size());
+        
+        for (size_t i = 0; i < filepaths.size(); ++i) {
+            jobs.Execute([&filepaths, &results, i]() {
+                LoadIndividual(filepaths[i], results[i]);
+            });
+        }
+        jobs.WaitAll();
+        
+        return results;
     }
 } // namespace Manro
