@@ -81,7 +81,7 @@ add_library(slang SHARED IMPORTED GLOBAL)
 
 if(WIN32)
     set_target_properties(slangc PROPERTIES IMPORTED_LOCATION "${slang_bin_SOURCE_DIR}/bin/slangc.exe")
-    set_target_properties(slang PROPERTIES 
+    set_target_properties(slang PROPERTIES
             IMPORTED_LOCATION "${slang_bin_SOURCE_DIR}/bin/slang.dll"
             IMPORTED_IMPLIB "${slang_bin_SOURCE_DIR}/lib/slang.lib"
     )
@@ -240,22 +240,20 @@ macro(compile_shader SHADER_FILE ENTRY_POINT STAGE OUTPUT_FILE)
     list(APPEND PRECOMPILED_SHADERS "${OUTPUT_FILE}")
 endmacro()
 
-compile_shader("pbr.slang" "VSMain" "vertex" "${SHADER_BIN_DIR}/pbr.vert.spv")
+compile_shader("pbr.slang" "VSMain" "vertex"   "${SHADER_BIN_DIR}/pbr.vert.spv")
 compile_shader("pbr.slang" "PSMain" "fragment" "${SHADER_BIN_DIR}/pbr.frag.spv")
 compile_shader("forward_plus_cull.slang" "main" "compute" "${SHADER_BIN_DIR}/forward_plus_cull.comp.spv")
-compile_shader("composite.slang" "VSMain" "vertex" "${SHADER_BIN_DIR}/composite.vert.spv")
+compile_shader("composite.slang" "VSMain" "vertex"   "${SHADER_BIN_DIR}/composite.vert.spv")
 compile_shader("composite.slang" "PSMain" "fragment" "${SHADER_BIN_DIR}/composite.frag.spv")
 compile_shader("mesh_cull.slang" "main" "compute" "${SHADER_BIN_DIR}/mesh_cull.comp.spv")
-compile_shader("imgui.slang" "VSMain" "vertex" "${SHADER_BIN_DIR}/imgui.vert.spv")
+compile_shader("imgui.slang" "VSMain" "vertex"   "${SHADER_BIN_DIR}/imgui.vert.spv")
 compile_shader("imgui.slang" "PSMain" "fragment" "${SHADER_BIN_DIR}/imgui.frag.spv")
 
-compile_shader("nvshaders/tonemapper.slang" "Tonemap" "compute" "${SHADER_BIN_DIR}/tonemapper.comp.spv")
-compile_shader("nvshaders/tonemapper.slang" "Histogram" "compute" "${SHADER_BIN_DIR}/tonemapper_histogram.comp.spv")
+compile_shader("nvshaders/tonemapper.slang" "Tonemap"      "compute" "${SHADER_BIN_DIR}/tonemapper.comp.spv")
+compile_shader("nvshaders/tonemapper.slang" "Histogram"    "compute" "${SHADER_BIN_DIR}/tonemapper_histogram.comp.spv")
 compile_shader("nvshaders/tonemapper.slang" "AutoExposure" "compute" "${SHADER_BIN_DIR}/tonemapper_autoexposure.comp.spv")
 
-add_custom_target(PrecompileShaders
-        DEPENDS ${PRECOMPILED_SHADERS}
-)
+add_custom_target(PrecompileShaders DEPENDS ${PRECOMPILED_SHADERS})
 
 macro(embed_shader SHADER_SPV_FILE VAR_NAME)
     set(_header "${SHADER_BIN_DIR}/${VAR_NAME}.h")
@@ -268,21 +266,19 @@ macro(embed_shader SHADER_SPV_FILE VAR_NAME)
     list(APPEND EMBEDDED_SHADER_HEADERS "${_header}")
 endmacro()
 
-embed_shader("${SHADER_BIN_DIR}/pbr.vert.spv"                         pbr_vert_spv)
-embed_shader("${SHADER_BIN_DIR}/pbr.frag.spv"                         pbr_frag_spv)
-embed_shader("${SHADER_BIN_DIR}/forward_plus_cull.comp.spv"           forward_plus_cull_comp_spv)
-embed_shader("${SHADER_BIN_DIR}/composite.vert.spv"                   composite_vert_spv)
-embed_shader("${SHADER_BIN_DIR}/composite.frag.spv"                   composite_frag_spv)
-embed_shader("${SHADER_BIN_DIR}/tonemapper.comp.spv"                   tonemapper_comp_spv)
-embed_shader("${SHADER_BIN_DIR}/tonemapper_histogram.comp.spv"         tonemapper_histogram_comp_spv)
-embed_shader("${SHADER_BIN_DIR}/tonemapper_autoexposure.comp.spv"      tonemapper_autoexposure_comp_spv)
-embed_shader("${SHADER_BIN_DIR}/mesh_cull.comp.spv"                   mesh_cull_comp_spv)
-embed_shader("${SHADER_BIN_DIR}/imgui.vert.spv"                       imgui_vert_spv)
-embed_shader("${SHADER_BIN_DIR}/imgui.frag.spv"                       imgui_frag_spv)
+embed_shader("${SHADER_BIN_DIR}/pbr.vert.spv"                        pbr_vert_spv)
+embed_shader("${SHADER_BIN_DIR}/pbr.frag.spv"                        pbr_frag_spv)
+embed_shader("${SHADER_BIN_DIR}/forward_plus_cull.comp.spv"          forward_plus_cull_comp_spv)
+embed_shader("${SHADER_BIN_DIR}/composite.vert.spv"                  composite_vert_spv)
+embed_shader("${SHADER_BIN_DIR}/composite.frag.spv"                  composite_frag_spv)
+embed_shader("${SHADER_BIN_DIR}/tonemapper.comp.spv"                 tonemapper_comp_spv)
+embed_shader("${SHADER_BIN_DIR}/tonemapper_histogram.comp.spv"       tonemapper_histogram_comp_spv)
+embed_shader("${SHADER_BIN_DIR}/tonemapper_autoexposure.comp.spv"    tonemapper_autoexposure_comp_spv)
+embed_shader("${SHADER_BIN_DIR}/mesh_cull.comp.spv"                  mesh_cull_comp_spv)
+embed_shader("${SHADER_BIN_DIR}/imgui.vert.spv"                      imgui_vert_spv)
+embed_shader("${SHADER_BIN_DIR}/imgui.frag.spv"                      imgui_frag_spv)
 
-add_custom_target(EmbedShaders
-        DEPENDS ${EMBEDDED_SHADER_HEADERS}
-)
+add_custom_target(EmbedShaders DEPENDS ${EMBEDDED_SHADER_HEADERS})
 
 add_library(Engine STATIC
         src/Core/EngineContext.cpp
@@ -294,15 +290,19 @@ add_library(Engine STATIC
         src/Input/InputManager.cpp
         src/Networking/NetworkClient.cpp
         src/Networking/NetworkServer.cpp
-        src/Render/Renderer.cpp
-        src/Render/Vulkan/Swapchain.cpp
         src/Render/Vulkan/VulkanContext.cpp
         src/Render/Vulkan/VulkanHelpers.cpp
+        src/Render/Vulkan/Swapchain.cpp
+        src/Render/Vulkan/Buffer.cpp
+        src/Render/Vulkan/Pipeline.cpp
+        src/Render/Vulkan/DescriptorAllocator.cpp
+        src/Render/Vulkan/PipelineCache.cpp
+        src/Render/RenderGraph.cpp
+        src/Render/Renderer.cpp
         src/Render/TextureManager.cpp
         src/Render/MeshManager.cpp
         src/Render/Model.cpp
-        src/Render/Vulkan/Buffer.cpp
-        src/Render/Vulkan/Pipeline.cpp
+        src/Render/Gui/ImGuiLayer.cpp
         src/Resource/ModelLoader.cpp
         src/Resource/TextureLoader.cpp
         src/Physics/PhysicsWorld.cpp
@@ -312,7 +312,6 @@ add_library(Engine STATIC
         src/Platform/Window/SDL3Window.cpp
         src/Platform/Window/WindowManager.cpp
         src/Platform/PlatformContext.cpp
-        src/Render/Gui/ImGuiLayer.cpp
         deps/mikktspace/mikktspace.c
         deps/imgui/imgui.cpp
         deps/imgui/imgui_draw.cpp

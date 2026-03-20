@@ -1,42 +1,38 @@
 #pragma once
 #include <Manro/Core/Types.h>
-#include <vulkan/vulkan.h>
-#include <imgui.h>
+#include <Manro/Render/Vulkan/VulkanContext.h>
+#include <Manro/Platform/Window/IWindow.h>
+#include <volk.h>
+#include <vector>
 
 namespace Manro {
-    class VulkanContext;
-    class IWindow;
-
     struct ImGuiLayerInfo {
-        VulkanContext* context;
-        IWindow* window;
-        VkFormat colorFormat;
-        u32 imageCount;
+        VulkanContext *context = nullptr;
+        IWindow *window = nullptr;
+        VkFormat colorFormat = VK_FORMAT_UNDEFINED;
+        u32 imageCount = 2;
     };
-
-    struct FrameStats;
 
     class ImGuiLayer {
     public:
-        ImGuiLayer(const ImGuiLayerInfo& info);
+        explicit ImGuiLayer(const ImGuiLayerInfo &info);
+
         ~ImGuiLayer();
 
-        void NewFrame(const FrameStats& stats);
+        void NewFrame();
+
         void Render(VkCommandBuffer cb);
 
-        void SetEnabled(bool enabled) { m_Enabled = enabled; }
         bool IsEnabled() const { return m_Enabled; }
+        void SetEnabled(bool e) { m_Enabled = e; }
 
     private:
         void CreateDescriptorPool();
-        void SetupImGui(const ImGuiLayerInfo& info);
-        void DrawProfilerWindow(const FrameStats& stats);
 
-        VulkanContext* m_Context;
-        VkDescriptorPool m_Pool{VK_NULL_HANDLE};
-        bool m_Enabled{true};
+        void SetupBackend(const ImGuiLayerInfo &info);
 
-        std::vector<float> m_FrameTimeHistory;
-        static constexpr size_t MAX_HISTORY = 120;
+        VulkanContext *m_Context = nullptr;
+        VkDescriptorPool m_Pool = VK_NULL_HANDLE;
+        bool m_Enabled = true;
     };
-}
+} // namespace Manro

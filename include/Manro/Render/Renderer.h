@@ -1,33 +1,64 @@
 #pragma once
 
+#include <Manro/Core/Types.h>
 #include <Manro/Render/Vulkan/VulkanContext.h>
-#include <Manro/Render/Vulkan/VulkanHelpers.h>
 #include <Manro/Render/Vulkan/Swapchain.h>
+#include <Manro/Render/Vulkan/Buffer.h>
 #include <Manro/Render/Vulkan/Pipeline.h>
+#include <Manro/Render/Vulkan/VulkanHelpers.h>
+#include <Manro/Render/Vulkan/DescriptorAllocator.h>
+#include <Manro/Render/Vulkan/PipelineCache.h>
+#include <Manro/Render/RenderGraph.h>
 #include <Manro/Render/TextureManager.h>
 #include <Manro/Render/MeshManager.h>
+#include <Manro/Render/Gui/ImGuiLayer.h>
 #include <Manro/Render/Material/Material.h>
 #include <Manro/Render/Material/MaterialInstance.h>
-#include <Manro/Core/Types.h>
-#include <vector>
+#include <Manro/Platform/Window/IWindow.h>
+#include <Manro/Core/VirtualFS.h>
+
+#include <nvshaders/gltf_scene_io.h.slang>
+
+#include <array>
 #include <unordered_map>
-#include <Manro/Render/Material/MaterialData.h>
-#include <Manro/Render/Gui/ImGuiLayer.h>
+#include <vector>
 
 namespace Manro {
-    struct FrameStats {
-        u32 drawCalls{0};
-        u32 triangleCount{0};
-        u32 instanceCount{0};
-        u32 lightCount{0};
+    class Model;
 
-        void Reset() {
-            drawCalls = 0;
-            triangleCount = 0;
-            instanceCount = 0;
-            lightCount = 0;
-        }
+    static constexpr u32 MAX_FRAMES_IN_FLIGHT = 3;
+    static constexpr u32 MAX_INSTANCES = 65536;
+    static constexpr u32 MAX_LIGHTS = 1024;
+    static constexpr u32 MAX_LIGHTS_PER_TILE = 64;
+    static constexpr u32 TILE_SIZE = 16;
+
+    struct FrameStats {
+        u32 drawCalls = 0;
+        u32 triangleCount = 0;
+        u32 instanceCount = 0;
+        u32 lightCount = 0;
+        void Reset() { drawCalls = triangleCount = instanceCount = lightCount = 0; }
     };
+
+    struct FrameData {
+        VkCommandPool commandPool = VK_NULL_HANDLE;
+        VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
+
+        Scope<Buffer> uboBuffer;
+        Scope<Buffer> lightBuffer;
+        Scope<Buffer> instanceBuffer;
+        Scope<Buffer> cullDataBuffer;
+        Scope<Buffer> indirectBuffer;
+        Scope<Buffer> countBuffer;
+        Scope<Buffer> tileHeaderBuffer;
+        Scope<Buffer> tileLightIndexBuffer;
+
+        VkDescriptorSet pbrSet = VK_NULL_HANDLE;
+        VkDescriptorSet cullSet = VK_NULL_HANDLE;
+        VkDescriptorSet meshCullSet = VK_NULL_HANDLE;
+        VkDescriptorSet compositeSet = VK_NULL_HANDLE;
+    };
+
     class IWindow;
 
     using LightData = shaderio::GltfLight;
@@ -130,6 +161,7 @@ namespace Manro {
         u32 firstInstance;
     };
 
+    // ── Renderer ──────────────────────────────────────────────────────────────────
     class Renderer {
     public:
         Renderer(IWindow &window, u32 width, u32 height,
@@ -141,74 +173,61 @@ namespace Manro {
 
         Renderer &operator=(const Renderer &) = delete;
 
-        void OnResize(u32 width, u32 height);
-
+        // ── Frame lifecycle (original API, unchanged) ─────────────────────────────
         bool BeginFrame();
 
-        void EndFrameAndPresent();
-
-        void BeginRendering(Vec4 clearColor = {0.02f, 0.02f, 0.05f, 1.0f});
-
-        void EndRendering();
+        void BeginRendering(Vec4 clearColor);
 
         void RenderQueue();
 
-        MeshHandle UploadMesh(const ModelData &data) { return m_Meshes.Upload(data); }
-        TextureHandle UploadTexture(const TextureData &data) { return m_Textures.Upload(data); }
+        void EndRendering();
+
+        void EndFrameAndPresent();
+
+        void DrawMesh(MeshHandle mesh, MaterialInstance &mat, const Mat4 &model);
+
+        void DrawModel(const Model &model, const Mat4 &transform);
+
+        void AddLight(const LightData &light);
+
+        void ClearLights();
 
         void SetViewProjection(const Mat4 &view, const Mat4 &proj) {
             m_ViewMatrix = view;
             m_ProjectionMatrix = proj;
         }
 
-        void SetGuiEnabled(bool enabled) { if (m_GuiLayer) m_GuiLayer->SetEnabled(enabled); }
-        bool IsGuiEnabled() const { return m_GuiLayer ? m_GuiLayer->IsEnabled() : false; }
-
         void SetCameraPosition(const Vec3 &pos) { m_CameraPosition = pos; }
 
-        void AddLight(const LightData &light);
+        MeshHandle UploadMesh(const ModelData &data) { return m_Meshes.Upload(data); }
+        TextureHandle UploadTexture(const TextureData &data) { return m_Textures.Upload(data); }
 
-        void ClearLights();
+        Ref<Material> GetDefaultMaterial() const { return m_DefaultMaterial; }
 
-        Scope<MaterialInstance> CreateMaterialInstance(Ref<Material> material);
+        Scope<MaterialInstance> CreateMaterialInstance(Ref<Material> mat);
 
-        void DrawMesh(MeshHandle meshId, MaterialInstance &material, const Mat4 &model);
-
-        void DrawModel(const class Model &model, const Mat4 &transform);
+        void OnResize(u32 width, u32 height);
 
         float GetAspectRatio() const {
-            if (!m_Swapchain) return 16.f / 9.f;
-            auto ext = m_Swapchain->GetExtent();
-            return (ext.height > 0)
-                       ? static_cast<float>(ext.width) / static_cast<float>(ext.height)
-                       : 16.f / 9.f;
+            if (m_PendingHeight == 0) return 1.f;
+            return static_cast<float>(m_PendingWidth) / static_cast<float>(m_PendingHeight);
         }
 
         VulkanContext &GetContext() { return m_Context; }
-        TextureManager &GetTextureManager() { return m_Textures; }
-        MeshManager &GetMeshManager() { return m_Meshes; }
-        Ref<Material> GetDefaultMaterial() { return m_DefaultMaterial; }
-        VkDescriptorPool GetDescriptorPool() { return m_DescriptorPool; }
-        const FrameStats& GetLastFrameStats() const { return m_LastFrameStats; }
+        TextureManager &GetTextures() { return m_Textures; }
+
+        const FrameStats &GetLastFrameStats() const { return m_LastFrameStats; }
+
+        PipelineCache &GetPipelineCache() { return m_PipelineCache; }
+        RenderGraph &GetRenderGraph() { return m_RenderGraph; }
+        BindlessAllocator &GetBindlessAlloc() { return m_BindlessAlloc; }
 
     private:
-        void CreateDepthResources(u32 width, u32 height);
+        void CreateOffscreenResources(u32 w, u32 h);
 
-        void CreateColorResources(u32 width, u32 height);
+        void CreateDepthResources(u32 w, u32 h);
 
-        void CreateOffscreenResources(u32 width, u32 height);
-
-        void RecreateSwapchain();
-
-        void CreateCommandBuffers();
-
-        void CreateSyncObjects();
-
-        void BuildPbrPipeline();
-
-        void BuildCompositePipeline();
-
-        void BuildCullPipeline();
+        void CreateColorResources(u32 w, u32 h);
 
         void CreateDescriptorLayouts();
 
@@ -216,94 +235,93 @@ namespace Manro {
 
         void CreateGpuBuffers();
 
-        void UpdatePbrDescriptorSet(u32 frameIndex);
+        void UpdatePbrDescriptorSet(u32 fi);
 
-        void UpdateCompositeDescriptorSet(u32 frameIndex);
+        void UpdateCompositeDescriptorSet(u32 fi);
+
+        void BuildPbrPipeline();
+
+        void BuildCompositePipeline();
+
+        void BuildCullPipeline();
+
+        void CreateCommandBuffers();
+
+        void CreateSyncObjects();
+
+        void RecreateSwapchain();
 
         void UploadLights(u32 frameIndex);
 
         VulkanContext m_Context;
         Scope<Swapchain> m_Swapchain;
 
-        Ref<Material> m_DefaultMaterial;
         TextureManager m_Textures;
         MeshManager m_Meshes;
 
-        AllocatedImage m_DepthImage{};
-        VkFormat m_DepthFormat{VK_FORMAT_D32_SFLOAT};
-        VkSampleCountFlagBits m_MsaaSamples{VK_SAMPLE_COUNT_1_BIT};
-        AllocatedImage m_MsaaColorImage{};
+        PerFrameAllocator m_PerFrameAlloc[MAX_FRAMES_IN_FLIGHT];
+        PersistentAllocator m_PersistentAlloc;
+        BindlessAllocator m_BindlessAlloc;
+        PipelineCache m_PipelineCache;
+        RenderGraph m_RenderGraph;
 
-        AllocatedImage m_OffscreenColor{};
-        VkFormat m_OffscreenFormat{VK_FORMAT_R16G16B16A16_SFLOAT};
-        VkSampler m_OffscreenSampler{VK_NULL_HANDLE};
+        Scope<ImGuiLayer> m_GuiLayer;
+        Ref<Material> m_DefaultMaterial;
 
-        Mat4 m_ViewMatrix{1.0f};
-        Mat4 m_ProjectionMatrix{1.0f};
-        Vec3 m_CameraPosition{0.f, 0.f, 0.f};
+        VkDescriptorPool m_DescriptorPool = VK_NULL_HANDLE;
 
-        std::vector<LightData> m_PendingLights;
-
-        struct FrameData {
-            VkCommandPool commandPool{VK_NULL_HANDLE};
-            VkCommandBuffer commandBuffer{VK_NULL_HANDLE};
-            Scope<Buffer> uboBuffer;
-            Scope<Buffer> lightBuffer;
-            Scope<Buffer> tileHeaderBuffer;
-            Scope<Buffer> tileLightIndexBuffer;
-            Scope<Buffer> instanceBuffer;
-            Scope<Buffer> cullDataBuffer;
-            Scope<Buffer> indirectBuffer;
-            Scope<Buffer> countBuffer;
-            VkDescriptorSet pbrSet{VK_NULL_HANDLE};
-            VkDescriptorSet compositeSet{VK_NULL_HANDLE};
-            VkDescriptorSet cullSet{VK_NULL_HANDLE};
-            VkDescriptorSet meshCullSet{VK_NULL_HANDLE};
-        };
-
-        static constexpr int MAX_FRAMES_IN_FLIGHT = 2;
-        static constexpr u32 MAX_INSTANCES = 100000;
-        static constexpr u32 MAX_LIGHTS = 256;
-        static constexpr u32 TILE_SIZE = 16u;
-        static constexpr u32 MAX_LIGHTS_PER_TILE = 128u;
-
-        std::vector<FrameData> m_Frames;
-        u32 m_CurrentImageIndex{0};
-        u32 m_CurrentFrame{0};
-
-        std::vector<VkSemaphore> m_ImageAvailableSemaphores;
-        VkSemaphore m_TimelineSemaphore{VK_NULL_HANDLE};
-        u64 m_TimelineValue{0};
-        u64 m_FrameBaseValue[MAX_FRAMES_IN_FLIGHT]{0, 0};
-        std::vector<VkSemaphore> m_PresentSemaphores;
-
-        VkDescriptorPool m_DescriptorPool{VK_NULL_HANDLE};
-
-        VkDescriptorSetLayout m_PbrSetLayout{VK_NULL_HANDLE};
-        VkDescriptorSetLayout m_CompositeSetLayout{VK_NULL_HANDLE};
-        VkDescriptorSetLayout m_CullSetLayout{VK_NULL_HANDLE};
-        VkDescriptorSetLayout m_MeshCullSetLayout{VK_NULL_HANDLE};
-
-        Scope<Buffer> m_MaterialBuffer;
-        Scope<Buffer> m_TextureInfoBuffer;
-        std::vector<MaterialData> m_Materials;
-        std::unordered_map<MaterialData, u32, MaterialDataHash> m_MaterialCache;
-
-        std::vector<GpuMeshInstance> m_CurrentFrameInstances;
-        std::vector<GpuCullData> m_CurrentFrameCullData;
+        VkDescriptorSetLayout m_PbrSetLayout = VK_NULL_HANDLE;
+        VkDescriptorSetLayout m_CompositeSetLayout = VK_NULL_HANDLE;
+        VkDescriptorSetLayout m_CullSetLayout = VK_NULL_HANDLE;
+        VkDescriptorSetLayout m_MeshCullSetLayout = VK_NULL_HANDLE;
 
         Scope<Pipeline> m_PbrPipeline;
         Scope<Pipeline> m_CompositePipeline;
         Scope<Pipeline> m_CullPipeline;
         Scope<Pipeline> m_MeshCullPipeline;
 
-        Scope<ImGuiLayer> m_GuiLayer;
+        AllocatedImage m_OffscreenColor{};
+        AllocatedImage m_MsaaColorImage{};
+        AllocatedImage m_DepthImage{};
+        VkSampler m_OffscreenSampler = VK_NULL_HANDLE;
 
-        FrameStats m_CurrentFrameStats;
-        FrameStats m_LastFrameStats;
+        VkFormat m_OffscreenFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+        VkFormat m_DepthFormat = VK_FORMAT_D32_SFLOAT;
+        VkSampleCountFlagBits m_MsaaSamples = VK_SAMPLE_COUNT_1_BIT;
 
-        u32 m_PendingWidth{0};
-        u32 m_PendingHeight{0};
-        bool m_PendingResize{false};
-    };
+        RGTextureHandle m_RGOffscreen{};
+        RGTextureHandle m_RGDepth{};
+        RGTextureHandle m_RGSwapchain{};
+
+        std::vector<FrameData> m_Frames;
+        u32 m_CurrentFrame = 0;
+        u32 m_CurrentImageIndex = 0;
+
+        VkSemaphore m_TimelineSemaphore = VK_NULL_HANDLE;
+        u64 m_TimelineValue = 0;
+        std::array<u64, MAX_FRAMES_IN_FLIGHT> m_FrameBaseValue{};
+        std::vector<VkSemaphore> m_ImageAvailableSemaphores;
+        std::vector<VkSemaphore> m_PresentSemaphores;
+
+        std::vector<MaterialData> m_Materials;
+        std::unordered_map<MaterialData, u32, MaterialDataHash> m_MaterialCache;
+        Scope<Buffer> m_MaterialBuffer;
+        Scope<Buffer> m_TextureInfoBuffer;
+
+        std::vector<GpuMeshInstance> m_CurrentFrameInstances;
+        std::vector<GpuCullData> m_CurrentFrameCullData;
+        std::vector<LightData> m_PendingLights;
+
+        Mat4 m_ViewMatrix = Mat4(1.f);
+        Mat4 m_ProjectionMatrix = Mat4(1.f);
+        Vec3 m_CameraPosition = Vec3(0.f);
+
+        u32 m_PendingWidth = 0;
+        u32 m_PendingHeight = 0;
+        bool m_PendingResize = false;
+
+        FrameStats m_CurrentFrameStats{};
+        FrameStats m_LastFrameStats{};
+};
+
 } // namespace Manro
