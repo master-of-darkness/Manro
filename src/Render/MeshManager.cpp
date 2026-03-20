@@ -33,7 +33,7 @@ namespace Manro {
         m_CurrentIndexOffset += static_cast<u32>(data.indices.size());
 
         MeshHandle id = m_NextId++;
-        m_Meshes.emplace(id, LoadedMesh{firstVertex, firstIndex, indexCount});
+        m_Meshes.emplace(id, LoadedMesh{firstVertex, firstIndex, indexCount, data.center, data.radius});
         return id;
     }
 

@@ -7,8 +7,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 namespace Manro {
-    static constexpr u32 kMaxTilesX = 120u;
-    static constexpr u32 kMaxTilesY = 68u;
+    static constexpr u32 kMaxTilesX = 256u;  // Up to 4096 / 16
+    static constexpr u32 kMaxTilesY = 144u;  // Up to 2304 / 16
     static constexpr u32 kMaxTiles = kMaxTilesX * kMaxTilesY;
 
     Renderer::Renderer(IWindow &window, u32 width, u32 height,
@@ -38,8 +38,19 @@ namespace Manro {
         CreateCommandBuffers();
         CreateSyncObjects();
 
+        m_CurrentFrameInstances.reserve(MAX_INSTANCES);
+        m_CurrentFrameCullData.reserve(MAX_INSTANCES);
+        m_PendingLights.reserve(MAX_LIGHTS);
+
         m_Materials.push_back(shaderio::defaultGltfMaterial());
         m_MaterialBuffer->LoadData(m_Materials.data(), sizeof(MaterialData));
+
+        ImGuiLayerInfo guiInfo{};
+        guiInfo.context = &m_Context;
+        guiInfo.window = &window;
+        guiInfo.colorFormat = m_Swapchain->GetImageFormat();
+        guiInfo.imageCount = MAX_FRAMES_IN_FLIGHT;
+        m_GuiLayer = CreateScope<ImGuiLayer>(guiInfo);
     }
 
     Renderer::~Renderer() {
@@ -50,6 +61,7 @@ namespace Manro {
         m_PbrPipeline.reset();
         m_CompositePipeline.reset();
         m_CullPipeline.reset();
+        m_MeshCullPipeline.reset();
 
         if (m_OffscreenSampler)
             vkDestroySampler(m_Context.GetDevice(), m_OffscreenSampler, nullptr);
@@ -76,6 +88,8 @@ namespace Manro {
             vkDestroyDescriptorSetLayout(m_Context.GetDevice(), m_CompositeSetLayout, nullptr);
         if (m_CullSetLayout)
             vkDestroyDescriptorSetLayout(m_Context.GetDevice(), m_CullSetLayout, nullptr);
+        if (m_MeshCullSetLayout)
+            vkDestroyDescriptorSetLayout(m_Context.GetDevice(), m_MeshCullSetLayout, nullptr);
 
         if (m_Swapchain) m_Swapchain->Shutdown();
     }
@@ -216,9 +230,15 @@ namespace Manro {
             m_ImageAvailableSemaphores[m_CurrentFrame]);
         if (m_CurrentImageIndex == UINT32_MAX) return false;
 
+        m_LastFrameStats = m_CurrentFrameStats;
+
         FrameData &frame = m_Frames[m_CurrentFrame];
         vkResetCommandBuffer(frame.commandBuffer, 0);
         m_CurrentFrameInstances.clear();
+        m_CurrentFrameCullData.clear();
+        m_CurrentFrameStats.Reset();
+
+        if (m_GuiLayer) m_GuiLayer->NewFrame(m_LastFrameStats);
 
         VkCommandBufferBeginInfo bi{};
         bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -231,6 +251,7 @@ namespace Manro {
     }
 
     void Renderer::UploadLights(u32 frameIndex) {
+        m_CurrentFrameStats.lightCount = static_cast<u32>(m_PendingLights.size());
         FrameData &frame = m_Frames[frameIndex];
         if (!m_PendingLights.empty())
             frame.lightBuffer->LoadData(
@@ -248,22 +269,79 @@ namespace Manro {
             frame.instanceBuffer->LoadData(
                 m_CurrentFrameInstances.data(),
                 sizeof(GpuMeshInstance) * instanceCount);
+                
+            frame.cullDataBuffer->LoadData(
+                m_CurrentFrameCullData.data(),
+                sizeof(GpuCullData) * instanceCount);
 
-            std::vector<GpuDrawCommand> cmds;
-            cmds.reserve(instanceCount);
-            for (u32 i = 0; i < instanceCount; ++i) {
-                auto &inst = m_CurrentFrameInstances[i];
-                GpuDrawCommand cmd{};
-                cmd.indexCount = inst.indexCount;
-                cmd.instanceCount = 1;
-                cmd.firstIndex = inst.firstIndex;
-                cmd.vertexOffset = (int)inst.firstVertex;
-                cmd.firstInstance = i;
-                cmds.push_back(cmd);
+            vkCmdFillBuffer(cb, frame.countBuffer->GetHandle(), 0, sizeof(u32), 0);
+
+            VkBufferMemoryBarrier2 fillBarrier{};
+            fillBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+            fillBarrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+            fillBarrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+            fillBarrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+            fillBarrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT;
+            fillBarrier.buffer = frame.countBuffer->GetHandle();
+            fillBarrier.offset = 0;
+            fillBarrier.size = VK_WHOLE_SIZE;
+
+            VkDependencyInfo fillDep{};
+            fillDep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+            fillDep.bufferMemoryBarrierCount = 1;
+            fillDep.pBufferMemoryBarriers = &fillBarrier;
+            vkCmdPipelineBarrier2(cb, &fillDep);
+
+            // Mesh culling
+            vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, m_MeshCullPipeline->GetHandle());
+            vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, m_MeshCullPipeline->GetLayout(), 0, 1, &frame.meshCullSet, 0, nullptr);
+
+            MeshCullPushConstants meshPc{};
+            Mat4 proj = m_ProjectionMatrix;
+            proj[1][1] *= -1;
+            Mat4 viewProj = proj * m_ViewMatrix;
+            Mat4 m = glm::transpose(viewProj);
+
+            Vec4 r0 = m[0];
+            Vec4 r1 = m[1];
+            Vec4 r2 = m[2];
+            Vec4 r3 = m[3];
+
+            meshPc.planes[0] = r3 + r0; // Left
+            meshPc.planes[1] = r3 - r0; // Right
+            meshPc.planes[2] = r3 + r1; // Bottom
+            meshPc.planes[3] = r3 - r1; // Top
+            meshPc.planes[4] = r2;      // Near
+            meshPc.planes[5] = r3 - r2; // Far
+
+            for (int i = 0; i < 6; ++i) {
+                float len = glm::length(Vec3(meshPc.planes[i]));
+                meshPc.planes[i] /= len;
             }
-            frame.indirectBuffer->LoadData(cmds.data(), sizeof(GpuDrawCommand) * instanceCount);
-            u32 cnt = instanceCount;
-            frame.countBuffer->LoadData(&cnt, sizeof(u32));
+
+            meshPc.instanceCount = instanceCount;
+
+            vkCmdPushConstants(cb, m_MeshCullPipeline->GetLayout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(meshPc), &meshPc);
+            vkCmdDispatch(cb, (instanceCount + 63) / 64, 1, 1);
+
+            VkBufferMemoryBarrier2 meshCullBarriers[2]{};
+            meshCullBarriers[0].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+            meshCullBarriers[0].srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+            meshCullBarriers[0].srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+            meshCullBarriers[0].dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
+            meshCullBarriers[0].dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
+            meshCullBarriers[0].buffer = frame.indirectBuffer->GetHandle();
+            meshCullBarriers[0].offset = 0;
+            meshCullBarriers[0].size = VK_WHOLE_SIZE;
+
+            meshCullBarriers[1] = meshCullBarriers[0];
+            meshCullBarriers[1].buffer = frame.countBuffer->GetHandle();
+
+            VkDependencyInfo meshDep{};
+            meshDep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+            meshDep.bufferMemoryBarrierCount = 2;
+            meshDep.pBufferMemoryBarriers = meshCullBarriers;
+            vkCmdPipelineBarrier2(cb, &meshDep);
 
             vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, m_CullPipeline->GetHandle());
             vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, m_CullPipeline->GetLayout(), 0, 1, &frame.cullSet, 0, nullptr);
@@ -285,8 +363,8 @@ namespace Manro {
             pc.screenTile = Vec4((float)ext.width, (float)ext.height, (float)TILE_SIZE, (float)TILE_SIZE);
             pc.lightCount = (u32)m_PendingLights.size();
             pc.maxPerTile = MAX_LIGHTS_PER_TILE;
-            pc.tilesX = (ext.width + TILE_SIZE - 1) / TILE_SIZE;
-            pc.tilesY = (ext.height + TILE_SIZE - 1) / TILE_SIZE;
+            pc.tilesX = std::min((ext.width + TILE_SIZE - 1) / TILE_SIZE, kMaxTilesX);
+            pc.tilesY = std::min((ext.height + TILE_SIZE - 1) / TILE_SIZE, kMaxTilesY);
             pc.zParams = Vec4(0.1f, 10000.0f, 1.0f, 0.0f);
 
             vkCmdPushConstants(cb, m_CullPipeline->GetLayout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(pc), &pc);
@@ -467,10 +545,13 @@ namespace Manro {
         VkDeviceSize offsets[2] = {0, 0};
         vkCmdBindVertexBuffers(cb, 0, 2, vbufs, offsets);
 
-        vkCmdDrawIndexedIndirect(cb,
-                                 frame.indirectBuffer->GetHandle(),
-                                 0,
-                                 instanceCount, sizeof(GpuDrawCommand));
+        vkCmdDrawIndexedIndirectCount(cb,
+                                      frame.indirectBuffer->GetHandle(),
+                                      0,
+                                      frame.countBuffer->GetHandle(),
+                                      0,
+                                      instanceCount,
+                                      sizeof(GpuDrawCommand));
     }
 
     void Renderer::EndRendering() {
@@ -560,6 +641,11 @@ namespace Manro {
                            0, sizeof(CompositePushConstants), &cpc);
 
         vkCmdDraw(cb, 3, 1, 0, 0);
+
+        if (m_GuiLayer && m_GuiLayer->IsEnabled()) {
+            m_GuiLayer->Render(cb);
+        }
+
         vkCmdEndRendering(cb);
 
         {
@@ -632,33 +718,84 @@ namespace Manro {
         if (!mesh) return;
 
         GpuMeshInstance inst{};
-        inst.modelMatrix = model;
-        glm::mat3 n3 = glm::transpose(glm::inverse(glm::mat3(model)));
-        for (int i = 0; i < 3; ++i) {
-            inst.normalMatrix[i][0] = n3[i][0];
-            inst.normalMatrix[i][1] = n3[i][1];
-            inst.normalMatrix[i][2] = n3[i][2];
-            inst.normalMatrix[i][3] = 0.f;
+        u32 matIndex = material.GetRendererIndex();
+        if (material.IsDirty() || matIndex == 0xFFFFFFFF) {
+            const MaterialData &md = material.GetData();
+            auto it = m_MaterialCache.find(md);
+            if (it != m_MaterialCache.end()) {
+                matIndex = it->second;
+            } else {
+                matIndex = (u32)m_Materials.size();
+                m_Materials.push_back(md);
+                m_MaterialCache[md] = matIndex;
+            }
+            material.SetRendererIndex(matIndex);
         }
 
-        const MaterialData &md = material.GetData();
+        m_CurrentFrameStats.drawCalls++;
+        m_CurrentFrameStats.instanceCount++;
+        m_CurrentFrameStats.triangleCount += mesh->indexCount / 3;
 
-        u32 matIndex = 0;
-        auto it = m_MaterialCache.find(md);
-        if (it != m_MaterialCache.end()) {
-            matIndex = it->second;
+        inst.modelMatrix = model;
+        
+        Vec3 s0 = Vec3(model[0]);
+        Vec3 s1 = Vec3(model[1]);
+        Vec3 s2 = Vec3(model[2]);
+        float l0 = glm::dot(s0, s0);
+        float l1 = glm::dot(s1, s1);
+        float l2 = glm::dot(s2, s2);
+        
+        if (std::abs(l0 - 1.0f) < 1e-4f && std::abs(l1 - 1.0f) < 1e-4f && std::abs(l2 - 1.0f) < 1e-4f) {
+            for (int i = 0; i < 3; ++i) {
+                inst.normalMatrix[i][0] = model[i][0];
+                inst.normalMatrix[i][1] = model[i][1];
+                inst.normalMatrix[i][2] = model[i][2];
+                inst.normalMatrix[i][3] = 0.f;
+            }
+        } else if (std::abs(l0 - l1) < 1e-4f && std::abs(l0 - l2) < 1e-4f) {
+            float invS2 = 1.0f / l0;
+            for (int i = 0; i < 3; ++i) {
+                inst.normalMatrix[i][0] = model[i][0] * invS2;
+                inst.normalMatrix[i][1] = model[i][1] * invS2;
+                inst.normalMatrix[i][2] = model[i][2] * invS2;
+                inst.normalMatrix[i][3] = 0.f;
+            }
         } else {
-            matIndex = (u32)m_Materials.size();
-            m_Materials.push_back(md);
-            m_MaterialCache[md] = matIndex;
+            glm::mat3 n3 = glm::transpose(glm::inverse(glm::mat3(model)));
+            for (int i = 0; i < 3; ++i) {
+                inst.normalMatrix[i][0] = n3[i][0];
+                inst.normalMatrix[i][1] = n3[i][1];
+                inst.normalMatrix[i][2] = n3[i][2];
+                inst.normalMatrix[i][3] = 0.f;
+            }
         }
 
         inst.firstVertex = mesh->firstVertex;
         inst.firstIndex = mesh->firstIndex;
         inst.indexCount = mesh->indexCount;
         inst.materialIndex = matIndex;
+        inst.center[0] = mesh->center.x;
+        inst.center[1] = mesh->center.y;
+        inst.center[2] = mesh->center.z;
+        inst.radius = mesh->radius;
         inst.flags = 0;
+        
+        GpuCullData cullData{};
+        Vec3 worldCenter = Vec3(model * Vec4(mesh->center.x, mesh->center.y, mesh->center.z, 1.0f));
+        float scaleSq = std::max(l0, std::max(l1, l2));
+        float worldRadius = mesh->radius * std::sqrt(scaleSq);
+        
+        cullData.center[0] = worldCenter.x;
+        cullData.center[1] = worldCenter.y;
+        cullData.center[2] = worldCenter.z;
+        cullData.radius = worldRadius;
+        cullData.indexCount = mesh->indexCount;
+        cullData.firstIndex = mesh->firstIndex;
+        cullData.firstVertex = mesh->firstVertex;
+        cullData.instanceId = (u32)m_CurrentFrameInstances.size();
+
         m_CurrentFrameInstances.push_back(inst);
+        m_CurrentFrameCullData.push_back(cullData);
     }
 
     void Renderer::DrawModel(const Model &model, const Mat4 &transform) {
@@ -791,6 +928,37 @@ namespace Manro {
                                             &m_CullSetLayout) != VK_SUCCESS)
                 throw std::runtime_error("Failed to create cull descriptor set layout");
         }
+
+        {
+            VkDescriptorSetLayoutBinding b[4]{};
+            b[0].binding = 0;
+            b[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            b[0].descriptorCount = 1;
+            b[0].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+            b[1].binding = 1;
+            b[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            b[1].descriptorCount = 1;
+            b[1].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+            b[2].binding = 2;
+            b[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            b[2].descriptorCount = 1;
+            b[2].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+            b[3].binding = 3;
+            b[3].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            b[3].descriptorCount = 1;
+            b[3].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+            VkDescriptorSetLayoutCreateInfo ci{};
+            ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+            ci.bindingCount = 4;
+            ci.pBindings = b;
+            if (vkCreateDescriptorSetLayout(m_Context.GetDevice(), &ci, nullptr,
+                                            &m_MeshCullSetLayout) != VK_SUCCESS)
+                throw std::runtime_error("Failed to create mesh cull descriptor set layout");
+        }
     }
 
     void Renderer::CreateDescriptorPool() {
@@ -822,7 +990,6 @@ namespace Manro {
             m_Context, sizeof(shaderio::GltfTextureInfo) * 1024,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
-        // Initialize with default texture info
         std::vector<shaderio::GltfTextureInfo> tis(1024);
         for (int i = 0; i < 1024; ++i) {
             tis[i].uvTransform = Mat3x2(1.0f);
@@ -975,6 +1142,53 @@ namespace Manro {
         cullWrites[3].pBufferInfo = &uboI;
 
         vkUpdateDescriptorSets(m_Context.GetDevice(), 4, cullWrites, 0, nullptr);
+
+        // Mesh cull set
+        VkDescriptorBufferInfo cullDataI{};
+        cullDataI.buffer = frame.cullDataBuffer->GetHandle();
+        cullDataI.offset = 0;
+        cullDataI.range = VK_WHOLE_SIZE;
+
+        VkDescriptorBufferInfo indirectI{};
+        indirectI.buffer = frame.indirectBuffer->GetHandle();
+        indirectI.offset = 0;
+        indirectI.range = VK_WHOLE_SIZE;
+
+        VkDescriptorBufferInfo countI{};
+        countI.buffer = frame.countBuffer->GetHandle();
+        countI.offset = 0;
+        countI.range = VK_WHOLE_SIZE;
+
+        VkWriteDescriptorSet meshCullWrites[4]{};
+        meshCullWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        meshCullWrites[0].dstSet = frame.meshCullSet;
+        meshCullWrites[0].dstBinding = 0;
+        meshCullWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        meshCullWrites[0].descriptorCount = 1;
+        meshCullWrites[0].pBufferInfo = &cullDataI;
+
+        meshCullWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        meshCullWrites[1].dstSet = frame.meshCullSet;
+        meshCullWrites[1].dstBinding = 1;
+        meshCullWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        meshCullWrites[1].descriptorCount = 1;
+        meshCullWrites[1].pBufferInfo = &indirectI;
+
+        meshCullWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        meshCullWrites[2].dstSet = frame.meshCullSet;
+        meshCullWrites[2].dstBinding = 2;
+        meshCullWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        meshCullWrites[2].descriptorCount = 1;
+        meshCullWrites[2].pBufferInfo = &countI;
+
+        meshCullWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        meshCullWrites[3].dstSet = frame.meshCullSet;
+        meshCullWrites[3].dstBinding = 3;
+        meshCullWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        meshCullWrites[3].descriptorCount = 1;
+        meshCullWrites[3].pBufferInfo = &uboI;
+
+        vkUpdateDescriptorSets(m_Context.GetDevice(), 4, meshCullWrites, 0, nullptr);
     }
 
     void Renderer::UpdateCompositeDescriptorSet(u32 fi) {
@@ -1032,39 +1246,45 @@ namespace Manro {
             };
             f.tileHeaderBuffer = CreateScope<Buffer>(
                 m_Context, sizeof(TileHeader) * kMaxTiles,
-                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
 
             f.tileLightIndexBuffer = CreateScope<Buffer>(
                 m_Context, sizeof(u32) * kMaxTiles * MAX_LIGHTS_PER_TILE,
-                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
 
             f.instanceBuffer = CreateScope<Buffer>(
                 m_Context, sizeof(GpuMeshInstance) * MAX_INSTANCES,
                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                 VMA_MEMORY_USAGE_CPU_TO_GPU);
 
+            f.cullDataBuffer = CreateScope<Buffer>(
+                m_Context, sizeof(GpuCullData) * MAX_INSTANCES,
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                VMA_MEMORY_USAGE_CPU_TO_GPU);
+
             f.indirectBuffer = CreateScope<Buffer>(
                 m_Context, sizeof(GpuDrawCommand) * MAX_INSTANCES,
                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
-                VMA_MEMORY_USAGE_CPU_TO_GPU);
+                VMA_MEMORY_USAGE_GPU_ONLY);
 
             f.countBuffer = CreateScope<Buffer>(
                 m_Context, sizeof(u32),
-                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
-                VMA_MEMORY_USAGE_CPU_TO_GPU);
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                VMA_MEMORY_USAGE_GPU_ONLY);
 
-            VkDescriptorSetLayout layouts[3] = {m_PbrSetLayout, m_CompositeSetLayout, m_CullSetLayout};
-            VkDescriptorSet sets[3];
+            VkDescriptorSetLayout layouts[4] = {m_PbrSetLayout, m_CompositeSetLayout, m_CullSetLayout, m_MeshCullSetLayout};
+            VkDescriptorSet sets[4];
             VkDescriptorSetAllocateInfo dsAI{};
             dsAI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
             dsAI.descriptorPool = m_DescriptorPool;
-            dsAI.descriptorSetCount = 3;
+            dsAI.descriptorSetCount = 4;
             dsAI.pSetLayouts = layouts;
             if (vkAllocateDescriptorSets(m_Context.GetDevice(), &dsAI, sets) != VK_SUCCESS)
                 throw std::runtime_error("Failed to allocate descriptor sets");
             f.pbrSet = sets[0];
             f.compositeSet = sets[1];
             f.cullSet = sets[2];
+            f.meshCullSet = sets[3];
 
             UpdateCompositeDescriptorSet(i);
             UpdatePbrDescriptorSet(i);
@@ -1185,18 +1405,32 @@ namespace Manro {
     }
 
     void Renderer::BuildCullPipeline() {
-        std::vector<u8> compSpv = VirtualFS::Get().ReadFile("shaders://forward_plus_cull.comp.spv");
-        if (compSpv.empty()) {
-            LOG_ERROR("[Renderer] Cull shader not found");
-            return;
+        m_CullPipeline = CreateScope<Pipeline>(m_Context);
+        {
+            std::vector<u8> compSpv = VirtualFS::Get().ReadFile("shaders://forward_plus_cull.comp.spv");
+            if (compSpv.empty()) {
+                LOG_ERROR("[Renderer] Cull shader not found");
+                return;
+            }
+            PipelineConfigParams cfg{};
+            cfg.computeEntryPoint = "main";
+            cfg.pushConstantSize = 176; 
+            cfg.descriptorSetLayouts = {m_CullSetLayout};
+            m_CullPipeline->BuildCompute(compSpv, cfg);
         }
 
-        PipelineConfigParams cfg{};
-        cfg.computeEntryPoint = "main";
-        cfg.pushConstantSize = 176; 
-        cfg.descriptorSetLayouts = {m_CullSetLayout};
-
-        m_CullPipeline = CreateScope<Pipeline>(m_Context);
-        m_CullPipeline->BuildCompute(compSpv, cfg);
+        m_MeshCullPipeline = CreateScope<Pipeline>(m_Context);
+        {
+            std::vector<u8> compSpv = VirtualFS::Get().ReadFile("shaders://mesh_cull.comp.spv");
+            if (compSpv.empty()) {
+                LOG_ERROR("[Renderer] Mesh cull shader not found");
+                return;
+            }
+            PipelineConfigParams cfg{};
+            cfg.computeEntryPoint = "main";
+            cfg.pushConstantSize = sizeof(MeshCullPushConstants); 
+            cfg.descriptorSetLayouts = {m_MeshCullSetLayout};
+            m_MeshCullPipeline->BuildCompute(compSpv, cfg);
+        }
     }
 } // namespace Manro

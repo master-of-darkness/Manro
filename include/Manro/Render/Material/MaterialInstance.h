@@ -17,6 +17,7 @@ namespace Manro {
             m_Data.pbrBaseColorTexture = (texture == kInvalidTexture)
                 ? static_cast<uint16_t>(0)
                 : static_cast<uint16_t>(texture + 1); // nvshaders uses 0 = no texture
+            m_Dirty = true;
         }
 
         TextureHandle GetTexture() const {
@@ -28,19 +29,21 @@ namespace Manro {
         const Material &GetMaterial() const { return *m_Material; }
         Ref<Material> GetMaterialRef() const { return m_Material; }
 
-        MaterialData &GetData() { return m_Data; }
+        u32 GetRendererIndex() const { return m_RendererIndex; }
+        void SetRendererIndex(u32 index) {
+            m_RendererIndex = index;
+            m_Dirty = false;
+        }
+
+        bool IsDirty() const { return m_Dirty; }
+        void MarkDirty() { m_Dirty = true; }
+
+        MaterialData &GetData() { m_Dirty = true; return m_Data; }
         const MaterialData &GetData() const { return m_Data; }
-
-        void CreateDescriptorSets(VkDescriptorPool pool, uint32_t count) {
-            // No longer needed for GPU-driven
-        }
-
-        VkDescriptorSet GetDescriptorSet(uint32_t frameIndex) const {
-            return VK_NULL_HANDLE;
-        }
-
     private:
         Ref<Material> m_Material;
         MaterialData m_Data;
+        u32 m_RendererIndex{0xFFFFFFFF};
+        bool m_Dirty{true};
     };
 } // namespace Manro

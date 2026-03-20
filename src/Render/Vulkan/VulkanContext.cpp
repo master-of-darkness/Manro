@@ -47,7 +47,13 @@ namespace Manro {
 
         auto inst_ret = builder
                 .set_app_name(appName)
-                .request_validation_layers(true)
+                .request_validation_layers(
+#if defined(NDEBUG)
+    false
+#else
+    true
+#endif
+                )
                 .require_api_version(1, 4, 0)
                 .use_default_debug_messenger()
                 .build();
@@ -177,5 +183,20 @@ namespace Manro {
         if (counts & VK_SAMPLE_COUNT_4_BIT) return VK_SAMPLE_COUNT_4_BIT;
         if (counts & VK_SAMPLE_COUNT_2_BIT) return VK_SAMPLE_COUNT_2_BIT;
         return VK_SAMPLE_COUNT_1_BIT;
+    }
+
+    void VulkanContext::GetVramStats(u64& usage, u64& budget) const {
+        VmaBudget budgets[VK_MAX_MEMORY_HEAPS];
+        vmaGetHeapBudgets(m_Allocator, budgets);
+        usage = 0;
+        budget = 0;
+        VkPhysicalDeviceMemoryProperties memProps;
+        vkGetPhysicalDeviceMemoryProperties(m_PhysicalDevice, &memProps);
+        for (u32 i = 0; i < memProps.memoryHeapCount; ++i) {
+            if (memProps.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) {
+                usage += budgets[i].usage;
+                budget += budgets[i].budget;
+            }
+        }
     }
 } // namespace Manro

@@ -8,6 +8,7 @@
 #include "tonemapper_comp_spv.h"
 #include "tonemapper_histogram_comp_spv.h"
 #include "tonemapper_autoexposure_comp_spv.h"
+#include "mesh_cull_comp_spv.h"
 
 namespace Manro {
     void RegisterEmbeddedShaders() {
@@ -36,5 +37,8 @@ namespace Manro {
 
         vfs.Mount("shaders://tonemapper_autoexposure.comp.spv",
                   tonemapper_autoexposure_comp_spv, tonemapper_autoexposure_comp_spv_len);
+
+        vfs.Mount("shaders://mesh_cull.comp.spv",
+                  mesh_cull_comp_spv, mesh_cull_comp_spv_len);
     }
 } // namespace Manro

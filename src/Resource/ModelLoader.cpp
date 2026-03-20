@@ -213,6 +213,25 @@ namespace Manro {
 
         GenerateTangents(out.vertices, out.indices);
 
+        if (out.vertices.empty()) {
+            out.center = Vec3(0.0f);
+            out.radius = 0.0f;
+        } else {
+            Vec3 min = out.vertices[0].position;
+            Vec3 max = out.vertices[0].position;
+            for (const auto& v : out.vertices) {
+                min = glm::min(min, v.position);
+                max = glm::max(max, v.position);
+            }
+            out.center = (min + max) * 0.5f;
+            float maxDistSq = 0.0f;
+            for (const auto& v : out.vertices) {
+                Vec3 diff = v.position - out.center;
+                maxDistSq = std::max(maxDistSq, glm::dot(diff, diff));
+            }
+            out.radius = std::sqrt(maxDistSq);
+        }
+
         if (!out.diffuseTexturePath.empty())
             LOG_INFO("[ModelLoader] Loaded '{}' - {} vertices, {} indices, texture: {}",
                  filepath, out.vertices.size(), out.indices.size(), out.diffuseTexturePath);
@@ -318,6 +337,21 @@ namespace Manro {
         for (auto &b: buckets) {
             if (!b.vertices.empty()) {
                 GenerateTangents(b.vertices, b.indices);
+
+                Vec3 min = b.vertices[0].position;
+                Vec3 max = b.vertices[0].position;
+                for (const auto& v : b.vertices) {
+                    min = glm::min(min, v.position);
+                    max = glm::max(max, v.position);
+                }
+                b.center = (min + max) * 0.5f;
+                float maxDistSq = 0.0f;
+                for (const auto& v : b.vertices) {
+                    Vec3 diff = v.position - b.center;
+                    maxDistSq = std::max(maxDistSq, glm::dot(diff, diff));
+                }
+                b.radius = std::sqrt(maxDistSq);
+
                 out.push_back(std::move(b));
             }
         }

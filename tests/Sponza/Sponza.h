@@ -67,9 +67,12 @@ private:
 
     std::chrono::high_resolution_clock::time_point m_LastFrameTime;
     float m_FpsTimer{0.f};
+    float m_AccumulatedTime{0.f};
     int m_FrameCount{0};
 
     Manro::Scope<Manro::Model> m_Model;
 
     FlyCamera m_Camera;
+    bool m_InputCaptured{true};
+    bool m_CtrlPressedLastFrame{false};
 };

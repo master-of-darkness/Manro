@@ -123,6 +123,7 @@ void Sponza::Run() {
         if (dt > 0.1f) dt = 0.1f;
 
         m_FpsTimer += dt;
+        m_AccumulatedTime += dt;
         m_FrameCount++;
         if (m_FpsTimer >= 1.0f) {
             float fps = static_cast<float>(m_FrameCount) / m_FpsTimer;
@@ -140,10 +141,26 @@ void Sponza::Run() {
         if (!platform.PollEvents(&m_InputManager))
             m_IsRunning = false;
 
+        // Toggle mouse capture
+        bool ctrlPressed = m_InputManager.IsKeyDown(Manro::Key::LeftCtrl);
+        if (ctrlPressed && !m_CtrlPressedLastFrame) {
+            m_InputCaptured = !m_InputCaptured;
+            auto *window = platform.GetWindowManager().Get(m_Window);
+            if (window) {
+                window->CaptureMouse(m_InputCaptured);
+                window->ShowCursor(!m_InputCaptured);
+            }
+        }
+        m_CtrlPressedLastFrame = ctrlPressed;
+
         if (m_InputManager.IsKeyDown(Manro::Key::Escape))
             m_IsRunning = false;
 
-        m_Camera.Update(m_InputManager, dt);
+        if (m_InputCaptured) {
+            m_Camera.Update(m_InputManager, dt);
+        } else {
+            m_InputManager.ConsumeMouseDelta();
+        }
         Render(dt);
     }
 }
@@ -157,12 +174,12 @@ void Sponza::Render(float dt) {
     m_Renderer->SetViewProjection(m_Camera.View(), m_Camera.Projection(kFov, aspect, kNearZ, kFarZ));
  
     m_Renderer->ClearLights();
-    Manro::LightData sun{};
-    sun.type       = shaderio::eLightTypeDirectional;
-    sun.direction  = {-0.8f, -0.6f, -0.2f};
-    sun.color      = {1.0f, 0.98f, 0.95f};
-    sun.intensity  = 6.0f;
-    m_Renderer->AddLight(sun);
+    // Manro::LightData sun{};
+    // sun.type       = shaderio::eLightTypeDirectional;
+    // sun.direction  = {-0.8f, -0.6f, -0.2f};
+    // sun.color      = {1.0f, 0.98f, 0.95f};
+    // sun.intensity  = 6.0f;
+    // m_Renderer->AddLight(sun);
 
     Manro::LightData fill{};
     fill.type      = shaderio::eLightTypeDirectional;
@@ -173,6 +190,25 @@ void Sponza::Render(float dt) {
 
     if (m_Model) {
         m_Renderer->DrawModel(*m_Model, Manro::Mat4{1.0f});
+    }
+
+    for (int i = 0; i < 60; ++i) {
+        for (int j = 0; j < 2; ++j) {
+            float x = (j == 0) ? -600.f : 600.f;
+            float z = -1500.f + i * 50.f;
+            float y = 200.f + sinf(m_AccumulatedTime * 2.0f + i * 0.5f) * 100.f;
+
+            Manro::LightData p{};
+            p.type = shaderio::eLightTypePoint;
+            p.position = {x, y, z};
+            if (i % 3 == 0)      p.color = {1.0f, 0.2f, 0.2f}; // Red
+            else if (i % 3 == 1) p.color = {0.2f, 1.0f, 0.2f}; // Green
+            else                 p.color = {0.2f, 0.2f, 1.0f}; // Blue
+
+            p.intensity = 500.f;
+            p.angularSizeOrInvRange = 1.0f / 300.0f;
+            m_Renderer->AddLight(p);
+        }
     }
 
     m_Renderer->BeginRendering({0.02f, 0.02f, 0.05f, 1.f});

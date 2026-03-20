@@ -15,6 +15,8 @@ namespace Manro {
         u32 firstVertex;
         u32 firstIndex;
         u32 indexCount;
+        Vec3 center;
+        float radius;
     };
 
     class MeshManager {

@@ -23,6 +23,8 @@ namespace Manro {
             md.vertices = std::move(sd.vertices);
             md.indices = std::move(sd.indices);
             md.diffuseTexturePath = sd.diffuseTexturePath;
+            md.center = sd.center;
+            md.radius = sd.radius;
 
             MeshHandle meshId = renderer.UploadMesh(md);
             auto material = renderer.CreateMaterialInstance(renderer.GetDefaultMaterial());

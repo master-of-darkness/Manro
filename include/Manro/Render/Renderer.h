@@ -12,11 +12,24 @@
 #include <vector>
 #include <unordered_map>
 #include <Manro/Render/Material/MaterialData.h>
+#include <Manro/Render/Gui/ImGuiLayer.h>
 
 namespace Manro {
+    struct FrameStats {
+        u32 drawCalls{0};
+        u32 triangleCount{0};
+        u32 instanceCount{0};
+        u32 lightCount{0};
+
+        void Reset() {
+            drawCalls = 0;
+            triangleCount = 0;
+            instanceCount = 0;
+            lightCount = 0;
+        }
+    };
     class IWindow;
 
-    // Use nvshaders GltfLight as the engine's light type
     using LightData = shaderio::GltfLight;
 
     struct UniformBufferObject {
@@ -84,6 +97,21 @@ namespace Manro {
         float _pad{0.f};
     };
 
+    struct MeshCullPushConstants {
+        Vec4 planes[6];
+        u32 instanceCount;
+        u32 _pad[3];
+    };
+
+    struct GpuCullData {
+        float center[3];
+        float radius;
+        u32 indexCount;
+        u32 firstIndex;
+        u32 firstVertex;
+        u32 instanceId;
+    };
+
     struct GpuMeshInstance {
         Mat4 modelMatrix;
         float normalMatrix[3][4];
@@ -91,7 +119,10 @@ namespace Manro {
         u32 firstVertex;
         u32 firstIndex;
         u32 indexCount;
+        float center[3];
+        float radius;
         u32 flags;
+        u32 _pad[3];
     };
 
     struct GpuDrawCommand {
@@ -133,6 +164,9 @@ namespace Manro {
             m_ProjectionMatrix = proj;
         }
 
+        void SetGuiEnabled(bool enabled) { if (m_GuiLayer) m_GuiLayer->SetEnabled(enabled); }
+        bool IsGuiEnabled() const { return m_GuiLayer ? m_GuiLayer->IsEnabled() : false; }
+
         void SetCameraPosition(const Vec3 &pos) { m_CameraPosition = pos; }
 
         void AddLight(const LightData &light);
@@ -158,6 +192,7 @@ namespace Manro {
         MeshManager &GetMeshManager() { return m_Meshes; }
         Ref<Material> GetDefaultMaterial() { return m_DefaultMaterial; }
         VkDescriptorPool GetDescriptorPool() { return m_DescriptorPool; }
+        const FrameStats& GetLastFrameStats() const { return m_LastFrameStats; }
 
     private:
         void CreateDepthResources(u32 width, u32 height);
@@ -220,11 +255,13 @@ namespace Manro {
             Scope<Buffer> tileHeaderBuffer;
             Scope<Buffer> tileLightIndexBuffer;
             Scope<Buffer> instanceBuffer;
+            Scope<Buffer> cullDataBuffer;
             Scope<Buffer> indirectBuffer;
             Scope<Buffer> countBuffer;
             VkDescriptorSet pbrSet{VK_NULL_HANDLE};
             VkDescriptorSet compositeSet{VK_NULL_HANDLE};
             VkDescriptorSet cullSet{VK_NULL_HANDLE};
+            VkDescriptorSet meshCullSet{VK_NULL_HANDLE};
         };
 
         static constexpr int MAX_FRAMES_IN_FLIGHT = 2;
@@ -248,6 +285,7 @@ namespace Manro {
         VkDescriptorSetLayout m_PbrSetLayout{VK_NULL_HANDLE};
         VkDescriptorSetLayout m_CompositeSetLayout{VK_NULL_HANDLE};
         VkDescriptorSetLayout m_CullSetLayout{VK_NULL_HANDLE};
+        VkDescriptorSetLayout m_MeshCullSetLayout{VK_NULL_HANDLE};
 
         Scope<Buffer> m_MaterialBuffer;
         Scope<Buffer> m_TextureInfoBuffer;
@@ -255,10 +293,17 @@ namespace Manro {
         std::unordered_map<MaterialData, u32, MaterialDataHash> m_MaterialCache;
 
         std::vector<GpuMeshInstance> m_CurrentFrameInstances;
+        std::vector<GpuCullData> m_CurrentFrameCullData;
 
         Scope<Pipeline> m_PbrPipeline;
         Scope<Pipeline> m_CompositePipeline;
         Scope<Pipeline> m_CullPipeline;
+        Scope<Pipeline> m_MeshCullPipeline;
+
+        Scope<ImGuiLayer> m_GuiLayer;
+
+        FrameStats m_CurrentFrameStats;
+        FrameStats m_LastFrameStats;
 
         u32 m_PendingWidth{0};
         u32 m_PendingHeight{0};

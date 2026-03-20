@@ -27,6 +27,8 @@ namespace Manro {
 
         VkSampleCountFlagBits GetMaxUsableSampleCount() const;
 
+        void GetVramStats(u64& usage, u64& budget) const;
+
         u64 GetTimelineSemaphoreCounterValue(VkSemaphore semaphore) const {
             u64 value = 0;
             vkGetSemaphoreCounterValue(m_Device, semaphore, &value);

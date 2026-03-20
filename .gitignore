@@ -12,5 +12,6 @@ cmake-build-release
 !/deps/VulkanMemoryAllocator/
 !/deps/slang/
 !/deps/imgui/
+!/deps/mikktspace
 
 assets/shaders/spv/*

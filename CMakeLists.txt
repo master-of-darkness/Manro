@@ -238,6 +238,9 @@ compile_shader("pbr.slang" "PSMain" "fragment" "${SHADER_BIN_DIR}/pbr.frag.spv")
 compile_shader("forward_plus_cull.slang" "main" "compute" "${SHADER_BIN_DIR}/forward_plus_cull.comp.spv")
 compile_shader("composite.slang" "VSMain" "vertex" "${SHADER_BIN_DIR}/composite.vert.spv")
 compile_shader("composite.slang" "PSMain" "fragment" "${SHADER_BIN_DIR}/composite.frag.spv")
+compile_shader("mesh_cull.slang" "main" "compute" "${SHADER_BIN_DIR}/mesh_cull.comp.spv")
+compile_shader("imgui.slang" "VSMain" "vertex" "${SHADER_BIN_DIR}/imgui.vert.spv")
+compile_shader("imgui.slang" "PSMain" "fragment" "${SHADER_BIN_DIR}/imgui.frag.spv")
 
 compile_shader("nvshaders/tonemapper.slang" "Tonemap" "compute" "${SHADER_BIN_DIR}/tonemapper.comp.spv")
 compile_shader("nvshaders/tonemapper.slang" "Histogram" "compute" "${SHADER_BIN_DIR}/tonemapper_histogram.comp.spv")
@@ -266,6 +269,9 @@ embed_shader("${SHADER_BIN_DIR}/composite.frag.spv"                   composite_
 embed_shader("${SHADER_BIN_DIR}/tonemapper.comp.spv"                   tonemapper_comp_spv)
 embed_shader("${SHADER_BIN_DIR}/tonemapper_histogram.comp.spv"         tonemapper_histogram_comp_spv)
 embed_shader("${SHADER_BIN_DIR}/tonemapper_autoexposure.comp.spv"      tonemapper_autoexposure_comp_spv)
+embed_shader("${SHADER_BIN_DIR}/mesh_cull.comp.spv"                   mesh_cull_comp_spv)
+embed_shader("${SHADER_BIN_DIR}/imgui.vert.spv"                       imgui_vert_spv)
+embed_shader("${SHADER_BIN_DIR}/imgui.frag.spv"                       imgui_frag_spv)
 
 add_custom_target(EmbedShaders
         DEPENDS ${EMBEDDED_SHADER_HEADERS}
@@ -299,7 +305,15 @@ add_library(Engine STATIC
         src/Platform/Window/SDL3Window.cpp
         src/Platform/Window/WindowManager.cpp
         src/Platform/PlatformContext.cpp
+        src/Render/Gui/ImGuiLayer.cpp
         deps/mikktspace/mikktspace.c
+        deps/imgui/imgui.cpp
+        deps/imgui/imgui_draw.cpp
+        deps/imgui/imgui_widgets.cpp
+        deps/imgui/imgui_tables.cpp
+        deps/imgui/imgui_demo.cpp
+        deps/imgui/backends/imgui_impl_sdl3.cpp
+        deps/imgui/backends/imgui_impl_vulkan.cpp
 )
 
 add_dependencies(Engine GenerateNetworkSchema PrecompileShaders EmbedShaders)
@@ -307,6 +321,8 @@ add_dependencies(Engine GenerateNetworkSchema PrecompileShaders EmbedShaders)
 target_include_directories(Engine PUBLIC
         include
         deps/vk-bootstrap/src
+        deps/imgui
+        deps/imgui/backends
         ${GEN_DIR}
         ${SHADER_BIN_DIR}
         ${SHADER_SRC_DIR}

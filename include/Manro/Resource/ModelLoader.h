@@ -16,12 +16,16 @@ namespace Manro {
         std::vector<Vertex> vertices;
         std::vector<u32> indices;
         std::string diffuseTexturePath;
+        Vec3 center;
+        float radius;
     };
 
     struct ModelData {
         std::vector<Vertex> vertices;
         std::vector<u32> indices;
         std::string diffuseTexturePath;
+        Vec3 center;
+        float radius;
     };
 
     class ModelLoader {
