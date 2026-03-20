@@ -4,7 +4,6 @@ struct CompositePushConstants {
     float exposure;
     float gamma;
     int outputIsSRGB;
-    float _pad;
 };
 
 layout(push_constant) ConstantBuffer<CompositePushConstants> pc;

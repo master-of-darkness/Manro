@@ -88,7 +88,7 @@ namespace Manro {
         depthStencil.stencilTestEnable = VK_FALSE;
 
         VkPushConstantRange pushRange{};
-        pushRange.stageFlags = VK_SHADER_STAGE_ALL;
+        pushRange.stageFlags = config.pushConstantStages ? config.pushConstantStages : (VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
         pushRange.offset = 0;
         pushRange.size = config.pushConstantSize;
 
@@ -142,7 +142,7 @@ namespace Manro {
         VkShaderModule compModule = CreateShaderModule(computeSpv);
 
         VkPushConstantRange pushRange{};
-        pushRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+        pushRange.stageFlags = config.pushConstantStages ? config.pushConstantStages : static_cast<VkShaderStageFlags>(VK_SHADER_STAGE_COMPUTE_BIT);
         pushRange.offset = 0;
         pushRange.size = config.pushConstantSize;
 

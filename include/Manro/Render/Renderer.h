@@ -94,7 +94,6 @@ namespace Manro {
         float exposure{1.0f};
         float gamma{2.2f};
         int outputIsSRGB{0};
-        float _pad{0.f};
     };
 
     struct MeshCullPushConstants {
@@ -106,10 +105,8 @@ namespace Manro {
     struct GpuCullData {
         float center[3];
         float radius;
-        u32 indexCount;
-        u32 firstIndex;
-        u32 firstVertex;
         u32 instanceId;
+        u32 _pad[3];
     };
 
     struct GpuMeshInstance {

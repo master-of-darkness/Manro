@@ -637,7 +637,7 @@ namespace Manro {
             cpc.outputIsSRGB = 0;
         }
         vkCmdPushConstants(cb, m_CompositePipeline->GetLayout(),
-                           VK_SHADER_STAGE_ALL,
+                           VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(CompositePushConstants), &cpc);
 
         vkCmdDraw(cb, 3, 1, 0, 0);
@@ -789,9 +789,6 @@ namespace Manro {
         cullData.center[1] = worldCenter.y;
         cullData.center[2] = worldCenter.z;
         cullData.radius = worldRadius;
-        cullData.indexCount = mesh->indexCount;
-        cullData.firstIndex = mesh->firstIndex;
-        cullData.firstVertex = mesh->firstVertex;
         cullData.instanceId = (u32)m_CurrentFrameInstances.size();
 
         m_CurrentFrameInstances.push_back(inst);
@@ -947,7 +944,7 @@ namespace Manro {
             b[2].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
             b[3].binding = 3;
-            b[3].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            b[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
             b[3].descriptorCount = 1;
             b[3].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
@@ -1184,9 +1181,9 @@ namespace Manro {
         meshCullWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         meshCullWrites[3].dstSet = frame.meshCullSet;
         meshCullWrites[3].dstBinding = 3;
-        meshCullWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        meshCullWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         meshCullWrites[3].descriptorCount = 1;
-        meshCullWrites[3].pBufferInfo = &uboI;
+        meshCullWrites[3].pBufferInfo = &instI;
 
         vkUpdateDescriptorSets(m_Context.GetDevice(), 4, meshCullWrites, 0, nullptr);
     }
@@ -1398,6 +1395,7 @@ namespace Manro {
         cfg.depthAttachmentFormat = VK_FORMAT_UNDEFINED;
         cfg.msaaSamples = VK_SAMPLE_COUNT_1_BIT;
         cfg.pushConstantSize = sizeof(CompositePushConstants);
+        cfg.pushConstantStages = VK_SHADER_STAGE_FRAGMENT_BIT;
         cfg.descriptorSetLayouts = {m_CompositeSetLayout};
 
         m_CompositePipeline = CreateScope<Pipeline>(m_Context);

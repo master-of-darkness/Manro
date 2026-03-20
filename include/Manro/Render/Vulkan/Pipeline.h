@@ -17,6 +17,7 @@ namespace Manro {
         VkSampleCountFlagBits msaaSamples{VK_SAMPLE_COUNT_1_BIT};
 
         u32 pushConstantSize{0};
+        VkShaderStageFlags pushConstantStages{0};
         std::string vertexEntryPoint{"main"};
         std::string fragmentEntryPoint{"main"};
         std::string computeEntryPoint{"main"};

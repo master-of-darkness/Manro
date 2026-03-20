@@ -1,10 +1,21 @@
 struct GpuCullData {
     float3 center;
     float radius;
-    uint indexCount;
-    uint firstIndex;
-    uint firstVertex;
     uint instanceId;
+    uint _pad[3];
+};
+
+struct GpuMeshInstance {
+    float4x4 modelMatrix;
+    float4 normalMatrix[3];
+    uint materialIndex;
+    uint firstVertex;
+    uint firstIndex;
+    uint indexCount;
+    float3 center;
+    float radius;
+    uint flags;
+    uint _pad[3];
 };
 
 struct GpuDrawCommand {
@@ -29,6 +40,9 @@ RWStructuredBuffer<GpuDrawCommand> drawCommands;
 [[vk::binding(2, 0)]]
 RWStructuredBuffer<uint> drawCount;
 
+[[vk::binding(3, 0)]]
+StructuredBuffer<GpuMeshInstance> meshInstances;
+
 [[vk::push_constant]]
 CullPushConstants pc;
 
@@ -37,10 +51,11 @@ CullPushConstants pc;
 void main(uint3 dtid : SV_DispatchThreadID) {
     if (dtid.x >= pc.instanceCount) return;
 
-    GpuCullData inst = cullData[dtid.x];
+    GpuCullData cull = cullData[dtid.x];
+    GpuMeshInstance inst = meshInstances[cull.instanceId];
     
-    float3 worldCenter = inst.center;
-    float worldRadius = inst.radius;
+    float3 worldCenter = cull.center;
+    float worldRadius = cull.radius;
 
     bool visible = true;
     for (int i = 0; i < 6; ++i) {
@@ -61,7 +76,7 @@ void main(uint3 dtid : SV_DispatchThreadID) {
         cmd.instanceCount = 1;
         cmd.firstIndex = inst.firstIndex;
         cmd.vertexOffset = (int)inst.firstVertex;
-        cmd.firstInstance = inst.instanceId;
+        cmd.firstInstance = cull.instanceId;
         
         drawCommands[drawIdx] = cmd;
     }
