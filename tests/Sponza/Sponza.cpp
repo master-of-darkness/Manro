@@ -130,8 +130,10 @@ void Sponza::Initialize() {
     Manro::VirtualFS::Get().SetBaseDir(MANRO_ASSETS_DIR);
     Manro::RegisterEmbeddedShaders();
 
+    Manro::RenderSettings settings{};
+    settings.msaaSamples = VK_SAMPLE_COUNT_8_BIT;
     m_Renderer = Manro::CreateScope<Manro::Renderer>(
-        *wm.Get(m_Window), kWindowWidth, kWindowHeight, VK_SAMPLE_COUNT_8_BIT);
+        *wm.Get(m_Window), kWindowWidth, kWindowHeight, settings);
     LOG_INFO("[SponzaTest] Renderer initialized.");
 
     LoadScene();
@@ -405,6 +407,18 @@ void Sponza::DrawGui(float dt) {
             ImGui::Text("Triangles   %u", m_LastStats.triangleCount);
             ImGui::Text("Instances   %u", m_LastStats.instanceCount);
             ImGui::Text("Lights      %u", m_LastStats.lightCount);
+        }
+
+        if (ImGui::CollapsingHeader("Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
+            auto settings = m_Renderer->GetSettings();
+            bool changed = false;
+
+            if (ImGui::SliderFloat("Resolution Scale", &settings.resolutionScale, 0.1f, 2.0f)) changed = true;
+            if (ImGui::SliderFloat("Exposure", &settings.postProcessing.exposure, 0.0f, 10.0f)) changed = true;
+            if (ImGui::SliderFloat("Contrast", &settings.postProcessing.contrast, 0.0f, 3.0f)) changed = true;
+            if (ImGui::SliderFloat("Saturation", &settings.postProcessing.saturation, 0.0f, 3.0f)) changed = true;
+
+            if (changed) m_Renderer->SetSettings(settings);
         }
 
         if (ImGui::CollapsingHeader("GPU")) {

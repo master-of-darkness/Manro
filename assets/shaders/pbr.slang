@@ -94,7 +94,6 @@ VSOutput VSMain(VSInput input) {
     return output;
 }
 
-// Simplified version of evaluateMaterial that works with StructuredBuffer
 PbrMaterial localEvaluateMaterial(GltfShadeMaterial material, float3 N, float3 T, float3 B, float2 uv) {
     PbrMaterial pbrMat = defaultPbrMaterial();
     pbrMat.baseColor = material.pbrBaseColorFactor.rgb;

@@ -1,9 +1,8 @@
 #include "nvshaders/tonemap_functions.h.slang"
 
 struct CompositePushConstants {
-    float exposure;
-    float gamma;
-    int outputIsSRGB;
+    TonemapperData tm;
+    float2 imageSize;
 };
 
 layout(push_constant) ConstantBuffer<CompositePushConstants> pc;
@@ -17,7 +16,6 @@ struct VSOutput {
 [shader("vertex")]
 VSOutput VSMain(uint vertexID : SV_VertexID) {
     VSOutput output;
-    // Full screen triangle
     output.uv = float2((vertexID << 1) & 2, vertexID & 2);
     output.position = float4(output.uv * 2.0f - 1.0f, 0.0f, 1.0f);
     return output;
@@ -27,15 +25,9 @@ VSOutput VSMain(uint vertexID : SV_VertexID) {
 float4 PSMain(VSOutput input) : SV_Target {
     float4 color = sceneColor.Sample(input.uv);
     
-    // TODO: use applyTonemap from nvshaders
-    
-    float3 result = color.rgb * pc.exposure;
-    
-    result = result / (result + float3(1.0));
-    
-    if (pc.outputIsSRGB == 0) {
-        result = pow(result, float3(1.0 / pc.gamma));
-    }
+    float2 pixel = input.uv * pc.imageSize;
+    float3 result = applyTonemap(pc.tm, color.rgb, pixel, pc.imageSize);
     
     return float4(result, color.a);
 }
+

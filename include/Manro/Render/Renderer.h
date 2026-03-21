@@ -16,8 +16,9 @@
 #include <Manro/Render/Material/MaterialInstance.h>
 #include <Manro/Platform/Window/IWindow.h>
 #include <Manro/Core/VirtualFS.h>
-
 #include <nvshaders/gltf_scene_io.h.slang>
+#include <Manro/Render/Tonemap/Tonemapper.h>
+#include <Manro/Render/RenderSettings.h>
 
 #include <array>
 #include <unordered_map>
@@ -121,11 +122,6 @@ namespace Manro {
         float _pad2; // Ensure total size matches shader (116 or 120 bytes depending on compiler)
     };
 
-    struct CompositePushConstants {
-        float exposure{1.0f};
-        float gamma{2.2f};
-        int outputIsSRGB{0};
-    };
 
     struct MeshCullPushConstants {
         Vec4 planes[6];
@@ -164,7 +160,7 @@ namespace Manro {
     class Renderer {
     public:
         Renderer(IWindow &window, u32 width, u32 height,
-                 VkSampleCountFlagBits msaaSamples = VK_SAMPLE_COUNT_1_BIT);
+                 const RenderSettings &settings = {});
 
         ~Renderer();
 
@@ -213,6 +209,11 @@ namespace Manro {
 
         VulkanContext &GetContext() { return m_Context; }
         TextureManager &GetTextures() { return m_Textures; }
+
+        void SetSettings(const RenderSettings &settings);
+
+        const RenderSettings &GetSettings() const { return m_Settings; }
+        RenderSettings &GetSettings() { return m_Settings; }
 
         const FrameStats &GetLastFrameStats() const { return m_LastFrameStats; }
 
@@ -285,7 +286,6 @@ namespace Manro {
 
         VkFormat m_OffscreenFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
         VkFormat m_DepthFormat = VK_FORMAT_D32_SFLOAT;
-        VkSampleCountFlagBits m_MsaaSamples = VK_SAMPLE_COUNT_1_BIT;
 
         RGTextureHandle m_RGOffscreen{};
         RGTextureHandle m_RGDepth{};
@@ -321,6 +321,9 @@ namespace Manro {
 
         FrameStats m_CurrentFrameStats{};
         FrameStats m_LastFrameStats{};
-};
+
+        RenderSettings m_Settings{};
+        VkExtent2D m_RenderExtent{};
+    };
 
 } // namespace Manro

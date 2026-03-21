@@ -12,19 +12,22 @@ namespace Manro {
     static constexpr u32 kMaxTiles = kMaxTilesX * kMaxTilesY;
 
     Renderer::Renderer(IWindow &window, u32 width, u32 height,
-                       VkSampleCountFlagBits msaaSamples)
+                       const RenderSettings &settings)
         : m_Context("GameEngine", window)
           , m_Textures(m_Context)
-          , m_Meshes(m_Context) {
+          , m_Meshes(m_Context)
+          , m_Settings(settings) {
         m_Swapchain = CreateScope<Swapchain>(m_Context, width, height);
 
         VkSampleCountFlagBits maxSamples = m_Context.GetMaxUsableSampleCount();
-        m_MsaaSamples = (static_cast<u32>(msaaSamples) <= static_cast<u32>(maxSamples))
-                            ? msaaSamples
-                            : maxSamples;
+        m_Settings.msaaSamples = (static_cast<u32>(m_Settings.msaaSamples) <= static_cast<u32>(maxSamples))
+                                     ? m_Settings.msaaSamples
+                                     : maxSamples;
 
         m_PendingWidth = width;
         m_PendingHeight = height;
+        m_RenderExtent.width = std::max(1u, (u32) (width * m_Settings.resolutionScale));
+        m_RenderExtent.height = std::max(1u, (u32) (height * m_Settings.resolutionScale));
 
         VkDevice device = m_Context.GetDevice();
 
@@ -37,9 +40,9 @@ namespace Manro {
 
         m_PipelineCache.Init(device, "manro_pipeline_cache.bin");
 
-        CreateOffscreenResources(width, height);
-        CreateColorResources(width, height);
-        CreateDepthResources(width, height);
+        CreateOffscreenResources(m_RenderExtent.width, m_RenderExtent.height);
+        CreateColorResources(m_RenderExtent.width, m_RenderExtent.height);
+        CreateDepthResources(m_RenderExtent.width, m_RenderExtent.height);
         CreateDescriptorLayouts();
         CreateDescriptorPool();
         CreateGpuBuffers();
@@ -143,6 +146,19 @@ namespace Manro {
         m_PendingResize = true;
     }
 
+    void Renderer::SetSettings(const RenderSettings &settings) {
+        bool needsResize = (m_Settings.resolutionScale != settings.resolutionScale) ||
+                           (m_Settings.msaaSamples != settings.msaaSamples);
+        m_Settings = settings;
+        if (needsResize) {
+            VkSampleCountFlagBits maxSamples = m_Context.GetMaxUsableSampleCount();
+            m_Settings.msaaSamples = (static_cast<u32>(m_Settings.msaaSamples) <= static_cast<u32>(maxSamples))
+                                         ? m_Settings.msaaSamples
+                                         : maxSamples;
+            m_PendingResize = true;
+        }
+    }
+
     Scope<MaterialInstance> Renderer::CreateMaterialInstance(Ref<Material> material) {
         return CreateScope<MaterialInstance>(material);
     }
@@ -183,9 +199,12 @@ namespace Manro {
         DestroyImage(m_Context, m_MsaaColorImage);
         DestroyImage(m_Context, m_DepthImage);
 
-        CreateOffscreenResources(w, h);
-        CreateColorResources(w, h);
-        CreateDepthResources(w, h);
+        m_RenderExtent.width = std::max(1u, (u32) (w * m_Settings.resolutionScale));
+        m_RenderExtent.height = std::max(1u, (u32) (h * m_Settings.resolutionScale));
+
+        CreateOffscreenResources(m_RenderExtent.width, m_RenderExtent.height);
+        CreateColorResources(m_RenderExtent.width, m_RenderExtent.height);
+        CreateDepthResources(m_RenderExtent.width, m_RenderExtent.height);
 
         for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
             UpdateCompositeDescriptorSet(i);
@@ -236,18 +255,18 @@ namespace Manro {
         p.height = height;
         p.format = m_DepthFormat;
         p.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-        p.samples = m_MsaaSamples;
+        p.samples = m_Settings.msaaSamples;
         m_DepthImage = CreateImage(m_Context, p, VK_IMAGE_ASPECT_DEPTH_BIT);
     }
 
     void Renderer::CreateColorResources(u32 width, u32 height) {
-        if (m_MsaaSamples == VK_SAMPLE_COUNT_1_BIT) return;
+        if (m_Settings.msaaSamples == VK_SAMPLE_COUNT_1_BIT) return;
         ImageCreateParams p{};
         p.width = width;
         p.height = height;
         p.format = m_OffscreenFormat;
         p.usage = VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-        p.samples = m_MsaaSamples;
+        p.samples = m_Settings.msaaSamples;
         m_MsaaColorImage = CreateImage(m_Context, p);
     }
 
@@ -304,7 +323,7 @@ namespace Manro {
     void Renderer::BeginRendering(Vec4 clearColor) {
         FrameData &frame = m_Frames[m_CurrentFrame];
         VkCommandBuffer cb = frame.commandBuffer;
-        VkExtent2D ext = m_Swapchain->GetExtent();
+        VkExtent2D ext = m_RenderExtent;
 
         if (!m_CurrentFrameInstances.empty()) {
             u32 instanceCount = (u32) m_CurrentFrameInstances.size();
@@ -451,7 +470,7 @@ namespace Manro {
         colorAtt.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         colorAtt.clearValue = cv;
 
-        if (m_MsaaSamples != VK_SAMPLE_COUNT_1_BIT) {
+        if (m_Settings.msaaSamples != VK_SAMPLE_COUNT_1_BIT) {
             colorAtt.imageView = m_MsaaColorImage.view;
             colorAtt.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             colorAtt.resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
@@ -650,14 +669,18 @@ namespace Manro {
                                 m_CompositePipeline->GetLayout(), 0, 1, &frame.compositeSet, 0, nullptr);
 
         CompositePushConstants cpc{};
-        cpc.exposure = 1.0f;
-        cpc.gamma = 2.2f;
-        VkFormat fmt = m_Swapchain->GetImageFormat();
-        cpc.outputIsSRGB = (fmt == VK_FORMAT_R8G8B8A8_SRGB ||
-                            fmt == VK_FORMAT_B8G8R8A8_SRGB ||
-                            fmt == VK_FORMAT_A8B8G8R8_SRGB_PACK32)
-                               ? 1
-                               : 0;
+        cpc.tm = m_Settings.postProcessing;
+
+        // Compute inputMatrix based on exposure, temperature and tint
+        // Using the same CMCCAT2000 math as the shader.
+        // Actually the Tonemapper C++ struct doesn't strictly NEED complex input matrix computation
+        // if we just want exposure to work as a start, but we can do a basic Identity scaled by exposure.
+        // The tonemapping functions in slang do: color = mul(inputMatrix, color);
+        cpc.tm.inputMatrix = SlangFloat3x3(glm::mat3(cpc.tm.exposure));
+
+        // Output conversion handled inside slang auto-exposure / tonemap, but we can configure tm.gamma too
+
+        cpc.imageSize = Vec2((float) m_RenderExtent.width, (float) m_RenderExtent.height);
 
         vkCmdPushConstants(cb, m_CompositePipeline->GetLayout(),
                            VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(CompositePushConstants), &cpc);
@@ -1139,7 +1162,7 @@ namespace Manro {
         cfg.fragmentEntryPoint = "main";
         cfg.colorAttachmentFormat = m_OffscreenFormat;
         cfg.depthAttachmentFormat = m_DepthFormat;
-        cfg.msaaSamples = m_MsaaSamples;
+        cfg.msaaSamples = m_Settings.msaaSamples;
         cfg.pushConstantSize = sizeof(PbrPushConstants);
         cfg.descriptorSetLayouts = {m_PbrSetLayout, m_Textures.GetBindlessLayout()};
 
@@ -1176,7 +1199,7 @@ namespace Manro {
         key.fragHash = PipelineCache::HashSpirV(fragSpv);
         key.colorFmt = m_OffscreenFormat;
         key.depthFmt = m_DepthFormat;
-        key.msaaSamples = m_MsaaSamples;
+        key.msaaSamples = m_Settings.msaaSamples;
         key.pushConstantSize = sizeof(PbrPushConstants);
         VkDescriptorSetLayout layouts[] = {m_PbrSetLayout, m_Textures.GetBindlessLayout()};
         key.setLayoutCount = 2;
