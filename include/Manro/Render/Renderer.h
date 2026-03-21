@@ -161,7 +161,6 @@ namespace Manro {
         u32 firstInstance;
     };
 
-    // ── Renderer ──────────────────────────────────────────────────────────────────
     class Renderer {
     public:
         Renderer(IWindow &window, u32 width, u32 height,
@@ -173,7 +172,6 @@ namespace Manro {
 
         Renderer &operator=(const Renderer &) = delete;
 
-        // ── Frame lifecycle (original API, unchanged) ─────────────────────────────
         bool BeginFrame();
 
         void BeginRendering(Vec4 clearColor);
@@ -307,6 +305,7 @@ namespace Manro {
         std::unordered_map<MaterialData, u32, MaterialDataHash> m_MaterialCache;
         Scope<Buffer> m_MaterialBuffer;
         Scope<Buffer> m_TextureInfoBuffer;
+        bool m_MaterialsDirty = true;
 
         std::vector<GpuMeshInstance> m_CurrentFrameInstances;
         std::vector<GpuCullData> m_CurrentFrameCullData;

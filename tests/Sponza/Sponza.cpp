@@ -14,7 +14,6 @@
 #include <stdexcept>
 
 static constexpr const char *kSponzaPath = "models/sponza.obj";
-static constexpr const char *kIs7Path = "models/is-7/scene.gltf";
 static constexpr float kFov = 100.f;
 static constexpr float kNearZ = 1.f;
 static constexpr float kFarZ = 10000.f;
@@ -142,17 +141,10 @@ void Sponza::Initialize() {
 }
 
 void Sponza::LoadScene() {
-    auto models = Manro::Model::Load({kSponzaPath, kIs7Path}, *m_Renderer, m_Engine.GetJobSystem());
+    auto models = Manro::Model::Load({kSponzaPath}, *m_Renderer, m_Engine.GetJobSystem());
     if (models.empty() || !models[0]) { LOG_ERROR("[SponzaTest] Failed to load Sponza!"); return; }
     m_Model = std::move(models[0]);
     LOG_INFO("[SponzaTest] Sponza loaded: {} sub-meshes", m_Model->GetSubMeshes().size());
-
-    if (models.size() > 1 && models[1]) {
-        m_Is7Model = std::move(models[1]);
-        LOG_INFO("[SponzaTest] IS-7 loaded: {} sub-meshes", m_Is7Model->GetSubMeshes().size());
-    } else {
-        LOG_ERROR("[SponzaTest] Failed to load IS-7!");
-    }
 }
 
 void Sponza::Run() {
@@ -235,12 +227,6 @@ void Sponza::Render(float dt) {
     }
 
     if (m_Model) m_Renderer->DrawModel(*m_Model, Manro::Mat4{1.0f});
-    // if (m_Is7Model) {
-    //     Manro::Mat4 is7Transform = glm::translate(Manro::Mat4{1.0f}, Manro::Vec3{0.f, 50.f, 0.f});
-    //     is7Transform = glm::rotate(is7Transform, glm::radians(-90.f), Manro::Vec3{1.f, 0.f, 0.f});
-    //     is7Transform = glm::scale(is7Transform, Manro::Vec3{100.f});
-    //     m_Renderer->DrawModel(*m_Is7Model, is7Transform);
-    // }
 
     m_Renderer->BeginRendering({0.02f, 0.02f, 0.05f, 1.f});
     m_Renderer->RenderQueue();

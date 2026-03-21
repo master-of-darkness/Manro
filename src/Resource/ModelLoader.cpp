@@ -18,9 +18,12 @@
 #include <sstream>
 #include <filesystem>
 
+#include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
 namespace Manro {
+    using Mat3 = glm::mat3;
+
     class VirtualFSMaterialReader : public tinyobj::MaterialReader {
     public:
         explicit VirtualFSMaterialReader(std::string baseDir) : m_BaseDir(std::move(baseDir)) {}
@@ -282,11 +285,165 @@ namespace Manro {
         }
     }
 
+    static void TraverseGltfNodes(const tinygltf::Model &model, int nodeIdx, const Mat4 &parentTransform,
+                                  const std::string &baseDir, const std::string &modelPath,
+                                  std::vector<SubMeshData> &out) {
+        if (nodeIdx < 0 || nodeIdx >= static_cast<int>(model.nodes.size())) return;
+        const auto &node = model.nodes[nodeIdx];
+
+        Mat4 nodeTransform = parentTransform;
+        if (!node.matrix.empty()) {
+            Mat4 local;
+            for (int i = 0; i < 16; ++i)
+                reinterpret_cast<float *>(&local)[i] = static_cast<float>(node.matrix[i]);
+            nodeTransform *= local;
+        } else {
+            if (!node.translation.empty()) {
+                nodeTransform = glm::translate(nodeTransform,
+                                               Vec3(static_cast<float>(node.translation[0]),
+                                                    static_cast<float>(node.translation[1]),
+                                                    static_cast<float>(node.translation[2])));
+            }
+            if (!node.rotation.empty()) {
+                Quat q(static_cast<float>(node.rotation[3]), static_cast<float>(node.rotation[0]),
+                       static_cast<float>(node.rotation[1]), static_cast<float>(node.rotation[2]));
+                nodeTransform *= glm::mat4_cast(q);
+            }
+            if (!node.scale.empty()) {
+                nodeTransform = glm::scale(nodeTransform,
+                                           Vec3(static_cast<float>(node.scale[0]), static_cast<float>(node.scale[1]),
+                                                static_cast<float>(node.scale[2])));
+            }
+        }
+
+        if (node.mesh >= 0 && node.mesh < static_cast<int>(model.meshes.size())) {
+            const auto &gltfMesh = model.meshes[node.mesh];
+            for (const auto &primitive: gltfMesh.primitives) {
+                SubMeshData smd;
+
+                // Position
+                if (primitive.attributes.count("POSITION") > 0) {
+                    const tinygltf::Accessor &accessor = model.accessors[primitive.attributes.at("POSITION")];
+                    const tinygltf::BufferView &bufferView = model.bufferViews[accessor.bufferView];
+                    const tinygltf::Buffer &buffer = model.buffers[bufferView.buffer];
+                    const float *positions = reinterpret_cast<const float *>(&buffer.data[
+                        bufferView.byteOffset + accessor.byteOffset]);
+
+                    smd.vertices.resize(accessor.count);
+                    for (size_t i = 0; i < accessor.count; ++i) {
+                        Vec4 pos = nodeTransform * Vec4(positions[i * 3 + 0], positions[i * 3 + 1],
+                                                        positions[i * 3 + 2], 1.0f);
+                        smd.vertices[i].position = Vec3(pos);
+                    }
+                }
+
+                // Normal
+                if (primitive.attributes.count("NORMAL") > 0) {
+                    const tinygltf::Accessor &accessor = model.accessors[primitive.attributes.at("NORMAL")];
+                    const tinygltf::BufferView &bufferView = model.bufferViews[accessor.bufferView];
+                    const tinygltf::Buffer &buffer = model.buffers[bufferView.buffer];
+                    const float *normals = reinterpret_cast<const float *>(&buffer.data[
+                        bufferView.byteOffset + accessor.byteOffset]);
+
+                    Mat3 normalMatrix = glm::transpose(glm::inverse(Mat3(nodeTransform)));
+                    for (size_t i = 0; i < accessor.count; ++i) {
+                        smd.vertices[i].normal = glm::normalize(
+                            normalMatrix * Vec3(normals[i * 3 + 0], normals[i * 3 + 1], normals[i * 3 + 2]));
+                    }
+                } else {
+                    for (auto &v: smd.vertices) v.normal = {0, 1, 0};
+                }
+
+                // UV
+                if (primitive.attributes.count("TEXCOORD_0") > 0) {
+                    const tinygltf::Accessor &accessor = model.accessors[primitive.attributes.at("TEXCOORD_0")];
+                    const tinygltf::BufferView &bufferView = model.bufferViews[accessor.bufferView];
+                    const tinygltf::Buffer &buffer = model.buffers[bufferView.buffer];
+                    const float *uvs = reinterpret_cast<const float *>(&buffer.data[bufferView.byteOffset + accessor.
+                        byteOffset]);
+
+                    for (size_t i = 0; i < accessor.count; ++i) {
+                        smd.vertices[i].uv = {uvs[i * 2 + 0], 1.0f - uvs[i * 2 + 1]}; // GLM vs GLTF UV flip
+                    }
+                }
+
+                if (primitive.indices >= 0) {
+                    const tinygltf::Accessor &indexAccessor = model.accessors[primitive.indices];
+                    const tinygltf::BufferView &indexBufferView = model.bufferViews[indexAccessor.bufferView];
+                    const tinygltf::Buffer &indexBuffer = model.buffers[indexBufferView.buffer];
+
+                    smd.indices.resize(indexAccessor.count);
+                    if (indexAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) {
+                        const u32 *buf = reinterpret_cast<const u32 *>(&indexBuffer.data[
+                            indexBufferView.byteOffset + indexAccessor.byteOffset]);
+                        for (size_t i = 0; i < indexAccessor.count; ++i) smd.indices[i] = buf[i];
+                    } else if (indexAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
+                        const u16 *buf = reinterpret_cast<const u16 *>(&indexBuffer.data[
+                            indexBufferView.byteOffset + indexAccessor.byteOffset]);
+                        for (size_t i = 0; i < indexAccessor.count; ++i) smd.indices[i] = buf[i];
+                    } else if (indexAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE) {
+                        const u8 *buf = reinterpret_cast<const u8 *>(&indexBuffer.data[
+                            indexBufferView.byteOffset + indexAccessor.byteOffset]);
+                        for (size_t i = 0; i < indexAccessor.count; ++i) smd.indices[i] = buf[i];
+                    }
+                } else {
+                    smd.indices.resize(smd.vertices.size());
+                    for (size_t i = 0; i < smd.vertices.size(); ++i) smd.indices[i] = static_cast<u32>(i);
+                }
+
+                if (primitive.material >= 0) {
+                    const auto &mat = model.materials[primitive.material];
+                    if (mat.pbrMetallicRoughness.baseColorTexture.index >= 0) {
+                        const auto &tex = model.textures[mat.pbrMetallicRoughness.baseColorTexture.index];
+                        const auto &img = model.images[tex.source];
+                        if (!img.uri.empty()) {
+                            if (img.uri.substr(0, 5) == "data:") {
+                            } else {
+                                smd.diffuseTexturePath = ModelLoader::NormalisePath(baseDir + img.uri);
+                            }
+                        } else if (img.bufferView >= 0) {
+                            std::string ext = ".png";
+                            if (img.mimeType == "image/jpeg") ext = ".jpg";
+                            smd.diffuseTexturePath =
+                                    "memory://" + modelPath + "/image_" + std::to_string(tex.source) + ext;
+                        }
+                    }
+                }
+
+                GenerateTangents(smd.vertices, smd.indices);
+
+                if (!smd.vertices.empty()) {
+                    Vec3 min = smd.vertices[0].position;
+                    Vec3 max = smd.vertices[0].position;
+                    for (const auto &v: smd.vertices) {
+                        min = glm::min(min, v.position);
+                        max = glm::max(max, v.position);
+                    }
+                    smd.center = (min + max) * 0.5f;
+                    float maxDistSq = 0.0f;
+                    for (const auto &v: smd.vertices) {
+                        Vec3 diff = v.position - smd.center;
+                        maxDistSq = std::max(maxDistSq, glm::dot(diff, diff));
+                    }
+                    smd.radius = std::sqrt(maxDistSq);
+                    out.push_back(std::move(smd));
+                }
+            }
+        }
+
+        for (int childIdx: node.children) {
+            TraverseGltfNodes(model, childIdx, nodeTransform, baseDir, modelPath, out);
+        }
+    }
+
     static void LoadGltf(const std::string &filepath, std::vector<SubMeshData> &out) {
         std::string baseDir;
         auto slash = filepath.find_last_of("/\\");
         if (slash != std::string::npos)
             baseDir = filepath.substr(0, slash + 1);
+
+        auto fileData = VirtualFS::Get().ReadFile(filepath);
+        if (fileData.empty()) return;
 
         tinygltf::Model model;
         tinygltf::TinyGLTF loader;
@@ -301,106 +458,46 @@ namespace Manro {
         callbacks.user_data = nullptr;
         loader.SetFsCallbacks(callbacks);
 
+        loader.SetImageLoader(nullptr, nullptr);
+
         bool ret = false;
         if (HasExtension(filepath, ".glb")) {
-            ret = loader.LoadBinaryFromFile(&model, &err, &warn, filepath);
+            ret = loader.LoadBinaryFromMemory(&model, &err, &warn, fileData.data(),
+                                              static_cast<unsigned int>(fileData.size()), baseDir);
         } else {
-            ret = loader.LoadASCIIFromFile(&model, &err, &warn, filepath);
+            ret = loader.LoadASCIIFromString(&model, &err, &warn, reinterpret_cast<const char *>(fileData.data()),
+                                             static_cast<unsigned int>(fileData.size()), baseDir);
         }
 
-        if (!warn.empty()) LOG_WARN("[ModelLoader] GLTF Warning ({}): {}", filepath, warn);
-        if (!err.empty()) LOG_ERROR("[ModelLoader] GLTF Error ({}): {}", filepath, err);
+        if (!warn.empty())
+            LOG_WARN("[ModelLoader] GLTF Warning ({}): {}", filepath, warn);
+        if (!err.empty())
+            LOG_ERROR("[ModelLoader] GLTF Error ({}): {}", filepath, err);
         if (!ret) return;
 
-        for (const auto& gltfMesh : model.meshes) {
-            for (const auto& primitive : gltfMesh.primitives) {
-                SubMeshData smd;
+        for (size_t i = 0; i < model.images.size(); ++i) {
+            const auto &img = model.images[i];
+            if (img.bufferView >= 0) {
+                const auto &bv = model.bufferViews[img.bufferView];
+                const auto &buf = model.buffers[bv.buffer];
+                std::string ext = ".png";
+                if (img.mimeType == "image/jpeg") ext = ".jpg";
+                std::string virtualPath = "memory://" + filepath + "/image_" + std::to_string(i) + ext;
 
-                // Position
-                if (primitive.attributes.count("POSITION") > 0) {
-                    const tinygltf::Accessor& accessor = model.accessors[primitive.attributes.at("POSITION")];
-                    const tinygltf::BufferView& bufferView = model.bufferViews[accessor.bufferView];
-                    const tinygltf::Buffer& buffer = model.buffers[bufferView.buffer];
-                    const float* positions = reinterpret_cast<const float*>(&buffer.data[bufferView.byteOffset + accessor.byteOffset]);
-
-                    smd.vertices.resize(accessor.count);
-                    for (size_t i = 0; i < accessor.count; ++i) {
-                        smd.vertices[i].position = { positions[i * 3 + 0], positions[i * 3 + 1], positions[i * 3 + 2] };
-                    }
+                if (!VirtualFS::Get().FileExists(virtualPath)) {
+                    std::vector<u8> data(buf.data.begin() + bv.byteOffset, buf.data.begin() + bv.byteOffset + bv.byteLength);
+                    VirtualFS::Get().MountOwned(virtualPath, std::move(data));
+                    LOG_INFO("[ModelLoader] Mounted embedded GLB texture: {}", virtualPath);
                 }
-
-                // Normal
-                if (primitive.attributes.count("NORMAL") > 0) {
-                    const tinygltf::Accessor& accessor = model.accessors[primitive.attributes.at("NORMAL")];
-                    const tinygltf::BufferView& bufferView = model.bufferViews[accessor.bufferView];
-                    const tinygltf::Buffer& buffer = model.buffers[bufferView.buffer];
-                    const float* normals = reinterpret_cast<const float*>(&buffer.data[bufferView.byteOffset + accessor.byteOffset]);
-
-                    for (size_t i = 0; i < accessor.count; ++i) {
-                        smd.vertices[i].normal = { normals[i * 3 + 0], normals[i * 3 + 1], normals[i * 3 + 2] };
-                    }
-                } else {
-                    for (auto& v : smd.vertices) v.normal = {0, 1, 0};
-                }
-
-                // UV
-                if (primitive.attributes.count("TEXCOORD_0") > 0) {
-                    const tinygltf::Accessor& accessor = model.accessors[primitive.attributes.at("TEXCOORD_0")];
-                    const tinygltf::BufferView& bufferView = model.bufferViews[accessor.bufferView];
-                    const tinygltf::Buffer& buffer = model.buffers[bufferView.buffer];
-                    const float* uvs = reinterpret_cast<const float*>(&buffer.data[bufferView.byteOffset + accessor.byteOffset]);
-
-                    for (size_t i = 0; i < accessor.count; ++i) {
-                        smd.vertices[i].uv = { uvs[i * 2 + 0], 1.0f - uvs[i * 2 + 1] };
-                    }
-                }
-
-                // Indices
-                const tinygltf::Accessor& indexAccessor = model.accessors[primitive.indices];
-                const tinygltf::BufferView& indexBufferView = model.bufferViews[indexAccessor.bufferView];
-                const tinygltf::Buffer& indexBuffer = model.buffers[indexBufferView.buffer];
-
-                smd.indices.resize(indexAccessor.count);
-                if (indexAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) {
-                    const u32* buf = reinterpret_cast<const u32*>(&indexBuffer.data[indexBufferView.byteOffset + indexAccessor.byteOffset]);
-                    for (size_t i = 0; i < indexAccessor.count; ++i) smd.indices[i] = buf[i];
-                } else if (indexAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
-                    const u16* buf = reinterpret_cast<const u16*>(&indexBuffer.data[indexBufferView.byteOffset + indexAccessor.byteOffset]);
-                    for (size_t i = 0; i < indexAccessor.count; ++i) smd.indices[i] = buf[i];
-                }
-
-                // Material
-                if (primitive.material >= 0) {
-                    const auto& mat = model.materials[primitive.material];
-                    if (mat.pbrMetallicRoughness.baseColorTexture.index >= 0) {
-                        const auto& tex = model.textures[mat.pbrMetallicRoughness.baseColorTexture.index];
-                        const auto& img = model.images[tex.source];
-                        if (!img.uri.empty()) {
-                            smd.diffuseTexturePath = ModelLoader::NormalisePath(baseDir + img.uri);
-                        }
-                    }
-                }
-
-                GenerateTangents(smd.vertices, smd.indices);
-
-                Vec3 min = smd.vertices[0].position;
-                Vec3 max = smd.vertices[0].position;
-                for (const auto& v : smd.vertices) {
-                    min = glm::min(min, v.position);
-                    max = glm::max(max, v.position);
-                }
-                smd.center = (min + max) * 0.5f;
-                float maxDistSq = 0.0f;
-                for (const auto& v : smd.vertices) {
-                    Vec3 diff = v.position - smd.center;
-                    maxDistSq = std::max(maxDistSq, glm::dot(diff, diff));
-                }
-                smd.radius = std::sqrt(maxDistSq);
-
-                out.push_back(std::move(smd));
             }
         }
+
+        const tinygltf::Scene &scene = model.scenes[model.defaultScene >= 0 ? model.defaultScene : 0];
+        for (int nodeIdx : scene.nodes) {
+            TraverseGltfNodes(model, nodeIdx, Mat4(1.0f), baseDir, filepath, out);
+        }
     }
+
 
     std::vector<std::vector<SubMeshData>> ModelLoader::LoadSubMeshes(const std::vector<std::string> &filepaths, JobSystem &jobs) {
         std::vector<std::vector<SubMeshData>> allResults(filepaths.size());

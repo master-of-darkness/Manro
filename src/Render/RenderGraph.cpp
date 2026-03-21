@@ -62,8 +62,6 @@ namespace Manro {
         m_BufferAccesses.push_back({h, stage, access});
     }
 
-    // ── RenderGraph: resource declaration ─────────────────────────────────────────
-
     RGTextureHandle RenderGraph::DeclareTexture(RGTextureDesc desc) {
         u32 idx = m_NextTextureIdx++;
         if (idx >= m_TextureDescs.size()) m_TextureDescs.resize(idx + 1);

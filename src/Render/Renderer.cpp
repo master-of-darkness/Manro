@@ -503,8 +503,10 @@ namespace Manro {
 
         frame.uboBuffer->LoadData(&ubo, sizeof(ubo));
 
-        if (!m_Materials.empty())
+        if (m_MaterialsDirty && !m_Materials.empty()) {
             m_MaterialBuffer->LoadData(m_Materials.data(), sizeof(MaterialData) * m_Materials.size());
+            m_MaterialsDirty = false;
+        }
 
         {
             VkBufferMemoryBarrier2 b[5]{};
@@ -743,6 +745,7 @@ namespace Manro {
                 matIndex = (u32) m_Materials.size();
                 m_Materials.push_back(md);
                 m_MaterialCache[md] = matIndex;
+                m_MaterialsDirty = true;
             }
             material.SetRendererIndex(matIndex);
         }
