@@ -218,7 +218,8 @@ namespace Manro {
     static bool HasExtension(const std::string &path, const std::string &ext) {
         if (path.size() < ext.size()) return false;
         std::string tail = path.substr(path.size() - ext.size());
-        std::transform(tail.begin(), tail.end(), tail.begin(), ::tolower);
+        std::transform(tail.begin(), tail.end(), tail.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         return tail == ext;
     }
 
