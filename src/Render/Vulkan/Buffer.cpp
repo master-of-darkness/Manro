@@ -54,6 +54,8 @@ namespace Manro {
 
         std::memcpy(static_cast<char *>(mappedData) + offset, data, size);
 
+        vmaFlushAllocation(m_Context.GetAllocator(), m_Allocation, offset, size);
+
         if (!m_AllocationInfo.pMappedData) {
             Unmap();
         }
