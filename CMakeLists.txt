@@ -362,11 +362,12 @@ add_library(Engine STATIC
         deps/imgui/backends/imgui_impl_sdl3.cpp
         deps/imgui/backends/imgui_impl_vulkan.cpp
 )
-
-set_source_files_properties(
-        deps/mikktspace/mikktspace.c
-        PROPERTIES COMPILE_OPTIONS "/wd4456"
-)
+if (WIN32)
+    set_source_files_properties(
+            deps/mikktspace/mikktspace.c
+            PROPERTIES COMPILE_OPTIONS "/wd4456"
+    )
+endif ()
 
 add_dependencies(Engine GenerateNetworkSchema PrecompileShaders EmbedShaders)
 

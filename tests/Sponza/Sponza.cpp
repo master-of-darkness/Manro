@@ -14,7 +14,7 @@
 #include <stdexcept>
 
 static constexpr const char *kSponzaPath = "models/sponza.obj";
-static constexpr float kFov = 100.f;
+static float kFov = 100.f;
 static constexpr float kNearZ = 1.f;
 static constexpr float kFarZ = 10000.f;
 static constexpr Manro::u32 kWindowWidth = 1920;
@@ -132,6 +132,7 @@ void Sponza::Initialize() {
 
     Manro::RenderSettings settings{};
     settings.msaaSamples = VK_SAMPLE_COUNT_8_BIT;
+
     m_Renderer = Manro::CreateScope<Manro::Renderer>(
         *wm.Get(m_Window), kWindowWidth, kWindowHeight, settings);
     LOG_INFO("[SponzaTest] Renderer initialized.");
@@ -410,13 +411,64 @@ void Sponza::DrawGui(float dt) {
         }
 
         if (ImGui::CollapsingHeader("Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
-            auto settings = m_Renderer->GetSettings();
+            Manro::RenderSettings settings = m_Renderer->GetSettings();
             bool changed = false;
 
             if (ImGui::SliderFloat("Resolution Scale", &settings.resolutionScale, 0.1f, 2.0f)) changed = true;
-            if (ImGui::SliderFloat("Exposure", &settings.postProcessing.exposure, 0.0f, 10.0f)) changed = true;
-            if (ImGui::SliderFloat("Contrast", &settings.postProcessing.contrast, 0.0f, 3.0f)) changed = true;
-            if (ImGui::SliderFloat("Saturation", &settings.postProcessing.saturation, 0.0f, 3.0f)) changed = true;
+            if (ImGui::Checkbox("VSync", &settings.enableVSync)) changed = true;
+            if (ImGui::Checkbox("Frustum Culling", &settings.enableFrustumCulling)) changed = true;
+
+            if (ImGui::TreeNode("Camera")) {
+                if (ImGui::DragFloat("Near Z", &settings.nearZ, 0.01f, 0.001f, 10.0f)) changed = true;
+                if (ImGui::DragFloat("Far Z", &settings.farZ, 10.0f, 100.0f, 100000.0f)) changed = true;
+                if (ImGui::SliderFloat("FoV", &kFov, 50.f, 120.f)) changed = true;
+                ImGui::TreePop();
+            }
+
+            if (ImGui::TreeNode("Lighting")) {
+                if (ImGui::SliderFloat("IBL Intensity", &settings.lighting.iblIntensity, 0.0f, 5.0f)) changed = true;
+                if (ImGui::SliderFloat("Gamma", &settings.lighting.gamma, 1.0f, 3.0f)) changed = true;
+                if (ImGui::Checkbox("AO Enabled", &settings.lighting.enableAmbientOcclusion)) changed = true;
+                if (settings.lighting.enableAmbientOcclusion) {
+                    if (ImGui::SliderFloat("AO Intensity", &settings.lighting.aoIntensity, 0.0f, 2.0f)) changed = true;
+                    if (ImGui::SliderFloat("AO Radius", &settings.lighting.aoRadius, 0.01f, 2.0f)) changed = true;
+                }
+                ImGui::TreePop();
+            }
+
+            // if (ImGui::TreeNode("Shadows")) {
+            //     if (ImGui::Checkbox("Enabled##Shadows", &settings.shadows.enabled)) changed = true;
+            //     if (ImGui::DragInt("Resolution", &settings.shadows.resolution, 128, 128, 4096)) changed = true;
+            //     if (ImGui::SliderFloat("Bias", &settings.shadows.bias, 0.0f, 0.05f, "%.4f")) changed = true;
+            //     if (ImGui::SliderFloat("Slope Bias", &settings.shadows.slopeBias, 0.0f, 0.5f)) changed = true;
+            //     if (ImGui::SliderFloat("Softness", &settings.shadows.softShadows, 0.0f, 5.0f)) changed = true;
+            //     ImGui::TreePop();
+            // }
+
+            if (ImGui::TreeNode("Post-Processing")) {
+                // if (ImGui::Checkbox("Bloom Enabled", &settings.postProcess.enableBloom)) changed = true;
+                // if (settings.postProcess.enableBloom) {
+                //     if (ImGui::SliderFloat("Intensity##Bloom", &settings.postProcess.bloomIntensity, 0.0f, 5.0f)) changed = true;
+                //     if (ImGui::SliderFloat("Threshold", &settings.postProcess.bloomThreshold, 0.0f, 2.0f)) changed = true;
+                // }
+                
+                auto& tm = settings.postProcess.tonemapping;
+                if (ImGui::SliderFloat("Exposure", &tm.exposure, 0.0f, 10.0f)) changed = true;
+                if (ImGui::SliderFloat("Contrast", &tm.contrast, 0.0f, 3.0f)) changed = true;
+                if (ImGui::SliderFloat("Saturation", &tm.saturation, 0.0f, 3.0f)) changed = true;
+                
+                const char* methods[] = { "Filmic", "Uncharted2", "Clip", "ACES", "AgX", "KhronosPBR" };
+                if (ImGui::Combo("Method", &tm.method, methods, IM_ARRAYSIZE(methods))) changed = true;
+                
+                ImGui::TreePop();
+            }
+
+            // if (ImGui::TreeNode("Ray Tracing")) {
+            //     if (ImGui::Checkbox("Reflections", &settings.rayTracing.enableReflections)) changed = true;
+            //     if (ImGui::Checkbox("Transparency", &settings.rayTracing.enableTransparency)) changed = true;
+            //     if (ImGui::SliderInt("Max Bounces", &settings.rayTracing.maxBounces, 1, 8)) changed = true;
+            //     ImGui::TreePop();
+            // }
 
             if (changed) m_Renderer->SetSettings(settings);
         }

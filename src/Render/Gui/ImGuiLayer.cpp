@@ -14,6 +14,7 @@ namespace Manro {
     ImGuiLayer::ImGuiLayer(const ImGuiLayerInfo &info) : m_Context(info.context) {
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
+        ImGui::GetIO().IniFilename = nullptr;
         ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
         ImGui::StyleColorsDark();
 

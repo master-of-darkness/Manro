@@ -5,22 +5,25 @@
 #include <stdexcept>
 
 namespace Manro {
-    Swapchain::Swapchain(const VulkanContext &context, u32 width, u32 height)
+    Swapchain::Swapchain(const VulkanContext &context, u32 width, u32 height, bool vsync)
         : m_Context(context) {
-        Build(width, height);
+        Build(width, height, vsync);
     }
 
     Swapchain::~Swapchain() {
         Shutdown();
     }
 
-    void Swapchain::Build(u32 width, u32 height) {
+    void Swapchain::Build(u32 width, u32 height, bool vsync) {
         vkb::SwapchainBuilder swapchain_builder{
             m_Context.GetPhysicalDevice(), m_Context.GetDevice(), m_Context.GetSurface()
         };
+
+        VkPresentModeKHR presentMode = vsync ? VK_PRESENT_MODE_FIFO_KHR : VK_PRESENT_MODE_IMMEDIATE_KHR;
+
         auto vkb_swapchain_ret = swapchain_builder
                 .use_default_format_selection()
-                .set_desired_present_mode(VK_PRESENT_MODE_IMMEDIATE_KHR)
+                .set_desired_present_mode(presentMode)
                 .add_fallback_present_mode(VK_PRESENT_MODE_MAILBOX_KHR)
                 .add_fallback_present_mode(VK_PRESENT_MODE_FIFO_KHR)
                 .set_desired_extent(width, height)
@@ -41,10 +44,10 @@ namespace Manro {
         m_ImageViews = vkb_swapchain.get_image_views().value();
     }
 
-    void Swapchain::Recreate(u32 width, u32 height) {
+    void Swapchain::Recreate(u32 width, u32 height, bool vsync) {
         vkDeviceWaitIdle(m_Context.GetDevice());
         Shutdown();
-        Build(width, height);
+        Build(width, height, vsync);
         m_NeedsRecreate = false;
     }
 

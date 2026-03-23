@@ -8,7 +8,7 @@ namespace Manro {
 
     class Swapchain {
     public:
-        Swapchain(const VulkanContext &context, u32 width, u32 height);
+        Swapchain(const VulkanContext &context, u32 width, u32 height, bool vsync = true);
 
         ~Swapchain();
 
@@ -16,7 +16,7 @@ namespace Manro {
 
         Swapchain &operator=(const Swapchain &) = delete;
 
-        void Recreate(u32 width, u32 height);
+        void Recreate(u32 width, u32 height, bool vsync);
 
         void Shutdown();
 
@@ -34,7 +34,7 @@ namespace Manro {
         VkImageView GetImageView(u32 index) const { return m_ImageViews[index]; }
 
     private:
-        void Build(u32 width, u32 height);
+        void Build(u32 width, u32 height, bool vsync);
 
         const VulkanContext &m_Context;
 

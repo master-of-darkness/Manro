@@ -17,7 +17,7 @@ namespace Manro {
           , m_Textures(m_Context)
           , m_Meshes(m_Context)
           , m_Settings(settings) {
-        m_Swapchain = CreateScope<Swapchain>(m_Context, width, height);
+        m_Swapchain = CreateScope<Swapchain>(m_Context, width, height, m_Settings.enableVSync);
 
         VkSampleCountFlagBits maxSamples = m_Context.GetMaxUsableSampleCount();
         m_Settings.msaaSamples = (static_cast<u32>(m_Settings.msaaSamples) <= static_cast<u32>(maxSamples))
@@ -148,7 +148,8 @@ namespace Manro {
 
     void Renderer::SetSettings(const RenderSettings &settings) {
         bool needsResize = (m_Settings.resolutionScale != settings.resolutionScale) ||
-                           (m_Settings.msaaSamples != settings.msaaSamples);
+                           (m_Settings.msaaSamples != settings.msaaSamples) ||
+                           (m_Settings.enableVSync != settings.enableVSync);
         m_Settings = settings;
         if (needsResize) {
             VkSampleCountFlagBits maxSamples = m_Context.GetMaxUsableSampleCount();
@@ -178,7 +179,7 @@ namespace Manro {
             vkWaitSemaphores(m_Context.GetDevice(), &wi, UINT64_MAX);
         }
 
-        m_Swapchain->Recreate(w, h);
+        m_Swapchain->Recreate(w, h, m_Settings.enableVSync);
 
         if (m_PresentSemaphores.size() != m_Swapchain->GetImageCount()) {
             for (auto s: m_PresentSemaphores)
@@ -495,27 +496,27 @@ namespace Manro {
         ubo.proj = m_ProjectionMatrix;
         ubo.proj[1][1] *= -1;
         ubo.camPos = Vec4(m_CameraPosition, 1.f);
-        ubo.exposure = 1.0f;
-        ubo.gamma = 2.2f;
+        ubo.exposure = m_Settings.postProcess.tonemapping.exposure;
+        ubo.gamma = m_Settings.lighting.gamma;
         ubo.prefilteredCubeMipLevels = 1.0f;
-        ubo.scaleIBLAmbient = 1.0f;
+        ubo.scaleIBLAmbient = m_Settings.lighting.iblIntensity;
         ubo.lightCount = (int) m_PendingLights.size();
         ubo.padding0 = 0;
         ubo.padding1 = 1.0f;
         ubo.padding2 = 0.0f;
         ubo.screenDimensions = Vec2((float) ext.width, (float) ext.height);
-        ubo.nearZ = 0.1f;
-        ubo.farZ = 10000.0f;
+        ubo.nearZ = m_Settings.nearZ;
+        ubo.farZ = m_Settings.farZ;
         ubo.slicesZ = 1.0f;
         ubo._pad3 = 0.0f;
         ubo.reflectionVP = Mat4(1.0f);
-        ubo.reflectionEnabled = 0;
+        ubo.reflectionEnabled = m_Settings.rayTracing.enableReflections;
         ubo.reflectionPass = 0;
         ubo._reflectPad0 = Vec2(0.0f);
         ubo.clipPlaneWS = Vec4(0.0f);
         ubo.reflectionIntensity = 1.0f;
-        ubo.enableRayQueryReflections = 0;
-        ubo.enableRayQueryTransparency = 0;
+        ubo.enableRayQueryReflections = m_Settings.rayTracing.enableReflections;
+        ubo.enableRayQueryTransparency = m_Settings.rayTracing.enableTransparency;
         ubo.geometryInfoCount = 0;
         ubo._rqReservedWorldPos = Vec4(0.0f);
         ubo.materialCount = (int) m_Materials.size();
@@ -669,16 +670,9 @@ namespace Manro {
                                 m_CompositePipeline->GetLayout(), 0, 1, &frame.compositeSet, 0, nullptr);
 
         CompositePushConstants cpc{};
-        cpc.tm = m_Settings.postProcessing;
+        cpc.tm = m_Settings.postProcess.tonemapping;
 
-        // Compute inputMatrix based on exposure, temperature and tint
-        // Using the same CMCCAT2000 math as the shader.
-        // Actually the Tonemapper C++ struct doesn't strictly NEED complex input matrix computation
-        // if we just want exposure to work as a start, but we can do a basic Identity scaled by exposure.
-        // The tonemapping functions in slang do: color = mul(inputMatrix, color);
         cpc.tm.inputMatrix = SlangFloat3x3(glm::mat3(cpc.tm.exposure));
-
-        // Output conversion handled inside slang auto-exposure / tonemap, but we can configure tm.gamma too
 
         cpc.imageSize = Vec2((float) m_RenderExtent.width, (float) m_RenderExtent.height);
 
