@@ -21,6 +21,7 @@ namespace Manro {
             case SDL_SCANCODE_F2: return Key::F2;
             case SDL_SCANCODE_F3: return Key::F3;
             case SDL_SCANCODE_F4: return Key::F4;
+            case SDL_SCANCODE_F11: return Key::F11;
             case SDL_SCANCODE_UP: return Key::Up;
             case SDL_SCANCODE_DOWN: return Key::Down;
             case SDL_SCANCODE_LEFT: return Key::Left;
@@ -72,7 +73,6 @@ namespace Manro {
     }
 
     void SDL3InputBackend::OnFrameEnd() {
-
     }
 
     bool SDL3InputBackend::IsKeyDown(Key k) const {

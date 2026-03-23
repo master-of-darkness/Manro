@@ -32,6 +32,7 @@ namespace Manro {
     static constexpr u32 MAX_LIGHTS = 1024;
     static constexpr u32 MAX_LIGHTS_PER_TILE = 64;
     static constexpr u32 TILE_SIZE = 16;
+    static constexpr u32 SHADOW_MAP_SIZE = 2048;
 
     struct FrameStats {
         u32 drawCalls = 0;
@@ -98,6 +99,18 @@ namespace Manro {
         int _padMat[3]{};
     };
 
+    struct ShadowUniformData {
+        Mat4 lightViewProj;
+        Vec4 lightDir;
+        Vec2 shadowMapSize;
+        float normalBias;
+        float _pad;
+    };
+
+    struct ShadowPushConstants {
+        Mat4 lightViewProj;
+    };
+
     struct PbrPushConstants {
         Vec4 baseColorFactor{1.f, 1.f, 1.f, 1.f};
         float metallicFactor{1.f};
@@ -109,19 +122,18 @@ namespace Manro {
         int emissiveTextureSet{-1};
         float alphaMask{0.f};
         float alphaMaskCutoff{0.5f};
-        float _pad0[3]; // Pad to 64 bytes for Vec3 emissiveFactor alignment
+        float _pad0[3];
         Vec3 emissiveFactor{0.f, 0.f, 0.f};
         float emissiveStrength{1.f};
         float transmissionFactor{0.f};
         int useSpecGlossWorkflow{0};
         float glossinessFactor{1.f};
-        float _pad1; // Pad to 96 bytes for Vec3 specularFactor alignment
+        float _pad1;
         Vec3 specularFactor{1.f, 1.f, 1.f};
         float ior{1.5f};
         int hasEmissiveStrengthExt{0};
-        float _pad2; // Ensure total size matches shader (116 or 120 bytes depending on compiler)
+        float _pad2;
     };
-
 
     struct MeshCullPushConstants {
         Vec4 planes[6];
@@ -221,6 +233,8 @@ namespace Manro {
         RenderGraph &GetRenderGraph() { return m_RenderGraph; }
         BindlessAllocator &GetBindlessAlloc() { return m_BindlessAlloc; }
 
+        ShadowUniformData &GetShadowUniform() { return m_ShadowUniform; }
+
     private:
         void CreateOffscreenResources(u32 w, u32 h);
 
@@ -228,15 +242,17 @@ namespace Manro {
 
         void CreateColorResources(u32 w, u32 h);
 
+        void CreateShadowResources();
+
         void CreateDescriptorLayouts();
 
         void CreateDescriptorPool();
 
         void CreateGpuBuffers();
 
-        void UpdatePbrDescriptorSet(u32 fi);
+        void CreateCommandBuffers();
 
-        void UpdateCompositeDescriptorSet(u32 fi);
+        void CreateSyncObjects();
 
         void BuildPbrPipeline();
 
@@ -244,13 +260,21 @@ namespace Manro {
 
         void BuildCullPipeline();
 
-        void CreateCommandBuffers();
+        void BuildShadowPipeline();
 
-        void CreateSyncObjects();
+        void UpdatePbrDescriptorSet(u32 fi);
+
+        void UpdatePbrDescriptorSetShadow(u32 fi);
+
+        void UpdateCompositeDescriptorSet(u32 fi);
 
         void RecreateSwapchain();
 
         void UploadLights(u32 frameIndex);
+
+        void RenderShadowPass(VkCommandBuffer cb);
+
+        Mat4 ComputeLightViewProj(const Vec3 &lightDir) const;
 
         VulkanContext m_Context;
         Scope<Swapchain> m_Swapchain;
@@ -268,7 +292,6 @@ namespace Manro {
         Ref<Material> m_DefaultMaterial;
 
         VkDescriptorPool m_DescriptorPool = VK_NULL_HANDLE;
-
         VkDescriptorSetLayout m_PbrSetLayout = VK_NULL_HANDLE;
         VkDescriptorSetLayout m_CompositeSetLayout = VK_NULL_HANDLE;
         VkDescriptorSetLayout m_CullSetLayout = VK_NULL_HANDLE;
@@ -278,11 +301,15 @@ namespace Manro {
         Scope<Pipeline> m_CompositePipeline;
         Scope<Pipeline> m_CullPipeline;
         Scope<Pipeline> m_MeshCullPipeline;
+        Scope<Pipeline> m_ShadowPipeline;
 
         AllocatedImage m_OffscreenColor{};
         AllocatedImage m_MsaaColorImage{};
         AllocatedImage m_DepthImage{};
+        AllocatedImage m_ShadowMap{};
+
         VkSampler m_OffscreenSampler = VK_NULL_HANDLE;
+        VkSampler m_ShadowSampler = VK_NULL_HANDLE;
 
         VkFormat m_OffscreenFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
         VkFormat m_DepthFormat = VK_FORMAT_D32_SFLOAT;
@@ -307,6 +334,9 @@ namespace Manro {
         Scope<Buffer> m_TextureInfoBuffer;
         bool m_MaterialsDirty = true;
 
+        Scope<Buffer> m_ShadowUniformBuffer;
+        ShadowUniformData m_ShadowUniform{};
+
         std::vector<GpuMeshInstance> m_CurrentFrameInstances;
         std::vector<GpuCullData> m_CurrentFrameCullData;
         std::vector<LightData> m_PendingLights;
@@ -325,5 +355,4 @@ namespace Manro {
         RenderSettings m_Settings{};
         VkExtent2D m_RenderExtent{};
     };
-
 } // namespace Manro

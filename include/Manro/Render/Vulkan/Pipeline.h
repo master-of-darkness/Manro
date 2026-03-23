@@ -36,6 +36,9 @@ namespace Manro {
         void BuildCompute(const std::vector<u8> &computeSpv,
                           const PipelineConfigParams &config);
 
+        void BuildShadowDepth(const std::vector<u8> &vertexSpv,
+                              const PipelineConfigParams &config);
+
         void Shutdown();
 
         VkPipeline GetHandle() const { return m_Pipeline; }

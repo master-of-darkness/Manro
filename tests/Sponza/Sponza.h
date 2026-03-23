@@ -24,7 +24,7 @@ struct FlyCamera {
 
     Manro::Mat4 View() const;
 
-    Manro::Mat4 Projection(float fovDeg, float aspect, float nearZ, float farZ) const;
+    static Manro::Mat4 Projection(float fovDeg, float aspect, float nearZ, float farZ);
 };
 
 struct BenchWaypoint {
@@ -94,6 +94,8 @@ private:
     bool m_IsRunning = false;
     bool m_InputCaptured = true;
     bool m_CtrlPressedLastFrame = false;
+    bool m_f11PressedLastFrame = false;
+    bool m_F11PressedLastFrame = false;
     float m_AccumulatedTime = 0.f;
     std::chrono::high_resolution_clock::time_point m_LastFrameTime;
 

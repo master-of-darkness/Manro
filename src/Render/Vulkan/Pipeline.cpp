@@ -174,6 +174,113 @@ namespace Manro {
         vkDestroyShaderModule(m_Context.GetDevice(), compModule, nullptr);
     }
 
+    void Pipeline::BuildShadowDepth(const std::vector<u8> &vertexSpv,
+                                    const PipelineConfigParams &config) {
+        VkShaderModule vertModule = CreateShaderModule(vertexSpv);
+
+        VkPipelineShaderStageCreateInfo stage{};
+        stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        stage.stage = VK_SHADER_STAGE_VERTEX_BIT;
+        stage.module = vertModule;
+        stage.pName = config.vertexEntryPoint.c_str();
+
+        std::vector<VkDynamicState> dynamicStates = {
+            VK_DYNAMIC_STATE_VIEWPORT,
+            VK_DYNAMIC_STATE_SCISSOR,
+            VK_DYNAMIC_STATE_DEPTH_BIAS,
+        };
+        VkPipelineDynamicStateCreateInfo dynamicState{};
+        dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+        dynamicState.dynamicStateCount = static_cast<u32>(dynamicStates.size());
+        dynamicState.pDynamicStates = dynamicStates.data();
+
+        VkPipelineVertexInputStateCreateInfo vertexInput{};
+        vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+        vertexInput.vertexBindingDescriptionCount = static_cast<u32>(config.vertexInputBindings.size());
+        vertexInput.pVertexBindingDescriptions = config.vertexInputBindings.data();
+        vertexInput.vertexAttributeDescriptionCount = static_cast<u32>(config.vertexInputAttributes.size());
+        vertexInput.pVertexAttributeDescriptions = config.vertexInputAttributes.data();
+
+        VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+        inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+        inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+        VkPipelineViewportStateCreateInfo viewportState{};
+        viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+        viewportState.viewportCount = 1;
+        viewportState.scissorCount = 1;
+
+        VkPipelineRasterizationStateCreateInfo rasterizer{};
+        rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+        rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+        rasterizer.lineWidth = 1.f;
+        rasterizer.cullMode = VK_CULL_MODE_FRONT_BIT;
+        rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+        rasterizer.depthBiasEnable = VK_TRUE;
+        rasterizer.depthClampEnable = VK_FALSE;
+
+        VkPipelineMultisampleStateCreateInfo multisampling{};
+        multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+        multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+        VkPipelineDepthStencilStateCreateInfo depthStencil{};
+        depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+        depthStencil.depthTestEnable = VK_TRUE;
+        depthStencil.depthWriteEnable = VK_TRUE;
+        depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+
+        VkPipelineColorBlendStateCreateInfo colorBlend{};
+        colorBlend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+        colorBlend.attachmentCount = 0;
+
+        VkPushConstantRange pushRange{};
+        pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        pushRange.offset = 0;
+        pushRange.size = config.pushConstantSize;
+
+        VkPipelineLayoutCreateInfo layoutInfo{};
+        layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        if (config.pushConstantSize > 0) {
+            layoutInfo.pushConstantRangeCount = 1;
+            layoutInfo.pPushConstantRanges = &pushRange;
+        }
+        if (!config.descriptorSetLayouts.empty()) {
+            layoutInfo.setLayoutCount = static_cast<u32>(config.descriptorSetLayouts.size());
+            layoutInfo.pSetLayouts = config.descriptorSetLayouts.data();
+        }
+
+        if (vkCreatePipelineLayout(m_Context.GetDevice(), &layoutInfo, nullptr, &m_PipelineLayout) != VK_SUCCESS)
+            throw std::runtime_error("Failed to create shadow pipeline layout");
+
+        VkPipelineRenderingCreateInfo renderingInfo{};
+        renderingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+        renderingInfo.colorAttachmentCount = 0;
+        renderingInfo.pColorAttachmentFormats = nullptr;
+        renderingInfo.depthAttachmentFormat = config.depthAttachmentFormat;
+
+        VkGraphicsPipelineCreateInfo pipelineInfo{};
+        pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+        pipelineInfo.pNext = &renderingInfo;
+        pipelineInfo.stageCount = 1;
+        pipelineInfo.pStages = &stage;
+        pipelineInfo.pVertexInputState = &vertexInput;
+        pipelineInfo.pInputAssemblyState = &inputAssembly;
+        pipelineInfo.pViewportState = &viewportState;
+        pipelineInfo.pRasterizationState = &rasterizer;
+        pipelineInfo.pMultisampleState = &multisampling;
+        pipelineInfo.pColorBlendState = &colorBlend;
+        pipelineInfo.pDepthStencilState = &depthStencil;
+        pipelineInfo.pDynamicState = &dynamicState;
+        pipelineInfo.layout = m_PipelineLayout;
+        pipelineInfo.renderPass = VK_NULL_HANDLE;
+
+        if (vkCreateGraphicsPipelines(m_Context.GetDevice(), VK_NULL_HANDLE,
+                                      1, &pipelineInfo, nullptr, &m_Pipeline) != VK_SUCCESS)
+            throw std::runtime_error("Failed to create shadow depth pipeline");
+
+        vkDestroyShaderModule(m_Context.GetDevice(), vertModule, nullptr);
+    }
+
     void Pipeline::Shutdown() {
         if (m_Pipeline) {
             vkDestroyPipeline(m_Context.GetDevice(), m_Pipeline, nullptr);

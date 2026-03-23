@@ -11,10 +11,10 @@ namespace Manro {
         W, A, S, D, Q, E,
         Space, LeftShift, LeftCtrl,
         Escape, Tab, Enter,
-        F1, F2, F3, F4,
+        F1, F2, F3, F4, F11,
         Up, Down, Left, Right,
         _Count
-    };
+    }; // TODO: Add all keys
 
     enum class MouseButton : u8 { Left = 0, Right, Middle, _Count };
 

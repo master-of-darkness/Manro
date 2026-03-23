@@ -45,7 +45,7 @@ namespace Manro {
         float saturation = 1.0f;
         float vignette = 0.0f;
 
-        // Advanced color grading
+        // Advanced color grading TODO: fix me pls. I don't update onChange
         float vibrance = 0.0f;
         float shadowBias = 0.0f;
         float midtoneBias = 0.0f;
@@ -56,7 +56,7 @@ namespace Manro {
         float warmColor[3] = {1.0f, 1.0f, 1.0f};
         float splitBalance = 0.0f;
 
-        // Auto-Exposure
+        // Auto-Exposure TODO: make it work
         int autoExposure = 0;
         float autoExposureSpeed = 5.0f;
         float evMinValue = -5.0f;

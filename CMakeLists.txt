@@ -246,6 +246,7 @@ compile_shader("forward_plus_cull.slang" "main" "compute" "${SHADER_BIN_DIR}/for
 compile_shader("composite.slang" "VSMain" "vertex"   "${SHADER_BIN_DIR}/composite.vert.spv")
 compile_shader("composite.slang" "PSMain" "fragment" "${SHADER_BIN_DIR}/composite.frag.spv")
 compile_shader("mesh_cull.slang" "main" "compute" "${SHADER_BIN_DIR}/mesh_cull.comp.spv")
+compile_shader("shadow_depth.slang" "VSMain" "vertex" "${SHADER_BIN_DIR}/shadow_depth.vert.spv")
 compile_shader("imgui.slang" "VSMain" "vertex"   "${SHADER_BIN_DIR}/imgui.vert.spv")
 compile_shader("imgui.slang" "PSMain" "fragment" "${SHADER_BIN_DIR}/imgui.frag.spv")
 
@@ -316,6 +317,7 @@ embed_shader("${SHADER_BIN_DIR}/tonemapper.comp.spv"                 tonemapper_
 embed_shader("${SHADER_BIN_DIR}/tonemapper_histogram.comp.spv"       tonemapper_histogram_comp_spv)
 embed_shader("${SHADER_BIN_DIR}/tonemapper_autoexposure.comp.spv"    tonemapper_autoexposure_comp_spv)
 embed_shader("${SHADER_BIN_DIR}/mesh_cull.comp.spv"                  mesh_cull_comp_spv)
+embed_shader("${SHADER_BIN_DIR}/shadow_depth.vert.spv" shadow_depth_vert_spv)
 embed_shader("${SHADER_BIN_DIR}/imgui.vert.spv"                      imgui_vert_spv)
 embed_shader("${SHADER_BIN_DIR}/imgui.frag.spv"                      imgui_frag_spv)
 
