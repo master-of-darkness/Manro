@@ -16,16 +16,22 @@ namespace Manro {
 
     void Swapchain::Build(u32 width, u32 height, bool vsync) {
         vkb::SwapchainBuilder swapchain_builder{
-            m_Context.GetPhysicalDevice(), m_Context.GetDevice(), m_Context.GetSurface()
+                m_Context.GetPhysicalDevice(), m_Context.GetDevice(), m_Context.GetSurface()
         };
 
-        VkPresentModeKHR presentMode = vsync ? VK_PRESENT_MODE_FIFO_KHR : VK_PRESENT_MODE_IMMEDIATE_KHR;
+        if (vsync) {
+            swapchain_builder
+                    .set_desired_present_mode(VK_PRESENT_MODE_MAILBOX_KHR)
+                    .add_fallback_present_mode(VK_PRESENT_MODE_FIFO_KHR);
+        } else {
+            swapchain_builder
+                    .set_desired_present_mode(VK_PRESENT_MODE_IMMEDIATE_KHR)
+                    .add_fallback_present_mode(VK_PRESENT_MODE_MAILBOX_KHR)
+                    .add_fallback_present_mode(VK_PRESENT_MODE_FIFO_KHR);
+        }
 
         auto vkb_swapchain_ret = swapchain_builder
                 .use_default_format_selection()
-                .set_desired_present_mode(presentMode)
-                .add_fallback_present_mode(VK_PRESENT_MODE_MAILBOX_KHR)
-                .add_fallback_present_mode(VK_PRESENT_MODE_FIFO_KHR)
                 .set_desired_extent(width, height)
                 .add_image_usage_flags(VK_IMAGE_USAGE_TRANSFER_DST_BIT)
                 .build();
@@ -37,6 +43,7 @@ namespace Manro {
 
         vkb::Swapchain vkb_swapchain = vkb_swapchain_ret.value();
         LOG_INFO("[Swapchain] Present mode: {}", (int)vkb_swapchain.present_mode);
+
         m_Swapchain = vkb_swapchain.swapchain;
         m_ImageFormat = vkb_swapchain.image_format;
         m_Extent = vkb_swapchain.extent;

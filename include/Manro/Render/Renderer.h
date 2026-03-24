@@ -54,11 +54,14 @@ namespace Manro {
         Scope<Buffer> countBuffer;
         Scope<Buffer> tileHeaderBuffer;
         Scope<Buffer> tileLightIndexBuffer;
+        Scope<Buffer> shadowIndirectBuffer;
+        Scope<Buffer> shadowCountBuffer;
 
         VkDescriptorSet pbrSet = VK_NULL_HANDLE;
         VkDescriptorSet cullSet = VK_NULL_HANDLE;
         VkDescriptorSet meshCullSet = VK_NULL_HANDLE;
         VkDescriptorSet compositeSet = VK_NULL_HANDLE;
+        VkDescriptorSet shadowMeshCullSet = VK_NULL_HANDLE;
     };
 
     class IWindow;
@@ -296,6 +299,7 @@ namespace Manro {
         VkDescriptorSetLayout m_CompositeSetLayout = VK_NULL_HANDLE;
         VkDescriptorSetLayout m_CullSetLayout = VK_NULL_HANDLE;
         VkDescriptorSetLayout m_MeshCullSetLayout = VK_NULL_HANDLE;
+        VkDescriptorSetLayout m_ShadowMeshCullSetLayout = VK_NULL_HANDLE;
 
         Scope<Pipeline> m_PbrPipeline;
         Scope<Pipeline> m_CompositePipeline;
