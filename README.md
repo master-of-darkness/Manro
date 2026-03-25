@@ -19,7 +19,7 @@ The engine is designed with a focus on embedded network support and rendering th
 - C++20 compatible compiler (Tested with GCC and MSVC)
 - Windows or Ubuntu (tested on 25.10)
 - CMake
-- Vulkan SDK
+- Vulkan SDK (1.4+)
 ### Building
 
 To build the project, use `CMakeLists.txt` in root.
