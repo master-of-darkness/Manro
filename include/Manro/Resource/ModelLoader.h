@@ -16,16 +16,31 @@ namespace Manro {
         std::vector<Vertex> vertices;
         std::vector<u32> indices;
         std::string diffuseTexturePath;
+        std::string normalTexturePath;
         Vec3 center;
         float radius;
+
+        Vec4 baseColorFactor{1.0f};
+        float metallicFactor{1.0f};
+        float roughnessFactor{1.0f};
+        int alphaMode{0};
+        float alphaCutoff{0.5f};
+        bool doubleSided{false};
     };
 
     struct ModelData {
         std::vector<Vertex> vertices;
         std::vector<u32> indices;
         std::string diffuseTexturePath;
+        std::string normalTexturePath;
         Vec3 center;
         float radius;
+        Vec4 baseColorFactor{1.0f};
+        float metallicFactor{1.0f};
+        float roughnessFactor{1.0f};
+        int alphaMode{0};
+        float alphaCutoff{0.5f};
+        bool doubleSided{false};
     };
 
     class JobSystem;

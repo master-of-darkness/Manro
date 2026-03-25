@@ -141,8 +141,12 @@ PbrMaterial localEvaluateMaterial(GltfShadeMaterial material, float3 N, float3 T
     PbrMaterial pbrMat = defaultPbrMaterial();
     pbrMat.baseColor = material.pbrBaseColorFactor.rgb;
     pbrMat.opacity   = material.pbrBaseColorFactor.a;
+    pbrMat.N = N;
+    pbrMat.Ng = N;
+    pbrMat.T = T;
+    pbrMat.B = B;
 
-    if (material.pbrBaseColorTexture > 0) {
+    if (material.pbrBaseColorTexture >= 0) {
         GltfTextureInfo tinfo = texInfos[NonUniformResourceIndex(uint(material.pbrBaseColorTexture))];
         if (tinfo.index >= 0) {
             float2 tt = mul(float3(uv, 1.0), tinfo.uvTransform).xy;
@@ -154,7 +158,7 @@ PbrMaterial localEvaluateMaterial(GltfShadeMaterial material, float3 N, float3 T
 
     float roughness = material.pbrRoughnessFactor;
     float metallic  = material.pbrMetallicFactor;
-    if (material.pbrMetallicRoughnessTexture > 0) {
+    if (material.pbrMetallicRoughnessTexture >= 0) {
         GltfTextureInfo tinfo = texInfos[NonUniformResourceIndex(uint(material.pbrMetallicRoughnessTexture))];
         if (tinfo.index >= 0) {
             float2 tt    = mul(float3(uv, 1.0), tinfo.uvTransform).xy;
@@ -168,7 +172,17 @@ PbrMaterial localEvaluateMaterial(GltfShadeMaterial material, float3 N, float3 T
     pbrMat.metallic  = metallic;
     pbrMat.emissive  = material.emissiveFactor;
 
-    if (material.emissiveTexture > 0) {
+    pbrMat.occlusion = material.occlusionStrength;
+    if (material.occlusionTexture >= 0) {
+        GltfTextureInfo tinfo = texInfos[NonUniformResourceIndex(uint(material.occlusionTexture))];
+        if (tinfo.index >= 0) {
+            float2 tt = mul(float3(uv, 1.0), tinfo.uvTransform).xy;
+            float occ = bindlessTextures[NonUniformResourceIndex(uint(tinfo.index))].Sample(defaultSampler, tt).r;
+            pbrMat.occlusion = 1.0 + pbrMat.occlusion * (occ - 1.0);
+        }
+    }
+
+    if (material.emissiveTexture >= 0) {
         GltfTextureInfo tinfo = texInfos[NonUniformResourceIndex(uint(material.emissiveTexture))];
         if (tinfo.index >= 0) {
             float2 tt = mul(float3(uv, 1.0), tinfo.uvTransform).xy;
@@ -176,14 +190,13 @@ PbrMaterial localEvaluateMaterial(GltfShadeMaterial material, float3 N, float3 T
         }
     }
 
-    pbrMat.N = N;
-    if (material.normalTexture > 0) {
+    if (material.normalTexture >= 0) {
         GltfTextureInfo tinfo = texInfos[NonUniformResourceIndex(uint(material.normalTexture))];
         if (tinfo.index >= 0) {
             float2 tt           = mul(float3(uv, 1.0), tinfo.uvTransform).xy;
             float3 normalSample = bindlessTextures[NonUniformResourceIndex(uint(tinfo.index))].Sample(defaultSampler, tt).xyz * 2.0 - 1.0;
             float3x3 tbn        = float3x3(T, B, N);
-            pbrMat.N            = normalize(mul(tbn, normalSample));
+            pbrMat.N            = normalize(mul(normalSample, tbn));
         }
     }
 
@@ -204,9 +217,9 @@ float4 PSMain(VSOutput input) : SV_Target {
     float3 result = float3(0.0);
 
     uint tileSize = 16u;
-    uint tileX    = uint(input.position.x) / tileSize;
-    uint tileY    = uint(input.position.y) / tileSize;
-    uint tilesX   = uint(ubo.screenDimensions.x + float(tileSize) - 1.0) / tileSize;
+    uint tileX    = min(uint(input.position.x) / tileSize, 255u);
+    uint tileY    = min(uint(input.position.y) / tileSize, 143u);
+    uint tilesX   = min(uint(ubo.screenDimensions.x + float(tileSize) - 1.0) / tileSize, 256u);
     uint tileIdx  = tileY * tilesX + tileX;
 
     uint2 hdr        = uint2(tileHeaders[tileIdx].offset, tileHeaders[tileIdx].count);
@@ -223,11 +236,11 @@ float4 PSMain(VSOutput input) : SV_Target {
 
         if (all(contrib.intensity <= 0.0)) continue;
 
-        float3 L = -contrib.incidentVector;
-
         if (light.type == int(LightType::eLightTypeDirectional)) {
             contrib.intensity *= shadowFactor;
         }
+
+        float3 L = -contrib.incidentVector;
 
         BsdfEvaluateData evalData;
         evalData.k1 = V;
@@ -237,7 +250,7 @@ float4 PSMain(VSOutput input) : SV_Target {
         result += (evalData.bsdf_diffuse + evalData.bsdf_glossy) * contrib.intensity;
     }
 
-    result += pbrMat.baseColor * 0.1 + pbrMat.emissive;
+    result += pbrMat.baseColor * (ubo.scaleIBLAmbient * 0.1 * pbrMat.occlusion) + pbrMat.emissive;
 
-    return float4(result, 1.0);
+    return float4(result, pbrMat.opacity);
 }

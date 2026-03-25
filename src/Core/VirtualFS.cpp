@@ -12,7 +12,6 @@ namespace Manro {
     void VirtualFS::Mount(std::string_view virtualPath, const u8 *data, size_t size) {
         std::lock_guard<std::mutex> lock(m_Mutex);
         m_Blobs[std::string(virtualPath)] = Blob{data, size, {}};
-        LOG_INFO("[VirtualFS] Mounted blob: {} ({} bytes)", virtualPath, size);
     }
 
     void VirtualFS::MountOwned(std::string_view virtualPath, std::vector<u8> &&data) {
@@ -20,7 +19,6 @@ namespace Manro {
         size_t size = data.size();
         const u8 *ptr = data.data();
         m_Blobs[std::string(virtualPath)] = Blob{ptr, size, std::move(data)};
-        LOG_INFO("[VirtualFS] Mounted owned blob: {} ({} bytes)", virtualPath, size);
     }
 
     void VirtualFS::SetBaseDir(std::string_view dir) {

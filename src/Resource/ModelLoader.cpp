@@ -394,18 +394,45 @@ namespace Manro {
 
                 if (primitive.material >= 0) {
                     const auto &mat = model.materials[primitive.material];
+                    smd.baseColorFactor = Vec4(
+                            static_cast<float>(mat.pbrMetallicRoughness.baseColorFactor[0]),
+                            static_cast<float>(mat.pbrMetallicRoughness.baseColorFactor[1]),
+                            static_cast<float>(mat.pbrMetallicRoughness.baseColorFactor[2]),
+                            static_cast<float>(mat.pbrMetallicRoughness.baseColorFactor[3]));
+                    smd.metallicFactor = static_cast<float>(mat.pbrMetallicRoughness.metallicFactor);
+                    smd.roughnessFactor = static_cast<float>(mat.pbrMetallicRoughness.roughnessFactor);
+                    smd.doubleSided = mat.doubleSided;
+                    smd.alphaCutoff = static_cast<float>(mat.alphaCutoff);
+                    if (mat.alphaMode == "MASK") smd.alphaMode = 1;
+                    else if (mat.alphaMode == "BLEND") smd.alphaMode = 2;
+                    else smd.alphaMode = 0;
+
                     if (mat.pbrMetallicRoughness.baseColorTexture.index >= 0) {
                         const auto &tex = model.textures[mat.pbrMetallicRoughness.baseColorTexture.index];
                         const auto &img = model.images[tex.source];
                         if (!img.uri.empty()) {
-                            if (img.uri.substr(0, 5) == "data:") {
-                            } else {
+                            if (img.uri.substr(0, 5) != "data:") {
                                 smd.diffuseTexturePath = ModelLoader::NormalisePath(baseDir + img.uri);
                             }
                         } else if (img.bufferView >= 0) {
                             std::string ext = ".png";
                             if (img.mimeType == "image/jpeg") ext = ".jpg";
                             smd.diffuseTexturePath =
+                                    "memory://" + modelPath + "/image_" + std::to_string(tex.source) + ext;
+                        }
+                    }
+
+                    if (mat.normalTexture.index >= 0) {
+                        const auto &tex = model.textures[mat.normalTexture.index];
+                        const auto &img = model.images[tex.source];
+                        if (!img.uri.empty()) {
+                            if (img.uri.substr(0, 5) != "data:") {
+                                smd.normalTexturePath = ModelLoader::NormalisePath(baseDir + img.uri);
+                            }
+                        } else if (img.bufferView >= 0) {
+                            std::string ext = ".png";
+                            if (img.mimeType == "image/jpeg") ext = ".jpg";
+                            smd.normalTexturePath =
                                     "memory://" + modelPath + "/image_" + std::to_string(tex.source) + ext;
                         }
                     }
@@ -525,17 +552,25 @@ namespace Manro {
 
         for (size_t i = 0; i < filepaths.size(); ++i) {
             ModelData& md = results[i];
-            u32 vertexOffset = 0;
             for (const auto& sm : subMeshes[i]) {
+                if (sm.vertices.empty()) continue;
+                u32 currentVertexOffset = static_cast<u32>(md.vertices.size());
                 for (auto v : sm.vertices) {
                     md.vertices.push_back(v);
                 }
                 for (auto idx : sm.indices) {
-                    md.indices.push_back(idx + vertexOffset);
+                    md.indices.push_back(idx + currentVertexOffset);
                 }
-                vertexOffset = static_cast<u32>(md.vertices.size());
+
                 if (!sm.diffuseTexturePath.empty() && md.diffuseTexturePath.empty()) {
                     md.diffuseTexturePath = sm.diffuseTexturePath;
+                    md.normalTexturePath = sm.normalTexturePath;
+                    md.baseColorFactor = sm.baseColorFactor;
+                    md.metallicFactor = sm.metallicFactor;
+                    md.roughnessFactor = sm.roughnessFactor;
+                    md.alphaMode = sm.alphaMode;
+                    md.alphaCutoff = sm.alphaCutoff;
+                    md.doubleSided = sm.doubleSided;
                 }
             }
 

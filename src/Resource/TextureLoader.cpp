@@ -235,7 +235,6 @@ namespace Manro {
                 LOG_ERROR("[TextureLoader] Failed to load DDS: {}", filepath);
                 return false;
             }
-            LOG_INFO("[TextureLoader] Loaded DDS '{}' - {}x{}", filepath, out.width, out.height);
             return true;
         }
 
@@ -258,7 +257,6 @@ namespace Manro {
 
         stbi_image_free(data);
 
-        LOG_INFO("[TextureLoader] Loaded '{}' - {}x{}", filepath, width, height);
         return true;
     }
 

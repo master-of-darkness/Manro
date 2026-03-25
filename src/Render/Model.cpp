@@ -21,6 +21,9 @@ namespace Manro {
                 if (!sm.diffuseTexturePath.empty()) {
                     uniqueTexturePaths.insert(sm.diffuseTexturePath);
                 }
+                if (!sm.normalTexturePath.empty()) {
+                    uniqueTexturePaths.insert(sm.normalTexturePath);
+                }
             }
         }
 
@@ -44,6 +47,7 @@ namespace Manro {
                 md.vertices = std::move(sd.vertices);
                 md.indices = std::move(sd.indices);
                 md.diffuseTexturePath = sd.diffuseTexturePath;
+                md.normalTexturePath = sd.normalTexturePath;
                 md.center = sd.center;
                 md.radius = sd.radius;
 
@@ -56,6 +60,21 @@ namespace Manro {
                         material->SetTexture(cacheIt->second);
                     }
                 }
+
+                if (!sd.normalTexturePath.empty()) {
+                    auto cacheIt = textureCache.find(sd.normalTexturePath);
+                    if (cacheIt != textureCache.end()) {
+                        material->GetData().normalTexture = static_cast<uint16_t>(cacheIt->second + 1);
+                    }
+                }
+
+                auto &matData = material->GetData();
+                matData.pbrBaseColorFactor = sd.baseColorFactor;
+                matData.pbrMetallicFactor = sd.metallicFactor;
+                matData.pbrRoughnessFactor = sd.roughnessFactor;
+                matData.alphaMode = sd.alphaMode;
+                matData.alphaCutoff = sd.alphaCutoff;
+                matData.doubleSided = sd.doubleSided ? 1 : 0;
 
                 model->AddSubMesh(meshId, std::move(material));
             }

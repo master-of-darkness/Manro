@@ -98,6 +98,7 @@ namespace Manro {
         m_GuiLayer.reset();
         m_DefaultMaterial.reset();
         m_PbrPipeline.reset();
+        m_ZPrepassPipeline.reset();
         m_CompositePipeline.reset();
         m_CullPipeline.reset();
         m_MeshCullPipeline.reset();
@@ -331,9 +332,9 @@ namespace Manro {
             VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
             VMA_MEMORY_USAGE_CPU_TO_GPU);
 
-        m_ShadowUniform.lightDir = Vec4(0.5f, -0.7f, 0.5f, 0.002f);
+        m_ShadowUniform.lightDir = Vec4(0.5f, -0.7f, 0.5f, 0.005f);
         m_ShadowUniform.shadowMapSize = Vec2(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
-        m_ShadowUniform.normalBias = 0.05f;
+        m_ShadowUniform.normalBias = 0.1f;
 
         LOG_INFO("[Renderer] Shadow resources created ({}x{} D32)", SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
     }
@@ -358,10 +359,10 @@ namespace Manro {
     }
 
     void Renderer::RenderShadowPass(VkCommandBuffer cb) {
-        if (!m_ShadowPipeline || m_CurrentFrameInstances.empty()) return;
+        u32 totalInstCount = static_cast<u32>(m_StaticInstances.size() + m_CurrentFrameInstances.size());
+        if (!m_ShadowPipeline || totalInstCount == 0) return;
 
         FrameData &frame = m_Frames[m_CurrentFrame];
-        u32 instanceCount = static_cast<u32>(m_CurrentFrameInstances.size());
 
         Vec3 lightDir = Vec3(m_ShadowUniform.lightDir);
         for (const auto &l: m_PendingLights)
@@ -434,7 +435,7 @@ namespace Manro {
         vkCmdDrawIndexedIndirectCount(cb,
                                       frame.shadowIndirectBuffer->GetHandle(), 0,
                                       frame.shadowCountBuffer->GetHandle(), 0,
-                                      instanceCount, sizeof(GpuDrawCommand));
+                                      totalInstCount, sizeof(GpuDrawCommand));
 
         vkCmdEndRendering(cb);
 
@@ -485,7 +486,13 @@ namespace Manro {
         vkResetCommandBuffer(frame.commandBuffer, 0);
         m_CurrentFrameInstances.clear();
         m_CurrentFrameCullData.clear();
+
         m_CurrentFrameStats.Reset();
+        m_CurrentFrameStats.drawCalls = (u32) m_StaticInstances.size();
+        m_CurrentFrameStats.instanceCount = (u32) m_StaticInstances.size();
+        for (const auto &inst: m_StaticInstances) {
+            m_CurrentFrameStats.triangleCount += inst.indexCount / 3;
+        }
 
         if (m_GuiLayer) m_GuiLayer->NewFrame();
 
@@ -513,14 +520,23 @@ namespace Manro {
         VkCommandBuffer cb = frame.commandBuffer;
         VkExtent2D ext = m_RenderExtent;
 
-        if (!m_CurrentFrameInstances.empty()) {
-            u32 instanceCount = (u32) m_CurrentFrameInstances.size();
-            frame.instanceBuffer->LoadData(
-                m_CurrentFrameInstances.data(),
-                sizeof(GpuMeshInstance) * instanceCount);
-            frame.cullDataBuffer->LoadData(
-                m_CurrentFrameCullData.data(),
-                sizeof(GpuCullData) * instanceCount);
+        u32 staticInstCount = (u32) m_StaticInstances.size();
+        u32 dynamicInstCount = (u32) m_CurrentFrameInstances.size();
+        u32 totalInstCount = staticInstCount + dynamicInstCount;
+
+        if (totalInstCount > 0) {
+            if (!frame.staticUploaded && staticInstCount > 0) {
+                frame.instanceBuffer->LoadData(m_StaticInstances.data(), sizeof(GpuMeshInstance) * staticInstCount, 0);
+                frame.cullDataBuffer->LoadData(m_StaticCullData.data(), sizeof(GpuCullData) * staticInstCount, 0);
+                frame.staticUploaded = true;
+            }
+            if (dynamicInstCount > 0) {
+                frame.instanceBuffer->LoadData(m_CurrentFrameInstances.data(),
+                                               sizeof(GpuMeshInstance) * dynamicInstCount,
+                                               sizeof(GpuMeshInstance) * staticInstCount);
+                frame.cullDataBuffer->LoadData(m_CurrentFrameCullData.data(), sizeof(GpuCullData) * dynamicInstCount,
+                                               sizeof(GpuCullData) * staticInstCount);
+            }
 
             vkCmdFillBuffer(cb, frame.countBuffer->GetHandle(), 0, sizeof(u32), 0);
 
@@ -544,26 +560,31 @@ namespace Manro {
             vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE,
                                     m_MeshCullPipeline->GetLayout(), 0, 1, &frame.meshCullSet, 0, nullptr);
 
-            MeshCullPushConstants meshPc{};
+            MeshCullPushConstants mcpc{};
             Mat4 proj = m_ProjectionMatrix;
             proj[1][1] *= -1;
             Mat4 viewProj = proj * m_ViewMatrix;
             Mat4 m = glm::transpose(viewProj);
             Vec4 r0 = m[0], r1 = m[1], r2 = m[2], r3 = m[3];
-            meshPc.planes[0] = r3 + r0;
-            meshPc.planes[1] = r3 - r0;
-            meshPc.planes[2] = r3 + r1;
-            meshPc.planes[3] = r3 - r1;
-            meshPc.planes[4] = r2;
-            meshPc.planes[5] = r3 - r2;
+            mcpc.planes[0] = r3 + r0;
+            mcpc.planes[1] = r3 - r0;
+            mcpc.planes[2] = r3 + r1;
+            mcpc.planes[3] = r3 - r1;
+            mcpc.planes[4] = r3 + r2;
+            mcpc.planes[5] = r3 - r2;
             for (int i = 0; i < 6; ++i) {
-                float len = glm::length(Vec3(meshPc.planes[i]));
-                meshPc.planes[i] /= len;
+                float len = glm::length(Vec3(mcpc.planes[i]));
+                mcpc.planes[i] /= len;
             }
-            meshPc.instanceCount = instanceCount;
+            mcpc.instanceCount = totalInstCount;
+            mcpc.cameraPos = Vec4(m_CameraPosition, 1.0f);
+            mcpc.maxDrawDistance = 10000.0f; // TODO: Could be exposed to settings
+
             vkCmdPushConstants(cb, m_MeshCullPipeline->GetLayout(),
-                               VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(meshPc), &meshPc);
-            vkCmdDispatch(cb, (instanceCount + 63) / 64, 1, 1);
+                               VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(MeshCullPushConstants), &mcpc);
+
+            u32 groupCount = (mcpc.instanceCount + 63) / 64;
+            vkCmdDispatch(cb, groupCount, 1, 1);
 
             VkBufferMemoryBarrier2 meshCullBarriers[2]{};
             meshCullBarriers[0].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
@@ -625,16 +646,16 @@ namespace Manro {
                 shadowPc.planes[1] = r3 - r0;
                 shadowPc.planes[2] = r3 + r1;
                 shadowPc.planes[3] = r3 - r1;
-                shadowPc.planes[4] = r2;
+                shadowPc.planes[4] = r3 + r2;
                 shadowPc.planes[5] = r3 - r2;
                 for (int i = 0; i < 6; ++i) {
                     float len = glm::length(Vec3(shadowPc.planes[i]));
                     shadowPc.planes[i] /= len;
                 }
-                shadowPc.instanceCount = instanceCount;
+                shadowPc.instanceCount = totalInstCount;
                 vkCmdPushConstants(cb, m_MeshCullPipeline->GetLayout(),
                                    VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(shadowPc), &shadowPc);
-                vkCmdDispatch(cb, (instanceCount + 63) / 64, 1, 1);
+                vkCmdDispatch(cb, (totalInstCount + 63) / 64, 1, 1);
             }
 
             VkBufferMemoryBarrier2 shadowCullBarriers[2]{};
@@ -669,40 +690,36 @@ namespace Manro {
                 u32 tilesX;
                 u32 tilesY;
                 Vec4 zParams;
-            } pc;
+            } cpc;
 
-            pc.view = m_ViewMatrix;
-            pc.proj = m_ProjectionMatrix;
-            pc.proj[1][1] *= -1;
-            pc.screenTile = Vec4((float) ext.width, (float) ext.height,
+            cpc.view = m_ViewMatrix;
+            cpc.proj = m_ProjectionMatrix;
+            cpc.proj[1][1] *= -1;
+            cpc.screenTile = Vec4((float) ext.width, (float) ext.height,
                                  (float) TILE_SIZE, (float) TILE_SIZE);
-            pc.lightCount = (u32) m_PendingLights.size();
-            pc.maxPerTile = MAX_LIGHTS_PER_TILE;
-            pc.tilesX = std::min((ext.width + TILE_SIZE - 1) / TILE_SIZE, kMaxTilesX);
-            pc.tilesY = std::min((ext.height + TILE_SIZE - 1) / TILE_SIZE, kMaxTilesY);
-            pc.zParams = Vec4(0.1f, 10000.f, 1.f, 0.f);
+            cpc.lightCount = (u32) m_PendingLights.size();
+            cpc.maxPerTile = MAX_LIGHTS_PER_TILE;
+            cpc.tilesX = std::min((ext.width + TILE_SIZE - 1) / TILE_SIZE, kMaxTilesX);
+            cpc.tilesY = std::min((ext.height + TILE_SIZE - 1) / TILE_SIZE, kMaxTilesY);
+            cpc.zParams = Vec4(0.1f, 10000.f, 1.f, 0.f);
 
             vkCmdPushConstants(cb, m_CullPipeline->GetLayout(),
-                               VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(pc), &pc);
-            vkCmdDispatch(cb, (pc.tilesX + 15) / 16, (pc.tilesY + 15) / 16, 1);
+                               VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(cpc), &cpc);
+            vkCmdDispatch(cb, cpc.tilesX, cpc.tilesY, 1);
 
-            VkBufferMemoryBarrier2 barriers[2]{};
-            barriers[0].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
-            barriers[0].srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-            barriers[0].srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
-            barriers[0].dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-            barriers[0].dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
-            barriers[0].buffer = frame.tileHeaderBuffer->GetHandle();
-            barriers[0].offset = 0;
-            barriers[0].size = VK_WHOLE_SIZE;
-            barriers[1] = barriers[0];
-            barriers[1].buffer = frame.tileLightIndexBuffer->GetHandle();
-            VkDependencyInfo dep{};
-            dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-            dep.bufferMemoryBarrierCount = 2;
-            dep.pBufferMemoryBarriers = barriers;
-            vkCmdPipelineBarrier2(cb, &dep);
+            VkMemoryBarrier2 cullMemBarrier{};
+            cullMemBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+            cullMemBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+            cullMemBarrier.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+            cullMemBarrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+            cullMemBarrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+            VkDependencyInfo cullDep{};
+            cullDep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+            cullDep.memoryBarrierCount = 1;
+            cullDep.pMemoryBarriers = &cullMemBarrier;
+            vkCmdPipelineBarrier2(cb, &cullDep);
         }
+
 
         {
             VkImageMemoryBarrier2 b{};
@@ -775,8 +792,76 @@ namespace Manro {
             vkCmdPipelineBarrier2(cb, &dep);
         }
 
+        m_CurrentClearColor = clearColor;
+    }
+
+    void Renderer::RenderQueue() {
+        FrameData &frame = m_Frames[m_CurrentFrame];
+        VkCommandBuffer cb = frame.commandBuffer;
+
+        u32 instanceCount = (u32) (m_StaticInstances.size() + m_CurrentFrameInstances.size());
+        if (instanceCount == 0) return;
+
+        VkRenderingAttachmentInfo depthAttOnly{};
+        depthAttOnly.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        depthAttOnly.imageView = m_DepthImage.view;
+        depthAttOnly.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        depthAttOnly.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depthAttOnly.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        depthAttOnly.clearValue.depthStencil = {1.f, 0};
+
+        VkRenderingInfo riZ{};
+        riZ.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+        riZ.renderArea.extent = m_RenderExtent;
+        riZ.layerCount = 1;
+        riZ.colorAttachmentCount = 0;
+        riZ.pDepthAttachment = &depthAttOnly;
+        vkCmdBeginRendering(cb, &riZ);
+
+        VkViewport vp{0.f, 0.f, (float) m_RenderExtent.width, (float) m_RenderExtent.height, 0.f, 1.f};
+        vkCmdSetViewport(cb, 0, 1, &vp);
+        VkRect2D scissor{{0, 0}, m_RenderExtent};
+        vkCmdSetScissor(cb, 0, 1, &scissor);
+
+        vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_ZPrepassPipeline->GetHandle());
+
+        VkDescriptorSet sets[] = {frame.pbrSet, m_Textures.GetBindlessSet()};
+        vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                m_ZPrepassPipeline->GetLayout(), 0, 2, sets, 0, nullptr);
+
+        vkCmdBindIndexBuffer(cb, m_Meshes.GetIndexBuffer()->GetHandle(), 0, VK_INDEX_TYPE_UINT32);
+        VkBuffer vbufs[2] = {m_Meshes.GetVertexBuffer()->GetHandle(), frame.instanceBuffer->GetHandle()};
+        VkDeviceSize offsets[2] = {0, 0};
+        vkCmdBindVertexBuffers(cb, 0, 2, vbufs, offsets);
+
+        vkCmdDrawIndexedIndirectCount(cb,
+                                      frame.indirectBuffer->GetHandle(), 0,
+                                      frame.countBuffer->GetHandle(), 0,
+                                      instanceCount, sizeof(GpuDrawCommand));
+
+        vkCmdEndRendering(cb);
+
+        VkImageMemoryBarrier2 depthBarrier{};
+        depthBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+        depthBarrier.srcStageMask =
+                VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+        depthBarrier.srcAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        depthBarrier.dstStageMask =
+                VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+        depthBarrier.dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+        depthBarrier.oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        depthBarrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        depthBarrier.image = m_DepthImage.image;
+        depthBarrier.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
+
+        VkDependencyInfo dep{};
+        dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        dep.imageMemoryBarrierCount = 1;
+        dep.pImageMemoryBarriers = &depthBarrier;
+        vkCmdPipelineBarrier2(cb, &dep);
+
         VkClearValue cv{};
-        cv.color = {clearColor.r, clearColor.g, clearColor.b, clearColor.a};
+        cv.color = {m_CurrentClearColor.r, m_CurrentClearColor.g, m_CurrentClearColor.b, m_CurrentClearColor.a};
 
         VkRenderingAttachmentInfo colorAtt{};
         colorAtt.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -795,50 +880,33 @@ namespace Manro {
             colorAtt.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         }
 
-        VkRenderingAttachmentInfo depthAtt{};
-        depthAtt.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        depthAtt.imageView = m_DepthImage.view;
-        depthAtt.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-        depthAtt.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        depthAtt.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        depthAtt.clearValue.depthStencil = {1.f, 0};
+        VkRenderingAttachmentInfo depthAttPbr{};
+        depthAttPbr.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        depthAttPbr.imageView = m_DepthImage.view;
+        depthAttPbr.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        depthAttPbr.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+        depthAttPbr.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 
-        VkRenderingInfo ri{};
-        ri.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-        ri.renderArea.extent = ext;
-        ri.layerCount = 1;
-        ri.colorAttachmentCount = 1;
-        ri.pColorAttachments = &colorAtt;
-        ri.pDepthAttachment = &depthAtt;
-        vkCmdBeginRendering(cb, &ri);
+        VkRenderingInfo riPbr{};
+        riPbr.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+        riPbr.renderArea.extent = m_RenderExtent;
+        riPbr.layerCount = 1;
+        riPbr.colorAttachmentCount = 1;
+        riPbr.pColorAttachments = &colorAtt;
+        riPbr.pDepthAttachment = &depthAttPbr;
+        vkCmdBeginRendering(cb, &riPbr);
 
-        VkViewport vp{0.f, 0.f, (float) ext.width, (float) ext.height, 0.f, 1.f};
         vkCmdSetViewport(cb, 0, 1, &vp);
-        VkRect2D scissor{{0, 0}, ext};
         vkCmdSetScissor(cb, 0, 1, &scissor);
-    }
-
-    void Renderer::RenderQueue() {
-        FrameData &frame = m_Frames[m_CurrentFrame];
-        VkCommandBuffer cb = frame.commandBuffer;
-
-        if (m_CurrentFrameInstances.empty()) return;
-
-        u32 instanceCount = (u32) m_CurrentFrameInstances.size();
 
         vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_PbrPipeline->GetHandle());
 
-        VkDescriptorSet sets[] = {frame.pbrSet, m_Textures.GetBindlessSet()};
+        VkDescriptorSet pbrSets[] = {frame.pbrSet, m_Textures.GetBindlessSet()};
         vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                m_PbrPipeline->GetLayout(), 0, 2, sets, 0, nullptr);
+                                m_PbrPipeline->GetLayout(), 0, 2, pbrSets, 0, nullptr);
 
         vkCmdBindIndexBuffer(cb, m_Meshes.GetIndexBuffer()->GetHandle(), 0, VK_INDEX_TYPE_UINT32);
 
-        VkBuffer vbufs[2] = {
-            m_Meshes.GetVertexBuffer()->GetHandle(),
-            frame.instanceBuffer->GetHandle()
-        };
-        VkDeviceSize offsets[2] = {0, 0};
         vkCmdBindVertexBuffers(cb, 0, 2, vbufs, offsets);
 
         vkCmdDrawIndexedIndirectCount(cb,
@@ -1070,6 +1138,85 @@ namespace Manro {
     void Renderer::DrawModel(const Model &model, const Mat4 &transform) {
         for (const auto &sm: model.GetSubMeshes())
             DrawMesh(sm.meshId, *sm.material, transform);
+    }
+
+    void Renderer::DrawModelStatic(const Model &model, const Mat4 &transform) {
+        for (const auto &sm: model.GetSubMeshes())
+            DrawMeshStatic(sm.meshId, *sm.material, transform);
+    }
+
+    void Renderer::DrawMeshStatic(MeshHandle meshId, MaterialInstance &material, const Mat4 &model) {
+        const auto *mesh = m_Meshes.Get(meshId);
+        if (!mesh) return;
+
+        u32 matIndex = material.GetRendererIndex();
+        if (material.IsDirty() || matIndex == 0xFFFFFFFF) {
+            const MaterialData &md = material.GetData();
+            auto it = m_MaterialCache.find(md);
+            if (it != m_MaterialCache.end()) {
+                matIndex = it->second;
+            } else {
+                matIndex = (u32) m_Materials.size();
+                m_Materials.push_back(md);
+                m_MaterialCache[md] = matIndex;
+                m_MaterialsDirty = true;
+            }
+            material.SetRendererIndex(matIndex);
+        }
+
+
+        GpuMeshInstance inst{};
+        inst.modelMatrix = model;
+
+        Vec3 s0 = Vec3(model[0]), s1 = Vec3(model[1]), s2 = Vec3(model[2]);
+        float l0 = glm::dot(s0, s0), l1 = glm::dot(s1, s1), l2 = glm::dot(s2, s2);
+
+        if (std::abs(l0 - 1.f) < 1e-4f && std::abs(l1 - 1.f) < 1e-4f && std::abs(l2 - 1.f) < 1e-4f) {
+            for (int i = 0; i < 3; ++i) {
+                inst.normalMatrix[i][0] = model[i][0];
+                inst.normalMatrix[i][1] = model[i][1];
+                inst.normalMatrix[i][2] = model[i][2];
+                inst.normalMatrix[i][3] = 0.f;
+            }
+        } else if (std::abs(l0 - l1) < 1e-4f && std::abs(l0 - l2) < 1e-4f) {
+            float invS2 = 1.f / l0;
+            for (int i = 0; i < 3; ++i) {
+                inst.normalMatrix[i][0] = model[i][0] * invS2;
+                inst.normalMatrix[i][1] = model[i][1] * invS2;
+                inst.normalMatrix[i][2] = model[i][2] * invS2;
+                inst.normalMatrix[i][3] = 0.f;
+            }
+        } else {
+            glm::mat3 n3 = glm::transpose(glm::inverse(glm::mat3(model)));
+            for (int i = 0; i < 3; ++i) {
+                inst.normalMatrix[i][0] = n3[i][0];
+                inst.normalMatrix[i][1] = n3[i][1];
+                inst.normalMatrix[i][2] = n3[i][2];
+                inst.normalMatrix[i][3] = 0.f;
+            }
+        }
+
+        inst.firstVertex = mesh->firstVertex;
+        inst.firstIndex = mesh->firstIndex;
+        inst.indexCount = mesh->indexCount;
+        inst.materialIndex = matIndex;
+        inst.center[0] = mesh->center.x;
+        inst.center[1] = mesh->center.y;
+        inst.center[2] = mesh->center.z;
+        inst.radius = mesh->radius;
+        inst.flags = 0;
+
+        GpuCullData cullData{};
+        Vec3 worldCenter = Vec3(model * Vec4(mesh->center, 1.f));
+        float scaleSq = std::max(l0, std::max(l1, l2));
+        cullData.center[0] = worldCenter.x;
+        cullData.center[1] = worldCenter.y;
+        cullData.center[2] = worldCenter.z;
+        cullData.radius = mesh->radius * std::sqrt(scaleSq);
+        cullData.instanceId = (u32) (m_StaticInstances.size() + m_CurrentFrameInstances.size());
+
+        m_StaticInstances.push_back(inst);
+        m_StaticCullData.push_back(cullData);
     }
 
     void Renderer::CreateDescriptorLayouts() {
@@ -1511,27 +1658,33 @@ namespace Manro {
         cfg.vertexInputBindings[1] = {1, sizeof(GpuMeshInstance), VK_VERTEX_INPUT_RATE_INSTANCE};
 
         cfg.vertexInputAttributes.resize(12);
-        cfg.vertexInputAttributes[0] = {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, position)};
-        cfg.vertexInputAttributes[1] = {1, 0, VK_FORMAT_R32G32B32_SFLOAT,    offsetof(Vertex, normal)};
-        cfg.vertexInputAttributes[2] = {2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, uv)};
-        cfg.vertexInputAttributes[3] = {3, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(Vertex, tangent)};
-        cfg.vertexInputAttributes[4] = {4, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(GpuMeshInstance, modelMatrix)};
-        cfg.vertexInputAttributes[5] = {5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(GpuMeshInstance, modelMatrix) + 16
+        cfg.vertexInputAttributes[0] = {0, 0, VK_FORMAT_R32G32B32_SFLOAT, (u32) offsetof(Vertex, position)};
+        cfg.vertexInputAttributes[1] = {1, 0, VK_FORMAT_R32G32B32_SFLOAT, (u32) offsetof(Vertex, normal)};
+        cfg.vertexInputAttributes[2] = {2, 0, VK_FORMAT_R32G32_SFLOAT, (u32) offsetof(Vertex, uv)};
+        cfg.vertexInputAttributes[3] = {3, 0, VK_FORMAT_R32G32B32A32_SFLOAT, (u32) offsetof(Vertex, tangent)};
+        cfg.vertexInputAttributes[4] = {4, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
+                                        (u32) offsetof(GpuMeshInstance, modelMatrix)};
+        cfg.vertexInputAttributes[5] = {5, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
+                                        (u32) offsetof(GpuMeshInstance, modelMatrix) + 16
         };
         cfg.vertexInputAttributes[6] = {
-            6, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(GpuMeshInstance, modelMatrix) + 32
+                6, 1, VK_FORMAT_R32G32B32A32_SFLOAT, (u32) offsetof(GpuMeshInstance, modelMatrix) + 32
         };
         cfg.vertexInputAttributes[7] = {
-            7, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(GpuMeshInstance, modelMatrix) + 48
+                7, 1, VK_FORMAT_R32G32B32A32_SFLOAT, (u32) offsetof(GpuMeshInstance, modelMatrix) + 48
         };
-        cfg.vertexInputAttributes[8] = {8, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(GpuMeshInstance, normalMatrix)};
+        cfg.vertexInputAttributes[8] = {8, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
+                                        (u32) offsetof(GpuMeshInstance, normalMatrix)};
         cfg.vertexInputAttributes[9] = {
-            9, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(GpuMeshInstance, normalMatrix) + 16
+                9, 1, VK_FORMAT_R32G32B32A32_SFLOAT, (u32) offsetof(GpuMeshInstance, normalMatrix) + 16
         };
         cfg.vertexInputAttributes[10] = {
-            10, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(GpuMeshInstance, normalMatrix) + 32
+                10, 1, VK_FORMAT_R32G32B32A32_SFLOAT, (u32) offsetof(GpuMeshInstance, normalMatrix) + 32
         };
-        cfg.vertexInputAttributes[11] = {11, 1, VK_FORMAT_R32_UINT, offsetof(GpuMeshInstance, materialIndex)};
+        cfg.vertexInputAttributes[11] = {11, 1, VK_FORMAT_R32_UINT, (u32) offsetof(GpuMeshInstance, materialIndex)};
+
+        cfg.depthWriteEnable = VK_FALSE;
+        cfg.depthCompareOp = VK_COMPARE_OP_EQUAL;
 
         PipelineKey key{};
         key.vertHash = PipelineCache::HashSpirV(vertSpv);
@@ -1549,6 +1702,15 @@ namespace Manro {
             m_PbrPipeline->BuildGraphics(vertSpv, fragSpv, cfg);
             return m_PbrPipeline->GetHandle();
         });
+
+        PipelineConfigParams zCfg = cfg;
+        zCfg.fragmentEntryPoint = "";
+        zCfg.colorAttachmentFormat = VK_FORMAT_UNDEFINED;
+        zCfg.depthWriteEnable = VK_TRUE;
+        zCfg.depthCompareOp = VK_COMPARE_OP_LESS;
+
+        m_ZPrepassPipeline = CreateScope<Pipeline>(m_Context);
+        m_ZPrepassPipeline->BuildGraphics(vertSpv, {}, zCfg);
 
         VkDescriptorSetLayoutBinding stub{0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr
         };
@@ -1666,25 +1828,27 @@ namespace Manro {
         cfg.vertexInputBindings[1] = {1, sizeof(GpuMeshInstance), VK_VERTEX_INPUT_RATE_INSTANCE};
 
         cfg.vertexInputAttributes.resize(9);
-        cfg.vertexInputAttributes[0] = {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, position)};
-        cfg.vertexInputAttributes[1] = {1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, normal)};
-        cfg.vertexInputAttributes[2] = {4, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(GpuMeshInstance, modelMatrix)};
+        cfg.vertexInputAttributes[0] = {0, 0, VK_FORMAT_R32G32B32_SFLOAT, (u32) offsetof(Vertex, position)};
+        cfg.vertexInputAttributes[1] = {1, 0, VK_FORMAT_R32G32B32_SFLOAT, (u32) offsetof(Vertex, normal)};
+        cfg.vertexInputAttributes[2] = {4, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
+                                        (u32) offsetof(GpuMeshInstance, modelMatrix)};
         cfg.vertexInputAttributes[3] = {
-            5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(GpuMeshInstance, modelMatrix) + 16
+                5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, (u32) offsetof(GpuMeshInstance, modelMatrix) + 16
         };
         cfg.vertexInputAttributes[4] = {
             6, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
-            offsetof(GpuMeshInstance, modelMatrix) + 32
+            (u32) offsetof(GpuMeshInstance, modelMatrix) + 32
         };
         cfg.vertexInputAttributes[5] = {
-            7, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(GpuMeshInstance, modelMatrix) + 48
+                7, 1, VK_FORMAT_R32G32B32A32_SFLOAT, (u32) offsetof(GpuMeshInstance, modelMatrix) + 48
         };
-        cfg.vertexInputAttributes[6] = {8, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(GpuMeshInstance, normalMatrix)};
+        cfg.vertexInputAttributes[6] = {8, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
+                                        (u32) offsetof(GpuMeshInstance, normalMatrix)};
         cfg.vertexInputAttributes[7] = {
-            9, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(GpuMeshInstance, normalMatrix) + 16
+                9, 1, VK_FORMAT_R32G32B32A32_SFLOAT, (u32) offsetof(GpuMeshInstance, normalMatrix) + 16
         };
         cfg.vertexInputAttributes[8] = {
-            10, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(GpuMeshInstance, normalMatrix) + 32
+                10, 1, VK_FORMAT_R32G32B32A32_SFLOAT, (u32) offsetof(GpuMeshInstance, normalMatrix) + 32
         };
 
         m_ShadowPipeline = CreateScope<Pipeline>(m_Context);

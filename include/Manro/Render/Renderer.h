@@ -62,6 +62,8 @@ namespace Manro {
         VkDescriptorSet meshCullSet = VK_NULL_HANDLE;
         VkDescriptorSet compositeSet = VK_NULL_HANDLE;
         VkDescriptorSet shadowMeshCullSet = VK_NULL_HANDLE;
+
+        bool staticUploaded = false;
     };
 
     class IWindow;
@@ -140,8 +142,10 @@ namespace Manro {
 
     struct MeshCullPushConstants {
         Vec4 planes[6];
+        Vec4 cameraPos;
         u32 instanceCount;
-        u32 _pad[3];
+        float maxDrawDistance;
+        u32 _pad[2];
     };
 
     struct GpuCullData {
@@ -195,7 +199,11 @@ namespace Manro {
 
         void DrawMesh(MeshHandle mesh, MaterialInstance &mat, const Mat4 &model);
 
+        void DrawMeshStatic(MeshHandle mesh, MaterialInstance &mat, const Mat4 &model);
+
         void DrawModel(const Model &model, const Mat4 &transform);
+
+        void DrawModelStatic(const Model &model, const Mat4 &transform);
 
         void AddLight(const LightData &light);
 
@@ -294,6 +302,9 @@ namespace Manro {
         Scope<ImGuiLayer> m_GuiLayer;
         Ref<Material> m_DefaultMaterial;
 
+        std::vector<GpuMeshInstance> m_StaticInstances;
+        std::vector<GpuCullData> m_StaticCullData;
+
         VkDescriptorPool m_DescriptorPool = VK_NULL_HANDLE;
         VkDescriptorSetLayout m_PbrSetLayout = VK_NULL_HANDLE;
         VkDescriptorSetLayout m_CompositeSetLayout = VK_NULL_HANDLE;
@@ -302,6 +313,7 @@ namespace Manro {
         VkDescriptorSetLayout m_ShadowMeshCullSetLayout = VK_NULL_HANDLE;
 
         Scope<Pipeline> m_PbrPipeline;
+        Scope<Pipeline> m_ZPrepassPipeline;
         Scope<Pipeline> m_CompositePipeline;
         Scope<Pipeline> m_CullPipeline;
         Scope<Pipeline> m_MeshCullPipeline;
@@ -358,5 +370,6 @@ namespace Manro {
 
         RenderSettings m_Settings{};
         VkExtent2D m_RenderExtent{};
+        Vec4 m_CurrentClearColor{};
     };
 } // namespace Manro

@@ -45,8 +45,8 @@ namespace Manro {
     struct RenderSettings {
         float resolutionScale = 1.0f;
         AntiAliasingMode aaMode = AntiAliasingMode::MSAA;
-        VkSampleCountFlagBits msaaSamples = VK_SAMPLE_COUNT_8_BIT;
-        
+        VkSampleCountFlagBits msaaSamples = VK_SAMPLE_COUNT_4_BIT;
+
         bool enableVSync = true;
         bool enableFrustumCulling = true;
         

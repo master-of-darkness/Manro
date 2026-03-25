@@ -15,17 +15,23 @@ namespace Manro {
                                  const std::vector<u8> &fragmentSpv,
                                  const PipelineConfigParams &config) {
         VkShaderModule vertModule = CreateShaderModule(vertexSpv);
-        VkShaderModule fragModule = CreateShaderModule(fragmentSpv);
+        VkShaderModule fragModule = VK_NULL_HANDLE;
 
+        u32 stageCount = 1;
         VkPipelineShaderStageCreateInfo stages[2]{};
         stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
         stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
         stages[0].module = vertModule;
         stages[0].pName = config.vertexEntryPoint.c_str();
-        stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-        stages[1].module = fragModule;
-        stages[1].pName = config.fragmentEntryPoint.c_str();
+
+        if (!fragmentSpv.empty() && !config.fragmentEntryPoint.empty()) {
+            fragModule = CreateShaderModule(fragmentSpv);
+            stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+            stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+            stages[1].module = fragModule;
+            stages[1].pName = config.fragmentEntryPoint.c_str();
+            stageCount = 2;
+        }
 
         std::vector<VkDynamicState> dynamicStates = {
             VK_DYNAMIC_STATE_VIEWPORT,
@@ -69,21 +75,20 @@ namespace Manro {
         multisampling.rasterizationSamples = config.msaaSamples;
 
         VkPipelineColorBlendAttachmentState blendAttachment{};
-        blendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                                         VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        blendAttachment.colorWriteMask = config.colorWriteMask;
         blendAttachment.blendEnable = VK_FALSE;
 
         VkPipelineColorBlendStateCreateInfo colorBlend{};
         colorBlend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
         colorBlend.logicOpEnable = VK_FALSE;
-        colorBlend.attachmentCount = 1;
-        colorBlend.pAttachments = &blendAttachment;
+        colorBlend.attachmentCount = config.colorAttachmentFormat != VK_FORMAT_UNDEFINED ? 1 : 0;
+        colorBlend.pAttachments = config.colorAttachmentFormat != VK_FORMAT_UNDEFINED ? &blendAttachment : nullptr;
 
         VkPipelineDepthStencilStateCreateInfo depthStencil{};
         depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
         depthStencil.depthTestEnable = VK_TRUE;
-        depthStencil.depthWriteEnable = VK_TRUE;
-        depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+        depthStencil.depthWriteEnable = config.depthWriteEnable;
+        depthStencil.depthCompareOp = config.depthCompareOp;
         depthStencil.depthBoundsTestEnable = VK_FALSE;
         depthStencil.stencilTestEnable = VK_FALSE;
 
@@ -109,14 +114,19 @@ namespace Manro {
 
         VkPipelineRenderingCreateInfo renderingInfo{};
         renderingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-        renderingInfo.colorAttachmentCount = 1;
-        renderingInfo.pColorAttachmentFormats = &config.colorAttachmentFormat;
+        if (config.colorAttachmentFormat != VK_FORMAT_UNDEFINED) {
+            renderingInfo.colorAttachmentCount = 1;
+            renderingInfo.pColorAttachmentFormats = &config.colorAttachmentFormat;
+        } else {
+            renderingInfo.colorAttachmentCount = 0;
+            renderingInfo.pColorAttachmentFormats = nullptr;
+        }
         renderingInfo.depthAttachmentFormat = config.depthAttachmentFormat;
 
         VkGraphicsPipelineCreateInfo pipelineInfo{};
         pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
         pipelineInfo.pNext = &renderingInfo;
-        pipelineInfo.stageCount = 2;
+        pipelineInfo.stageCount = stageCount;
         pipelineInfo.pStages = stages;
         pipelineInfo.pVertexInputState = &vertexInput;
         pipelineInfo.pInputAssemblyState = &inputAssembly;
@@ -133,7 +143,8 @@ namespace Manro {
             VK_SUCCESS)
             throw std::runtime_error("Failed to create graphics pipeline!");
 
-        vkDestroyShaderModule(m_Context.GetDevice(), fragModule, nullptr);
+        if (fragModule != VK_NULL_HANDLE)
+            vkDestroyShaderModule(m_Context.GetDevice(), fragModule, nullptr);
         vkDestroyShaderModule(m_Context.GetDevice(), vertModule, nullptr);
     }
 

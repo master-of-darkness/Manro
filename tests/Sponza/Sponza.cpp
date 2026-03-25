@@ -13,7 +13,7 @@
 #include <random>
 #include <stdexcept>
 
-static constexpr auto kSponzaPath = "models/sponza.obj";
+static constexpr auto kSponzaPath = "models/sponza/Sponza.gltf";
 static float kFov = 100.f;
 static constexpr float kNearZ = 1.f;
 static constexpr float kFarZ = 10000.f;
@@ -89,6 +89,7 @@ void Sponza::Initialize() {
 
     Manro::RenderSettings settings{};
     settings.msaaSamples = VK_SAMPLE_COUNT_8_BIT;
+    settings.enableVSync = false;
 
     m_Renderer = Manro::CreateScope<Manro::Renderer>(*wm.Get(m_Window), kWindowWidth, kWindowHeight, settings);
     LOG_INFO("[SponzaTest] Renderer initialized.");
@@ -182,7 +183,7 @@ void Sponza::LoadScene() {
         return;
     }
     m_Model = std::move(models[0]);
-    LOG_INFO("[SponzaTest] Sponza loaded: {} sub-meshes", m_Model->GetSubMeshes().size());
+    if (m_Model) m_Renderer->DrawModelStatic(*m_Model, glm::scale(glm::mat4(1.0f), glm::vec3(100.0f)));
 }
 
 void Sponza::Render(const float dt) {
@@ -226,7 +227,6 @@ void Sponza::Render(const float dt) {
             m_Renderer->AddLight(l);
     }
 
-    if (m_Model) m_Renderer->DrawModel(*m_Model, Manro::Mat4{1.0f});
 
     Manro::Vec4 clearColor = {0.02f, 0.02f, 0.05f, 1.f};
     if (sunAltitude > 0.0f) {

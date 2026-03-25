@@ -28,7 +28,10 @@ struct GpuDrawCommand {
 
 struct CullPushConstants {
     float4 planes[6];
+    float4 cameraPos;
     uint instanceCount;
+    float maxDrawDistance;
+    uint _pad[2];
 };
 
 [[vk::binding(0, 0)]]
@@ -58,12 +61,22 @@ void main(uint3 dtid : SV_DispatchThreadID) {
     float worldRadius = cull.radius;
 
     bool visible = true;
-    for (int i = 0; i < 6; ++i) {
-        float4 plane = pc.planes[i];
-        float dist = dot(plane.xyz, worldCenter) + plane.w;
-        if (dist < -worldRadius) {
-            visible = false;
-            break;
+
+    float3 camToCenter = worldCenter - pc.cameraPos.xyz;
+    float distSq = dot(camToCenter, camToCenter);
+    float maxDist = pc.maxDrawDistance + worldRadius;
+    if (distSq > maxDist * maxDist) {
+        visible = false;
+    }
+
+    if (visible) {
+        for (int i = 0; i < 6; ++i) {
+            float4 plane = pc.planes[i];
+            float dist = dot(plane.xyz, worldCenter) + plane.w;
+            if (dist < -worldRadius) {
+                visible = false;
+                break;
+            }
         }
     }
 
