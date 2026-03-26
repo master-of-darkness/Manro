@@ -64,11 +64,11 @@ namespace Manro {
                 if (!sd.normalTexturePath.empty()) {
                     auto cacheIt = textureCache.find(sd.normalTexturePath);
                     if (cacheIt != textureCache.end()) {
-                        material->GetData().normalTexture = static_cast<uint16_t>(cacheIt->second + 1);
+                        material->ModifyData().normalTexture = static_cast<uint16_t>(cacheIt->second + 1);
                     }
                 }
 
-                auto &matData = material->GetData();
+                auto &matData = material->ModifyData();
                 matData.pbrBaseColorFactor = sd.baseColorFactor;
                 matData.pbrMetallicFactor = sd.metallicFactor;
                 matData.pbrRoughnessFactor = sd.roughnessFactor;

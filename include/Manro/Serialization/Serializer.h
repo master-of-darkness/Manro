@@ -5,7 +5,7 @@
 #include <cstring>
 #include <type_traits>
 
-namespace Engine {
+namespace Manro {
     class BinaryArchive {
     public:
         BinaryArchive() = default;
@@ -75,4 +75,4 @@ namespace Engine {
     void Deserialize(Archive& archive) { \
         archive.Read(__VA_ARGS__); \
     }
-} // namespace Engine
+} // namespace Manro

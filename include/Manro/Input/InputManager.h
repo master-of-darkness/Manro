@@ -18,7 +18,6 @@ namespace Manro {
         InputManager &operator=(const InputManager &) = delete;
 
         void SetBackend(IInputBackend *backend) { m_Backend = backend; }
-        void SetActionMap(IInputActionMap *map) { m_ActionMap = map; }
 
         UserCmd Poll();
 

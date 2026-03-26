@@ -1,6 +1,7 @@
 #include <Manro/Render/MeshManager.h>
 #include <Manro/Resource/ModelLoader.h>
-#include <Manro/Render/Vulkan/VulkanContext.h>
+#include "Backend/Vulkan/VulkanContext.h"
+#include "Backend/Vulkan/Buffer.h"
 #include <Manro/Core/Logger.h>
 
 namespace Manro {
@@ -12,6 +13,8 @@ namespace Manro {
                                              VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                                              VMA_MEMORY_USAGE_CPU_TO_GPU);
     }
+
+    MeshManager::~MeshManager() = default;
 
     MeshHandle MeshManager::Upload(const ModelData &data) {
         if (data.vertices.empty() || data.indices.empty()) return kInvalidMesh;

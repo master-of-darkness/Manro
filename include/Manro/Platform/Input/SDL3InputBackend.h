@@ -11,8 +11,6 @@ namespace Manro {
     public:
         void ProcessEvent(const SDL_Event &event) override;
 
-        void OnFrameEnd() override;
-
         bool IsKeyDown(Key k) const;
 
         RawMouseDelta ConsumeMouseDelta();

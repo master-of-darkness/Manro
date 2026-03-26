@@ -19,9 +19,6 @@ namespace Manro {
 
         VkBuffer GetHandle() const { return m_Buffer; }
         VkDeviceSize GetSize() const { return m_Size; }
-
-        VkDeviceAddress GetDeviceAddress() const;
-
     private:
         const VulkanContext &m_Context;
         VkBuffer m_Buffer{nullptr};

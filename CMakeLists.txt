@@ -325,14 +325,15 @@ add_custom_target(EmbedShaders DEPENDS ${EMBEDDED_SHADER_HEADERS})
 
 add_library(Engine STATIC
         src/Core/EngineContext.cpp
+        src/Core/EngineLoop.cpp
         src/Core/Logger.cpp
         src/Core/JobSystem.cpp
         src/Core/VirtualFS.cpp
         src/Core/EmbeddedShaders.cpp
-        src/Scene/SceneManager.cpp
         src/Input/InputManager.cpp
         src/Networking/NetworkClient.cpp
         src/Networking/NetworkServer.cpp
+        src/Render/Material.cpp
         src/Render/Vulkan/VulkanContext.cpp
         src/Render/Vulkan/VulkanHelpers.cpp
         src/Render/Vulkan/Swapchain.cpp
@@ -342,6 +343,10 @@ add_library(Engine STATIC
         src/Render/Vulkan/PipelineCache.cpp
         src/Render/RenderGraph.cpp
         src/Render/Renderer.cpp
+        src/Render/RHI/StubRenderDevice.cpp
+        src/Render/RHI/VulkanCommandList.cpp
+        src/Render/SceneRenderer.cpp
+        src/Render/UIRenderer.cpp
         src/Render/TextureManager.cpp
         src/Render/MeshManager.cpp
         src/Render/Model.cpp
@@ -363,6 +368,7 @@ add_library(Engine STATIC
         deps/imgui/imgui_demo.cpp
         deps/imgui/backends/imgui_impl_sdl3.cpp
         deps/imgui/backends/imgui_impl_vulkan.cpp
+        src/Render/SceneRenderer.cpp
 )
 if (WIN32)
     set_source_files_properties(
@@ -386,6 +392,7 @@ target_include_directories(Engine PUBLIC
         ${stb_SOURCE_DIR}
         deps/mikktspace
 )
+target_include_directories(Engine PRIVATE src/Render)
 
 target_compile_definitions(Engine PUBLIC VK_NO_PROTOTYPES)
 
@@ -417,7 +424,7 @@ target_compile_options(Engine PRIVATE
         $<$<CONFIG:Release>:/O2 /Ob3 /GL /DNDEBUG /GS->
         >
         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:
-        -Wall -Wextra -Wno-unused-parameter
+        -Wall -Wextra -Wno-unused-parameter -Wunused
         $<$<CONFIG:Release>:
         -O3 -DNDEBUG
         -fvisibility=hidden

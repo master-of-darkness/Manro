@@ -72,9 +72,6 @@ namespace Manro {
         }
     }
 
-    void SDL3InputBackend::OnFrameEnd() {
-    }
-
     bool SDL3InputBackend::IsKeyDown(Key k) const {
         auto idx = static_cast<size_t>(k);
         return idx < m_KeyDown.size() && m_KeyDown[idx];

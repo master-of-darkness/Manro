@@ -1,20 +1,390 @@
-#include <Manro/Render/Renderer.h>
-#include <Manro/Render/Vulkan/VulkanHelpers.h>
+﻿#include <Manro/Render/Renderer.h>
+#include "Backend/Vulkan/VulkanHelpers.h"
 #include <Manro/Core/Logger.h>
 #include <Manro/Core/VirtualFS.h>
 #include <Manro/Render/Model.h>
+#include <Manro/Render/RHI/IRenderDevice.h>
+#include <Manro/Render/SceneRenderer.h>
+#include <Manro/Render/UIRenderer.h>
 #include <stdexcept>
 #include <glm/gtc/matrix_transform.hpp>
 
+
+#include "Backend/Vulkan/VulkanContext.h"
+#include "Backend/Vulkan/Swapchain.h"
+#include "Backend/Vulkan/Buffer.h"
+#include "Backend/Vulkan/Pipeline.h"
+#include "Backend/Vulkan/DescriptorAllocator.h"
+#include "Backend/Vulkan/PipelineCache.h"
+
 namespace Manro {
+
+    struct FrameData {
+        VkCommandPool commandPool = VK_NULL_HANDLE;
+        VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
+
+        Scope<Buffer> uboBuffer;
+        Scope<Buffer> lightBuffer;
+        Scope<Buffer> instanceBuffer;
+        Scope<Buffer> cullDataBuffer;
+        Scope<Buffer> indirectBuffer;
+        Scope<Buffer> countBuffer;
+        Scope<Buffer> tileHeaderBuffer;
+        Scope<Buffer> tileLightIndexBuffer;
+        Scope<Buffer> shadowIndirectBuffer;
+        Scope<Buffer> shadowCountBuffer;
+
+        VkDescriptorSet pbrSet = VK_NULL_HANDLE;
+        VkDescriptorSet cullSet = VK_NULL_HANDLE;
+        VkDescriptorSet meshCullSet = VK_NULL_HANDLE;
+        VkDescriptorSet compositeSet = VK_NULL_HANDLE;
+        VkDescriptorSet shadowMeshCullSet = VK_NULL_HANDLE;
+
+        bool staticUploaded = false;
+    };
+
+    struct UniformBufferObject {
+        Mat4 model;
+        Mat4 view;
+        Mat4 proj;
+        Vec4 camPos;
+        float exposure{1.0f};
+        float gamma{2.2f};
+        float prefilteredCubeMipLevels{1.0f};
+        float scaleIBLAmbient{1.0f};
+        int lightCount{0};
+        int padding0{0};
+        float padding1{0.0f};
+        float padding2{0.0f};
+        Vec2 screenDimensions;
+        float nearZ{0.1f};
+        float farZ{1000.0f};
+        float slicesZ{1.0f};
+        float _pad3{0.0f};
+        Mat4 reflectionVP;
+        int reflectionEnabled{0};
+        int reflectionPass{0};
+        Vec2 _reflectPad0;
+        Vec4 clipPlaneWS;
+        float reflectionIntensity{1.0f};
+        int enableRayQueryReflections{0};
+        int enableRayQueryTransparency{0};
+        float _padReflect[1]{};
+        int geometryInfoCount{0};
+        int _padGeo[3]{};
+        Vec4 _rqReservedWorldPos;
+        int materialCount{0};
+        int _padMat[3]{};
+    };
+
+    struct ShadowUniformData {
+        Mat4 lightViewProj;
+        Vec4 lightDir;
+        Vec2 shadowMapSize;
+        float normalBias;
+        float _pad;
+    };
+
+    struct ShadowPushConstants {
+        Mat4 lightViewProj;
+    };
+
+    struct PbrPushConstants {
+        Vec4 baseColorFactor{1.f, 1.f, 1.f, 1.f};
+        float metallicFactor{1.f};
+        float roughnessFactor{1.f};
+        int baseColorTextureSet{-1};
+        int physicalDescriptorTextureSet{-1};
+        int normalTextureSet{-1};
+        int occlusionTextureSet{-1};
+        int emissiveTextureSet{-1};
+        float alphaMask{0.f};
+        float alphaMaskCutoff{0.5f};
+        float _pad0[3];
+        Vec3 emissiveFactor{0.f, 0.f, 0.f};
+        float emissiveStrength{1.f};
+        float transmissionFactor{0.f};
+        int useSpecGlossWorkflow{0};
+        float glossinessFactor{1.f};
+        float _pad1;
+        Vec3 specularFactor{1.f, 1.f, 1.f};
+        float ior{1.5f};
+        int hasEmissiveStrengthExt{0};
+        float _pad2;
+    };
+
+    struct MeshCullPushConstants {
+        Vec4 planes[6];
+        Vec4 cameraPos;
+        u32 instanceCount;
+        float maxDrawDistance;
+        u32 _pad[2];
+    };
+
+    struct GpuCullData {
+        float center[3];
+        float radius;
+        u32 instanceId;
+        u32 _pad[3];
+    };
+
+    struct GpuMeshInstance {
+        Mat4 modelMatrix;
+        float normalMatrix[3][4];
+        u32 materialIndex;
+        u32 firstVertex;
+        u32 firstIndex;
+        u32 indexCount;
+        float center[3];
+        float radius;
+        u32 flags;
+        u32 _pad[3];
+    };
+
+    struct GpuDrawCommand {
+        u32 indexCount;
+        u32 instanceCount;
+        u32 firstIndex;
+        int vertexOffset;
+        u32 firstInstance;
+    };
+
+    class RendererImpl {
+    public:
+        RendererImpl(IWindow &window, u32 width, u32 height, const RenderSettings &settings);
+
+        ~RendererImpl();
+
+        bool BeginFrame();
+
+        void BeginRendering(Vec4 clearColor);
+
+        void RenderQueue();
+
+        void EndRendering();
+
+        void EndFrameAndPresent();
+
+        void DrawMesh(MeshHandle mesh, MaterialInstance &mat, const Mat4 &model);
+
+        void DrawMeshStatic(MeshHandle mesh, MaterialInstance &mat, const Mat4 &model);
+
+        void DrawModel(const Model &model, const Mat4 &transform);
+
+        void DrawModelStatic(const Model &model, const Mat4 &transform);
+
+        void AddLight(const LightData &light);
+
+        void ClearLights();
+
+        void SetViewProjection(const Mat4 &view, const Mat4 &proj) {
+            m_ViewMatrix = view;
+            m_ProjectionMatrix = proj;
+        }
+
+        void SetCameraPosition(const Vec3 &pos) { m_CameraPosition = pos; }
+
+        MeshHandle UploadMesh(const ModelData &data) { return m_Meshes.Upload(data); }
+
+        TextureHandle UploadTexture(const TextureData &data) { return m_Textures.Upload(data); }
+
+        Ref<Material> GetDefaultMaterial() const { return m_DefaultMaterial; }
+
+        Scope<MaterialInstance> CreateMaterialInstance(Ref<Material> mat);
+
+        void OnResize(u32 width, u32 height);
+
+        float GetAspectRatio() const {
+            if (m_PendingHeight == 0) return 1.f;
+            return static_cast<float>(m_PendingWidth) / static_cast<float>(m_PendingHeight);
+        }
+
+        VulkanContext &GetContext() { return m_Context; }
+
+        TextureManager &GetTextures() { return m_Textures; }
+
+        MeshManager &GetMeshes() { return m_Meshes; }
+
+        void SetSettings(const RenderSettings &settings);
+
+        const RenderSettings &GetSettings() const { return m_Settings; }
+
+        RenderSettings &GetSettings() { return m_Settings; }
+
+        const FrameStats &GetLastFrameStats() const { return m_LastFrameStats; }
+
+        void GetVramStats(u64 &usage, u64 &budget) const {
+            if (m_RhiDevice) {
+                const auto info = m_RhiDevice->GetAdapterInfo();
+                usage = info.vramUsage;
+                budget = info.vramBudget;
+                if (usage || budget) return;
+            }
+            m_Context.GetVramStats(usage, budget);
+        }
+
+        std::string GetAdapterName() const {
+            if (m_RhiDevice) {
+                const auto info = m_RhiDevice->GetAdapterInfo();
+                if (info.name[0] != '\0') return info.name;
+            }
+            VkPhysicalDeviceProperties props{};
+            vkGetPhysicalDeviceProperties(m_Context.GetPhysicalDevice(), &props);
+            return props.deviceName;
+        }
+
+    private:
+        void CreateOffscreenResources(u32 w, u32 h);
+
+        void CreateDepthResources(u32 w, u32 h);
+
+        void CreateColorResources(u32 w, u32 h);
+
+        void CreateShadowResources();
+
+        void CreateDescriptorLayouts();
+
+        void CreateDescriptorPool();
+
+        void CreateGpuBuffers();
+
+        void CreateCommandBuffers();
+
+        void CreateSyncObjects();
+
+        void BuildPbrPipeline();
+
+        void BuildCompositePipeline();
+
+        void BuildCullPipeline();
+
+        void BuildShadowPipeline();
+
+        void UpdatePbrDescriptorSet(u32 fi);
+
+        void UpdatePbrDescriptorSetShadow(u32 fi);
+
+        void UpdateCompositeDescriptorSet(u32 fi);
+
+        void RecreateSwapchain();
+
+        void UploadLights(u32 frameIndex);
+
+        void RenderShadowPass(VkCommandBuffer cb);
+
+        Mat4 ComputeLightViewProj(const Vec3 &lightDir) const;
+
+        void FinalizeFrameAndPresent(VkCommandBuffer cb);
+
+        VulkanContext m_Context;
+        Scope<RHI::IRenderDevice> m_RhiDevice;
+        Scope<RHI::VulkanCommandList> m_VulkanCommandList;
+        Scope<Swapchain> m_Swapchain;
+        Scope<SceneRenderer> m_SceneRenderer;
+        Scope<UIRenderer> m_UIRenderer;
+
+        TextureManager m_Textures;
+        MeshManager m_Meshes;
+
+        RHI::PipelineHandle m_PbrPipelineHandle{};
+        RHI::PipelineHandle m_ZPrepassPipelineHandle{};
+        RHI::PipelineHandle m_CompositePipelineHandle{};
+        RHI::PipelineHandle m_ShadowPipelineHandle{};
+        RHI::PipelineHandle m_CullPipelineHandle{};
+        RHI::PipelineHandle m_MeshCullPipelineHandle{};
+        RHI::PipelineHandle m_ShadowMeshCullPipelineHandle{};
+
+        void ImportPipelinesToRHI();
+
+        PerFrameAllocator m_PerFrameAlloc[MAX_FRAMES_IN_FLIGHT];
+        PersistentAllocator m_PersistentAlloc;
+        BindlessAllocator m_BindlessAlloc;
+        PipelineCache m_PipelineCache;
+        RenderGraph m_RenderGraph;
+
+        Scope<ImGuiLayer> m_GuiLayer;
+        Ref<Material> m_DefaultMaterial;
+
+        std::vector<GpuMeshInstance> m_StaticInstances;
+        std::vector<GpuCullData> m_StaticCullData;
+
+        VkDescriptorPool m_DescriptorPool = VK_NULL_HANDLE;
+        VkDescriptorSetLayout m_PbrSetLayout = VK_NULL_HANDLE;
+        VkDescriptorSetLayout m_CompositeSetLayout = VK_NULL_HANDLE;
+        VkDescriptorSetLayout m_CullSetLayout = VK_NULL_HANDLE;
+        VkDescriptorSetLayout m_MeshCullSetLayout = VK_NULL_HANDLE;
+        VkDescriptorSetLayout m_ShadowMeshCullSetLayout = VK_NULL_HANDLE;
+
+        Scope<Pipeline> m_PbrPipeline;
+        Scope<Pipeline> m_ZPrepassPipeline;
+        Scope<Pipeline> m_CompositePipeline;
+        Scope<Pipeline> m_CullPipeline;
+        Scope<Pipeline> m_MeshCullPipeline;
+        Scope<Pipeline> m_ShadowPipeline;
+
+        AllocatedImage m_OffscreenColor{};
+        AllocatedImage m_MsaaColorImage{};
+        AllocatedImage m_DepthImage{};
+        AllocatedImage m_ShadowMap{};
+
+        VkSampler m_OffscreenSampler = VK_NULL_HANDLE;
+        VkSampler m_ShadowSampler = VK_NULL_HANDLE;
+
+        VkFormat m_OffscreenFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+        VkFormat m_DepthFormat = VK_FORMAT_D32_SFLOAT;
+
+        RGTextureHandle m_RGOffscreen{};
+        RGTextureHandle m_RGDepth{};
+        RGTextureHandle m_RGSwapchain{};
+
+        std::vector<FrameData> m_Frames;
+        u32 m_CurrentFrame = 0;
+        u32 m_CurrentImageIndex = 0;
+
+        VkSemaphore m_TimelineSemaphore = VK_NULL_HANDLE;
+        u64 m_TimelineValue = 0;
+        std::array<u64, MAX_FRAMES_IN_FLIGHT> m_FrameBaseValue{};
+        std::vector<VkSemaphore> m_ImageAvailableSemaphores;
+        std::vector<VkSemaphore> m_PresentSemaphores;
+
+        std::vector<MaterialData> m_Materials;
+        std::unordered_map<MaterialData, u32, MaterialDataHash> m_MaterialCache;
+        Scope<Buffer> m_MaterialBuffer;
+        Scope<Buffer> m_TextureInfoBuffer;
+        bool m_MaterialsDirty = true;
+
+        Scope<Buffer> m_ShadowUniformBuffer;
+        ShadowUniformData m_ShadowUniform{};
+
+        std::vector<GpuMeshInstance> m_CurrentFrameInstances;
+        std::vector<GpuCullData> m_CurrentFrameCullData;
+        std::vector<LightData> m_PendingLights;
+
+        Mat4 m_ViewMatrix = Mat4(1.f);
+        Mat4 m_ProjectionMatrix = Mat4(1.f);
+        Vec3 m_CameraPosition = Vec3(0.f);
+
+        u32 m_PendingWidth = 0;
+        u32 m_PendingHeight = 0;
+        bool m_PendingResize = false;
+
+        FrameStats m_CurrentFrameStats{};
+        FrameStats m_LastFrameStats{};
+
+        RenderSettings m_Settings{};
+        VkExtent2D m_RenderExtent{};
+        Vec4 m_CurrentClearColor{};
+    };
+
     static constexpr u32 kMaxTilesX = 256u;
     static constexpr u32 kMaxTilesY = 144u;
     static constexpr u32 kMaxTiles = kMaxTilesX * kMaxTilesY;
 
-    Renderer::Renderer(IWindow &window, u32 width, u32 height,
+    RendererImpl::RendererImpl(IWindow &window, u32 width, u32 height,
                        const RenderSettings &settings)
-        : m_Context("GameEngine", window)
-          , m_Textures(m_Context)
+            : m_Context("GameEngine", window),
+              m_RhiDevice(RHI::IRenderDevice::CreateVulkan(window, width, height, settings.enableVSync)),
+              m_Textures(m_Context, m_BindlessAlloc)
           , m_Meshes(m_Context)
           , m_Settings(settings) {
         m_Swapchain = CreateScope<Swapchain>(m_Context, width, height, m_Settings.enableVSync);
@@ -36,7 +406,13 @@ namespace Manro {
 
         m_PersistentAlloc.Init(device, 64);
         m_BindlessAlloc.Init(device);
+        m_Textures.InitDefaults();
         m_PipelineCache.Init(device, "manro_pipeline_cache.bin");
+        m_VulkanCommandList = CreateScope<RHI::VulkanCommandList>();
+        if (m_RhiDevice) {
+            m_SceneRenderer = CreateScope<SceneRenderer>(*m_RhiDevice);
+            m_UIRenderer = CreateScope<UIRenderer>(*m_RhiDevice, m_RhiDevice->GetSwapchainFormat());
+        }
 
         CreateOffscreenResources(m_RenderExtent.width, m_RenderExtent.height);
         CreateColorResources(m_RenderExtent.width, m_RenderExtent.height);
@@ -51,6 +427,8 @@ namespace Manro {
         BuildShadowPipeline();
         CreateCommandBuffers();
         CreateSyncObjects();
+
+        ImportPipelinesToRHI();
 
         m_CurrentFrameInstances.reserve(MAX_INSTANCES);
         m_CurrentFrameCullData.reserve(MAX_INSTANCES);
@@ -85,7 +463,7 @@ namespace Manro {
         m_GuiLayer = CreateScope<ImGuiLayer>(guiInfo);
     }
 
-    Renderer::~Renderer() {
+    RendererImpl::~RendererImpl() {
         if (!m_Context.GetDevice()) return;
         vkDeviceWaitIdle(m_Context.GetDevice());
 
@@ -141,20 +519,26 @@ namespace Manro {
         if (m_Swapchain) m_Swapchain->Shutdown();
     }
 
-    void Renderer::AddLight(const LightData &light) {
+    void RendererImpl::AddLight(const LightData &light) {
+        if (m_SceneRenderer)
+            m_SceneRenderer->AddLight(light);
         if (m_PendingLights.size() < MAX_LIGHTS)
             m_PendingLights.push_back(light);
     }
 
-    void Renderer::ClearLights() { m_PendingLights.clear(); }
+    void RendererImpl::ClearLights() {
+        if (m_SceneRenderer)
+            m_SceneRenderer->ClearLights();
+        m_PendingLights.clear();
+    }
 
-    void Renderer::OnResize(u32 width, u32 height) {
+    void RendererImpl::OnResize(u32 width, u32 height) {
         m_PendingWidth = width;
         m_PendingHeight = height;
         m_PendingResize = true;
     }
 
-    void Renderer::SetSettings(const RenderSettings &settings) {
+    void RendererImpl::SetSettings(const RenderSettings &settings) {
         bool needsResize = (m_Settings.resolutionScale != settings.resolutionScale) ||
                            (m_Settings.msaaSamples != settings.msaaSamples) ||
                            (m_Settings.enableVSync != settings.enableVSync);
@@ -168,11 +552,11 @@ namespace Manro {
         }
     }
 
-    Scope<MaterialInstance> Renderer::CreateMaterialInstance(Ref<Material> material) {
+    Scope<MaterialInstance> RendererImpl::CreateMaterialInstance(Ref<Material> material) {
         return CreateScope<MaterialInstance>(material);
     }
 
-    void Renderer::RecreateSwapchain() {
+    void RendererImpl::RecreateSwapchain() {
         const u32 w = m_PendingWidth;
         const u32 h = m_PendingHeight;
         m_PendingResize = false;
@@ -188,6 +572,7 @@ namespace Manro {
         }
 
         m_Swapchain->Recreate(w, h, m_Settings.enableVSync);
+        if (m_RhiDevice) m_RhiDevice->OnResize(w, h);
 
         if (m_PresentSemaphores.size() != m_Swapchain->GetImageCount()) {
             for (auto s: m_PresentSemaphores)
@@ -221,7 +606,7 @@ namespace Manro {
         }
     }
 
-    void Renderer::CreateOffscreenResources(u32 width, u32 height) {
+    void RendererImpl::CreateOffscreenResources(u32 width, u32 height) {
         ImageCreateParams p{};
         p.width = width;
         p.height = height;
@@ -260,7 +645,7 @@ namespace Manro {
         });
     }
 
-    void Renderer::CreateDepthResources(u32 width, u32 height) {
+    void RendererImpl::CreateDepthResources(u32 width, u32 height) {
         ImageCreateParams p{};
         p.width = width;
         p.height = height;
@@ -270,7 +655,7 @@ namespace Manro {
         m_DepthImage = CreateImage(m_Context, p, VK_IMAGE_ASPECT_DEPTH_BIT);
     }
 
-    void Renderer::CreateColorResources(u32 width, u32 height) {
+    void RendererImpl::CreateColorResources(u32 width, u32 height) {
         if (m_Settings.msaaSamples == VK_SAMPLE_COUNT_1_BIT) return;
         ImageCreateParams p{};
         p.width = width;
@@ -281,7 +666,7 @@ namespace Manro {
         m_MsaaColorImage = CreateImage(m_Context, p);
     }
 
-    void Renderer::CreateShadowResources() {
+    void RendererImpl::CreateShadowResources() {
         {
             ImageCreateParams p{};
             p.width = SHADOW_MAP_SIZE;
@@ -339,7 +724,7 @@ namespace Manro {
         LOG_INFO("[Renderer] Shadow resources created ({}x{} D32)", SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
     }
 
-    Mat4 Renderer::ComputeLightViewProj(const Vec3 &lightDir) const {
+    Mat4 RendererImpl::ComputeLightViewProj(const Vec3 &lightDir) const {
         const float worldRadius = 3500.f;
         const float depth = 10000.f;
 
@@ -358,7 +743,7 @@ namespace Manro {
         return proj * view;
     }
 
-    void Renderer::RenderShadowPass(VkCommandBuffer cb) {
+    void RendererImpl::RenderShadowPass(VkCommandBuffer cb) {
         u32 totalInstCount = static_cast<u32>(m_StaticInstances.size() + m_CurrentFrameInstances.size());
         if (!m_ShadowPipeline || totalInstCount == 0) return;
 
@@ -459,7 +844,75 @@ namespace Manro {
             vkCmdPipelineBarrier2(cb, &dep);
         }
     }
-    bool Renderer::BeginFrame() {
+
+    void RendererImpl::FinalizeFrameAndPresent(VkCommandBuffer cb) {
+        {
+            VkImageMemoryBarrier2 b{};
+            b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+            b.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+            b.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+            b.dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
+            b.dstAccessMask = 0;
+            b.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            b.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+            b.image = m_Swapchain->GetImage(m_CurrentImageIndex);
+            b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            VkDependencyInfo dep{};
+            dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+            dep.imageMemoryBarrierCount = 1;
+            dep.pImageMemoryBarriers = &b;
+            vkCmdPipelineBarrier2(cb, &dep);
+        }
+
+        if (vkEndCommandBuffer(cb) != VK_SUCCESS)
+            throw std::runtime_error("Failed to record command buffer");
+
+        const u64 signalValue = ++m_TimelineValue;
+        m_FrameBaseValue[m_CurrentFrame] = signalValue;
+
+        VkCommandBufferSubmitInfo cmdInfo{};
+        cmdInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+        cmdInfo.commandBuffer = cb;
+
+        VkSemaphoreSubmitInfo waitInfo{};
+        waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+        waitInfo.semaphore = m_ImageAvailableSemaphores[m_CurrentFrame];
+        waitInfo.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+        VkSemaphoreSubmitInfo signalInfos[2]{};
+        signalInfos[0].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+        signalInfos[0].semaphore = m_TimelineSemaphore;
+        signalInfos[0].value = signalValue;
+        signalInfos[0].stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        signalInfos[1].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+        signalInfos[1].semaphore = m_PresentSemaphores[m_CurrentImageIndex];
+        signalInfos[1].stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+
+        VkSubmitInfo2 submit{};
+        submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+        submit.waitSemaphoreInfoCount = 1;
+        submit.pWaitSemaphoreInfos = &waitInfo;
+        submit.signalSemaphoreInfoCount = 2;
+        submit.pSignalSemaphoreInfos = signalInfos;
+        submit.commandBufferInfoCount = 1;
+        submit.pCommandBufferInfos = &cmdInfo;
+
+        if (vkQueueSubmit2(m_Context.GetGraphicsQueue(), 1, &submit, VK_NULL_HANDLE) != VK_SUCCESS)
+            throw std::runtime_error("Failed to submit command buffer");
+
+        if (m_Swapchain->Present(m_CurrentImageIndex, m_PresentSemaphores[m_CurrentImageIndex]))
+            m_PendingResize = true;
+
+        if (m_RhiDevice)
+            m_RhiDevice->EndFrame();
+
+        m_CurrentFrame = (m_CurrentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+    }
+
+    bool RendererImpl::BeginFrame() {
+        if (m_RhiDevice && !m_RhiDevice->BeginFrame())
+            return false;
+
         if (m_PendingResize || m_Swapchain->NeedsRecreate()) {
             RecreateSwapchain();
             return false;
@@ -495,18 +948,21 @@ namespace Manro {
         }
 
         if (m_GuiLayer) m_GuiLayer->NewFrame();
+        if (m_UIRenderer) m_UIRenderer->NewFrame();
 
         VkCommandBufferBeginInfo bi{};
         bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         if (vkBeginCommandBuffer(frame.commandBuffer, &bi) != VK_SUCCESS)
             throw std::runtime_error("Failed to begin command buffer");
+        if (m_VulkanCommandList)
+            m_VulkanCommandList->SetCommandBuffer(frame.commandBuffer);
 
         UploadLights(m_CurrentFrame);
 
         return true;
     }
 
-    void Renderer::UploadLights(u32 frameIndex) {
+    void RendererImpl::UploadLights(u32 frameIndex) {
         m_CurrentFrameStats.lightCount = static_cast<u32>(m_PendingLights.size());
         FrameData &frame = m_Frames[frameIndex];
         if (!m_PendingLights.empty())
@@ -515,7 +971,7 @@ namespace Manro {
                 sizeof(LightData) * m_PendingLights.size());
     }
 
-    void Renderer::BeginRendering(Vec4 clearColor) {
+    void RendererImpl::BeginRendering(Vec4 clearColor) {
         FrameData &frame = m_Frames[m_CurrentFrame];
         VkCommandBuffer cb = frame.commandBuffer;
         VkExtent2D ext = m_RenderExtent;
@@ -795,51 +1251,32 @@ namespace Manro {
         m_CurrentClearColor = clearColor;
     }
 
-    void Renderer::RenderQueue() {
+    void RendererImpl::RenderQueue() {
         FrameData &frame = m_Frames[m_CurrentFrame];
         VkCommandBuffer cb = frame.commandBuffer;
 
         u32 instanceCount = (u32) (m_StaticInstances.size() + m_CurrentFrameInstances.size());
         if (instanceCount == 0) return;
 
-        VkRenderingAttachmentInfo depthAttOnly{};
-        depthAttOnly.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        depthAttOnly.imageView = m_DepthImage.view;
-        depthAttOnly.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-        depthAttOnly.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        depthAttOnly.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        depthAttOnly.clearValue.depthStencil = {1.f, 0};
+        if (m_SceneRenderer && m_VulkanCommandList) {
+            RHI::VulkanZPrepassState zState{};
+            zState.extent = m_RenderExtent;
+            zState.depthView = m_DepthImage.view;
+            zState.pipeline = m_ZPrepassPipeline->GetHandle();
+            zState.pipelineLayout = m_ZPrepassPipeline->GetLayout();
+            zState.descriptorSets[0] = frame.pbrSet;
+            zState.descriptorSets[1] = m_Textures.GetBindlessSet();
+            zState.descriptorSetCount = 2;
+            zState.indexBuffer = m_Meshes.GetIndexBuffer()->GetHandle();
+            zState.vertexBuffers[0] = m_Meshes.GetVertexBuffer()->GetHandle();
+            zState.vertexBuffers[1] = frame.instanceBuffer->GetHandle();
+            zState.indirectBuffer = frame.indirectBuffer->GetHandle();
+            zState.countBuffer = frame.countBuffer->GetHandle();
+            zState.instanceCount = instanceCount;
+            zState.drawStride = sizeof(GpuDrawCommand);
 
-        VkRenderingInfo riZ{};
-        riZ.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-        riZ.renderArea.extent = m_RenderExtent;
-        riZ.layerCount = 1;
-        riZ.colorAttachmentCount = 0;
-        riZ.pDepthAttachment = &depthAttOnly;
-        vkCmdBeginRendering(cb, &riZ);
-
-        VkViewport vp{0.f, 0.f, (float) m_RenderExtent.width, (float) m_RenderExtent.height, 0.f, 1.f};
-        vkCmdSetViewport(cb, 0, 1, &vp);
-        VkRect2D scissor{{0, 0}, m_RenderExtent};
-        vkCmdSetScissor(cb, 0, 1, &scissor);
-
-        vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_ZPrepassPipeline->GetHandle());
-
-        VkDescriptorSet sets[] = {frame.pbrSet, m_Textures.GetBindlessSet()};
-        vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                m_ZPrepassPipeline->GetLayout(), 0, 2, sets, 0, nullptr);
-
-        vkCmdBindIndexBuffer(cb, m_Meshes.GetIndexBuffer()->GetHandle(), 0, VK_INDEX_TYPE_UINT32);
-        VkBuffer vbufs[2] = {m_Meshes.GetVertexBuffer()->GetHandle(), frame.instanceBuffer->GetHandle()};
-        VkDeviceSize offsets[2] = {0, 0};
-        vkCmdBindVertexBuffers(cb, 0, 2, vbufs, offsets);
-
-        vkCmdDrawIndexedIndirectCount(cb,
-                                      frame.indirectBuffer->GetHandle(), 0,
-                                      frame.countBuffer->GetHandle(), 0,
-                                      instanceCount, sizeof(GpuDrawCommand));
-
-        vkCmdEndRendering(cb);
+            m_SceneRenderer->SetZPrepassState(&zState);
+        }
 
         VkImageMemoryBarrier2 depthBarrier{};
         depthBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
@@ -860,66 +1297,40 @@ namespace Manro {
         dep.pImageMemoryBarriers = &depthBarrier;
         vkCmdPipelineBarrier2(cb, &dep);
 
-        VkClearValue cv{};
-        cv.color = {m_CurrentClearColor.r, m_CurrentClearColor.g, m_CurrentClearColor.b, m_CurrentClearColor.a};
+        if (m_SceneRenderer && m_VulkanCommandList) {
+            RHI::VulkanPbrPassState pbrState{};
+            pbrState.extent = m_RenderExtent;
+            pbrState.clearColor.color = {m_CurrentClearColor.r, m_CurrentClearColor.g, m_CurrentClearColor.b,
+                                         m_CurrentClearColor.a};
+            pbrState.msaaSamples = m_Settings.msaaSamples;
+            pbrState.msaaColorView = m_MsaaColorImage.view;
+            pbrState.offscreenColorView = m_OffscreenColor.view;
+            pbrState.depthView = m_DepthImage.view;
+            pbrState.pipeline = m_PbrPipeline->GetHandle();
+            pbrState.pipelineLayout = m_PbrPipeline->GetLayout();
+            pbrState.descriptorSets[0] = frame.pbrSet;
+            pbrState.descriptorSets[1] = m_Textures.GetBindlessSet();
+            pbrState.descriptorSetCount = 2;
+            pbrState.indexBuffer = m_Meshes.GetIndexBuffer()->GetHandle();
+            pbrState.vertexBuffers[0] = m_Meshes.GetVertexBuffer()->GetHandle();
+            pbrState.vertexBuffers[1] = frame.instanceBuffer->GetHandle();
+            pbrState.indirectBuffer = frame.indirectBuffer->GetHandle();
+            pbrState.countBuffer = frame.countBuffer->GetHandle();
+            pbrState.instanceCount = instanceCount;
+            pbrState.drawStride = sizeof(GpuDrawCommand);
 
-        VkRenderingAttachmentInfo colorAtt{};
-        colorAtt.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        colorAtt.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        colorAtt.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        colorAtt.clearValue = cv;
-
-        if (m_Settings.msaaSamples != VK_SAMPLE_COUNT_1_BIT) {
-            colorAtt.imageView = m_MsaaColorImage.view;
-            colorAtt.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            colorAtt.resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
-            colorAtt.resolveImageView = m_OffscreenColor.view;
-            colorAtt.resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        } else {
-            colorAtt.imageView = m_OffscreenColor.view;
-            colorAtt.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            m_SceneRenderer->SetPbrPassState(&pbrState);
+            m_SceneRenderer->Flush(*m_VulkanCommandList, m_ViewMatrix, m_ProjectionMatrix, m_CameraPosition,
+                                   m_PendingLights);
         }
-
-        VkRenderingAttachmentInfo depthAttPbr{};
-        depthAttPbr.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        depthAttPbr.imageView = m_DepthImage.view;
-        depthAttPbr.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-        depthAttPbr.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-        depthAttPbr.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-
-        VkRenderingInfo riPbr{};
-        riPbr.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-        riPbr.renderArea.extent = m_RenderExtent;
-        riPbr.layerCount = 1;
-        riPbr.colorAttachmentCount = 1;
-        riPbr.pColorAttachments = &colorAtt;
-        riPbr.pDepthAttachment = &depthAttPbr;
-        vkCmdBeginRendering(cb, &riPbr);
-
-        vkCmdSetViewport(cb, 0, 1, &vp);
-        vkCmdSetScissor(cb, 0, 1, &scissor);
-
-        vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_PbrPipeline->GetHandle());
-
-        VkDescriptorSet pbrSets[] = {frame.pbrSet, m_Textures.GetBindlessSet()};
-        vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                m_PbrPipeline->GetLayout(), 0, 2, pbrSets, 0, nullptr);
-
-        vkCmdBindIndexBuffer(cb, m_Meshes.GetIndexBuffer()->GetHandle(), 0, VK_INDEX_TYPE_UINT32);
-
-        vkCmdBindVertexBuffers(cb, 0, 2, vbufs, offsets);
-
-        vkCmdDrawIndexedIndirectCount(cb,
-            frame.indirectBuffer->GetHandle(), 0,
-            frame.countBuffer->GetHandle(), 0,
-            instanceCount, sizeof(GpuDrawCommand));
     }
 
-    void Renderer::EndRendering() {
-        vkCmdEndRendering(m_Frames[m_CurrentFrame].commandBuffer);
+    void RendererImpl::EndRendering() {
+        if (m_UIRenderer && m_VulkanCommandList)
+            m_UIRenderer->Render(*m_VulkanCommandList);
     }
 
-    void Renderer::EndFrameAndPresent() {
+    void RendererImpl::EndFrameAndPresent() {
         FrameData& frame = m_Frames[m_CurrentFrame];
         VkCommandBuffer cb = frame.commandBuffer;
         VkExtent2D ext = m_Swapchain->GetExtent();
@@ -960,105 +1371,53 @@ namespace Manro {
             vkCmdPipelineBarrier2(cb, &dep);
         }
 
-        VkRenderingAttachmentInfo colorAtt{};
-        colorAtt.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        colorAtt.imageView = m_Swapchain->GetImageView(m_CurrentImageIndex);
-        colorAtt.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        colorAtt.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        colorAtt.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        if (m_SceneRenderer && m_VulkanCommandList) {
+            CompositePushConstants cpc{};
+            cpc.tm = m_Settings.postProcess.tonemapping;
+            cpc.tm.inputMatrix = SlangFloat3x3(glm::mat3(cpc.tm.exposure));
+            cpc.imageSize = Vec2((float) m_RenderExtent.width, (float) m_RenderExtent.height);
 
-        VkRenderingInfo ri{};
-        ri.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-        ri.renderArea.extent = ext;
-        ri.layerCount = 1;
-        ri.colorAttachmentCount = 1;
-        ri.pColorAttachments = &colorAtt;
-        vkCmdBeginRendering(cb, &ri);
+            RHI::VulkanCompositePassState compositeState{};
+            compositeState.extent = ext;
+            compositeState.colorView = m_Swapchain->GetImageView(m_CurrentImageIndex);
+            compositeState.pipeline = m_CompositePipeline->GetHandle();
+            compositeState.pipelineLayout = m_CompositePipeline->GetLayout();
+            compositeState.descriptorSet = frame.compositeSet;
+            compositeState.pushConstants = &cpc;
+            compositeState.pushConstantSize = sizeof(CompositePushConstants);
+            compositeState.pushConstantStages = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-        VkViewport vp{0.f, 0.f, (float) ext.width, (float) ext.height, 0.f, 1.f};
-        vkCmdSetViewport(cb, 0, 1, &vp);
-        VkRect2D scissor{{0, 0}, ext};
-        vkCmdSetScissor(cb, 0, 1, &scissor);
-
-        vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_CompositePipeline->GetHandle());
-        vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                m_CompositePipeline->GetLayout(), 0, 1, &frame.compositeSet, 0, nullptr);
-
-        CompositePushConstants cpc{};
-        cpc.tm = m_Settings.postProcess.tonemapping;
-        cpc.tm.inputMatrix = SlangFloat3x3(glm::mat3(cpc.tm.exposure));
-        cpc.imageSize     = Vec2((float)m_RenderExtent.width, (float) m_RenderExtent.height);
-        vkCmdPushConstants(cb, m_CompositePipeline->GetLayout(),
-                           VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(CompositePushConstants), &cpc);
-        vkCmdDraw(cb, 3, 1, 0, 0);
-
-        if (m_GuiLayer && m_GuiLayer->IsEnabled())
-            m_GuiLayer->Render(cb);
-
-        vkCmdEndRendering(cb);
-
-        {
-            VkImageMemoryBarrier2 b{};
-            b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-            b.srcStageMask        = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-            b.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-            b.dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
-            b.dstAccessMask = 0;
-            b.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            b.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-            b.image = m_Swapchain->GetImage(m_CurrentImageIndex);
-            b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-            VkDependencyInfo dep{};
-            dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-            dep.imageMemoryBarrierCount = 1;
-            dep.pImageMemoryBarriers = &b;
-            vkCmdPipelineBarrier2(cb, &dep);
+            m_SceneRenderer->SetCompositePassState(&compositeState);
+            m_SceneRenderer->Flush(*m_VulkanCommandList, m_ViewMatrix, m_ProjectionMatrix, m_CameraPosition,
+                                   m_PendingLights);
         }
 
-        if (vkEndCommandBuffer(cb) != VK_SUCCESS)
-            throw std::runtime_error("Failed to record command buffer");
+        if (m_GuiLayer && m_GuiLayer->IsEnabled()) {
+            VkRenderingAttachmentInfo guiColorAtt{};
+            guiColorAtt.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+            guiColorAtt.imageView = m_Swapchain->GetImageView(m_CurrentImageIndex);
+            guiColorAtt.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            guiColorAtt.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+            guiColorAtt.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 
-        const u64 signalValue = ++m_TimelineValue;
-        m_FrameBaseValue[m_CurrentFrame] = signalValue;
+            VkRenderingInfo guiRi{};
+            guiRi.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+            guiRi.renderArea.extent = ext;
+            guiRi.layerCount = 1;
+            guiRi.colorAttachmentCount = 1;
+            guiRi.pColorAttachments = &guiColorAtt;
+            vkCmdBeginRendering(cb, &guiRi);
+            m_GuiLayer->Render(cb);
+            vkCmdEndRendering(cb);
+        }
 
-        VkCommandBufferSubmitInfo cmdInfo{};
-        cmdInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
-        cmdInfo.commandBuffer = cb;
-
-        VkSemaphoreSubmitInfo waitInfo{};
-        waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-        waitInfo.semaphore = m_ImageAvailableSemaphores[m_CurrentFrame];
-        waitInfo.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-
-        VkSemaphoreSubmitInfo signalInfos[2]{};
-        signalInfos[0].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-        signalInfos[0].semaphore = m_TimelineSemaphore;
-        signalInfos[0].value = signalValue;
-        signalInfos[0].stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-        signalInfos[1].sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-        signalInfos[1].semaphore = m_PresentSemaphores[m_CurrentImageIndex];
-        signalInfos[1].stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-
-        VkSubmitInfo2 submit{};
-        submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
-        submit.waitSemaphoreInfoCount   = 1;
-        submit.pWaitSemaphoreInfos = &waitInfo;
-        submit.signalSemaphoreInfoCount = 2;
-        submit.pSignalSemaphoreInfos = signalInfos;
-        submit.commandBufferInfoCount = 1;
-        submit.pCommandBufferInfos = &cmdInfo;
-
-        if (vkQueueSubmit2(m_Context.GetGraphicsQueue(), 1, &submit, VK_NULL_HANDLE) != VK_SUCCESS)
-            throw std::runtime_error("Failed to submit command buffer");
-
-        if (m_Swapchain->Present(m_CurrentImageIndex,
-                                 m_PresentSemaphores[m_CurrentImageIndex]))
-            m_PendingResize = true;
-
-        m_CurrentFrame = (m_CurrentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+        FinalizeFrameAndPresent(cb);
     }
 
-    void Renderer::DrawMesh(MeshHandle meshId, MaterialInstance &material, const Mat4 &model) {
+    void RendererImpl::DrawMesh(MeshHandle meshId, MaterialInstance &material, const Mat4 &model) {
+        if (m_SceneRenderer)
+            m_SceneRenderer->DrawMesh(meshId, material, model);
+
         const auto *mesh = m_Meshes.Get(meshId);
         if (!mesh) return;
 
@@ -1135,17 +1494,20 @@ namespace Manro {
         m_CurrentFrameCullData.push_back(cullData);
     }
 
-    void Renderer::DrawModel(const Model &model, const Mat4 &transform) {
+    void RendererImpl::DrawModel(const Model &model, const Mat4 &transform) {
         for (const auto &sm: model.GetSubMeshes())
             DrawMesh(sm.meshId, *sm.material, transform);
     }
 
-    void Renderer::DrawModelStatic(const Model &model, const Mat4 &transform) {
+    void RendererImpl::DrawModelStatic(const Model &model, const Mat4 &transform) {
         for (const auto &sm: model.GetSubMeshes())
             DrawMeshStatic(sm.meshId, *sm.material, transform);
     }
 
-    void Renderer::DrawMeshStatic(MeshHandle meshId, MaterialInstance &material, const Mat4 &model) {
+    void RendererImpl::DrawMeshStatic(MeshHandle meshId, MaterialInstance &material, const Mat4 &model) {
+        if (m_SceneRenderer)
+            m_SceneRenderer->DrawMeshStatic(meshId, material, model);
+
         const auto *mesh = m_Meshes.Get(meshId);
         if (!mesh) return;
 
@@ -1219,7 +1581,7 @@ namespace Manro {
         m_StaticCullData.push_back(cullData);
     }
 
-    void Renderer::CreateDescriptorLayouts() {
+    void RendererImpl::CreateDescriptorLayouts() {
         {
             VkDescriptorSetLayoutBinding b[14];
             b[0] = {0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -1323,7 +1685,7 @@ namespace Manro {
         }
     }
 
-    void Renderer::CreateDescriptorPool() {
+    void RendererImpl::CreateDescriptorPool() {
         VkDescriptorPoolSize sizes[] = {
             {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,              u32(MAX_FRAMES_IN_FLIGHT * 10)},
             {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, u32(MAX_FRAMES_IN_FLIGHT * 20)},
@@ -1341,7 +1703,7 @@ namespace Manro {
             throw std::runtime_error("Failed to create descriptor pool");
     }
 
-    void Renderer::CreateGpuBuffers() {
+    void RendererImpl::CreateGpuBuffers() {
         m_MaterialBuffer = CreateScope<Buffer>(
             m_Context, sizeof(MaterialData) * 1024,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
@@ -1359,7 +1721,7 @@ namespace Manro {
         m_TextureInfoBuffer->LoadData(tis.data(), sizeof(shaderio::GltfTextureInfo) * 1024);
     }
 
-    void Renderer::UpdatePbrDescriptorSet(u32 fi) {
+    void RendererImpl::UpdatePbrDescriptorSet(u32 fi) {
         FrameData& frame = m_Frames[fi];
 
         VkDescriptorBufferInfo uboI{frame.uboBuffer->GetHandle(), 0, sizeof(UniformBufferObject)};
@@ -1456,7 +1818,7 @@ namespace Manro {
         UpdatePbrDescriptorSetShadow(fi);
     }
 
-    void Renderer::UpdatePbrDescriptorSetShadow(u32 fi) {
+    void RendererImpl::UpdatePbrDescriptorSetShadow(u32 fi) {
         FrameData &frame = m_Frames[fi];
 
         VkDescriptorImageInfo shadowImgI{};
@@ -1493,7 +1855,7 @@ namespace Manro {
         vkUpdateDescriptorSets(m_Context.GetDevice(), 3, writes, 0, nullptr);
     }
 
-    void Renderer::UpdateCompositeDescriptorSet(u32 fi) {
+    void RendererImpl::UpdateCompositeDescriptorSet(u32 fi) {
         FrameData &frame = m_Frames[fi];
 
         VkDescriptorImageInfo imgI{};
@@ -1511,7 +1873,7 @@ namespace Manro {
         vkUpdateDescriptorSets(m_Context.GetDevice(), 1, &w, 0, nullptr);
     }
 
-    void Renderer::CreateCommandBuffers() {
+    void RendererImpl::CreateCommandBuffers() {
         m_Frames.resize(MAX_FRAMES_IN_FLIGHT);
 
         VkCommandPoolCreateInfo poolCI{};
@@ -1607,7 +1969,7 @@ namespace Manro {
         }
     }
 
-    void Renderer::CreateSyncObjects() {
+    void RendererImpl::CreateSyncObjects() {
         VkSemaphoreCreateInfo binaryCI{};
         binaryCI.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
@@ -1636,7 +1998,7 @@ namespace Manro {
                 throw std::runtime_error("Failed to create present semaphore");
     }
 
-    void Renderer::BuildPbrPipeline() {
+    void RendererImpl::BuildPbrPipeline() {
         auto vertSpv = VirtualFS::Get().ReadFile("shaders://pbr.vert.spv");
         auto fragSpv = VirtualFS::Get().ReadFile("shaders://pbr.frag.spv");
         if (vertSpv.empty() || fragSpv.empty()) {
@@ -1723,7 +2085,7 @@ namespace Manro {
         m_DefaultMaterial = CreateRef<Material>(m_Context, nullptr, stubLayout);
     }
 
-    void Renderer::BuildCompositePipeline() {
+    void RendererImpl::BuildCompositePipeline() {
         auto vertSpv = VirtualFS::Get().ReadFile("shaders://composite.vert.spv");
         auto fragSpv = VirtualFS::Get().ReadFile("shaders://composite.frag.spv");
         if (vertSpv.empty() || fragSpv.empty()) {
@@ -1756,7 +2118,7 @@ namespace Manro {
         });
     }
 
-    void Renderer::BuildCullPipeline() {
+    void RendererImpl::BuildCullPipeline() {
         {
             auto compSpv = VirtualFS::Get().ReadFile("shaders://forward_plus_cull.comp.spv");
             if (compSpv.empty()) { LOG_ERROR("[Renderer] Cull shader not found");
@@ -1808,7 +2170,7 @@ namespace Manro {
         }
     }
 
-    void Renderer::BuildShadowPipeline() {
+    void RendererImpl::BuildShadowPipeline() {
         auto vertSpv = VirtualFS::Get().ReadFile("shaders://shadow_depth.vert.spv");
         if (vertSpv.empty()) {
             LOG_ERROR("[Renderer] Shadow depth shader not found");
@@ -1856,4 +2218,101 @@ namespace Manro {
 
         LOG_INFO("[Renderer] Shadow depth pipeline built");
     }
+
+    void RendererImpl::ImportPipelinesToRHI() {
+        if (!m_VulkanCommandList) return;
+
+        if (m_PbrPipeline) {
+            m_VulkanCommandList->ImportGraphicsPipeline(m_PbrPipelineHandle,
+                                                        m_PbrPipeline->GetHandle(),
+                                                        m_PbrPipeline->GetLayout());
+        }
+        if (m_ZPrepassPipeline) {
+            m_VulkanCommandList->ImportGraphicsPipeline(m_ZPrepassPipelineHandle,
+                                                        m_ZPrepassPipeline->GetHandle(),
+                                                        m_ZPrepassPipeline->GetLayout());
+        }
+        if (m_CompositePipeline) {
+            m_VulkanCommandList->ImportGraphicsPipeline(m_CompositePipelineHandle,
+                                                        m_CompositePipeline->GetHandle(),
+                                                        m_CompositePipeline->GetLayout());
+        }
+        if (m_ShadowPipeline) {
+            m_VulkanCommandList->ImportGraphicsPipeline(m_ShadowPipelineHandle,
+                                                        m_ShadowPipeline->GetHandle(),
+                                                        m_ShadowPipeline->GetLayout());
+        }
+    }
+
+    Renderer::Renderer(IWindow &window, u32 width, u32 height, const RenderSettings &settings)
+            : m_Impl(CreateScope<RendererImpl>(window, width, height, settings)) {}
+
+    Renderer::~Renderer() = default;
+
+    bool Renderer::BeginFrame() { return m_Impl->BeginFrame(); }
+
+    void Renderer::BeginRendering(Vec4 clearColor) { m_Impl->BeginRendering(clearColor); }
+
+    void Renderer::RenderQueue() { m_Impl->RenderQueue(); }
+
+    void Renderer::EndRendering() { m_Impl->EndRendering(); }
+
+    void Renderer::EndFrameAndPresent() { m_Impl->EndFrameAndPresent(); }
+
+    void Renderer::DrawMesh(MeshHandle mesh, MaterialInstance &mat, const Mat4 &model) {
+        m_Impl->DrawMesh(mesh, mat, model);
+    }
+
+    void Renderer::DrawMeshStatic(MeshHandle mesh, MaterialInstance &mat, const Mat4 &model) {
+        m_Impl->DrawMeshStatic(mesh, mat, model);
+    }
+
+    void Renderer::DrawModel(const Model &model, const Mat4 &transform) {
+        m_Impl->DrawModel(model, transform);
+    }
+
+    void Renderer::DrawModelStatic(const Model &model, const Mat4 &transform) {
+        m_Impl->DrawModelStatic(model, transform);
+    }
+
+    void Renderer::AddLight(const LightData &light) { m_Impl->AddLight(light); }
+
+    void Renderer::ClearLights() { m_Impl->ClearLights(); }
+
+    void Renderer::SetViewProjection(const Mat4 &view, const Mat4 &proj) {
+        m_Impl->SetViewProjection(view, proj);
+    }
+
+    void Renderer::SetCameraPosition(const Vec3 &pos) { m_Impl->SetCameraPosition(pos); }
+
+    MeshHandle Renderer::UploadMesh(const ModelData &data) { return m_Impl->UploadMesh(data); }
+
+    TextureHandle Renderer::UploadTexture(const TextureData &data) { return m_Impl->UploadTexture(data); }
+
+    Ref<Material> Renderer::GetDefaultMaterial() const { return m_Impl->GetDefaultMaterial(); }
+
+    Scope<MaterialInstance> Renderer::CreateMaterialInstance(Ref<Material> mat) {
+        return m_Impl->CreateMaterialInstance(mat);
+    }
+
+    void Renderer::OnResize(u32 width, u32 height) { m_Impl->OnResize(width, height); }
+
+    float Renderer::GetAspectRatio() const { return m_Impl->GetAspectRatio(); }
+
+    TextureManager &Renderer::GetTextures() { return m_Impl->GetTextures(); }
+
+    MeshManager &Renderer::GetMeshes() { return m_Impl->GetMeshes(); }
+
+    void Renderer::SetSettings(const RenderSettings &settings) { m_Impl->SetSettings(settings); }
+
+    const RenderSettings &Renderer::GetSettings() const { return m_Impl->GetSettings(); }
+
+    RenderSettings &Renderer::GetSettings() { return m_Impl->GetSettings(); }
+
+    const FrameStats &Renderer::GetLastFrameStats() const { return m_Impl->GetLastFrameStats(); }
+
+    void Renderer::GetVramStats(u64 &usage, u64 &budget) const { m_Impl->GetVramStats(usage, budget); }
+
+    std::string Renderer::GetAdapterName() const { return m_Impl->GetAdapterName(); }
+
 } // namespace Manro

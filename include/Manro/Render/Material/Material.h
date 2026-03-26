@@ -1,27 +1,32 @@
 #pragma once
 
-#include <Manro/Render/Vulkan/Pipeline.h>
 #include <Manro/Core/Types.h>
-#include <Manro/Render/Vulkan/VulkanContext.h> // Added this include for VulkanContext
+#include <volk.h>
 
 namespace Manro {
+    class VulkanContext;
+
+    class Pipeline;
+
     class Material {
     public:
-        Material(const VulkanContext &ctx, Scope<Pipeline> pipeline, VkDescriptorSetLayout layout)
-            : m_Context(ctx), m_Pipeline(std::move(pipeline)), m_DescriptorSetLayout(layout) {
-        }
+        Material(const VulkanContext &ctx, Scope<Pipeline> pipeline, VkDescriptorSetLayout layout);
 
-        ~Material() {
-            if (m_DescriptorSetLayout) {
-                vkDestroyDescriptorSetLayout(m_Context.GetDevice(), m_DescriptorSetLayout, nullptr);
-            }
-        }
+        ~Material();
 
-        const Pipeline &GetPipeline() const { return *m_Pipeline; }
-        const VulkanContext &GetContext() const { return m_Context; }
-        VkPipeline GetHandle() const { return m_Pipeline->GetHandle(); }
-        VkPipelineLayout GetLayout() const { return m_Pipeline->GetLayout(); }
-        VkDescriptorSetLayout GetDescriptorSetLayout() const { return m_DescriptorSetLayout; }
+        Material(const Material &) = delete;
+
+        Material &operator=(const Material &) = delete;
+
+        const Pipeline &GetPipeline() const;
+
+        const VulkanContext &GetContext() const;
+
+        VkPipeline GetHandle() const;
+
+        VkPipelineLayout GetLayout() const;
+
+        VkDescriptorSetLayout GetDescriptorSetLayout() const;
 
     private:
         const VulkanContext &m_Context;

@@ -1,12 +1,13 @@
 #pragma once
 
-#include <Manro/Render/Vulkan/Buffer.h>
 #include <Manro/Resource/ModelLoader.h>
 #include <Manro/Core/Types.h>
 #include <unordered_map>
 
 namespace Manro {
     class VulkanContext;
+
+    class Buffer;
 
     using MeshHandle = u32;
     inline constexpr MeshHandle kInvalidMesh = 0;
@@ -23,7 +24,7 @@ namespace Manro {
     public:
         explicit MeshManager(const VulkanContext &ctx);
 
-        ~MeshManager() = default;
+        ~MeshManager();
 
         MeshManager(const MeshManager &) = delete;
 

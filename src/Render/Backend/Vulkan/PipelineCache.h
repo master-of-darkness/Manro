@@ -7,6 +7,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <span>
 
 namespace Manro {
     enum PipelineVariant : u32 {
@@ -73,16 +74,11 @@ namespace Manro {
 
         void Invalidate(const PipelineKey &key);
 
-        void InvalidateAll();
-
-        VkPipelineCache VkHandle() const { return m_Cache; }
-
         static u64 HashSpirV(const std::vector<u8> &spv);
 
         static u64 HashSpirV(const u32 *data, size_t wordCount);
 
         static u64 HashLayouts(const VkDescriptorSetLayout *layouts, u32 count);
-
     private:
         VkDevice m_Device = VK_NULL_HANDLE;
         VkPipelineCache m_Cache = VK_NULL_HANDLE;
@@ -92,8 +88,10 @@ namespace Manro {
         PSOMap m_Graphics;
         PSOMap m_Compute;
 
-        void LoadFromDisk();
-
         void SaveToDisk() const;
+
+        u64 HashLayoutBindings(std::span<const VkDescriptorSetLayoutBinding> bindings);
+
+        void InvalidateAll();
     };
 } // namespace Manro

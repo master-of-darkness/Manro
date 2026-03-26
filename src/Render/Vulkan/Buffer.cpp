@@ -1,7 +1,7 @@
 #include <volk.h>
 
-#include <Manro/Render/Vulkan/Buffer.h>
-#include <Manro/Render/Vulkan/VulkanContext.h>
+#include "../Backend/Vulkan/Buffer.h"
+#include "../Backend/Vulkan/VulkanContext.h"
 #include <stdexcept>
 #include <cstring>
 
@@ -59,12 +59,5 @@ namespace Manro {
         if (!m_AllocationInfo.pMappedData) {
             Unmap();
         }
-    }
-
-    VkDeviceAddress Buffer::GetDeviceAddress() const {
-        VkBufferDeviceAddressInfo addressInfo{};
-        addressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
-        addressInfo.buffer = m_Buffer;
-        return vkGetBufferDeviceAddress(m_Context.GetDevice(), &addressInfo);
     }
 } // namespace Manro

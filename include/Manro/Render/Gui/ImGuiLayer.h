@@ -1,11 +1,11 @@
 #pragma once
 #include <Manro/Core/Types.h>
-#include <Manro/Render/Vulkan/VulkanContext.h>
-#include <Manro/Platform/Window/IWindow.h>
 #include <volk.h>
+#include <Manro/Platform/Window/IWindow.h>
 #include <vector>
 
 namespace Manro {
+    class VulkanContext;
     struct ImGuiLayerInfo {
         VulkanContext *context = nullptr;
         IWindow *window = nullptr;

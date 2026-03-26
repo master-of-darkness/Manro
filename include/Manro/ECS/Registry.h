@@ -2,117 +2,119 @@
 
 #include <Manro/ECS/Entity.h>
 #include <Manro/ECS/ComponentArray.h>
+#include <Manro/ECS/ComponentTypeId.h>
 #include <queue>
-#include <unordered_map>
-#include <typeindex>
 #include <memory>
 #include <cassert>
 #include <functional>
 
 namespace Manro {
+
     class Registry {
     public:
         Registry() {
-            for (Entity entity = 0; entity < MAX_ENTITIES; ++entity) {
-                m_AvailableEntities.push(entity);
-            }
+            for (Entity e = 0; e < MAX_ENTITIES; ++e)
+                m_Available.push(e);
+            m_Arrays.reserve(64);
+            m_Signatures.fill(Signature{});
         }
 
         Entity CreateEntity() {
-            assert(m_LivingEntityCount < MAX_ENTITIES && "Too many entities in existence.");
-            Entity id = m_AvailableEntities.front();
-            m_AvailableEntities.pop();
-            m_LivingEntityCount++;
+            assert(m_LivingCount < MAX_ENTITIES && "Too many entities.");
+            Entity id = m_Available.front();
+            m_Available.pop();
+            ++m_LivingCount;
             return id;
         }
 
         void DestroyEntity(Entity entity) {
-            assert(entity < MAX_ENTITIES && "Entity out of range.");
+            assert(entity < MAX_ENTITIES);
             m_Signatures[entity].reset();
-            m_AvailableEntities.push(entity);
-            m_LivingEntityCount--;
-
-            for (auto const &pair: m_ComponentArrays) {
-                auto const &componentArray = pair.second;
-                componentArray->EntityDestroyed(entity);
-            }
+            m_Available.push(entity);
+            --m_LivingCount;
+            for (auto &arr: m_Arrays)
+                if (arr) arr->EntityDestroyed(entity);
         }
 
-        Signature GetSignature(Entity entity) {
-            assert(entity < MAX_ENTITIES && "Entity out of range.");
+        Signature GetSignature(Entity entity) const {
+            assert(entity < MAX_ENTITIES);
             return m_Signatures[entity];
         }
 
         template<typename T>
         void RegisterComponent() {
-            std::string typeName = typeid(T).name();
-            assert(
-                m_ComponentTypes.find(typeName) == m_ComponentTypes.end() &&
-                "Registering component type more than once.");
-
-            m_ComponentTypes.insert({typeName, m_NextComponentType});
-            m_ComponentArrays.insert({typeName, std::make_shared<ComponentArray<T> >()});
-            m_NextComponentType++;
+            u32 id = ComponentTypeId<T>();
+            assert(id < MAX_COMPONENTS && "Component id exceeds MAX_COMPONENTS.");
+            if (id >= m_Arrays.size())
+                m_Arrays.resize(id + 1);
+            assert(!m_Arrays[id] && "Component registered twice.");
+            m_Arrays[id] = std::make_unique<ComponentArray<T>>();
         }
 
         template<typename T>
         void AddComponent(Entity entity, T component) {
-            GetComponentArray<T>()->InsertData(entity, std::move(component));
-            auto signature = m_Signatures[entity];
-            signature.set(GetComponentType<T>(), true);
-            m_Signatures[entity] = signature;
+            GetArray<T>().InsertData(entity, std::move(component));
+            m_Signatures[entity].set(ComponentTypeId<T>(), true);
         }
 
         template<typename T>
         void RemoveComponent(Entity entity) {
-            GetComponentArray<T>()->RemoveData(entity);
-            auto signature = m_Signatures[entity];
-            signature.set(GetComponentType<T>(), false);
-            m_Signatures[entity] = signature;
+            GetArray<T>().RemoveData(entity);
+            m_Signatures[entity].set(ComponentTypeId<T>(), false);
         }
 
         template<typename T>
         T &GetComponent(Entity entity) {
-            return GetComponentArray<T>()->GetData(entity);
+            return GetArray<T>().GetData(entity);
         }
 
         template<typename T>
-        bool HasComponent(Entity entity) {
-            return m_Signatures[entity].test(GetComponentType<T>());
+        const T &GetComponent(Entity entity) const {
+            return GetArray<T>().GetData(entity);
         }
 
         template<typename T>
-        std::shared_ptr<ComponentArray<T> > GetComponentArray() {
-            std::string typeName = typeid(T).name();
-            assert(m_ComponentTypes.find(typeName) != m_ComponentTypes.end() && "Component not registered before use.");
-            return std::static_pointer_cast<ComponentArray<T> >(m_ComponentArrays[typeName]);
+        bool HasComponent(Entity entity) const {
+            u32 id = ComponentTypeId<T>();
+            if (id >= m_Arrays.size() || !m_Arrays[id]) return false;
+            return m_Signatures[entity].test(id);
         }
 
         template<typename T>
-        void ForEach(const std::function<void(Entity, T &)> &callback) {
-            auto arr = GetComponentArray<T>();
-            auto &dense = arr->GetDenseArray();
-            auto &entityMap = arr->GetDenseToEntityMap();
-            for (size_t i = 0; i < arr->GetSize(); ++i) {
-                callback(entityMap[i], dense[i]);
-            }
+        void ForEach(const std::function<void(Entity, T &)> &cb) {
+            auto &arr = GetArray<T>();
+            auto &dense = arr.GetDenseArray();
+            const auto &entityMap = arr.GetDenseToEntityMap();
+            for (size_t i = 0; i < arr.GetSize(); ++i)
+                cb(entityMap[i], dense[i]);
+        }
+
+        template<typename T>
+        const ComponentArray<T> *GetComponentArrayRO() const {
+            u32 id = ComponentTypeId<T>();
+            if (id >= m_Arrays.size() || !m_Arrays[id]) return nullptr;
+            return static_cast<const ComponentArray<T> *>(m_Arrays[id].get());
         }
 
     private:
         template<typename T>
-        u32 GetComponentType() {
-            std::string typeName = typeid(T).name();
-            assert(m_ComponentTypes.find(typeName) != m_ComponentTypes.end() && "Component not registered before use.");
-            return m_ComponentTypes[typeName];
+        ComponentArray<T> &GetArray() {
+            u32 id = ComponentTypeId<T>();
+            assert(id < m_Arrays.size() && m_Arrays[id] && "Component not registered.");
+            return *static_cast<ComponentArray<T> *>(m_Arrays[id].get());
         }
 
-        std::queue<Entity> m_AvailableEntities;
-        u32 m_LivingEntityCount{0};
+        template<typename T>
+        const ComponentArray<T> &GetArray() const {
+            u32 id = ComponentTypeId<T>();
+            assert(id < m_Arrays.size() && m_Arrays[id] && "Component not registered.");
+            return *static_cast<const ComponentArray<T> *>(m_Arrays[id].get());
+        }
 
+        std::queue<Entity> m_Available;
+        u32 m_LivingCount{0};
         std::array<Signature, MAX_ENTITIES> m_Signatures;
-        std::unordered_map<std::string, u32> m_ComponentTypes;
-        u32 m_NextComponentType{0};
-
-        std::unordered_map<std::string, std::shared_ptr<IComponentArray> > m_ComponentArrays;
+        std::vector<std::unique_ptr<IComponentArray>> m_Arrays;
     };
+
 } // namespace Manro

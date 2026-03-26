@@ -1,4 +1,4 @@
-#include <Manro/Render/Vulkan/PipelineCache.h>
+#include "../Backend/Vulkan/PipelineCache.h"
 #include <Manro/Core/Logger.h>
 
 #include <fstream>
@@ -106,6 +106,26 @@ namespace Manro {
                 hash ^= bytes[b];
                 hash *= 1099511628211ull;
             }
+        }
+        return hash;
+    }
+
+    u64 PipelineCache::HashLayoutBindings(
+            std::span<const VkDescriptorSetLayoutBinding> bindings) {
+
+        u64 hash = 14695981039346656037ull;
+        for (const auto &b: bindings) {
+            auto mix = [&](u64 v) {
+                const u8 *p = reinterpret_cast<const u8 *>(&v);
+                for (int i = 0; i < 8; ++i) {
+                    hash ^= p[i];
+                    hash *= 1099511628211ull;
+                }
+            };
+            mix(b.binding);
+            mix(static_cast<u64>(b.descriptorType));
+            mix(b.descriptorCount);
+            mix(static_cast<u64>(b.stageFlags));
         }
         return hash;
     }

@@ -1,8 +1,7 @@
 #include "Sponza.h"
+#include "Manro/Core/EngineLoop.h"
 
-int main(int argc, char **argv) {
-    Sponza app = Sponza();
-    app.Initialize();
-    app.Run();
-    return 0;
+int main() {
+    Sponza app;
+    Manro::EngineLoop::Run(app);
 }

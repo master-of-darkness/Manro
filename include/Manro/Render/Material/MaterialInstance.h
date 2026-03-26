@@ -3,7 +3,6 @@
 #include <Manro/Render/Material/Material.h>
 #include <Manro/Render/TextureManager.h>
 #include <Manro/Core/Types.h>
-
 #include <Manro/Render/Material/MaterialData.h>
 
 namespace Manro {
@@ -38,8 +37,12 @@ namespace Manro {
         bool IsDirty() const { return m_Dirty; }
         void MarkDirty() { m_Dirty = true; }
 
-        MaterialData &GetData() { m_Dirty = true; return m_Data; }
         const MaterialData &GetData() const { return m_Data; }
+
+        MaterialData &ModifyData() {
+            m_Dirty = true;
+            return m_Data;
+        }
     private:
         Ref<Material> m_Material;
         MaterialData m_Data;

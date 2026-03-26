@@ -18,7 +18,6 @@ namespace Manro {
 
         JobSystem &GetJobSystem() { return m_JobSystem; }
 
-        bool HasPlatform() const { return m_Platform.has_value(); }
         PlatformContext &GetPlatform() { return m_Platform.value(); }
 
     private:
