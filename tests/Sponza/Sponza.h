@@ -56,7 +56,8 @@ public:
     ~Sponza() = default;
 
     Manro::WindowDesc GetWindowDesc() const override;
-    void OnStartup()  override;
+
+    void OnStartup(const Manro::InitContext &ctx) override;
     void OnShutdown() override;
     bool OnUpdate(const Manro::FrameContext& ctx, const Manro::UserCmd& cmd) override;
     void OnRender(Manro::RenderContext& ctx) override;
@@ -76,6 +77,10 @@ private:
                                      const BenchWaypoint& p2, const BenchWaypoint& p3,
                                      float t);
     static float CatmullRomAngle(float a0, float a1, float a2, float a3, float t);
+
+    Manro::IWindow *m_Window{nullptr};
+    Manro::JobSystem *m_Jobs{nullptr};
+    Manro::Renderer *m_Renderer{nullptr};
 
     Manro::JobSystem       m_LoadJobs;
     Manro::SDL3InputBackend m_InputBackend;

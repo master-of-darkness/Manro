@@ -719,7 +719,7 @@ namespace Manro {
 
         m_ShadowUniform.lightDir = Vec4(0.5f, -0.7f, 0.5f, 0.005f);
         m_ShadowUniform.shadowMapSize = Vec2(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
-        m_ShadowUniform.normalBias = 0.1f;
+        m_ShadowUniform.normalBias = m_Settings.shadows.bias;
 
         LOG_INFO("[Renderer] Shadow resources created ({}x{} D32)", SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
     }
@@ -757,6 +757,7 @@ namespace Manro {
             }
         m_ShadowUniform.lightViewProj = ComputeLightViewProj(lightDir);
         m_ShadowUniform.lightDir = Vec4(lightDir, 0.005f);
+        m_ShadowUniform.normalBias = m_Settings.shadows.bias;
         m_ShadowUniformBuffer->LoadData(&m_ShadowUniform, sizeof(ShadowUniformData));
 
         {
@@ -1258,25 +1259,31 @@ namespace Manro {
         u32 instanceCount = (u32) (m_StaticInstances.size() + m_CurrentFrameInstances.size());
         if (instanceCount == 0) return;
 
-        if (m_SceneRenderer && m_VulkanCommandList) {
-            RHI::VulkanZPrepassState zState{};
-            zState.extent = m_RenderExtent;
-            zState.depthView = m_DepthImage.view;
-            zState.pipeline = m_ZPrepassPipeline->GetHandle();
-            zState.pipelineLayout = m_ZPrepassPipeline->GetLayout();
-            zState.descriptorSets[0] = frame.pbrSet;
-            zState.descriptorSets[1] = m_Textures.GetBindlessSet();
-            zState.descriptorSetCount = 2;
-            zState.indexBuffer = m_Meshes.GetIndexBuffer()->GetHandle();
-            zState.vertexBuffers[0] = m_Meshes.GetVertexBuffer()->GetHandle();
-            zState.vertexBuffers[1] = frame.instanceBuffer->GetHandle();
-            zState.indirectBuffer = frame.indirectBuffer->GetHandle();
-            zState.countBuffer = frame.countBuffer->GetHandle();
-            zState.instanceCount = instanceCount;
-            zState.drawStride = sizeof(GpuDrawCommand);
-
-            m_SceneRenderer->SetZPrepassState(&zState);
+        auto *indexBuffer = m_Meshes.GetIndexBuffer();
+        auto *vertexBuffer = m_Meshes.GetVertexBuffer();
+        if (!m_SceneRenderer || !m_VulkanCommandList || !m_ZPrepassPipeline || !m_PbrPipeline ||
+            !indexBuffer || !vertexBuffer || m_DepthImage.image == VK_NULL_HANDLE ||
+            m_DepthImage.view == VK_NULL_HANDLE) {
+            return;
         }
+
+        RHI::VulkanZPrepassState zState{};
+        zState.extent = m_RenderExtent;
+        zState.depthView = m_DepthImage.view;
+        zState.pipeline = m_ZPrepassPipeline->GetHandle();
+        zState.pipelineLayout = m_ZPrepassPipeline->GetLayout();
+        zState.descriptorSets[0] = frame.pbrSet;
+        zState.descriptorSets[1] = m_Textures.GetBindlessSet();
+        zState.descriptorSetCount = 2;
+        zState.indexBuffer = indexBuffer->GetHandle();
+        zState.vertexBuffers[0] = vertexBuffer->GetHandle();
+        zState.vertexBuffers[1] = frame.instanceBuffer->GetHandle();
+        zState.indirectBuffer = frame.indirectBuffer->GetHandle();
+        zState.countBuffer = frame.countBuffer->GetHandle();
+        zState.instanceCount = instanceCount;
+        zState.drawStride = sizeof(GpuDrawCommand);
+
+        m_SceneRenderer->SetZPrepassState(&zState);
 
         VkImageMemoryBarrier2 depthBarrier{};
         depthBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
@@ -1297,7 +1304,7 @@ namespace Manro {
         dep.pImageMemoryBarriers = &depthBarrier;
         vkCmdPipelineBarrier2(cb, &dep);
 
-        if (m_SceneRenderer && m_VulkanCommandList) {
+        {
             RHI::VulkanPbrPassState pbrState{};
             pbrState.extent = m_RenderExtent;
             pbrState.clearColor.color = {m_CurrentClearColor.r, m_CurrentClearColor.g, m_CurrentClearColor.b,
@@ -1311,8 +1318,8 @@ namespace Manro {
             pbrState.descriptorSets[0] = frame.pbrSet;
             pbrState.descriptorSets[1] = m_Textures.GetBindlessSet();
             pbrState.descriptorSetCount = 2;
-            pbrState.indexBuffer = m_Meshes.GetIndexBuffer()->GetHandle();
-            pbrState.vertexBuffers[0] = m_Meshes.GetVertexBuffer()->GetHandle();
+            pbrState.indexBuffer = indexBuffer->GetHandle();
+            pbrState.vertexBuffers[0] = vertexBuffer->GetHandle();
             pbrState.vertexBuffers[1] = frame.instanceBuffer->GetHandle();
             pbrState.indirectBuffer = frame.indirectBuffer->GetHandle();
             pbrState.countBuffer = frame.countBuffer->GetHandle();

@@ -35,7 +35,8 @@ namespace Manro {
             if (ev == WindowEvent::Resized) renderer.OnResize(w, h);
         });
 
-        app.OnStartup();
+        InitContext ictx{*win, engine.GetJobSystem(), renderer};
+        app.OnStartup(ictx);
 
         using Clock = std::chrono::high_resolution_clock;
         auto lastTime = Clock::now();
@@ -57,7 +58,7 @@ namespace Manro {
             if (!app.OnUpdate(fctx, cmd)) break;
             if (!renderer.BeginFrame()) continue;
 
-            RenderContext rctx{renderer, *win, engine.GetJobSystem(), fctx};
+            RenderContext rctx{renderer, fctx};
             app.OnRender(rctx);
 
             renderer.EndFrameAndPresent();

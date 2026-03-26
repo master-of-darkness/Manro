@@ -81,7 +81,7 @@ namespace Manro {
             results.push_back(std::move(model));
         }
 
-        LOG_INFO("[Model] Batched load of {} models completed", paths.size());
+        LOG_INFO("[Model] Load of {} models completed", paths.size());
         return results;
     }
 } // namespace Manro

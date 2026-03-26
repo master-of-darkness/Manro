@@ -20,10 +20,14 @@ namespace Manro {
         u64 FrameIndex{0};
     };
 
-    struct RenderContext {
-        Renderer &Renderer;
+    struct InitContext {
         IWindow &Window;
         JobSystem &Jobs;
+        Renderer &Renderer;
+    };
+
+    struct RenderContext {
+        Renderer &Renderer;
         const FrameContext &Frame;
     };
 
@@ -31,7 +35,7 @@ namespace Manro {
     public:
         virtual ~IApplication() = default;
 
-        virtual void OnStartup() = 0;
+        virtual void OnStartup(const InitContext &ctx) = 0;
 
         virtual void OnShutdown() = 0;
 

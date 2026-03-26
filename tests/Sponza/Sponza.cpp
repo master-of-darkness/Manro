@@ -37,10 +37,16 @@ Manro::WindowDesc Sponza::GetWindowDesc() const {
     return d;
 }
 
-void Sponza::OnStartup() {
+void Sponza::OnStartup(const Manro::InitContext &ctx) {
+    m_Window = &ctx.Window;
+    m_Jobs = &ctx.Jobs;
+    m_Renderer = &ctx.Renderer;
+
     Manro::VirtualFS::Get().SetBaseDir(MANRO_ASSETS_DIR);
     m_InputManager.SetBackend(&m_InputBackend);
     m_BenchFrameTimes.reserve(30 * 500);
+
+    LoadScene(*m_Renderer, *m_Jobs);
 
     LOG_INFO("[SponzaTest] Ready. WASD=move Mouse=look Shift=sprint Q/E=up/down Escape=quit");
 }
@@ -63,8 +69,10 @@ bool Sponza::OnUpdate(const Manro::FrameContext& ctx, const Manro::UserCmd& /*cm
     const bool ctrlDown = m_InputManager.IsKeyDown(Manro::Key::LeftCtrl);
     const bool f11Down  = m_InputManager.IsKeyDown(Manro::Key::F11);
 
-    if (ctrlDown && !m_CtrlWasDown) {
-        m_InputCaptured = !m_InputCaptured;
+    if (ctrlDown && !m_CtrlWasDown) m_InputCaptured = !m_InputCaptured;
+    if (f11Down && !m_F11WasDown) {
+        m_Window->ToggleFullscreen();
+        m_F11WasDown = !m_F11WasDown;
     }
     m_CtrlWasDown = ctrlDown;
     m_F11WasDown  = f11Down;
@@ -100,10 +108,10 @@ void Sponza::OnRender(Manro::RenderContext& ctx) {
     Manro::Renderer& renderer = ctx.Renderer;
     const float dt = ctx.Frame.DeltaTime;
 
-    ctx.Window.CaptureMouse(m_InputCaptured);
-    ctx.Window.ShowCursor(!m_InputCaptured);
+    m_Window->CaptureMouse(m_InputCaptured);
+    m_Window->ShowCursor(!m_InputCaptured);
 
-    if (!m_Model) LoadScene(renderer, m_LoadJobs);
+    if (!m_Model) LoadScene(renderer, *m_Jobs);
 
     renderer.SetViewProjection(
             m_Camera.View(),
