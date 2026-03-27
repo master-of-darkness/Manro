@@ -8,6 +8,7 @@ endif ()
 
 if(WIN32)
     add_definitions(-DNOMINMAX -D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_DEPRECATE)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
 project(GameEngine VERSION 0.1 LANGUAGES C CXX)
