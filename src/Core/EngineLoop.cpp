@@ -1,21 +1,37 @@
 #include <Manro/Core/EngineLoop.h>
 #include <Manro/Core/IApplication.h>
-#include <Manro/Core/EngineContext.h>
 #include <Manro/Core/Logger.h>
+#include <Manro/Core/JobSystem.h>
 #include <Manro/Core/VirtualFS.h>
+#include <Manro/Platform/PlatformContext.h>
 #include <Manro/Render/Renderer.h>
 #include <Manro/Input/InputManager.h>
 #include <Manro/Platform/Input/SDL3InputBackend.h>
 #include <chrono>
 
+#ifdef _WIN32
+
+#include <windows.h>
+#include <timeapi.h>
+
+#endif
+
 namespace Manro {
 
     void EngineLoop::Run(IApplication &app) {
-        EngineContext engine;
+        Logger::Init();
+
+#ifdef _WIN32
+        timeBeginPeriod(1);
+#endif
+
+        JobSystem jobs;
+        PlatformContext platform;
+
         RegisterEmbeddedShaders();
 
         auto winDesc = app.GetWindowDesc();
-        auto &wm = engine.GetPlatform().GetWindowManager();
+        auto &wm = platform.GetWindowManager();
         WindowHandle wh = wm.AddWindow(winDesc);
         IWindow *win = wm.Get(wh);
 
@@ -35,7 +51,7 @@ namespace Manro {
             if (ev == WindowEvent::Resized) renderer.OnResize(w, h);
         });
 
-        InitContext ictx{*win, engine.GetJobSystem(), renderer};
+        InitContext ictx{*win, jobs, renderer};
         app.OnStartup(ictx);
 
         using Clock = std::chrono::high_resolution_clock;
@@ -50,7 +66,7 @@ namespace Manro {
             lastTime = now;
             totalTime += dt;
 
-            if (!engine.GetPlatform().PollEvents(inputManager)) break;
+            if (!platform.PollEvents(inputManager)) break;
 
             UserCmd cmd = inputManager->Poll();
             FrameContext fctx{dt, totalTime, frameIndex++};
@@ -65,6 +81,10 @@ namespace Manro {
         }
 
         app.OnShutdown();
+
+#ifdef _WIN32
+        timeEndPeriod(1);
+#endif
     }
 
 } // namespace Manro

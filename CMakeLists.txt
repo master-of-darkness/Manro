@@ -324,7 +324,6 @@ embed_shader("${SHADER_BIN_DIR}/imgui.frag.spv"                      imgui_frag_
 add_custom_target(EmbedShaders DEPENDS ${EMBEDDED_SHADER_HEADERS})
 
 add_library(Engine STATIC
-        src/Core/EngineContext.cpp
         src/Core/EngineLoop.cpp
         src/Core/Logger.cpp
         src/Core/JobSystem.cpp
