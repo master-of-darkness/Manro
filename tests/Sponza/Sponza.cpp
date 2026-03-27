@@ -48,7 +48,7 @@ void Sponza::OnStartup(const Manro::InitContext &ctx) {
     m_InputManager.SetBackend(&m_InputBackend);
     m_BenchFrameTimes.reserve(30 * 500);
 
-    LoadScene(*m_Renderer, *m_Jobs);
+    LoadScene();
 
     LOG_INFO("[SponzaTest] Ready. WASD=move Mouse=look Shift=sprint Q/E=up/down Escape=quit");
 }
@@ -106,21 +106,20 @@ bool Sponza::OnUpdate(const Manro::FrameContext& ctx, const Manro::UserCmd& /*cm
     return true;
 }
 
-void Sponza::OnRender(Manro::RenderContext& ctx) {
-    Manro::Renderer& renderer = ctx.Renderer;
-    const float dt = ctx.Frame.DeltaTime;
+void Sponza::OnRender(Manro::FrameContext &frame) {
+    const float dt = frame.DeltaTime;
 
     m_Window->CaptureMouse(m_InputCaptured);
     m_Window->ShowCursor(!m_InputCaptured);
 
-    if (!m_Model) LoadScene(renderer, *m_Jobs);
+    if (!m_Model) LoadScene();
 
-    renderer.SetViewProjection(
+    m_Renderer->SetViewProjection(
             m_Camera.View(),
-            FlyCamera::Projection(kFov, renderer.GetAspectRatio(), kNearZ, kFarZ));
-    renderer.SetCameraPosition(m_Camera.Position);
+            FlyCamera::Projection(kFov, m_Renderer->GetAspectRatio(), kNearZ, kFarZ));
+    m_Renderer->SetCameraPosition(m_Camera.Position);
 
-    renderer.ClearLights();
+    m_Renderer->ClearLights();
 
     const float dayTau     = (s_TimeOfDay / 24.f) * 2.f * 3.14159265f;
     const float sunAlt     = sinf(dayTau - 1.5707f);
@@ -143,49 +142,49 @@ void Sponza::OnRender(Manro::RenderContext& ctx) {
         sun.color     = {0.1f, 0.15f, 0.35f};
         sun.intensity = 0.2f;
     }
-    renderer.AddLight(sun);
+    m_Renderer->AddLight(sun);
 
     const bool benchActive = (m_BenchState == BenchmarkState::Warmup ||
                               m_BenchState == BenchmarkState::Running);
     if (benchActive) {
-        for (const auto& l : m_BenchLights) renderer.AddLight(l);
-        TickBenchmark(renderer, dt);
+        for (const auto &l: m_BenchLights) m_Renderer->AddLight(l);
+        TickBenchmark(dt);
     }
 
-    renderer.BeginRendering();
-    renderer.RenderQueue();
-    renderer.EndRendering();
+    m_Renderer->BeginRendering();
+    m_Renderer->RenderQueue();
+    m_Renderer->EndRendering();
 
-    DrawGui(renderer, dt);
+    DrawGui(dt);
 
-    m_LastStats = renderer.GetLastFrameStats();
+    m_LastStats = m_Renderer->GetLastFrameStats();
     const float frameMs = dt * 1000.f;
     m_FrameTimeHistory[m_FrameTimeOffset] = frameMs;
     m_FrameTimeOffset = (m_FrameTimeOffset + 1) % kHistoryLen;
 }
 
-void Sponza::LoadScene(Manro::Renderer& renderer, Manro::JobSystem& jobs) {
-    auto models = Manro::Model::Load({kSponzaPath}, renderer, jobs);
+void Sponza::LoadScene() {
+    auto models = Manro::Model::Load({kSponzaPath}, *m_Renderer, *m_Jobs);
 
     if (models.empty() || !models[0]) {
         LOG_ERROR("[SponzaTest] Failed to load Sponza!");
         return;
     }
     m_Model = std::move(models[0]);
-    renderer.DrawModelStatic(*m_Model,
+    m_Renderer->DrawModelStatic(*m_Model,
                              glm::scale(glm::mat4(1.f), glm::vec3(100.f)));
 
     auto skyFaces = Manro::TextureLoader::LoadCubemap("skyboxes/cubemap_sky.png");
     if (!skyFaces.empty()) {
-        auto h = renderer.UploadCubemap(skyFaces);
-        renderer.SetSkybox(h);
+        auto h = m_Renderer->UploadCubemap(skyFaces);
+        m_Renderer->SetSkybox(h);
     }
 
     LOG_INFO("[SponzaTest] Sponza loaded.");
 }
 
 
-void Sponza::DrawGui(Manro::Renderer& renderer, const float dt) {
+void Sponza::DrawGui(const float dt) {
     const float fps   = dt > 0.f ? 1.f / dt : 0.f;
     const float msdt  = dt * 1000.f;
     const bool  benchActive = (m_BenchState == BenchmarkState::Warmup ||
@@ -216,7 +215,7 @@ void Sponza::DrawGui(Manro::Renderer& renderer, const float dt) {
         }
 
         if (ImGui::CollapsingHeader("Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
-            Manro::RenderSettings settings = renderer.GetSettings();
+            Manro::RenderSettings settings = m_Renderer->GetSettings();
             bool changed = false;
 
             if (ImGui::SliderFloat("Resolution Scale", &settings.resolutionScale, 0.1f, 2.0f)) changed = true;
@@ -264,18 +263,18 @@ void Sponza::DrawGui(Manro::Renderer& renderer, const float dt) {
                 ImGui::TreePop();
             }
 
-            if (changed) renderer.SetSettings(settings);
+            if (changed) m_Renderer->SetSettings(settings);
         }
 
         if (ImGui::CollapsingHeader("GPU")) {
             Manro::u64 used, budget;
-            renderer.GetVramStats(used, budget);
+            m_Renderer->GetVramStats(used, budget);
             const float usedMB   = static_cast<float>(used)   / (1024.f * 1024.f);
             const float budgetMB = static_cast<float>(budget) / (1024.f * 1024.f);
             ImGui::Text("VRAM  %.1f / %.1f MB", usedMB, budgetMB);
             ImGui::ProgressBar(usedMB / std::max(budgetMB, 1.f), {-FLT_MIN, 0});
 
-            ImGui::TextDisabled("%s", renderer.GetAdapterName().c_str());
+            ImGui::TextDisabled("%s", m_Renderer->GetAdapterName().c_str());
         }
 
         ImGui::Separator();
@@ -473,7 +472,7 @@ void Sponza::StartBenchmark() {
              static_cast<int>(m_WarmupDuration), m_BenchDuration);
 }
 
-void Sponza::TickBenchmark(Manro::Renderer& renderer, float dt) {
+void Sponza::TickBenchmark(float dt) {
     if (m_BenchState == BenchmarkState::Warmup) {
         m_WarmupElapsed += dt;
         if (m_WarmupElapsed >= m_WarmupDuration) {
@@ -490,10 +489,10 @@ void Sponza::TickBenchmark(Manro::Renderer& renderer, float dt) {
     m_BenchElapsed      += dt;
 
     if (m_BenchElapsed >= static_cast<float>(m_BenchDuration))
-        FinishBenchmark(renderer);
+        FinishBenchmark();
 }
 
-void Sponza::FinishBenchmark(Manro::Renderer& /*renderer*/) {
+void Sponza::FinishBenchmark() {
     auto& r        = m_BenchResult;
     r.totalFrames  = static_cast<Manro::u32>(m_BenchFrameTimes.size());
     r.totalSeconds = m_BenchElapsed;

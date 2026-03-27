@@ -60,17 +60,20 @@ public:
     void OnStartup(const Manro::InitContext &ctx) override;
     void OnShutdown() override;
     bool OnUpdate(const Manro::FrameContext& ctx, const Manro::UserCmd& cmd) override;
-    void OnRender(Manro::RenderContext& ctx) override;
+
+    void OnRender(Manro::FrameContext &frame) override;
     Manro::InputManager* GetInputManager() override { return &m_InputManager; }
 
 private:
-    void LoadScene(Manro::Renderer& renderer, Manro::JobSystem& jobs);
+    void LoadScene();
 
-    void DrawGui(Manro::Renderer& renderer, float dt);
+    void DrawGui(float dt);
 
     void StartBenchmark();
-    void TickBenchmark(Manro::Renderer& renderer, float dt);
-    void FinishBenchmark(Manro::Renderer& renderer);
+
+    void TickBenchmark(float dt);
+
+    void FinishBenchmark();
     void AdvanceBenchCamera(float dt);
 
     static Manro::Vec3 CatmullRomPos(const BenchWaypoint& p0, const BenchWaypoint& p1,

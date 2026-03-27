@@ -74,8 +74,7 @@ namespace Manro {
             if (!app.OnUpdate(fctx, cmd)) break;
             if (!renderer.BeginFrame()) continue;
 
-            RenderContext rctx{renderer, fctx};
-            app.OnRender(rctx);
+            app.OnRender(fctx);
 
             renderer.EndFrameAndPresent();
         }

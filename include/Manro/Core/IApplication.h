@@ -41,7 +41,7 @@ namespace Manro {
 
         virtual bool OnUpdate(const FrameContext &ctx, const UserCmd &cmd) = 0;
 
-        virtual void OnRender(RenderContext &ctx) = 0;
+        virtual void OnRender(FrameContext &ctx) = 0;
 
         virtual InputManager *GetInputManager() { return nullptr; }
 

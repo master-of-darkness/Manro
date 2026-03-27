@@ -2332,8 +2332,6 @@ namespace Manro {
 
         m_ShadowPipeline = CreateScope<Pipeline>(m_Context);
         m_ShadowPipeline->BuildShadowDepth(vertSpv, cfg);
-
-        LOG_INFO("[Renderer] Shadow depth pipeline built");
     }
 
     void RendererImpl::BuildSkyboxPipeline() {
@@ -2361,7 +2359,6 @@ namespace Manro {
 
         m_SkyboxPipeline = CreateScope<Pipeline>(m_Context);
         m_SkyboxPipeline->BuildGraphics(vertSpv, fragSpv, cfg);
-        LOG_INFO("[Renderer] Skybox pipeline built");
     }
 
     void RendererImpl::ImportPipelinesToRHI() {
