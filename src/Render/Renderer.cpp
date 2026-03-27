@@ -1,4 +1,4 @@
-﻿#include <Manro/Render/Renderer.h>
+#include <Manro/Render/Renderer.h>
 #include "Backend/Vulkan/VulkanHelpers.h"
 #include <Manro/Core/Logger.h>
 #include <Manro/Core/VirtualFS.h>
@@ -39,6 +39,7 @@ namespace Manro {
         VkDescriptorSet meshCullSet = VK_NULL_HANDLE;
         VkDescriptorSet compositeSet = VK_NULL_HANDLE;
         VkDescriptorSet shadowMeshCullSet = VK_NULL_HANDLE;
+        VkDescriptorSet skyboxSet = VK_NULL_HANDLE;
 
         bool staticUploaded = false;
     };
@@ -157,7 +158,7 @@ namespace Manro {
 
         bool BeginFrame();
 
-        void BeginRendering(Vec4 clearColor);
+        void BeginRendering();
 
         void RenderQueue();
 
@@ -184,11 +185,26 @@ namespace Manro {
 
         void SetCameraPosition(const Vec3 &pos) { m_CameraPosition = pos; }
 
+        void SetSkybox(TextureHandle cubemap) {
+            if (cubemap == kInvalidTexture) {
+                LOG_ERROR("[Renderer] SetSkybox called with invalid texture!");
+            } else {
+                LOG_INFO("[Renderer] Skybox texture set: {}", cubemap);
+            }
+            m_SkyboxTexture = cubemap;
+            for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+                UpdateSkyboxDescriptorSet(i);
+            }
+        }
+
         MeshHandle UploadMesh(const ModelData &data) { return m_Meshes.Upload(data); }
 
         TextureHandle UploadTexture(const TextureData &data) { return m_Textures.Upload(data); }
 
+        TextureHandle UploadCubemap(const std::vector<TextureData> &faces) { return m_Textures.UploadCubemap(faces); }
+
         Ref<Material> GetDefaultMaterial() const { return m_DefaultMaterial; }
+
 
         Scope<MaterialInstance> CreateMaterialInstance(Ref<Material> mat);
 
@@ -293,6 +309,7 @@ namespace Manro {
         RHI::PipelineHandle m_CullPipelineHandle{};
         RHI::PipelineHandle m_MeshCullPipelineHandle{};
         RHI::PipelineHandle m_ShadowMeshCullPipelineHandle{};
+        RHI::PipelineHandle m_SkyboxPipelineHandle{};
 
         void ImportPipelinesToRHI();
 
@@ -314,6 +331,7 @@ namespace Manro {
         VkDescriptorSetLayout m_CullSetLayout = VK_NULL_HANDLE;
         VkDescriptorSetLayout m_MeshCullSetLayout = VK_NULL_HANDLE;
         VkDescriptorSetLayout m_ShadowMeshCullSetLayout = VK_NULL_HANDLE;
+        VkDescriptorSetLayout m_SkyboxSetLayout = VK_NULL_HANDLE;
 
         Scope<Pipeline> m_PbrPipeline;
         Scope<Pipeline> m_ZPrepassPipeline;
@@ -321,6 +339,12 @@ namespace Manro {
         Scope<Pipeline> m_CullPipeline;
         Scope<Pipeline> m_MeshCullPipeline;
         Scope<Pipeline> m_ShadowPipeline;
+        Scope<Pipeline> m_SkyboxPipeline;
+
+        Scope<Buffer> m_SkyboxVertexBuffer;
+        Scope<Buffer> m_SkyboxIndexBuffer;
+        TextureHandle m_SkyboxTexture = kInvalidTexture;
+
 
         AllocatedImage m_OffscreenColor{};
         AllocatedImage m_MsaaColorImage{};
@@ -373,7 +397,10 @@ namespace Manro {
 
         RenderSettings m_Settings{};
         VkExtent2D m_RenderExtent{};
-        Vec4 m_CurrentClearColor{};
+
+        void BuildSkyboxPipeline();
+
+        void UpdateSkyboxDescriptorSet(u32 fi);
     };
 
     static constexpr u32 kMaxTilesX = 256u;
@@ -410,8 +437,8 @@ namespace Manro {
         m_PipelineCache.Init(device, "manro_pipeline_cache.bin");
         m_VulkanCommandList = CreateScope<RHI::VulkanCommandList>();
         if (m_RhiDevice) {
-            m_SceneRenderer = CreateScope<SceneRenderer>(*m_RhiDevice);
-            m_UIRenderer = CreateScope<UIRenderer>(*m_RhiDevice, m_RhiDevice->GetSwapchainFormat());
+            m_SceneRenderer = CreateScope<SceneRenderer>();
+            m_UIRenderer = CreateScope<UIRenderer>(m_RhiDevice->GetSwapchainFormat());
         }
 
         CreateOffscreenResources(m_RenderExtent.width, m_RenderExtent.height);
@@ -425,6 +452,7 @@ namespace Manro {
         BuildCompositePipeline();
         BuildCullPipeline();
         BuildShadowPipeline();
+        BuildSkyboxPipeline();
         CreateCommandBuffers();
         CreateSyncObjects();
 
@@ -774,7 +802,8 @@ namespace Manro {
             b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             b.image = m_ShadowMap.image;
             b.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
-            VkDependencyInfo dep{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+            VkDependencyInfo dep{};
+            dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
             dep.imageMemoryBarrierCount = 1;
             dep.pImageMemoryBarriers = &b;
             vkCmdPipelineBarrier2(cb, &dep);
@@ -788,7 +817,8 @@ namespace Manro {
         depthAtt.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         depthAtt.clearValue.depthStencil = {1.f, 0};
 
-        VkRenderingInfo ri{VK_STRUCTURE_TYPE_RENDERING_INFO};
+        VkRenderingInfo ri{};
+        ri.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
         ri.renderArea.extent = {SHADOW_MAP_SIZE, SHADOW_MAP_SIZE};
         ri.layerCount = 1;
         ri.pDepthAttachment = &depthAtt;
@@ -839,7 +869,8 @@ namespace Manro {
             b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             b.image = m_ShadowMap.image;
             b.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
-            VkDependencyInfo dep{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+            VkDependencyInfo dep{};
+            dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
             dep.imageMemoryBarrierCount = 1;
             dep.pImageMemoryBarriers = &b;
             vkCmdPipelineBarrier2(cb, &dep);
@@ -972,7 +1003,7 @@ namespace Manro {
                 sizeof(LightData) * m_PendingLights.size());
     }
 
-    void RendererImpl::BeginRendering(Vec4 clearColor) {
+    void RendererImpl::BeginRendering() {
         FrameData &frame = m_Frames[m_CurrentFrame];
         VkCommandBuffer cb = frame.commandBuffer;
         VkExtent2D ext = m_RenderExtent;
@@ -1179,20 +1210,29 @@ namespace Manro {
 
 
         {
-            VkImageMemoryBarrier2 b{};
-            b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-            b.srcStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-            b.srcAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
-            b.dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-            b.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-            b.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            b.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            b.image = m_OffscreenColor.image;
-            b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            VkImageMemoryBarrier2 b[2]{};
+            b[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+            b[0].srcStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+            b[0].srcAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+            b[0].dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+            b[0].dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+            b[0].oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            b[0].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            b[0].image = m_OffscreenColor.image;
+            b[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+
+            u32 barrierCount = 1;
+            if (m_MsaaColorImage.image != VK_NULL_HANDLE) {
+                b[1] = b[0];
+                b[1].image = m_MsaaColorImage.image;
+                b[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+                barrierCount = 2;
+            }
+
             VkDependencyInfo dep{};
             dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-            dep.imageMemoryBarrierCount = 1;
-            dep.pImageMemoryBarriers = &b;
+            dep.imageMemoryBarrierCount = barrierCount;
+            dep.pImageMemoryBarriers = b;
             vkCmdPipelineBarrier2(cb, &dep);
         }
 
@@ -1248,67 +1288,44 @@ namespace Manro {
             dep.pBufferMemoryBarriers = b;
             vkCmdPipelineBarrier2(cb, &dep);
         }
-
-        m_CurrentClearColor = clearColor;
     }
 
     void RendererImpl::RenderQueue() {
         FrameData &frame = m_Frames[m_CurrentFrame];
-        VkCommandBuffer cb = frame.commandBuffer;
 
         u32 instanceCount = (u32) (m_StaticInstances.size() + m_CurrentFrameInstances.size());
-        if (instanceCount == 0) return;
-
         auto *indexBuffer = m_Meshes.GetIndexBuffer();
         auto *vertexBuffer = m_Meshes.GetVertexBuffer();
-        if (!m_SceneRenderer || !m_VulkanCommandList || !m_ZPrepassPipeline || !m_PbrPipeline ||
-            !indexBuffer || !vertexBuffer || m_DepthImage.image == VK_NULL_HANDLE ||
-            m_DepthImage.view == VK_NULL_HANDLE) {
-            return;
-        }
+
+        const bool hasMeshes = (instanceCount > 0 && m_ZPrepassPipeline && m_PbrPipeline && indexBuffer &&
+                                vertexBuffer &&
+                                m_DepthImage.image != VK_NULL_HANDLE);
+        const bool hasSkybox = (m_SkyboxTexture != kInvalidTexture && m_SkyboxPipeline);
 
         RHI::VulkanZPrepassState zState{};
-        zState.extent = m_RenderExtent;
-        zState.depthView = m_DepthImage.view;
-        zState.pipeline = m_ZPrepassPipeline->GetHandle();
-        zState.pipelineLayout = m_ZPrepassPipeline->GetLayout();
-        zState.descriptorSets[0] = frame.pbrSet;
-        zState.descriptorSets[1] = m_Textures.GetBindlessSet();
-        zState.descriptorSetCount = 2;
-        zState.indexBuffer = indexBuffer->GetHandle();
-        zState.vertexBuffers[0] = vertexBuffer->GetHandle();
-        zState.vertexBuffers[1] = frame.instanceBuffer->GetHandle();
-        zState.indirectBuffer = frame.indirectBuffer->GetHandle();
-        zState.countBuffer = frame.countBuffer->GetHandle();
-        zState.instanceCount = instanceCount;
-        zState.drawStride = sizeof(GpuDrawCommand);
+        if (hasMeshes || m_DepthImage.image != VK_NULL_HANDLE) {
+            zState.extent = m_RenderExtent;
+            zState.depthView = m_DepthImage.view;
+            if (hasMeshes) {
+                zState.pipeline = m_ZPrepassPipeline->GetHandle();
+                zState.pipelineLayout = m_ZPrepassPipeline->GetLayout();
+                zState.descriptorSets[0] = frame.pbrSet;
+                zState.descriptorSets[1] = m_Textures.GetBindlessSet();
+                zState.descriptorSetCount = 2;
+                zState.indexBuffer = indexBuffer->GetHandle();
+                zState.vertexBuffers[0] = vertexBuffer->GetHandle();
+                zState.vertexBuffers[1] = frame.instanceBuffer->GetHandle();
+                zState.indirectBuffer = frame.indirectBuffer->GetHandle();
+                zState.countBuffer = frame.countBuffer->GetHandle();
+                zState.instanceCount = instanceCount;
+                zState.drawStride = sizeof(GpuDrawCommand);
+            }
+            m_SceneRenderer->SetZPrepassState(&zState);
+        }
 
-        m_SceneRenderer->SetZPrepassState(&zState);
-
-        VkImageMemoryBarrier2 depthBarrier{};
-        depthBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-        depthBarrier.srcStageMask =
-                VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
-        depthBarrier.srcAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-        depthBarrier.dstStageMask =
-                VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
-        depthBarrier.dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
-        depthBarrier.oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-        depthBarrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-        depthBarrier.image = m_DepthImage.image;
-        depthBarrier.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
-
-        VkDependencyInfo dep{};
-        dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        dep.imageMemoryBarrierCount = 1;
-        dep.pImageMemoryBarriers = &depthBarrier;
-        vkCmdPipelineBarrier2(cb, &dep);
-
-        {
-            RHI::VulkanPbrPassState pbrState{};
+        RHI::VulkanPbrPassState pbrState{};
+        if (hasMeshes) {
             pbrState.extent = m_RenderExtent;
-            pbrState.clearColor.color = {m_CurrentClearColor.r, m_CurrentClearColor.g, m_CurrentClearColor.b,
-                                         m_CurrentClearColor.a};
             pbrState.msaaSamples = m_Settings.msaaSamples;
             pbrState.msaaColorView = m_MsaaColorImage.view;
             pbrState.offscreenColorView = m_OffscreenColor.view;
@@ -1325,12 +1342,31 @@ namespace Manro {
             pbrState.countBuffer = frame.countBuffer->GetHandle();
             pbrState.instanceCount = instanceCount;
             pbrState.drawStride = sizeof(GpuDrawCommand);
-
             m_SceneRenderer->SetPbrPassState(&pbrState);
+        }
+
+        RHI::VulkanSkyboxPassState skyState{};
+        if (hasSkybox) {
+            skyState.extent = m_RenderExtent;
+            skyState.offscreenColorView = m_OffscreenColor.view;
+            skyState.msaaColorView = m_MsaaColorImage.view;
+            skyState.msaaSamples = m_Settings.msaaSamples;
+            skyState.depthView = m_DepthImage.view;
+            skyState.pipeline = m_SkyboxPipeline->GetHandle();
+            skyState.pipelineLayout = m_SkyboxPipeline->GetLayout();
+            skyState.descriptorSet = frame.skyboxSet;
+            skyState.vertexBuffer = m_SkyboxVertexBuffer->GetHandle();
+            skyState.indexBuffer = m_SkyboxIndexBuffer->GetHandle();
+            skyState.indexCount = 36;
+            m_SceneRenderer->SetSkyboxPassState(&skyState);
+        }
+
+        if (m_SceneRenderer && m_VulkanCommandList) {
             m_SceneRenderer->Flush(*m_VulkanCommandList, m_ViewMatrix, m_ProjectionMatrix, m_CameraPosition,
                                    m_PendingLights);
         }
     }
+
 
     void RendererImpl::EndRendering() {
         if (m_UIRenderer && m_VulkanCommandList)
@@ -1690,6 +1726,18 @@ namespace Manro {
                                             &m_ShadowMeshCullSetLayout) != VK_SUCCESS)
                 throw std::runtime_error("Failed to create shadow mesh cull descriptor set layout");
         }
+
+        {
+            VkDescriptorSetLayoutBinding b[2];
+            b[0] = {0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr};
+            b[1] = {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
+            VkDescriptorSetLayoutCreateInfo ci{};
+            ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+            ci.bindingCount = 2;
+            ci.pBindings = b;
+            if (vkCreateDescriptorSetLayout(m_Context.GetDevice(), &ci, nullptr, &m_SkyboxSetLayout) != VK_SUCCESS)
+                throw std::runtime_error("Failed to create skybox descriptor set layout");
+        }
     }
 
     void RendererImpl::CreateDescriptorPool() {
@@ -1726,6 +1774,31 @@ namespace Manro {
             tis[i].texCoord = 0;
         }
         m_TextureInfoBuffer->LoadData(tis.data(), sizeof(shaderio::GltfTextureInfo) * 1024);
+
+        float skyboxVertices[] = {
+                -5000.0f, 5000.0f, -5000.0f, -5000.0f, -5000.0f, -5000.0f, 5000.0f, -5000.0f, -5000.0f,
+                5000.0f, -5000.0f, -5000.0f, 5000.0f, 5000.0f, -5000.0f, -5000.0f, 5000.0f, -5000.0f,
+                -5000.0f, -5000.0f, 5000.0f, -5000.0f, -5000.0f, -5000.0f, -5000.0f, 5000.0f, -5000.0f,
+                -5000.0f, 5000.0f, -5000.0f, -5000.0f, 5000.0f, 5000.0f, -5000.0f, -5000.0f, 5000.0f,
+                5000.0f, -5000.0f, -5000.0f, 5000.0f, -5000.0f, 5000.0f, 5000.0f, 5000.0f, 5000.0f,
+                5000.0f, 5000.0f, 5000.0f, 5000.0f, 5000.0f, -5000.0f, 5000.0f, -5000.0f, -5000.0f,
+                -5000.0f, -5000.0f, 5000.0f, -5000.0f, 5000.0f, 5000.0f, 5000.0f, 5000.0f, 5000.0f,
+                5000.0f, 5000.0f, 5000.0f, 5000.0f, -5000.0f, 5000.0f, -5000.0f, -5000.0f, 5000.0f,
+                -5000.0f, 5000.0f, -5000.0f, 5000.0f, 5000.0f, -5000.0f, 5000.0f, 5000.0f, 5000.0f,
+                5000.0f, 5000.0f, 5000.0f, -5000.0f, 5000.0f, 5000.0f, -5000.0f, 5000.0f, -5000.0f,
+                -5000.0f, -5000.0f, -5000.0f, -5000.0f, -5000.0f, 5000.0f, 5000.0f, -5000.0f, -5000.0f,
+                5000.0f, -5000.0f, -5000.0f, -5000.0f, -5000.0f, 5000.0f, 5000.0f, -5000.0f, 5000.0f
+        };
+        u32 skyboxIndices[36];
+        for (u32 i = 0; i < 36; ++i) skyboxIndices[i] = i;
+
+        m_SkyboxVertexBuffer = CreateScope<Buffer>(m_Context, sizeof(skyboxVertices),
+                                                   VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+        m_SkyboxVertexBuffer->LoadData(skyboxVertices, sizeof(skyboxVertices));
+
+        m_SkyboxIndexBuffer = CreateScope<Buffer>(m_Context, sizeof(skyboxIndices),
+                                                  VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+        m_SkyboxIndexBuffer->LoadData(skyboxIndices, sizeof(skyboxIndices));
     }
 
     void RendererImpl::UpdatePbrDescriptorSet(u32 fi) {
@@ -1823,6 +1896,7 @@ namespace Manro {
         vkUpdateDescriptorSets(m_Context.GetDevice(), 4, sw, 0, nullptr);
 
         UpdatePbrDescriptorSetShadow(fi);
+        UpdateSkyboxDescriptorSet(fi);
     }
 
     void RendererImpl::UpdatePbrDescriptorSetShadow(u32 fi) {
@@ -1878,6 +1952,34 @@ namespace Manro {
         w.descriptorCount = 1;
         w.pImageInfo = &imgI;
         vkUpdateDescriptorSets(m_Context.GetDevice(), 1, &w, 0, nullptr);
+    }
+
+    void RendererImpl::UpdateSkyboxDescriptorSet(u32 fi) {
+        if (m_SkyboxTexture == kInvalidTexture) return;
+        FrameData &frame = m_Frames[fi];
+
+        VkDescriptorBufferInfo uboI{frame.uboBuffer->GetHandle(), 0, sizeof(UniformBufferObject)};
+        VkDescriptorImageInfo skyI{};
+        skyI.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        skyI.imageView = m_Textures.GetView(m_SkyboxTexture);
+        skyI.sampler = m_Textures.GetSampler();
+
+        VkWriteDescriptorSet writes[2]{};
+        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[0].dstSet = frame.skyboxSet;
+        writes[0].dstBinding = 0;
+        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        writes[0].descriptorCount = 1;
+        writes[0].pBufferInfo = &uboI;
+
+        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[1].dstSet = frame.skyboxSet;
+        writes[1].dstBinding = 1;
+        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[1].descriptorCount = 1;
+        writes[1].pImageInfo = &skyI;
+
+        vkUpdateDescriptorSets(m_Context.GetDevice(), 2, writes, 0, nullptr);
     }
 
     void RendererImpl::CreateCommandBuffers() {
@@ -1970,6 +2072,14 @@ namespace Manro {
             f.cullSet = sets[2];
             f.meshCullSet = sets[3];
             f.shadowMeshCullSet = sets[4];
+
+            VkDescriptorSetAllocateInfo skyAI{};
+            skyAI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+            skyAI.descriptorPool = m_DescriptorPool;
+            skyAI.descriptorSetCount = 1;
+            skyAI.pSetLayouts = &m_SkyboxSetLayout;
+            vkAllocateDescriptorSets(m_Context.GetDevice(), &skyAI, &f.skyboxSet);
+
 
             UpdateCompositeDescriptorSet(i);
             UpdatePbrDescriptorSet(i);
@@ -2226,6 +2336,34 @@ namespace Manro {
         LOG_INFO("[Renderer] Shadow depth pipeline built");
     }
 
+    void RendererImpl::BuildSkyboxPipeline() {
+        auto vertSpv = VirtualFS::Get().ReadFile("shaders://skybox.vert.spv");
+        auto fragSpv = VirtualFS::Get().ReadFile("shaders://skybox.frag.spv");
+        if (vertSpv.empty() || fragSpv.empty()) {
+            LOG_ERROR("[Renderer] Skybox shaders not found");
+            return;
+        }
+
+        PipelineConfigParams cfg{};
+        cfg.vertexEntryPoint = "main";
+        cfg.fragmentEntryPoint = "main";
+        cfg.colorAttachmentFormat = m_OffscreenFormat;
+        cfg.depthAttachmentFormat = m_DepthFormat;
+        cfg.msaaSamples = m_Settings.msaaSamples;
+        cfg.descriptorSetLayouts = {m_SkyboxSetLayout};
+        cfg.depthWriteEnable = VK_FALSE;
+        cfg.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+
+        cfg.vertexInputBindings.resize(1);
+        cfg.vertexInputBindings[0] = {0, sizeof(float) * 3, VK_VERTEX_INPUT_RATE_VERTEX};
+        cfg.vertexInputAttributes.resize(1);
+        cfg.vertexInputAttributes[0] = {0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0};
+
+        m_SkyboxPipeline = CreateScope<Pipeline>(m_Context);
+        m_SkyboxPipeline->BuildGraphics(vertSpv, fragSpv, cfg);
+        LOG_INFO("[Renderer] Skybox pipeline built");
+    }
+
     void RendererImpl::ImportPipelinesToRHI() {
         if (!m_VulkanCommandList) return;
 
@@ -2249,6 +2387,11 @@ namespace Manro {
                                                         m_ShadowPipeline->GetHandle(),
                                                         m_ShadowPipeline->GetLayout());
         }
+        if (m_SkyboxPipeline) {
+            m_VulkanCommandList->ImportGraphicsPipeline(m_SkyboxPipelineHandle,
+                                                        m_SkyboxPipeline->GetHandle(),
+                                                        m_SkyboxPipeline->GetLayout());
+        }
     }
 
     Renderer::Renderer(IWindow &window, u32 width, u32 height, const RenderSettings &settings)
@@ -2258,7 +2401,7 @@ namespace Manro {
 
     bool Renderer::BeginFrame() { return m_Impl->BeginFrame(); }
 
-    void Renderer::BeginRendering(Vec4 clearColor) { m_Impl->BeginRendering(clearColor); }
+    void Renderer::BeginRendering() { m_Impl->BeginRendering(); }
 
     void Renderer::RenderQueue() { m_Impl->RenderQueue(); }
 
@@ -2292,11 +2435,19 @@ namespace Manro {
 
     void Renderer::SetCameraPosition(const Vec3 &pos) { m_Impl->SetCameraPosition(pos); }
 
+    void Renderer::SetSkybox(TextureHandle cubemap) { m_Impl->SetSkybox(cubemap); }
+
     MeshHandle Renderer::UploadMesh(const ModelData &data) { return m_Impl->UploadMesh(data); }
+
 
     TextureHandle Renderer::UploadTexture(const TextureData &data) { return m_Impl->UploadTexture(data); }
 
+    TextureHandle Renderer::UploadCubemap(const std::vector<TextureData> &faces) {
+        return m_Impl->UploadCubemap(faces);
+    }
+
     Ref<Material> Renderer::GetDefaultMaterial() const { return m_Impl->GetDefaultMaterial(); }
+
 
     Scope<MaterialInstance> Renderer::CreateMaterialInstance(Ref<Material> mat) {
         return m_Impl->CreateMaterialInstance(mat);

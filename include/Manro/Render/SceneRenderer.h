@@ -13,7 +13,7 @@ namespace Manro {
 
     class SceneRenderer {
     public:
-        explicit SceneRenderer(RHI::IRenderDevice &device);
+        explicit SceneRenderer();
 
         void DrawMesh(MeshHandle mesh, MaterialInstance &mat, const Mat4 &model);
 
@@ -26,6 +26,8 @@ namespace Manro {
 
         void SetPbrPassState(const RHI::VulkanPbrPassState *state);
 
+        void SetSkyboxPassState(const Manro::RHI::VulkanSkyboxPassState *state);
+
         void SetCompositePassState(const RHI::VulkanCompositePassState *state);
 
         void AddLight(const LightData &light);
@@ -37,7 +39,6 @@ namespace Manro {
         TextureHandle UploadTexture(const TextureData &data);
 
     private:
-        RHI::IRenderDevice &m_Device;
         struct DrawItem {
             MeshHandle mesh{kInvalidMesh};
             MaterialInstance *material{nullptr};
@@ -48,6 +49,7 @@ namespace Manro {
         std::vector<LightData> m_Lights;
         const RHI::VulkanZPrepassState *m_ZPrepassState{nullptr};
         const RHI::VulkanPbrPassState *m_PbrPassState{nullptr};
+        const RHI::VulkanSkyboxPassState *m_SkyboxPassState{nullptr};
         const RHI::VulkanCompositePassState *m_CompositePassState{nullptr};
     };
 

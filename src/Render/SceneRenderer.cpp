@@ -2,8 +2,7 @@
 
 namespace Manro {
 
-    SceneRenderer::SceneRenderer(RHI::IRenderDevice &device)
-            : m_Device(device) {}
+    SceneRenderer::SceneRenderer() {}
 
     void SceneRenderer::DrawMesh(MeshHandle mesh, MaterialInstance &mat, const Mat4 &model) {
         m_DrawQueue.push_back({mesh, &mat, model, false});
@@ -16,9 +15,12 @@ namespace Manro {
     void SceneRenderer::SetZPrepassState(const RHI::VulkanZPrepassState *state) {
         m_ZPrepassState = state;
     }
-
     void SceneRenderer::SetPbrPassState(const RHI::VulkanPbrPassState *state) {
         m_PbrPassState = state;
+    }
+
+    void SceneRenderer::SetSkyboxPassState(const RHI::VulkanSkyboxPassState *state) {
+        m_SkyboxPassState = state;
     }
 
     void SceneRenderer::SetCompositePassState(const RHI::VulkanCompositePassState *state) {
@@ -44,6 +46,13 @@ namespace Manro {
                 vkCmd->ExecutePbrPass(*m_PbrPassState);
             }
             m_PbrPassState = nullptr;
+        }
+
+        if (m_SkyboxPassState) {
+            if (auto *vkCmd = dynamic_cast<RHI::VulkanCommandList *>(&cmd)) {
+                vkCmd->ExecuteSkyboxPass(*m_SkyboxPassState);
+            }
+            m_SkyboxPassState = nullptr;
         }
 
         if (m_CompositePassState) {

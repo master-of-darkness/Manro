@@ -210,7 +210,6 @@ namespace Manro {
             std::vector<VkImageMemoryBarrier2> imageBarriers;
             std::vector<VkBufferMemoryBarrier2> bufferBarriers;
 
-            u32 barrierIdx = 0;
             for (const auto &acc: pd.textureAccesses) {
                 try {
                     const auto &resolved = m_Resources.GetTexture(acc.handle);

@@ -11,9 +11,9 @@ namespace Manro {
     public:
         void ProcessEvent(const SDL_Event &event) override;
 
-        bool IsKeyDown(Key k) const;
+        bool IsKeyDown(Key k) const override;
 
-        RawMouseDelta ConsumeMouseDelta();
+        RawMouseDelta ConsumeMouseDelta() override;
 
         float GetGamepadAxis(int axis) const;
 

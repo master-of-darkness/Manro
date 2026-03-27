@@ -4,7 +4,9 @@
 #include <Manro/Core/Logger.h>
 #include <Manro/Core/VirtualFS.h>
 #include <Manro/Render/Renderer.h>
+#include <Manro/Resource/TextureLoader.h>
 #include <Manro/Render/Gui/ImGuiLayer.h>
+
 #include <Manro/Platform/Window/IWindow.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <imgui.h>
@@ -150,12 +152,7 @@ void Sponza::OnRender(Manro::RenderContext& ctx) {
         TickBenchmark(renderer, dt);
     }
 
-    Manro::Vec4 clearColor{0.02f, 0.02f, 0.05f, 1.f};
-    if (sunAlt > 0.f)
-        clearColor = glm::mix(Manro::Vec4{0.1f, 0.05f, 0.02f, 1.f},
-                              Manro::Vec4{0.4f, 0.6f, 0.9f,  1.f}, sunAlt);
-
-    renderer.BeginRendering(clearColor);
+    renderer.BeginRendering();
     renderer.RenderQueue();
     renderer.EndRendering();
 
@@ -177,8 +174,16 @@ void Sponza::LoadScene(Manro::Renderer& renderer, Manro::JobSystem& jobs) {
     m_Model = std::move(models[0]);
     renderer.DrawModelStatic(*m_Model,
                              glm::scale(glm::mat4(1.f), glm::vec3(100.f)));
+
+    auto skyFaces = Manro::TextureLoader::LoadCubemap("skyboxes/cubemap_sky.png");
+    if (!skyFaces.empty()) {
+        auto h = renderer.UploadCubemap(skyFaces);
+        renderer.SetSkybox(h);
+    }
+
     LOG_INFO("[SponzaTest] Sponza loaded.");
 }
+
 
 void Sponza::DrawGui(Manro::Renderer& renderer, const float dt) {
     const float fps   = dt > 0.f ? 1.f / dt : 0.f;

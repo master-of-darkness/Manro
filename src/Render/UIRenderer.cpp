@@ -2,8 +2,7 @@
 
 namespace Manro { // TODO: implement
 
-    UIRenderer::UIRenderer(RHI::IRenderDevice &device, RHI::Format targetFormat)
-            : m_Device(device) {
+    UIRenderer::UIRenderer(RHI::Format targetFormat) {
         (void) targetFormat;
     }
 

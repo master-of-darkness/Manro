@@ -30,7 +30,6 @@ namespace Manro::RHI {
 
     struct VulkanPbrPassState {
         VkExtent2D extent{};
-        VkClearValue clearColor{};
         VkSampleCountFlagBits msaaSamples{VK_SAMPLE_COUNT_1_BIT};
         VkImageView msaaColorView{VK_NULL_HANDLE};
         VkImageView offscreenColorView{VK_NULL_HANDLE};
@@ -57,8 +56,23 @@ namespace Manro::RHI {
         VkPipelineLayout pipelineLayout{VK_NULL_HANDLE};
         VkDescriptorSet descriptorSet{VK_NULL_HANDLE};
         const void *pushConstants{nullptr};
-        u32 pushConstantSize{0};
+        Manro::u32 pushConstantSize{0};
         VkShaderStageFlags pushConstantStages{VK_SHADER_STAGE_FRAGMENT_BIT};
+    };
+
+    struct VulkanSkyboxPassState {
+        VkExtent2D extent{};
+        VkImageView offscreenColorView{VK_NULL_HANDLE};
+        VkImageView msaaColorView{VK_NULL_HANDLE};
+        VkSampleCountFlagBits msaaSamples{VK_SAMPLE_COUNT_1_BIT};
+        VkImageView depthView{VK_NULL_HANDLE};
+        VkPipeline pipeline{VK_NULL_HANDLE};
+
+        VkPipelineLayout pipelineLayout{VK_NULL_HANDLE};
+        VkDescriptorSet descriptorSet{VK_NULL_HANDLE};
+        VkBuffer vertexBuffer{VK_NULL_HANDLE};
+        VkBuffer indexBuffer{VK_NULL_HANDLE};
+        Manro::u32 indexCount{0};
     };
 
     class VulkanCommandList final : public ICommandList {
@@ -78,6 +92,8 @@ namespace Manro::RHI {
         void ExecutePbrPass(const VulkanPbrPassState &state);
 
         void ExecuteCompositePass(const VulkanCompositePassState &state);
+
+        void ExecuteSkyboxPass(const VulkanSkyboxPassState &state);
 
         void BeginRendering(std::span<const ColorAttachment> color, const DepthAttachment *depth = nullptr) override;
 

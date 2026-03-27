@@ -18,8 +18,7 @@ namespace Manro::RHI {
     }
 
     void VulkanCommandList::ExecuteZPrepass(const VulkanZPrepassState &state) {
-        if (!m_CommandBuffer || !state.depthView || !state.pipeline || !state.indexBuffer || !state.indirectBuffer ||
-            !state.countBuffer)
+        if (!m_CommandBuffer || !state.depthView)
             return;
 
         VkRenderingAttachmentInfo depthAtt{};
@@ -38,38 +37,40 @@ namespace Manro::RHI {
         ri.pDepthAttachment = &depthAtt;
         vkCmdBeginRendering(m_CommandBuffer, &ri);
 
-        VkViewport vp{0.f, 0.f, static_cast<float>(state.extent.width), static_cast<float>(state.extent.height), 0.f,
-                      1.f};
-        vkCmdSetViewport(m_CommandBuffer, 0, 1, &vp);
-        VkRect2D sc{{0, 0}, state.extent};
-        vkCmdSetScissor(m_CommandBuffer, 0, 1, &sc);
+        if (state.pipeline && state.indexBuffer && state.indirectBuffer && state.countBuffer) {
+            VkViewport vp{0.f, 0.f, static_cast<float>(state.extent.width), static_cast<float>(state.extent.height),
+                          0.f,
+                          1.f};
+            vkCmdSetViewport(m_CommandBuffer, 0, 1, &vp);
+            VkRect2D sc{{0, 0}, state.extent};
+            vkCmdSetScissor(m_CommandBuffer, 0, 1, &sc);
 
-        vkCmdBindPipeline(m_CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, state.pipeline);
-        if (state.pipelineLayout && state.descriptorSetCount > 0) {
-            vkCmdBindDescriptorSets(m_CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    state.pipelineLayout, 0, state.descriptorSetCount,
-                                    state.descriptorSets, 0, nullptr);
+            vkCmdBindPipeline(m_CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, state.pipeline);
+            if (state.pipelineLayout && state.descriptorSetCount > 0) {
+                vkCmdBindDescriptorSets(m_CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                        state.pipelineLayout, 0, state.descriptorSetCount,
+                                        state.descriptorSets, 0, nullptr);
+            }
+
+            vkCmdBindIndexBuffer(m_CommandBuffer, state.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+            vkCmdBindVertexBuffers(m_CommandBuffer, 0, 2, state.vertexBuffers, state.vertexOffsets);
+            vkCmdDrawIndexedIndirectCount(m_CommandBuffer,
+                                          state.indirectBuffer, 0,
+                                          state.countBuffer, 0,
+                                          state.instanceCount, state.drawStride);
         }
-
-        vkCmdBindIndexBuffer(m_CommandBuffer, state.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-        vkCmdBindVertexBuffers(m_CommandBuffer, 0, 2, state.vertexBuffers, state.vertexOffsets);
-        vkCmdDrawIndexedIndirectCount(m_CommandBuffer,
-                                      state.indirectBuffer, 0,
-                                      state.countBuffer, 0,
-                                      state.instanceCount, state.drawStride);
 
         vkCmdEndRendering(m_CommandBuffer);
     }
 
     void VulkanCommandList::ExecutePbrPass(const VulkanPbrPassState &state) {
-        if (!m_CommandBuffer || !state.pipeline || !state.indexBuffer || !state.indirectBuffer || !state.countBuffer)
+        if (!m_CommandBuffer)
             return;
 
         VkRenderingAttachmentInfo colorAtt{};
         colorAtt.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        colorAtt.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        colorAtt.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         colorAtt.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        colorAtt.clearValue = state.clearColor;
 
         if (state.msaaSamples != VK_SAMPLE_COUNT_1_BIT) {
             colorAtt.imageView = state.msaaColorView;
@@ -87,7 +88,7 @@ namespace Manro::RHI {
         depthAtt.imageView = state.depthView;
         depthAtt.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         depthAtt.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-        depthAtt.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depthAtt.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 
         VkRenderingInfo ri{};
         ri.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
@@ -98,25 +99,28 @@ namespace Manro::RHI {
         ri.pDepthAttachment = &depthAtt;
         vkCmdBeginRendering(m_CommandBuffer, &ri);
 
-        VkViewport vp{0.f, 0.f, static_cast<float>(state.extent.width), static_cast<float>(state.extent.height), 0.f,
-                      1.f};
-        VkRect2D sc{{0, 0}, state.extent};
-        vkCmdSetViewport(m_CommandBuffer, 0, 1, &vp);
-        vkCmdSetScissor(m_CommandBuffer, 0, 1, &sc);
+        if (state.pipeline && state.indexBuffer && state.indirectBuffer && state.countBuffer) {
+            VkViewport vp{0.f, 0.f, static_cast<float>(state.extent.width), static_cast<float>(state.extent.height),
+                          0.f,
+                          1.f};
+            VkRect2D sc{{0, 0}, state.extent};
+            vkCmdSetViewport(m_CommandBuffer, 0, 1, &vp);
+            vkCmdSetScissor(m_CommandBuffer, 0, 1, &sc);
 
-        vkCmdBindPipeline(m_CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, state.pipeline);
-        if (state.pipelineLayout && state.descriptorSetCount > 0) {
-            vkCmdBindDescriptorSets(m_CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    state.pipelineLayout, 0, state.descriptorSetCount,
-                                    state.descriptorSets, 0, nullptr);
+            vkCmdBindPipeline(m_CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, state.pipeline);
+            if (state.pipelineLayout && state.descriptorSetCount > 0) {
+                vkCmdBindDescriptorSets(m_CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                        state.pipelineLayout, 0, state.descriptorSetCount,
+                                        state.descriptorSets, 0, nullptr);
+            }
+
+            vkCmdBindIndexBuffer(m_CommandBuffer, state.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+            vkCmdBindVertexBuffers(m_CommandBuffer, 0, 2, state.vertexBuffers, state.vertexOffsets);
+            vkCmdDrawIndexedIndirectCount(m_CommandBuffer,
+                                          state.indirectBuffer, 0,
+                                          state.countBuffer, 0,
+                                          state.instanceCount, state.drawStride);
         }
-
-        vkCmdBindIndexBuffer(m_CommandBuffer, state.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-        vkCmdBindVertexBuffers(m_CommandBuffer, 0, 2, state.vertexBuffers, state.vertexOffsets);
-        vkCmdDrawIndexedIndirectCount(m_CommandBuffer,
-                                      state.indirectBuffer, 0,
-                                      state.countBuffer, 0,
-                                      state.instanceCount, state.drawStride);
         vkCmdEndRendering(m_CommandBuffer);
     }
 
@@ -158,7 +162,66 @@ namespace Manro::RHI {
         vkCmdEndRendering(m_CommandBuffer);
     }
 
+    void VulkanCommandList::ExecuteSkyboxPass(const VulkanSkyboxPassState &state) {
+        if (!m_CommandBuffer || !state.pipeline || !state.vertexBuffer || !state.indexBuffer ||
+            !state.offscreenColorView)
+            return;
+
+        VkRenderingAttachmentInfo colorAtt{};
+        colorAtt.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+
+        if (state.msaaSamples != VK_SAMPLE_COUNT_1_BIT) {
+            colorAtt.imageView = state.msaaColorView;
+            colorAtt.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            colorAtt.resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
+            colorAtt.resolveImageView = state.offscreenColorView;
+            colorAtt.resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        } else {
+            colorAtt.imageView = state.offscreenColorView;
+            colorAtt.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        }
+
+        colorAtt.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+        colorAtt.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+
+        VkRenderingAttachmentInfo depthAtt{};
+        depthAtt.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        depthAtt.imageView = state.depthView;
+        depthAtt.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        depthAtt.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+        depthAtt.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+
+        VkRenderingInfo ri{};
+        ri.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+        ri.renderArea.extent = state.extent;
+        ri.layerCount = 1;
+        ri.colorAttachmentCount = 1;
+        ri.pColorAttachments = &colorAtt;
+        ri.pDepthAttachment = (state.depthView != VK_NULL_HANDLE) ? &depthAtt : nullptr;
+        vkCmdBeginRendering(m_CommandBuffer, &ri);
+
+        VkViewport vp{0.f, 0.f, static_cast<float>(state.extent.width), static_cast<float>(state.extent.height), 0.f,
+                      1.f};
+        VkRect2D sc{{0, 0}, state.extent};
+        vkCmdSetViewport(m_CommandBuffer, 0, 1, &vp);
+        vkCmdSetScissor(m_CommandBuffer, 0, 1, &sc);
+
+        vkCmdBindPipeline(m_CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, state.pipeline);
+        if (state.pipelineLayout && state.descriptorSet != VK_NULL_HANDLE) {
+            vkCmdBindDescriptorSets(m_CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    state.pipelineLayout, 0, 1, &state.descriptorSet, 0, nullptr);
+        }
+
+        VkDeviceSize offset = 0;
+        vkCmdBindVertexBuffers(m_CommandBuffer, 0, 1, &state.vertexBuffer, &offset);
+        vkCmdBindIndexBuffer(m_CommandBuffer, state.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexed(m_CommandBuffer, state.indexCount, 1, 0, 0, 0);
+
+        vkCmdEndRendering(m_CommandBuffer);
+    }
+
     void VulkanCommandList::BeginRendering(std::span<const ColorAttachment> color, const DepthAttachment *depth) {
+
         if (!m_CommandBuffer) return;
 
         VkRenderingAttachmentInfo colorInfos[8]{};

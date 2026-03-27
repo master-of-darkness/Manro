@@ -10,7 +10,18 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #define TINYGLTF_NO_INCLUDE_STB_IMAGE
 #include <stb_image.h>
+
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-literal-operator"
+#pragma clang diagnostic ignored "-Wmissing-field-initializers"
+#endif
+
 #include <tiny_gltf.h>
+
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 
 #include <mikktspace.h>
 #include <algorithm>

@@ -6,7 +6,7 @@ namespace Manro {
 
     class UIRenderer {
     public:
-        UIRenderer(RHI::IRenderDevice &device, RHI::Format targetFormat);
+        UIRenderer(RHI::Format targetFormat);
 
         ~UIRenderer();
 
@@ -19,7 +19,6 @@ namespace Manro {
         void SetEnabled(bool e) { m_Enabled = e; }
 
     private:
-        RHI::IRenderDevice &m_Device;
         bool m_Enabled{true};
     };
 

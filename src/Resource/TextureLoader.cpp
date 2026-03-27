@@ -272,4 +272,59 @@ namespace Manro {
         
         return results;
     }
+
+    std::vector<TextureData> TextureLoader::LoadCubemap(const std::string &filepath) {
+        TextureData rawData;
+        if (!LoadIndividual(filepath, rawData)) {
+            return {};
+        }
+
+        std::vector<TextureData> faces(6);
+        int faceSize = 0;
+
+        struct FaceCoord {
+            int col, row;
+        } coords[6] = {
+                {2, 1}, // +X
+                {0, 1}, // -X
+                {1, 0}, // +Y
+                {1, 2}, // -Y
+                {1, 1}, // +Z
+                {3, 1}  // -Z
+        };
+
+        if (rawData.width == rawData.height * 4 / 3) {
+            faceSize = rawData.height / 3;
+        } else if (rawData.height == rawData.width * 4 / 3) { // TODO:
+            // ... (3x4)
+        } else if (rawData.width == rawData.height * 6) {
+            // ... (6x1)
+        } else if (rawData.height == rawData.width * 6) {
+            // ... (1x6)
+        } else {
+            LOG_ERROR("[TextureLoader] Unsupported cubemap layout for {}: {}x{}", filepath, rawData.width,
+                      rawData.height);
+            return {};
+        }
+
+        for (int i = 0; i < 6; ++i) {
+            faces[i].width = faceSize;
+            faces[i].height = faceSize;
+            faces[i].channels = 4;
+            faces[i].pixels.resize(static_cast<size_t>(faceSize) * faceSize * 4);
+
+            int startX = coords[i].col * faceSize;
+            int startY = coords[i].row * faceSize;
+
+            for (int y = 0; y < faceSize; ++y) {
+                const u8 *src = &rawData.pixels[((startY + y) * rawData.width + startX) * 4];
+                u8 *dst = &faces[i].pixels[y * faceSize * 4];
+                std::memcpy(dst, src, faceSize * 4);
+            }
+        }
+
+        return faces;
+    }
+
 } // namespace Manro
+

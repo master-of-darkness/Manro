@@ -10,6 +10,8 @@
 #include "tonemapper_histogram_comp_spv.h"
 #include "tonemapper_autoexposure_comp_spv.h"
 #include "mesh_cull_comp_spv.h"
+#include "skybox_vert_spv.h"
+#include "skybox_frag_spv.h"
 
 namespace Manro {
     void RegisterEmbeddedShaders() {
@@ -27,5 +29,8 @@ namespace Manro {
                   tonemapper_autoexposure_comp_spv_len);
         vfs.Mount("shaders://mesh_cull.comp.spv", mesh_cull_comp_spv, mesh_cull_comp_spv_len);
         vfs.Mount("shaders://shadow_depth.vert.spv", shadow_depth_vert_spv, shadow_depth_vert_spv_len);
+        vfs.Mount("shaders://skybox.vert.spv", skybox_vert_spv, skybox_vert_spv_len);
+        vfs.Mount("shaders://skybox.frag.spv", skybox_frag_spv, skybox_frag_spv_len);
+
     }
 } // namespace Manro

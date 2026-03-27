@@ -53,7 +53,7 @@ namespace Manro {
 
         bool BeginFrame();
 
-        void BeginRendering(Vec4 clearColor);
+        void BeginRendering();
 
         void RenderQueue();
 
@@ -77,9 +77,13 @@ namespace Manro {
 
         void SetCameraPosition(const Vec3 &pos);
 
+        void SetSkybox(TextureHandle cubemap);
+
         MeshHandle UploadMesh(const ModelData &data);
 
         TextureHandle UploadTexture(const TextureData &data);
+
+        TextureHandle UploadCubemap(const std::vector<TextureData> &faces);
 
         Ref<Material> GetDefaultMaterial() const;
 

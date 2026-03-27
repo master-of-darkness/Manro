@@ -87,7 +87,127 @@ namespace Manro {
         return Upload(data.pixels.data(), data.width, data.height);
     }
 
+    TextureHandle TextureManager::UploadCubemap(const std::vector<TextureData> &faces) {
+        if (faces.size() != 6) {
+            LOG_ERROR("[TextureManager] Cubemap must have exactly 6 faces");
+            return kInvalidTexture;
+        }
+
+        int width = faces[0].width;
+        int height = faces[0].height;
+        VkDeviceSize layerSize = static_cast<VkDeviceSize>(width) * height * 4;
+        VkDeviceSize totalSize = layerSize * 6;
+
+        VkBuffer stagingBuf{};
+        VmaAllocation stagingAlloc{};
+        VmaAllocationInfo stagingAllocInfo{};
+
+        VkBufferCreateInfo stagingCI{};
+        stagingCI.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        stagingCI.size = totalSize;
+        stagingCI.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        stagingCI.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        VmaAllocationCreateInfo stagingAllocCI{};
+        stagingAllocCI.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+        stagingAllocCI.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+        if (vmaCreateBuffer(m_Impl->context.GetAllocator(),
+                            &stagingCI, &stagingAllocCI,
+                            &stagingBuf, &stagingAlloc, &stagingAllocInfo) != VK_SUCCESS) {
+            LOG_ERROR("[TextureManager] Failed to create staging buffer for cubemap");
+            return kInvalidTexture;
+        }
+
+        u8 *data = static_cast<u8 *>(stagingAllocInfo.pMappedData);
+        for (int i = 0; i < 6; ++i) {
+            std::memcpy(data + i * layerSize, faces[i].pixels.data(), layerSize);
+        }
+        vmaFlushAllocation(m_Impl->context.GetAllocator(), stagingAlloc, 0, totalSize);
+
+        VkImageCreateInfo imageCI{};
+        imageCI.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        imageCI.imageType = VK_IMAGE_TYPE_2D;
+        imageCI.extent = {static_cast<u32>(width), static_cast<u32>(height), 1};
+        imageCI.mipLevels = 1;
+        imageCI.arrayLayers = 6;
+        imageCI.format = VK_FORMAT_R8G8B8A8_UNORM;
+        imageCI.tiling = VK_IMAGE_TILING_OPTIMAL;
+        imageCI.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        imageCI.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        imageCI.samples = VK_SAMPLE_COUNT_1_BIT;
+        imageCI.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        imageCI.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+
+        VmaAllocationCreateInfo gpuAllocCI{};
+        gpuAllocCI.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+        Impl::LoadedTexture tex{};
+        if (vmaCreateImage(m_Impl->context.GetAllocator(), &imageCI, &gpuAllocCI,
+                           &tex.image, &tex.allocation, nullptr) != VK_SUCCESS) {
+            LOG_ERROR("[TextureManager] Failed to create VkImage for cubemap");
+            vmaDestroyBuffer(m_Impl->context.GetAllocator(), stagingBuf, stagingAlloc);
+            return kInvalidTexture;
+        }
+
+        ExecuteOneShot(m_Impl->context, [&](VkCommandBuffer cmd) {
+            VkImageMemoryBarrier barrier{};
+            barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.image = tex.image;
+            barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 6};
+
+            barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            barrier.srcAccessMask = 0;
+            barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            vkCmdPipelineBarrier(cmd,
+                                 VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+            VkBufferImageCopy regions[6]{};
+            for (int i = 0; i < 6; ++i) {
+                regions[i].bufferOffset = i * layerSize;
+                regions[i].imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, static_cast<u32>(i), 1};
+                regions[i].imageExtent = {static_cast<u32>(width), static_cast<u32>(height), 1};
+            }
+            vkCmdCopyBufferToImage(cmd, stagingBuf, tex.image,
+                                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 6, regions);
+
+            barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            vkCmdPipelineBarrier(cmd,
+                                 VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                 0, 0, nullptr, 0, nullptr, 1, &barrier);
+        });
+
+        vmaDestroyBuffer(m_Impl->context.GetAllocator(), stagingBuf, stagingAlloc);
+
+        VkImageViewCreateInfo viewCI{};
+        viewCI.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        viewCI.image = tex.image;
+        viewCI.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
+        viewCI.format = VK_FORMAT_R8G8B8A8_UNORM;
+        viewCI.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 6};
+
+        if (vkCreateImageView(m_Impl->context.GetDevice(), &viewCI, nullptr, &tex.view) != VK_SUCCESS) {
+            LOG_ERROR("[TextureManager] Failed to create cubemap image view");
+            vmaDestroyImage(m_Impl->context.GetAllocator(), tex.image, tex.allocation);
+            return kInvalidTexture;
+        }
+
+        TextureHandle id = m_Impl->nextId++;
+        m_Impl->textures.emplace(id, tex);
+        m_Impl->bindlessAlloc.UpdateSlot(id, m_Impl->textures[id].view);
+
+        return id;
+    }
+
     TextureHandle TextureManager::Upload(const u8 *pixels, int width, int height) {
+
         VkDeviceSize imageSize = static_cast<VkDeviceSize>(width) * height * 4;
 
         VkBuffer stagingBuf{};

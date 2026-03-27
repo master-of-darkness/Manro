@@ -1,22 +1,32 @@
 cmake_minimum_required(VERSION 3.24)
 cmake_policy(SET CMP0091 NEW)
+
+if (NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT CMAKE_C_COMPILER_ID MATCHES "Clang")
+    set(CMAKE_C_COMPILER clang)
+    set(CMAKE_CXX_COMPILER clang++)
+endif ()
+
+if(WIN32)
+    add_definitions(-DNOMINMAX)
+    add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+    add_definitions(-D_CRT_NONSTDC_NO_DEPRECATE)
+endif()
+
 project(GameEngine VERSION 0.1 LANGUAGES C CXX)
+
+if (NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    message(FATAL_ERROR "MSVC is forbidden. Project requires Clang. Detected: ${CMAKE_CXX_COMPILER_ID}")
+endif ()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(FETCHCONTENT_QUIET OFF)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Build type" FORCE)
     set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "RelWithDebInfo")
 endif()
-
-if(MSVC)
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-    add_compile_options(/DNOMINMAX /utf-8)
-endif()
-
-include(FetchContent)
 
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
@@ -24,31 +34,25 @@ set(SDL_SHARED OFF CACHE BOOL "" FORCE)
 set(SDL_STATIC ON CACHE BOOL "" FORCE)
 set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(SDL_X11_XTEST OFF CACHE BOOL "" FORCE)
-
 set(SDL3MIXER_VENDORED ON CACHE BOOL "" FORCE)
 set(SDL3MIXER_SAMPLES OFF CACHE BOOL "" FORCE)
 set(SDL3MIXER_OPUS ON CACHE BOOL "" FORCE)
 set(SDL3MIXER_FLAC ON CACHE BOOL "" FORCE)
 set(SDL3MIXER_VORBIS ON CACHE BOOL "" FORCE)
 
-FetchContent_Declare(
-        SDL3
-        GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
-        GIT_TAG        main
-        OVERRIDE_FIND_PACKAGE
-)
-
-FetchContent_Declare(
-        SDL3_mixer
-        GIT_REPOSITORY https://github.com/libsdl-org/SDL_mixer.git
-        GIT_TAG        main
-)
-
+add_subdirectory(deps/SDL3)
+add_subdirectory(deps/SDL3_mixer)
 add_subdirectory(deps/vk-bootstrap)
 add_subdirectory(deps/volk)
 add_subdirectory(deps/VulkanMemoryAllocator)
+add_subdirectory(deps/flatbuffers)
+add_subdirectory(deps/glm)
+add_subdirectory(deps/enet)
+add_subdirectory(deps/tinyobjloader)
+add_subdirectory(deps/tinygltf)
+add_subdirectory(deps/JoltPhysics/Build)
+add_subdirectory(deps/spdlog)
 
-# --- Slang Binary Fetching ---
 if(WIN32)
     set(SLANG_OS "windows")
     set(SLANG_ARCH "x86_64")
@@ -67,6 +71,8 @@ else()
     set(SLANG_EXT "tar.gz")
 endif()
 
+include(FetchContent)
+
 set(SLANG_BINARY_VERSION "2026.4.2")
 set(SLANG_BINARY_URL "https://github.com/shader-slang/slang/releases/download/v${SLANG_BINARY_VERSION}/slang-${SLANG_BINARY_VERSION}-${SLANG_OS}-${SLANG_ARCH}.${SLANG_EXT}")
 
@@ -83,108 +89,15 @@ if(WIN32)
     set_target_properties(slangc PROPERTIES IMPORTED_LOCATION "${slang_bin_SOURCE_DIR}/bin/slangc.exe")
     set_target_properties(slang PROPERTIES
             IMPORTED_LOCATION "${slang_bin_SOURCE_DIR}/bin/slang.dll"
-            IMPORTED_IMPLIB "${slang_bin_SOURCE_DIR}/lib/slang.lib"
-    )
+            IMPORTED_IMPLIB "${slang_bin_SOURCE_DIR}/lib/slang.lib")
+    set(SLANG_EXTRA_LIB_DIR "${slang_bin_SOURCE_DIR}/bin")
 else()
     set_target_properties(slangc PROPERTIES IMPORTED_LOCATION "${slang_bin_SOURCE_DIR}/bin/slangc")
-    if(EXISTS "${slang_bin_SOURCE_DIR}/lib/libslang.so")
-        set_target_properties(slang PROPERTIES IMPORTED_LOCATION "${slang_bin_SOURCE_DIR}/lib/libslang.so")
-    else()
-        set_target_properties(slang PROPERTIES IMPORTED_LOCATION "${slang_bin_SOURCE_DIR}/bin/libslang.so")
-    endif()
-endif()
+    set_target_properties(slang PROPERTIES IMPORTED_LOCATION "${slang_bin_SOURCE_DIR}/lib/libslang.so")
+    set(SLANG_EXTRA_LIB_DIR "${slang_bin_SOURCE_DIR}/lib")
+endif ()
+
 target_include_directories(slang INTERFACE "${slang_bin_SOURCE_DIR}/include")
-
-FetchContent_Declare(
-        flatbuffers
-        GIT_REPOSITORY https://github.com/google/flatbuffers.git
-        GIT_TAG v25.12.19
-)
-set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(flatbuffers)
-
-FetchContent_Declare(
-        glm
-        GIT_REPOSITORY https://github.com/g-truc/glm.git
-        GIT_TAG 1.0.3
-)
-FetchContent_MakeAvailable(glm)
-
-FetchContent_Declare(
-        enet
-        GIT_REPOSITORY https://github.com/lsalzman/enet.git
-        GIT_TAG v1.3.18
-)
-FetchContent_MakeAvailable(enet)
-
-FetchContent_Declare(
-        tinyobjloader
-        GIT_REPOSITORY https://github.com/tinyobjloader/tinyobjloader.git
-        GIT_TAG        v2.0.0rc13
-)
-FetchContent_MakeAvailable(tinyobjloader)
-
-FetchContent_Declare(
-        stb
-        GIT_REPOSITORY https://github.com/nothings/stb.git
-        GIT_TAG        master
-)
-FetchContent_MakeAvailable(stb)
-
-FetchContent_Declare(
-        tinygltf
-        GIT_REPOSITORY https://github.com/syoyo/tinygltf.git
-        GIT_TAG        v2.9.3
-)
-FetchContent_MakeAvailable(tinygltf)
-
-FetchContent_Declare(
-        JoltPhysics
-        GIT_REPOSITORY https://github.com/jrouwe/JoltPhysics.git
-        GIT_TAG v5.5.0
-        SOURCE_SUBDIR  Build
-)
-set(USE_STD_VECTOR OFF CACHE BOOL "" FORCE)
-set(TARGET_UNIT_TESTS OFF CACHE BOOL "" FORCE)
-set(USE_STATIC_MSVC_RUNTIME ON CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(JoltPhysics)
-
-if(MSVC)
-    target_compile_options(Jolt PRIVATE /wd4865 /wd5105)
-endif()
-
-FetchContent_Declare(
-        spdlog
-        GIT_REPOSITORY https://github.com/gabime/spdlog.git
-        GIT_TAG        v1.17.0
-)
-FetchContent_MakeAvailable(spdlog)
-
-FetchContent_MakeAvailable(SDL3 SDL3_mixer)
-
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    foreach(_target
-            SDL3-static SDL3_mixer-static
-            vk-bootstrap volk
-            slang flatbuffers enet Jolt spdlog
-    )
-        if(TARGET ${_target})
-            get_target_property(_type ${_target} TYPE)
-            get_target_property(_imported ${_target} IMPORTED)
-            if(NOT _type STREQUAL "INTERFACE_LIBRARY" AND NOT _imported)
-                if(MSVC)
-                    target_compile_options(${_target} PRIVATE
-                            /O2 /Ob3 /GL /DNDEBUG /GS-
-                    )
-                else()
-                    target_compile_options(${_target} PRIVATE
-                            -O3 -DNDEBUG -fvisibility=hidden
-                    )
-                endif()
-            endif()
-        endif()
-    endforeach()
-endif()
 
 set(SCHEMA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/Networking/Schema")
 set(SCHEMA_FILE "${SCHEMA_DIR}/NetworkMessage.fbs")
@@ -200,16 +113,6 @@ add_custom_command(
 add_custom_target(GenerateNetworkSchema
         DEPENDS "${GEN_DIR}/NetworkMessage_generated.h"
 )
-
-if (WIN32)
-    set(SLANG_EXTRA_LIB_DIR "${slang_bin_SOURCE_DIR}/bin")
-else ()
-    if(EXISTS "${slang_bin_SOURCE_DIR}/lib")
-        set(SLANG_EXTRA_LIB_DIR "${slang_bin_SOURCE_DIR}/lib")
-    else()
-        set(SLANG_EXTRA_LIB_DIR "${slang_bin_SOURCE_DIR}/bin")
-    endif()
-endif ()
 
 set(SHADER_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders")
 set(SHADER_BIN_DIR "${CMAKE_CURRENT_BINARY_DIR}/assets/shaders/spv")
@@ -249,12 +152,63 @@ compile_shader("mesh_cull.slang" "main" "compute" "${SHADER_BIN_DIR}/mesh_cull.c
 compile_shader("shadow_depth.slang" "VSMain" "vertex" "${SHADER_BIN_DIR}/shadow_depth.vert.spv")
 compile_shader("imgui.slang" "VSMain" "vertex"   "${SHADER_BIN_DIR}/imgui.vert.spv")
 compile_shader("imgui.slang" "PSMain" "fragment" "${SHADER_BIN_DIR}/imgui.frag.spv")
-
+compile_shader("skybox.slang" "VSMain" "vertex" "${SHADER_BIN_DIR}/skybox.vert.spv")
+compile_shader("skybox.slang" "PSMain" "fragment" "${SHADER_BIN_DIR}/skybox.frag.spv")
 compile_shader("nvshaders/tonemapper.slang" "Tonemap"      "compute" "${SHADER_BIN_DIR}/tonemapper.comp.spv")
 compile_shader("nvshaders/tonemapper.slang" "Histogram"    "compute" "${SHADER_BIN_DIR}/tonemapper_histogram.comp.spv")
 compile_shader("nvshaders/tonemapper.slang" "AutoExposure" "compute" "${SHADER_BIN_DIR}/tonemapper_autoexposure.comp.spv")
 
 add_custom_target(PrecompileShaders DEPENDS ${PRECOMPILED_SHADERS})
+
+add_library(Engine STATIC
+        src/Core/EngineLoop.cpp
+        src/Core/Logger.cpp
+        src/Core/JobSystem.cpp
+        src/Core/VirtualFS.cpp
+        src/Core/EmbeddedShaders.cpp
+        src/Input/InputManager.cpp
+        src/Networking/NetworkClient.cpp
+        src/Networking/NetworkServer.cpp
+        src/Render/Material.cpp
+        src/Render/Vulkan/VulkanContext.cpp
+        src/Render/Vulkan/VulkanHelpers.cpp
+        src/Render/Vulkan/Swapchain.cpp
+        src/Render/Vulkan/Buffer.cpp
+        src/Render/Vulkan/Pipeline.cpp
+        src/Render/Vulkan/DescriptorAllocator.cpp
+        src/Render/Vulkan/PipelineCache.cpp
+        src/Render/RenderGraph.cpp
+        src/Render/Renderer.cpp
+        src/Render/RHI/StubRenderDevice.cpp
+        src/Render/RHI/VulkanCommandList.cpp
+        src/Render/SceneRenderer.cpp
+        src/Render/UIRenderer.cpp
+        src/Render/TextureManager.cpp
+        src/Render/MeshManager.cpp
+        src/Render/Model.cpp
+        src/Render/Gui/ImGuiLayer.cpp
+        src/Resource/ModelLoader.cpp
+        src/Resource/TextureLoader.cpp
+        src/Physics/PhysicsWorld.cpp
+        src/Platform/Audio/AudioManager.cpp
+        src/Platform/Audio/SDL3AudioBackend.cpp
+        src/Platform/Input/SDL3InputBackend.cpp
+        src/Platform/Window/SDL3Window.cpp
+        src/Platform/Window/WindowManager.cpp
+        src/Platform/PlatformContext.cpp
+        deps/mikktspace/mikktspace.c
+        deps/imgui/imgui.cpp
+        deps/imgui/imgui_draw.cpp
+        deps/imgui/imgui_widgets.cpp
+        deps/imgui/imgui_tables.cpp
+        deps/imgui/imgui_demo.cpp
+        deps/imgui/backends/imgui_impl_sdl3.cpp
+        deps/imgui/backends/imgui_impl_vulkan.cpp
+)
+
+set_source_files_properties(deps/mikktspace/mikktspace.c
+        PROPERTIES COMPILE_FLAGS "-Wno-unused-but-set-variable"
+)
 
 set(_EMBED_SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/embed_spv.cmake")
 file(WRITE "${_EMBED_SCRIPT}" [=[
@@ -308,91 +262,44 @@ macro(embed_shader SHADER_SPV_FILE VAR_NAME)
     list(APPEND EMBEDDED_SHADER_HEADERS "${_header}")
 endmacro()
 
-embed_shader("${SHADER_BIN_DIR}/pbr.vert.spv"                        pbr_vert_spv)
-embed_shader("${SHADER_BIN_DIR}/pbr.frag.spv"                        pbr_frag_spv)
-embed_shader("${SHADER_BIN_DIR}/forward_plus_cull.comp.spv"          forward_plus_cull_comp_spv)
-embed_shader("${SHADER_BIN_DIR}/composite.vert.spv"                  composite_vert_spv)
-embed_shader("${SHADER_BIN_DIR}/composite.frag.spv"                  composite_frag_spv)
-embed_shader("${SHADER_BIN_DIR}/tonemapper.comp.spv"                 tonemapper_comp_spv)
-embed_shader("${SHADER_BIN_DIR}/tonemapper_histogram.comp.spv"       tonemapper_histogram_comp_spv)
-embed_shader("${SHADER_BIN_DIR}/tonemapper_autoexposure.comp.spv"    tonemapper_autoexposure_comp_spv)
-embed_shader("${SHADER_BIN_DIR}/mesh_cull.comp.spv"                  mesh_cull_comp_spv)
+embed_shader("${SHADER_BIN_DIR}/pbr.vert.spv" pbr_vert_spv)
+embed_shader("${SHADER_BIN_DIR}/pbr.frag.spv" pbr_frag_spv)
+embed_shader("${SHADER_BIN_DIR}/forward_plus_cull.comp.spv" forward_plus_cull_comp_spv)
+embed_shader("${SHADER_BIN_DIR}/composite.vert.spv" composite_vert_spv)
+embed_shader("${SHADER_BIN_DIR}/composite.frag.spv" composite_frag_spv)
+embed_shader("${SHADER_BIN_DIR}/tonemapper.comp.spv" tonemapper_comp_spv)
+embed_shader("${SHADER_BIN_DIR}/tonemapper_histogram.comp.spv" tonemapper_histogram_comp_spv)
+embed_shader("${SHADER_BIN_DIR}/tonemapper_autoexposure.comp.spv" tonemapper_autoexposure_comp_spv)
+embed_shader("${SHADER_BIN_DIR}/mesh_cull.comp.spv" mesh_cull_comp_spv)
 embed_shader("${SHADER_BIN_DIR}/shadow_depth.vert.spv" shadow_depth_vert_spv)
-embed_shader("${SHADER_BIN_DIR}/imgui.vert.spv"                      imgui_vert_spv)
-embed_shader("${SHADER_BIN_DIR}/imgui.frag.spv"                      imgui_frag_spv)
+embed_shader("${SHADER_BIN_DIR}/imgui.vert.spv" imgui_vert_spv)
+embed_shader("${SHADER_BIN_DIR}/imgui.frag.spv" imgui_frag_spv)
+embed_shader("${SHADER_BIN_DIR}/skybox.vert.spv" skybox_vert_spv)
+embed_shader("${SHADER_BIN_DIR}/skybox.frag.spv" skybox_frag_spv)
 
 add_custom_target(EmbedShaders DEPENDS ${EMBEDDED_SHADER_HEADERS})
 
-add_library(Engine STATIC
-        src/Core/EngineLoop.cpp
-        src/Core/Logger.cpp
-        src/Core/JobSystem.cpp
-        src/Core/VirtualFS.cpp
-        src/Core/EmbeddedShaders.cpp
-        src/Input/InputManager.cpp
-        src/Networking/NetworkClient.cpp
-        src/Networking/NetworkServer.cpp
-        src/Render/Material.cpp
-        src/Render/Vulkan/VulkanContext.cpp
-        src/Render/Vulkan/VulkanHelpers.cpp
-        src/Render/Vulkan/Swapchain.cpp
-        src/Render/Vulkan/Buffer.cpp
-        src/Render/Vulkan/Pipeline.cpp
-        src/Render/Vulkan/DescriptorAllocator.cpp
-        src/Render/Vulkan/PipelineCache.cpp
-        src/Render/RenderGraph.cpp
-        src/Render/Renderer.cpp
-        src/Render/RHI/StubRenderDevice.cpp
-        src/Render/RHI/VulkanCommandList.cpp
-        src/Render/SceneRenderer.cpp
-        src/Render/UIRenderer.cpp
-        src/Render/TextureManager.cpp
-        src/Render/MeshManager.cpp
-        src/Render/Model.cpp
-        src/Render/Gui/ImGuiLayer.cpp
-        src/Resource/ModelLoader.cpp
-        src/Resource/TextureLoader.cpp
-        src/Physics/PhysicsWorld.cpp
-        src/Platform/Audio/AudioManager.cpp
-        src/Platform/Audio/SDL3AudioBackend.cpp
-        src/Platform/Input/SDL3InputBackend.cpp
-        src/Platform/Window/SDL3Window.cpp
-        src/Platform/Window/WindowManager.cpp
-        src/Platform/PlatformContext.cpp
-        deps/mikktspace/mikktspace.c
-        deps/imgui/imgui.cpp
-        deps/imgui/imgui_draw.cpp
-        deps/imgui/imgui_widgets.cpp
-        deps/imgui/imgui_tables.cpp
-        deps/imgui/imgui_demo.cpp
-        deps/imgui/backends/imgui_impl_sdl3.cpp
-        deps/imgui/backends/imgui_impl_vulkan.cpp
-        src/Render/SceneRenderer.cpp
-)
-if (WIN32)
-    set_source_files_properties(
-            deps/mikktspace/mikktspace.c
-            PROPERTIES COMPILE_OPTIONS "/wd4456"
-    )
-endif ()
-
 add_dependencies(Engine GenerateNetworkSchema PrecompileShaders EmbedShaders)
 
-target_include_directories(Engine PUBLIC
-        include
+target_include_directories(Engine SYSTEM PUBLIC
         deps/vk-bootstrap/src
         deps/imgui
         deps/imgui/backends
+        deps/enet/include
+        deps/tinyobjloader
+        deps/stb
+        deps/mikktspace
+        deps/VulkanMemoryAllocator/include
+)
+
+target_include_directories(Engine PUBLIC
+        include
         ${GEN_DIR}
         ${SHADER_BIN_DIR}
         ${SHADER_SRC_DIR}
-        ${enet_SOURCE_DIR}/include
-        ${tinyobjloader_SOURCE_DIR}
-        ${stb_SOURCE_DIR}
-        deps/mikktspace
 )
-target_include_directories(Engine PRIVATE src/Render)
 
+target_include_directories(Engine PRIVATE src/Render deps/stb)
 target_compile_definitions(Engine PUBLIC VK_NO_PROTOTYPES)
 
 target_link_libraries(Engine PUBLIC
@@ -417,13 +324,7 @@ else()
 endif()
 
 target_compile_options(Engine PRIVATE
-        $<$<CXX_COMPILER_ID:MSVC>:
-        /W4 /WX /utf-8
-        /wd4865 /wd5105 /wd4201 /wd4100 /wd4324 /wd4189 /wd4267
-        $<$<CONFIG:Release>:/O2 /Ob3 /GL /DNDEBUG /GS->
-        >
-        $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:
-        -Wall -Wextra -Wno-unused-parameter -Wunused
+        -Wall -Wextra -Werror -Wno-unused-parameter -Wunused
         $<$<CONFIG:Release>:
         -O3 -DNDEBUG
         -fvisibility=hidden
@@ -431,22 +332,13 @@ target_compile_options(Engine PRIVATE
         -ffunction-sections
         -fdata-sections
         >
-        >
 )
 
-if(MSVC)
-    target_link_options(Engine PUBLIC
-            $<$<CONFIG:Release>:      /LTCG /OPT:REF /OPT:ICF /DEBUG:NONE>
-            $<$<CONFIG:RelWithDebInfo>:/DEBUG:FULL /OPT:REF /OPT:ICF>
-            $<$<CONFIG:Debug>:        /DEBUG:FULL>
-    )
-else()
-    target_link_options(Engine PUBLIC
-            $<$<CONFIG:Release>:
-            -Wl,--gc-sections
-            -Wl,--strip-all
-            >
-    )
-endif()
+target_link_options(Engine PUBLIC
+        $<$<CONFIG:Release>:
+        -Wl,--gc-sections
+        $<$<NOT:$<PLATFORM_ID:Apple>>:-Wl,--strip-all>
+        >
+)
 
 add_subdirectory(tests/Sponza)
