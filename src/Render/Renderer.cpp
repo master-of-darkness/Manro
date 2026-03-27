@@ -7,6 +7,7 @@
 #include <Manro/Render/SceneRenderer.h>
 #include <Manro/Render/UIRenderer.h>
 #include <stdexcept>
+#include <cstring>
 #include <glm/gtc/matrix_transform.hpp>
 
 
@@ -410,10 +411,17 @@ namespace Manro {
     RendererImpl::RendererImpl(IWindow &window, u32 width, u32 height,
                        const RenderSettings &settings)
             : m_Context("GameEngine", window),
-              m_RhiDevice(RHI::IRenderDevice::CreateVulkan(window, width, height, settings.enableVSync)),
               m_Textures(m_Context, m_BindlessAlloc)
           , m_Meshes(m_Context)
           , m_Settings(settings) {
+        {
+            RHI::AdapterInfo info{};
+            m_Context.GetVramStats(info.vramUsage, info.vramBudget);
+            VkPhysicalDeviceProperties props{};
+            vkGetPhysicalDeviceProperties(m_Context.GetPhysicalDevice(), &props);
+            std::strncpy(info.name, props.deviceName, sizeof(info.name) - 1);
+            m_RhiDevice = RHI::IRenderDevice::CreateVulkan(window, width, height, settings.enableVSync, &info);
+        }
         m_Swapchain = CreateScope<Swapchain>(m_Context, width, height, m_Settings.enableVSync);
 
         VkSampleCountFlagBits maxSamples = m_Context.GetMaxUsableSampleCount();

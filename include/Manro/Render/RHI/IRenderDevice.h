@@ -71,7 +71,8 @@ namespace Manro::RHI {
 
         static Scope<IRenderDevice> CreateVulkan(::Manro::IWindow &window,
                                                  u32 width, u32 height,
-                                                 bool vsync = true);
+                                                 bool vsync = true,
+                                                 const AdapterInfo* pAdapterInfo = nullptr);
     };
 
 } // namespace Manro::RHI

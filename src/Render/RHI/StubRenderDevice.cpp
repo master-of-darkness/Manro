@@ -25,8 +25,8 @@ namespace Manro::RHI {
 
         class StubRenderDevice final : public IRenderDevice {
         public:
-            StubRenderDevice(u32 width, u32 height)
-                    : m_Width(width), m_Height(height) {
+            StubRenderDevice(u32 width, u32 height, const AdapterInfo& info)
+                    : m_Width(width), m_Height(height), m_AdapterInfo(info) {
                 TextureDesc scDesc{};
                 scDesc.width = width;
                 scDesc.height = height;
@@ -91,15 +91,13 @@ namespace Manro::RHI {
             }
 
             AdapterInfo GetAdapterInfo() const override {
-                AdapterInfo info{};
-                const char *name = "StubRHI (migration in progress)";
-                std::memcpy(info.name, name, std::strlen(name));
-                return info;
+                return m_AdapterInfo;
             }
 
         private:
             u32 m_Width{0};
             u32 m_Height{0};
+            AdapterInfo m_AdapterInfo{};
             TextureHandle m_SwapchainTexture{};
             VulkanCommandList m_CommandList;
 
@@ -109,10 +107,12 @@ namespace Manro::RHI {
         };
     } // namespace
 
-    Scope<IRenderDevice> IRenderDevice::CreateVulkan(::Manro::IWindow &window, u32 width, u32 height, bool vsync) {
+    Scope<IRenderDevice> IRenderDevice::CreateVulkan(::Manro::IWindow &window, u32 width, u32 height, bool vsync, const AdapterInfo* pAdapterInfo) {
         (void) window;
         (void) vsync;
-        return CreateScope<StubRenderDevice>(width, height);
+        AdapterInfo info{};
+        if (pAdapterInfo) info = *pAdapterInfo;
+        return CreateScope<StubRenderDevice>(width, height, info);
     }
 
 } // namespace Manro::RHI
