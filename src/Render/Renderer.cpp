@@ -17,6 +17,7 @@
 #include "Backend/Vulkan/Pipeline.h"
 #include "Backend/Vulkan/DescriptorAllocator.h"
 #include "Backend/Vulkan/PipelineCache.h"
+#include "Manro/Render/DebugDraw.h"
 
 namespace Manro {
 
@@ -43,6 +44,9 @@ namespace Manro {
         VkDescriptorSet skyboxSet = VK_NULL_HANDLE;
 
         bool staticUploaded = false;
+        Scope<Buffer> debugVertexBuffer;
+        Scope<Buffer> debugVertexBufferNoDepth;
+
     };
 
     struct UniformBufferObject {
@@ -250,6 +254,20 @@ namespace Manro {
             return props.deviceName;
         }
 
+        void DebugLine(const Vec3 &a, const Vec3 &b, u32 color, bool depthTest);
+
+        void DebugAABB(const Vec3 &min, const Vec3 &max, u32 color, bool depthTest);
+
+        void DebugBox(const Vec3 &center, const Vec3 &half, const Mat4 &transform, u32 color, bool depthTest);
+
+        void DebugSphere(const Vec3 &center, float radius, u32 color, int segments, bool depthTest);
+
+        void DebugFrustum(const Mat4 &invViewProj, u32 color, bool depthTest);
+
+        void DebugCross(const Vec3 &center, float size, u32 color, bool depthTest);
+
+        void DebugAxes(const Mat4 &transform, float size);
+
     private:
         void CreateOffscreenResources(u32 w, u32 h);
 
@@ -325,6 +343,8 @@ namespace Manro {
 
         std::vector<GpuMeshInstance> m_StaticInstances;
         std::vector<GpuCullData> m_StaticCullData;
+        std::vector<DebugVertex> m_DebugVertices;
+        std::vector<DebugVertex> m_DebugVerticesNoDepth;
 
         VkDescriptorPool m_DescriptorPool = VK_NULL_HANDLE;
         VkDescriptorSetLayout m_PbrSetLayout = VK_NULL_HANDLE;
@@ -341,11 +361,14 @@ namespace Manro {
         Scope<Pipeline> m_MeshCullPipeline;
         Scope<Pipeline> m_ShadowPipeline;
         Scope<Pipeline> m_SkyboxPipeline;
+        Scope<Pipeline> m_DebugPipeline;
+        Scope<Pipeline> m_DebugPipelineNoDepth;
 
         Scope<Buffer> m_SkyboxVertexBuffer;
         Scope<Buffer> m_SkyboxIndexBuffer;
+        Scope<Buffer> m_debugVertexBuffer;
+        Scope<Buffer> m_debugVertexBufferNoDepth;
         TextureHandle m_SkyboxTexture = kInvalidTexture;
-
 
         AllocatedImage m_OffscreenColor{};
         AllocatedImage m_MsaaColorImage{};
@@ -402,11 +425,17 @@ namespace Manro {
         void BuildSkyboxPipeline();
 
         void UpdateSkyboxDescriptorSet(u32 fi);
+
+        void BuildDebugPipeline();
+
+        void FlushDebugDraw(VkCommandBuffer cb);
+
     };
 
     static constexpr u32 kMaxTilesX = 256u;
     static constexpr u32 kMaxTilesY = 144u;
     static constexpr u32 kMaxTiles = kMaxTilesX * kMaxTilesY;
+    static constexpr u32 kMaxDebugVertices = 65536;
 
     RendererImpl::RendererImpl(IWindow &window, u32 width, u32 height,
                        const RenderSettings &settings)
@@ -461,6 +490,7 @@ namespace Manro {
         BuildCullPipeline();
         BuildShadowPipeline();
         BuildSkyboxPipeline();
+        BuildDebugPipeline();
         CreateCommandBuffers();
         CreateSyncObjects();
 
@@ -937,8 +967,11 @@ namespace Manro {
         submit.commandBufferInfoCount = 1;
         submit.pCommandBufferInfos = &cmdInfo;
 
-        if (vkQueueSubmit2(m_Context.GetGraphicsQueue(), 1, &submit, VK_NULL_HANDLE) != VK_SUCCESS)
+        VkResult result = vkQueueSubmit2(m_Context.GetGraphicsQueue(), 1, &submit, VK_NULL_HANDLE);
+        if (result != VK_SUCCESS) {
+            LOG_ERROR("[Renderer] vkQueueSubmit2 failed with result: %d", (int) result);
             throw std::runtime_error("Failed to submit command buffer");
+        }
 
         if (m_Swapchain->Present(m_CurrentImageIndex, m_PresentSemaphores[m_CurrentImageIndex]))
             m_PendingResize = true;
@@ -1379,6 +1412,8 @@ namespace Manro {
     void RendererImpl::EndRendering() {
         if (m_UIRenderer && m_VulkanCommandList)
             m_UIRenderer->Render(*m_VulkanCommandList);
+        if (m_VulkanCommandList)
+            FlushDebugDraw(m_VulkanCommandList->GetHandle());
     }
 
     void RendererImpl::EndFrameAndPresent() {
@@ -1807,6 +1842,18 @@ namespace Manro {
         m_SkyboxIndexBuffer = CreateScope<Buffer>(m_Context, sizeof(skyboxIndices),
                                                   VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
         m_SkyboxIndexBuffer->LoadData(skyboxIndices, sizeof(skyboxIndices));
+
+        m_debugVertexBuffer = CreateScope<Buffer>(
+                m_Context,
+                sizeof(DebugVertex) * kMaxDebugVertices,
+                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+        m_debugVertexBufferNoDepth = CreateScope<Buffer>(
+                m_Context,
+                sizeof(DebugVertex) * kMaxDebugVertices,
+                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                VMA_MEMORY_USAGE_CPU_TO_GPU);
     }
 
     void RendererImpl::UpdatePbrDescriptorSet(u32 fi) {
@@ -2061,6 +2108,18 @@ namespace Manro {
                     VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
                     VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                     VMA_MEMORY_USAGE_GPU_ONLY);
+
+            f.debugVertexBuffer = CreateScope<Buffer>(
+                    m_Context,
+                    sizeof(DebugVertex) * kMaxDebugVertices,
+                    VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                    VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+            f.debugVertexBufferNoDepth = CreateScope<Buffer>(
+                    m_Context,
+                    sizeof(DebugVertex) * kMaxDebugVertices,
+                    VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                    VMA_MEMORY_USAGE_CPU_TO_GPU);
 
             VkDescriptorSetLayout layouts[5] = {
                     m_PbrSetLayout, m_CompositeSetLayout,
@@ -2369,6 +2428,107 @@ namespace Manro {
         m_SkyboxPipeline->BuildGraphics(vertSpv, fragSpv, cfg);
     }
 
+    void RendererImpl::BuildDebugPipeline() {
+        auto vertSpv = VirtualFS::Get().ReadFile("shaders://gizmo.vert.spv");
+        auto fragSpv = VirtualFS::Get().ReadFile("shaders://gizmo.frag.spv");
+        if (vertSpv.empty() || fragSpv.empty()) {
+            LOG_ERROR("[Renderer] Debug draw shaders not found");
+            return;
+        }
+
+        PipelineConfigParams cfg{};
+        cfg.vertexEntryPoint = "main";
+        cfg.fragmentEntryPoint = "main";
+        cfg.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+        cfg.colorAttachmentFormat = m_OffscreenFormat;
+        cfg.depthAttachmentFormat = m_DepthFormat;
+        cfg.msaaSamples = VK_SAMPLE_COUNT_1_BIT;
+        cfg.vertexInputBindings = {
+                {0, sizeof(DebugVertex), VK_VERTEX_INPUT_RATE_VERTEX}
+        };
+        cfg.vertexInputAttributes = {
+                {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(DebugVertex, position)},
+                {1, 0, VK_FORMAT_R32_UINT,         offsetof(DebugVertex, color)},
+        };
+        cfg.pushConstantSize = sizeof(Mat4);
+        cfg.pushConstantStages = VK_SHADER_STAGE_VERTEX_BIT;
+        cfg.depthWriteEnable = VK_FALSE;
+        cfg.depthCompareOp = VK_COMPARE_OP_LESS;
+        cfg.depthTestEnable = VK_TRUE;
+
+        m_DebugPipeline = CreateScope<Pipeline>(m_Context);
+        m_DebugPipeline->BuildGraphics(vertSpv, fragSpv, cfg);
+
+        cfg.depthTestEnable = VK_FALSE;
+        m_DebugPipelineNoDepth = CreateScope<Pipeline>(m_Context);
+        m_DebugPipelineNoDepth->BuildGraphics(vertSpv, fragSpv, cfg);
+    }
+
+    void RendererImpl::FlushDebugDraw(VkCommandBuffer cb) {
+        if (m_DebugVertices.empty() && m_DebugVerticesNoDepth.empty()) return;
+        if (!m_DebugPipeline) return;
+
+        FrameData &frame = m_Frames[m_CurrentFrame];
+
+        auto recordLines = [&](std::vector<DebugVertex> &verts, Buffer *buf, Pipeline *pipeline) {
+            if (verts.empty()) return;
+
+            u32 count = static_cast<u32>(std::min(verts.size(), static_cast<size_t>(kMaxDebugVertices)));
+            buf->LoadData(verts.data(), sizeof(DebugVertex) * count);
+
+            VkRenderingAttachmentInfo color{};
+            color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+            color.imageView = m_OffscreenColor.view;
+            color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            color.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+            color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+
+            VkRenderingAttachmentInfo depth{};
+            depth.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+            depth.imageView = m_DepthImage.view;
+            depth.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+            depth.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+            depth.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+
+            VkRenderingInfo ri{};
+            ri.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+            ri.renderArea.extent = m_RenderExtent;
+            ri.layerCount = 1;
+            ri.colorAttachmentCount = 1;
+            ri.pColorAttachments = &color;
+            ri.pDepthAttachment = &depth;
+
+            vkCmdBeginRendering(cb, &ri);
+
+            VkViewport vp{0, 0,
+                          static_cast<float>(m_RenderExtent.width),
+                          static_cast<float>(m_RenderExtent.height), 0, 1};
+            vkCmdSetViewport(cb, 0, 1, &vp);
+            VkRect2D sc{{0, 0}, m_RenderExtent};
+            vkCmdSetScissor(cb, 0, 1, &sc);
+
+            vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              pipeline->GetHandle());
+
+            Mat4 viewProj = m_ProjectionMatrix * m_ViewMatrix;
+            viewProj[1][1] *= -1;
+            vkCmdPushConstants(cb, pipeline->GetLayout(),
+                               VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Mat4), &viewProj);
+
+            VkBuffer vb = buf->GetHandle();
+            VkDeviceSize off = 0;
+            vkCmdBindVertexBuffers(cb, 0, 1, &vb, &off);
+            vkCmdDraw(cb, count, 1, 0, 0);
+
+            vkCmdEndRendering(cb);
+        };
+
+        recordLines(m_DebugVertices, frame.debugVertexBuffer.get(), m_DebugPipeline.get());
+        recordLines(m_DebugVerticesNoDepth, frame.debugVertexBufferNoDepth.get(), m_DebugPipelineNoDepth.get());
+
+        m_DebugVertices.clear();
+        m_DebugVerticesNoDepth.clear();
+    }
     void RendererImpl::ImportPipelinesToRHI() {
         if (!m_VulkanCommandList) return;
 
@@ -2397,6 +2557,42 @@ namespace Manro {
                                                         m_SkyboxPipeline->GetHandle(),
                                                         m_SkyboxPipeline->GetLayout());
         }
+    }
+
+    void RendererImpl::DebugLine(const Vec3 &a, const Vec3 &b, u32 color, bool depthTest) {
+        auto &target = depthTest ? m_DebugVertices : m_DebugVerticesNoDepth;
+        DebugDraw::Line(target, a, b, color, depthTest);
+    }
+
+    void RendererImpl::DebugAABB(const Vec3 &min, const Vec3 &max, u32 color, bool depthTest) {
+        auto &target = depthTest ? m_DebugVertices : m_DebugVerticesNoDepth;
+        DebugDraw::AABB(target, min, max, color, depthTest);
+    }
+
+    void RendererImpl::DebugBox(const Vec3 &center, const Vec3 &half,
+                                const Mat4 &transform, u32 color, bool depthTest) {
+        auto &target = depthTest ? m_DebugVertices : m_DebugVerticesNoDepth;
+        DebugDraw::Box(target, center, half, transform, color, depthTest);
+    }
+
+    void RendererImpl::DebugSphere(const Vec3 &center, float radius,
+                                   u32 color, int segments, bool depthTest) {
+        auto &target = depthTest ? m_DebugVertices : m_DebugVerticesNoDepth;
+        DebugDraw::Sphere(target, center, radius, color, segments, depthTest);
+    }
+
+    void RendererImpl::DebugFrustum(const Mat4 &invViewProj, u32 color, bool depthTest) {
+        auto &target = depthTest ? m_DebugVertices : m_DebugVerticesNoDepth;
+        DebugDraw::Frustum(target, invViewProj, color, depthTest);
+    }
+
+    void RendererImpl::DebugCross(const Vec3 &center, float size, u32 color, bool depthTest) {
+        auto &target = depthTest ? m_DebugVertices : m_DebugVerticesNoDepth;
+        DebugDraw::Cross(target, center, size, color, depthTest);
+    }
+
+    void RendererImpl::DebugAxes(const Mat4 &transform, float size) {
+        DebugDraw::Axes(m_DebugVertices, transform, size);
     }
 
     Renderer::Renderer(IWindow &window, u32 width, u32 height, const RenderSettings &settings)
@@ -2477,5 +2673,35 @@ namespace Manro {
     void Renderer::GetVramStats(u64 &usage, u64 &budget) const { m_Impl->GetVramStats(usage, budget); }
 
     std::string Renderer::GetAdapterName() const { return m_Impl->GetAdapterName(); }
+
+    void Renderer::DebugLine(const Vec3 &a, const Vec3 &b, u32 color, bool depthTest) {
+        m_Impl->DebugLine(a, b, color, depthTest);
+    }
+
+    void Renderer::DebugAABB(const Vec3 &min, const Vec3 &max, u32 color, bool depthTest) {
+        m_Impl->DebugAABB(min, max, color, depthTest);
+    }
+
+    void Renderer::DebugBox(const Vec3 &center, const Vec3 &half,
+                            const Mat4 &transform, u32 color, bool depthTest) {
+        m_Impl->DebugBox(center, half, transform, color, depthTest);
+    }
+
+    void Renderer::DebugSphere(const Vec3 &center, float radius,
+                               u32 color, int segments, bool depthTest) {
+        m_Impl->DebugSphere(center, radius, color, segments, depthTest);
+    }
+
+    void Renderer::DebugFrustum(const Mat4 &invViewProj, u32 color, bool depthTest) {
+        m_Impl->DebugFrustum(invViewProj, color, depthTest);
+    }
+
+    void Renderer::DebugCross(const Vec3 &center, float size, u32 color, bool depthTest) {
+        m_Impl->DebugCross(center, size, color, depthTest);
+    }
+
+    void Renderer::DebugAxes(const Mat4 &transform, float size) {
+        m_Impl->DebugAxes(transform, size);
+    }
 
 } // namespace Manro

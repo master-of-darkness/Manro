@@ -81,6 +81,8 @@ namespace Manro::RHI {
 
         void SetCommandBuffer(VkCommandBuffer cmd) { m_CommandBuffer = cmd; }
 
+        VkCommandBuffer GetHandle() const { return m_CommandBuffer; }
+
         void ImportBuffer(BufferHandle handle, VkBuffer buffer);
 
         void ImportTexture(TextureHandle handle, VulkanTextureBinding texture);

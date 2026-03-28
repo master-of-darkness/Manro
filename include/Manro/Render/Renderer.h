@@ -109,6 +109,22 @@ namespace Manro {
 
         std::string GetAdapterName() const;
 
+        void DebugLine(const Vec3 &a, const Vec3 &b, u32 color, bool depthTest = true);
+
+        void DebugAABB(const Vec3 &min, const Vec3 &max, u32 color, bool depthTest = true);
+
+        void DebugBox(const Vec3 &center, const Vec3 &half, const Mat4 &transform,
+                      u32 color, bool depthTest = true);
+
+        void DebugSphere(const Vec3 &center, float radius, u32 color,
+                         int segments = 16, bool depthTest = true);
+
+        void DebugFrustum(const Mat4 &invViewProj, u32 color, bool depthTest = true);
+
+        void DebugCross(const Vec3 &center, float size, u32 color, bool depthTest = true);
+
+        void DebugAxes(const Mat4 &transform, float size = 50.f);
+
     private:
         Scope<RendererImpl> m_Impl;
     };

@@ -12,6 +12,7 @@ namespace Manro {
 
         std::vector<VkVertexInputBindingDescription> vertexInputBindings;
         std::vector<VkVertexInputAttributeDescription> vertexInputAttributes;
+        VkPrimitiveTopology topology{VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
 
         std::vector<VkDescriptorSetLayout> descriptorSetLayouts;
         VkSampleCountFlagBits msaaSamples{VK_SAMPLE_COUNT_1_BIT};
@@ -22,6 +23,7 @@ namespace Manro {
         std::string fragmentEntryPoint{"main"};
         std::string computeEntryPoint{"main"};
 
+        VkBool32 depthTestEnable{VK_TRUE};
         VkBool32 depthWriteEnable{VK_TRUE};
         VkCompareOp depthCompareOp{VK_COMPARE_OP_LESS};
         VkColorComponentFlags colorWriteMask{

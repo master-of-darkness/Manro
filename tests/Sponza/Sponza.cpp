@@ -1,4 +1,5 @@
 #include "Sponza.h"
+#include "Manro/Render/DebugDraw.h"
 
 #include <Manro/Core/IApplication.h>
 #include <Manro/Core/Logger.h>
@@ -114,9 +115,10 @@ void Sponza::OnRender(Manro::FrameContext &frame) {
 
     if (!m_Model) LoadScene();
 
-    m_Renderer->SetViewProjection(
-            m_Camera.View(),
-            FlyCamera::Projection(kFov, m_Renderer->GetAspectRatio(), kNearZ, kFarZ));
+    const Manro::Mat4 view = m_Camera.View();
+    const Manro::Mat4 proj = FlyCamera::Projection(kFov, m_Renderer->GetAspectRatio(), kNearZ, kFarZ);
+
+    m_Renderer->SetViewProjection(view, proj);
     m_Renderer->SetCameraPosition(m_Camera.Position);
 
     m_Renderer->ClearLights();
@@ -153,9 +155,59 @@ void Sponza::OnRender(Manro::FrameContext &frame) {
 
     m_Renderer->BeginRendering();
     m_Renderer->RenderQueue();
-    m_Renderer->EndRendering();
+
+    // debug draw
+    m_Renderer->DebugAxes(glm::mat4(1.f), 100.f);
+
+    m_Renderer->DebugLine(
+            Manro::Vec3(-1200.f, 5.f, 0.f),
+            Manro::Vec3( 1200.f, 5.f, 0.f),
+            Manro::DebugDraw::Colors::White);
+
+    const Manro::Vec3 sunOrigin = m_Camera.Position - Manro::Vec3(sun.direction) * 800.f;
+    m_Renderer->DebugLine(
+            sunOrigin,
+            sunOrigin + Manro::Vec3(sun.direction) * 300.f,
+            Manro::DebugDraw::Colors::Yellow, false);
+    m_Renderer->DebugSphere(sunOrigin, 40.f, Manro::DebugDraw::Colors::Yellow, 16, false);
+
+    m_Renderer->DebugAABB(
+            Manro::Vec3(-1200.f, 0.f, -550.f),
+            Manro::Vec3( 1200.f, 700.f, 550.f),
+            Manro::DebugDraw::Colors::Gray, false);
+
+    if (benchActive) {
+        for (const auto& l : m_BenchLights) {
+            const Manro::Vec3 lp = {l.position.x, l.position.y, l.position.z};
+            const float range = 1.f / l.angularSizeOrInvRange;
+            m_Renderer->DebugSphere(lp, range,
+                                    Manro::DebugDraw::Color(
+                                            static_cast<Manro::u8>(l.color.x * 255),
+                                            static_cast<Manro::u8>(l.color.y * 255),
+                                            static_cast<Manro::u8>(l.color.z * 255)),
+                                    8, false);
+            m_Renderer->DebugCross(lp, 20.f,
+                                   Manro::DebugDraw::Color(
+                                           static_cast<Manro::u8>(l.color.x * 255),
+                                           static_cast<Manro::u8>(l.color.y * 255),
+                                           static_cast<Manro::u8>(l.color.z * 255)));
+        }
+
+        const Manro::Mat4 invVP = glm::inverse(proj * view);
+        m_Renderer->DebugFrustum(invVP, Manro::DebugDraw::Colors::Cyan, false);
+    }
+
+    m_Renderer->DebugCross(m_Camera.Position, 15.f,
+                           Manro::DebugDraw::Colors::Magenta, false);
+
+    m_Renderer->DebugBox(
+            Manro::Vec3(0.f),
+            Manro::Vec3(80.f, 80.f, 80.f),
+            glm::translate(glm::mat4(1.f), Manro::Vec3(0.f, 80.f, 0.f)),
+            Manro::DebugDraw::Colors::Orange);
 
     DrawGui(dt);
+    m_Renderer->EndRendering();
 
     m_LastStats = m_Renderer->GetLastFrameStats();
     const float frameMs = dt * 1000.f;

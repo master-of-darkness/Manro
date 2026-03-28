@@ -11,6 +11,7 @@ add_custom_command(
 add_custom_target(GenerateNetworkSchema DEPENDS "${GEN_DIR}/NetworkMessage_generated.h")
 
 add_library(Engine STATIC
+        # Core systems
         Core/EngineLoop.cpp
         Core/Logger.cpp
         Core/JobSystem.cpp
@@ -19,6 +20,8 @@ add_library(Engine STATIC
         Input/InputManager.cpp
         Networking/NetworkClient.cpp
         Networking/NetworkServer.cpp
+        # Main rendering code
+        Render/DebugDraw.cpp
         Render/Material.cpp
         Render/Vulkan/VulkanContext.cpp
         Render/Vulkan/VulkanHelpers.cpp
@@ -40,6 +43,7 @@ add_library(Engine STATIC
         Resource/ModelLoader.cpp
         Resource/TextureLoader.cpp
         Physics/PhysicsWorld.cpp
+        # Windows, audio and input
         Platform/Audio/AudioManager.cpp
         Platform/Audio/SDL3AudioBackend.cpp
         Platform/Input/SDL3InputBackend.cpp
@@ -99,5 +103,5 @@ target_compile_options(Engine PRIVATE
 )
 
 target_link_options(Engine PUBLIC
-        $<$<CONFIG:Release>:-Wl,--gc-sections $<$<NOT:$<PLATFORM_ID:Apple>>:-Wl,--strip-all>>
+        $<$<CONFIG:Release>:-Wl$<$<NOT:$<PLATFORM_ID:Apple>>:-Wl>>
 )
