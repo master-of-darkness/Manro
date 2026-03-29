@@ -30,7 +30,10 @@ namespace Manro {
 
         PhysicsBodyHandle AddDynamicBox(const Vec3 &position, const Vec3 &halfExtents, float mass = 1.f);
 
-        PhysicsBodyHandle AddKinematicCapsule(const Vec3 &position, float radius, float halfHeight);
+        PhysicsBodyHandle AddDynamicCapsule(const Vec3 &position, float radius, float halfHeight, float mass = 1.f);
+
+        PhysicsBodyHandle AddStaticMesh(const std::vector<Vec3> &vertices, const std::vector<u32> &indices,
+                                        const Mat4 &transform = Mat4(1.f));
 
         PhysicsBodyHandle AddDynamicCone(const Vec3 &position, float radius, float height, float mass = 1.f);
 
@@ -48,6 +51,8 @@ namespace Manro {
 
         void SetLinearVelocity(PhysicsBodyHandle handle, const Vec3 &velocity);
 
+        void SetBodyMotionType(PhysicsBodyHandle handle, bool kinematic);
+
         void ApplyLinearImpulse(PhysicsBodyHandle handle, const Vec3 &impulse);
 
         bool IsGrounded(PhysicsBodyHandle handle) const;
@@ -57,6 +62,8 @@ namespace Manro {
         void WakeBodyAndNeighbours(PhysicsBodyHandle handle, float radius = 2.f);
 
         void ForEachDynamicBody(const BodySyncCallback &cb) const;
+
+        void DrawDebug(class Renderer &renderer) const;
 
     private:
         struct Impl;

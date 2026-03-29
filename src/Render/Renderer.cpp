@@ -1182,6 +1182,9 @@ namespace Manro {
                     shadowPc.planes[i] /= len;
                 }
                 shadowPc.instanceCount = totalInstCount;
+                shadowPc.cameraPos = Vec4(m_CameraPosition, 1.0f);
+                shadowPc.maxDrawDistance = m_Settings.farZ;
+
                 vkCmdPushConstants(cb, m_MeshCullPipeline->GetLayout(),
                                    VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(shadowPc), &shadowPc);
                 vkCmdDispatch(cb, (totalInstCount + 63) / 64, 1, 1);
@@ -2510,8 +2513,9 @@ namespace Manro {
             vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
                               pipeline->GetHandle());
 
-            Mat4 viewProj = m_ProjectionMatrix * m_ViewMatrix;
-            viewProj[1][1] *= -1;
+            Mat4 proj = m_ProjectionMatrix;
+            proj[1][1] *= -1;
+            Mat4 viewProj = proj * m_ViewMatrix;
             vkCmdPushConstants(cb, pipeline->GetLayout(),
                                VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Mat4), &viewProj);
 

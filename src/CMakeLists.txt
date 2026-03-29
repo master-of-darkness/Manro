@@ -42,6 +42,7 @@ add_library(Engine STATIC
         Render/Gui/ImGuiLayer.cpp
         Resource/ModelLoader.cpp
         Resource/TextureLoader.cpp
+        Resource/Primitives.cpp
         Physics/PhysicsWorld.cpp
         # Windows, audio and input
         Platform/Audio/AudioManager.cpp

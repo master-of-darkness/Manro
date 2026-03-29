@@ -81,3 +81,4 @@ include(Shaders)
 
 add_subdirectory(src)
 add_subdirectory(tests/Sponza)
+add_subdirectory(tests/DemoShooter)
