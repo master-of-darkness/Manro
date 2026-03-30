@@ -53,12 +53,12 @@ namespace Manro {
     }
 
     SoundHandle SDL3AudioBackend::LoadSound(const std::string &filepath) {
-        if (!m_Initialized) return 0; // 0 is kInvalidSound
+        if (!m_Initialized) return kInvalidSound;
 
         MIX_Audio *audio = MIX_LoadAudio(m_Mixer, filepath.c_str(), true);
         if (!audio) {
             LOG_ERROR("[SDL3AudioBackend] Failed to load '{}': {}", filepath, SDL_GetError());
-            return 0;
+            return kInvalidSound;
         }
 
         MIX_Track *track = MIX_CreateTrack(m_Mixer);

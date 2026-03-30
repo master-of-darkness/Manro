@@ -1,6 +1,7 @@
 #include <Manro/Physics/PhysicsWorld.h>
+#include <Manro/Core/Logger.h>
+#include <Manro/Core/Handles.h>
 #include <Manro/Render/Renderer.h>
-#include <Manro/Render/DebugDraw.h>
 
 #include <Jolt/Jolt.h>
 #include <Jolt/Core/Factory.h>
@@ -20,6 +21,7 @@
 #include <thread>
 #include <unordered_map>
 #include <cmath>
+#include "Manro/Render/DebugDraw.h"
 
 #ifdef JPH_ENABLE_ASSERTS
 static bool JoltAssertFailed(const char *expr, const char *msg,
@@ -94,10 +96,17 @@ namespace {
     static constexpr JPH::uint NUM_BODY_MUTEXES = 0;
     static constexpr JPH::uint MAX_BODY_PAIRS = 4096;
     static constexpr JPH::uint MAX_CONTACT_CONSTRAINTS = 2048;
+}
 
-    inline Manro::u32 toHandle(JPH::BodyID id) { return id.GetIndexAndSequenceNumber(); }
-    inline JPH::BodyID fromHandle(Manro::u32 h) { return JPH::BodyID(h); }
-} // anonymous namespace
+static inline Manro::PhysicsBodyHandle toHandle(JPH::BodyID id) {
+    Manro::PhysicsBodyHandle h;
+    h.packed = id.GetIndexAndSequenceNumber();
+    return h;
+}
+
+static inline JPH::BodyID fromHandle(Manro::PhysicsBodyHandle handle) { return JPH::BodyID(handle.packed); }
+
+static inline JPH::BodyID fromHandle(Manro::u32 handle) { return JPH::BodyID(handle); }
 
 namespace Manro {
 

@@ -1,12 +1,10 @@
 #pragma once
 
 #include <Manro/Core/Types.h>
+#include <Manro/Core/Handles.h>
 #include <string>
 
 namespace Manro {
-    using SoundHandle = u32;
-    inline constexpr SoundHandle kInvalidSound = 0;
-
     class IAudioBackend {
     public:
         virtual ~IAudioBackend() = default;
@@ -19,7 +17,7 @@ namespace Manro {
 
         virtual void UnloadSound(SoundHandle handle) = 0;
 
-        virtual void Play(SoundHandle handle, bool loop = false) = 0;
+        virtual void Play(SoundHandle handle, bool loop) = 0;
 
         virtual void Stop(SoundHandle handle) = 0;
 
@@ -33,7 +31,7 @@ namespace Manro {
 
         virtual void SetMasterVolume(f32 volume) = 0;
 
-        virtual void PlayMusic(const std::string &filepath, bool loop = true) = 0;
+        virtual void PlayMusic(const std::string &filepath, bool loop) = 0;
 
         virtual void StopMusic() = 0;
 

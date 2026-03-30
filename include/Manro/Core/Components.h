@@ -1,5 +1,6 @@
 #pragma once
 #include <Manro/Core/Types.h>
+#include <Manro/Core/Handles.h>
 #include <cstdint>
 
 namespace Manro {
@@ -16,15 +17,14 @@ namespace Manro {
     };
 
     struct RigidBodyComponent {
-        u32 BodyId{0xFFFFFFFF};
+        PhysicsBodyHandle BodyId{kInvalidBodyHandle};
         PhysicsBodyType Type{PhysicsBodyType::Static};
 
         Vec3 HalfExtents{0.5f, 0.5f, 0.5f};
         f32 CapsuleRadius{0.3f};
         f32 CapsuleHalfHeight{0.5f};
 
-        Vec3 Velocity{0.0f, 0.0f, 0.0f};
 
-        bool IsValid() const { return BodyId != 0xFFFFFFFF; }
+        bool IsValid() const { return BodyId != kInvalidBodyHandle; }
     };
-}
+} // namespace Manro

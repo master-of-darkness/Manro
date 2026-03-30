@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Manro/Core/Types.h>
+#include <Manro/Core/Handles.h>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -8,9 +9,6 @@
 
 namespace Manro {
     class Registry;
-
-    using PhysicsBodyHandle = u32;
-    inline constexpr PhysicsBodyHandle kInvalidBodyHandle = 0xFFFFFFFF;
 
     using BodySyncCallback = std::function<void(u32 entity, const Vec3 &pos, const Vec3 &vel)>;
 

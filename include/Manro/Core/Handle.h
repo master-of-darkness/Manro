@@ -21,6 +21,19 @@ namespace Manro {
             return h;
         }
 
+        Handle operator++(int) {
+            Handle temp = *this;
+            packed++;
+            return temp;
+        }
+
+        Handle &operator++() {
+            packed++;
+            return *this;
+        }
+
+        operator Storage() const { return packed; }
+
         Storage Index() const { return packed & kIndexMask; }
         Storage Generation() const { return (packed >> kIndexBits) & kGenMask; }
         bool IsValid() const { return packed != kInvalid; }
@@ -101,6 +114,10 @@ namespace Manro {
         std::vector<Slot> m_Slots;
         std::vector<u32> m_FreeList;
     };
+
+    template<typename Tag, typename Storage>
+    inline Storage format_as(const Handle<Tag, Storage> &h) { return h.packed; }
+
 } // namespace Manro
 
 namespace std {
