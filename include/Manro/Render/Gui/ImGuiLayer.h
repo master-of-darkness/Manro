@@ -2,7 +2,9 @@
 #include <Manro/Core/Types.h>
 #include <volk.h>
 #include <Manro/Platform/Window/IWindow.h>
+#include <Manro/Render/RenderSettings.h>
 #include <vector>
+#include <string>
 
 namespace Manro {
     class VulkanContext;
@@ -21,10 +23,13 @@ namespace Manro {
 
         void NewFrame();
 
+        void DrawDebugUI(u32 drawCalls, u32 triangles, u32 instances,
+                         const std::string& gpuName, RenderSettings& settings, bool& settingsChanged);
+
         void Render(VkCommandBuffer cb);
 
-        bool IsEnabled() const { return m_Enabled; }
-        void SetEnabled(bool e) { m_Enabled = e; }
+        bool IsDebugUIEnabled() const { return m_ShowDebugUI; }
+        void SetDebugUIEnabled(bool e) { m_ShowDebugUI = e; }
 
     private:
         void CreateDescriptorPool();
@@ -33,6 +38,6 @@ namespace Manro {
 
         VulkanContext *m_Context = nullptr;
         VkDescriptorPool m_Pool = VK_NULL_HANDLE;
-        bool m_Enabled = true;
+        bool m_ShowDebugUI = true;
     };
 } // namespace Manro

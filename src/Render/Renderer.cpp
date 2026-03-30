@@ -338,7 +338,7 @@ namespace Manro {
         PipelineCache m_PipelineCache;
         RenderGraph m_RenderGraph;
 
-        Scope<ImGuiLayer> m_GuiLayer;
+        Scope<ImGuiLayer> m_ImGuiLayer;
         Ref<Material> m_DefaultMaterial;
 
         std::vector<GpuMeshInstance> m_StaticInstances;
@@ -526,7 +526,7 @@ namespace Manro {
         guiInfo.window = &window;
         guiInfo.colorFormat = m_Swapchain->GetImageFormat();
         guiInfo.imageCount = MAX_FRAMES_IN_FLIGHT;
-        m_GuiLayer = CreateScope<ImGuiLayer>(guiInfo);
+        m_ImGuiLayer = CreateScope<ImGuiLayer>(guiInfo);
     }
 
     RendererImpl::~RendererImpl() {
@@ -539,7 +539,7 @@ namespace Manro {
         for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
             m_PerFrameAlloc[i].Shutdown();
 
-        m_GuiLayer.reset();
+        m_ImGuiLayer.reset();
         m_DefaultMaterial.reset();
         m_PbrPipeline.reset();
         m_ZPrepassPipeline.reset();
@@ -1020,8 +1020,23 @@ namespace Manro {
             m_CurrentFrameStats.triangleCount += inst.indexCount / 3;
         }
 
-        if (m_GuiLayer) m_GuiLayer->NewFrame();
+        if (m_ImGuiLayer) m_ImGuiLayer->NewFrame();
         if (m_UIRenderer) m_UIRenderer->NewFrame();
+
+        if (m_ImGuiLayer && m_ImGuiLayer->IsDebugUIEnabled()) {
+            bool settingsChanged = false;
+            m_ImGuiLayer->DrawDebugUI(
+                m_LastFrameStats.drawCalls,
+                m_LastFrameStats.triangleCount,
+                m_LastFrameStats.instanceCount,
+                GetAdapterName(),
+                m_Settings,
+                settingsChanged
+            );
+            if (settingsChanged) {
+                SetSettings(m_Settings);
+            }
+        }
 
         VkCommandBufferBeginInfo bi{};
         bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -1481,7 +1496,7 @@ namespace Manro {
                                    m_PendingLights);
         }
 
-        if (m_GuiLayer && m_GuiLayer->IsEnabled()) {
+        if (m_ImGuiLayer && m_ImGuiLayer->IsDebugUIEnabled()) {
             VkRenderingAttachmentInfo guiColorAtt{};
             guiColorAtt.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
             guiColorAtt.imageView = m_Swapchain->GetImageView(m_CurrentImageIndex);
@@ -1496,7 +1511,7 @@ namespace Manro {
             guiRi.colorAttachmentCount = 1;
             guiRi.pColorAttachments = &guiColorAtt;
             vkCmdBeginRendering(cb, &guiRi);
-            m_GuiLayer->Render(cb);
+            m_ImGuiLayer->Render(cb);
             vkCmdEndRendering(cb);
         }
 
@@ -1768,8 +1783,7 @@ namespace Manro {
             ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
             ci.bindingCount = 4;
             ci.pBindings = b;
-            if (vkCreateDescriptorSetLayout(m_Context.GetDevice(), &ci, nullptr,
-                                            &m_ShadowMeshCullSetLayout) != VK_SUCCESS)
+            if (vkCreateDescriptorSetLayout(m_Context.GetDevice(), &ci, nullptr, &m_ShadowMeshCullSetLayout) != VK_SUCCESS)
                 throw std::runtime_error("Failed to create shadow mesh cull descriptor set layout");
         }
 

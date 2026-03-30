@@ -99,6 +99,42 @@ namespace Manro {
         ImGui::NewFrame();
     }
 
+    void ImGuiLayer::DrawDebugUI(u32 drawCalls, u32 triangles, u32 instances,
+                                 const std::string& gpuName, RenderSettings& settings, bool& settingsChanged) {
+        if (!m_ShowDebugUI) return;
+
+        float frameTime = ImGui::GetIO().DeltaTime * 1000.0f;
+        ImGui::SetNextWindowPos({10.f, 10.f}, ImGuiCond_FirstUseEver);
+        if (ImGui::Begin("Debug", &m_ShowDebugUI, ImGuiWindowFlags_AlwaysAutoResize)) {
+            if (ImGui::CollapsingHeader("Performance", ImGuiTreeNodeFlags_DefaultOpen)) {
+                ImGui::Text("GPU: %s", gpuName.c_str());
+                ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
+                ImGui::Text("Frame Time: %.3f ms", frameTime);
+            }
+            if (ImGui::CollapsingHeader("Rendering Stats", ImGuiTreeNodeFlags_DefaultOpen)) {
+                ImGui::Text("Draw Calls: %u", drawCalls);
+                ImGui::Text("Triangles: %u", triangles);
+                ImGui::Text("Instances: %u", instances);
+            }
+            if (ImGui::CollapsingHeader("Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
+                if (ImGui::Checkbox("VSync", &settings.enableVSync)) settingsChanged = true;
+                if (ImGui::SliderFloat("Resolution Scale", &settings.resolutionScale, 0.1f, 2.0f)) settingsChanged = true;
+
+                ImGui::SeparatorText("Lighting");
+                if (ImGui::SliderFloat("Gamma", &settings.lighting.gamma, 1.0f, 3.0f)) settingsChanged = true;
+                if (ImGui::SliderFloat("Intensity", &settings.lighting.iblIntensity, 0.0f, 5.0f)) settingsChanged = true;
+
+                ImGui::SeparatorText("Shadows");
+                if (ImGui::Checkbox("Enable Shadows", &settings.shadows.enabled)) settingsChanged = true;
+                if (ImGui::SliderFloat("Shadow Bias", &settings.shadows.bias, 0.0f, 0.1f, "%.4f")) settingsChanged = true; // TODO: fix me
+
+                ImGui::SeparatorText("Post Processing");
+                if (ImGui::SliderFloat("Exposure", &settings.postProcess.tonemapping.exposure, 0.1f, 10.0f)) settingsChanged = true;
+            }
+        }
+        ImGui::End();
+    }
+
     void ImGuiLayer::Render(VkCommandBuffer cb) {
         ImGui::Render();
         if (auto *dd = ImGui::GetDrawData())
