@@ -35,7 +35,6 @@ add_library(Engine STATIC
         Render/RHI/StubRenderDevice.cpp
         Render/RHI/VulkanCommandList.cpp
         Render/SceneRenderer.cpp
-        Render/UIRenderer.cpp
         Render/TextureManager.cpp
         Render/MeshManager.cpp
         Render/Model.cpp

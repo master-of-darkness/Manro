@@ -5,7 +5,6 @@
 #include <Manro/Render/Model.h>
 #include <Manro/Render/RHI/IRenderDevice.h>
 #include <Manro/Render/SceneRenderer.h>
-#include <Manro/Render/UIRenderer.h>
 #include <stdexcept>
 #include <cstring>
 #include <glm/gtc/matrix_transform.hpp>
@@ -316,7 +315,6 @@ namespace Manro {
         Scope<RHI::VulkanCommandList> m_VulkanCommandList;
         Scope<Swapchain> m_Swapchain;
         Scope<SceneRenderer> m_SceneRenderer;
-        Scope<UIRenderer> m_UIRenderer;
 
         TextureManager m_Textures;
         MeshManager m_Meshes;
@@ -475,7 +473,6 @@ namespace Manro {
         m_VulkanCommandList = CreateScope<RHI::VulkanCommandList>();
         if (m_RhiDevice) {
             m_SceneRenderer = CreateScope<SceneRenderer>();
-            m_UIRenderer = CreateScope<UIRenderer>(m_RhiDevice->GetSwapchainFormat());
         }
 
         CreateOffscreenResources(m_RenderExtent.width, m_RenderExtent.height);
@@ -1021,7 +1018,6 @@ namespace Manro {
         }
 
         if (m_ImGuiLayer) m_ImGuiLayer->NewFrame();
-        if (m_UIRenderer) m_UIRenderer->NewFrame();
 
         if (m_ImGuiLayer && m_ImGuiLayer->IsDebugUIEnabled()) {
             bool settingsChanged = false;
@@ -1428,8 +1424,6 @@ namespace Manro {
 
 
     void RendererImpl::EndRendering() {
-        if (m_UIRenderer && m_VulkanCommandList)
-            m_UIRenderer->Render(*m_VulkanCommandList);
         if (m_VulkanCommandList)
             FlushDebugDraw(m_VulkanCommandList->GetHandle());
     }
