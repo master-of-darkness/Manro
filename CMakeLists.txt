@@ -14,7 +14,7 @@ endif()
 project(GameEngine VERSION 0.1 LANGUAGES C CXX)
 
 if (NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    message(FATAL_ERROR "MSVC is forbidden. Project requires Clang. Detected: ${CMAKE_CXX_COMPILER_ID}")
+    message(FATAL_ERROR "Project requires Clang. Detected: ${CMAKE_CXX_COMPILER_ID}")
 endif ()
 
 set(CMAKE_CXX_STANDARD 20)
@@ -30,14 +30,18 @@ endif()
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
 set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+set(SDL_TESTS OFF CACHE BOOL "" FORCE)
+set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
 set(SDL_STATIC ON CACHE BOOL "" FORCE)
-set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(SDL_X11_XTEST OFF CACHE BOOL "" FORCE)
 set(SDL3MIXER_VENDORED ON CACHE BOOL "" FORCE)
 set(SDL3MIXER_SAMPLES OFF CACHE BOOL "" FORCE)
 set(SDL3MIXER_OPUS ON CACHE BOOL "" FORCE)
 set(SDL3MIXER_FLAC ON CACHE BOOL "" FORCE)
 set(SDL3MIXER_VORBIS ON CACHE BOOL "" FORCE)
+
+# Make sure Jolt doesnt compile HLSL shader since  their build is broken on linux (idk why)
+set(JPH_USE_VK OFF CACHE BOOL "" FORCE)
 
 add_subdirectory(deps/SDL3)
 add_subdirectory(deps/SDL3_mixer)

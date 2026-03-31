@@ -578,6 +578,8 @@ namespace Manro {
             vkDestroyDescriptorSetLayout(m_Context.GetDevice(), m_MeshCullSetLayout, nullptr);
         if (m_ShadowMeshCullSetLayout)
             vkDestroyDescriptorSetLayout(m_Context.GetDevice(), m_ShadowMeshCullSetLayout, nullptr);
+            if (m_SkyboxSetLayout)
+            vkDestroyDescriptorSetLayout(m_Context.GetDevice(), m_SkyboxSetLayout, nullptr);
 
         if (m_Swapchain) m_Swapchain->Shutdown();
     }
