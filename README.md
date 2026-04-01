@@ -16,15 +16,14 @@ The engine is designed with a focus on embedded network support and rendering th
 ## Getting Started
 ### Prerequisites
 
-- C++20 compatible compiler (Tested with GCC and MSVC)
+- Clang compiler
 - Windows or Ubuntu (tested on 25.10)
 - CMake
 - Vulkan SDK (1.4+)
 ### Building
 
 To build the project, use `CMakeLists.txt` in root.
-
-This will fetch and build dependencies. They are gonna be linked statically to libEngine.
+Make sure you fetched submodules before.
 ## Examples
 
-See `tests`
+See `samples` directory.
