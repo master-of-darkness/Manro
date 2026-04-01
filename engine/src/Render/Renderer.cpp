@@ -233,6 +233,14 @@ namespace Manro {
 
         const FrameStats &GetLastFrameStats() const { return m_LastFrameStats; }
 
+        void SetDebugUIEnabled(bool enabled) {
+            if (m_ImGuiLayer) m_ImGuiLayer->SetDebugUIEnabled(enabled);
+        }
+
+        bool IsDebugUIEnabled() const {
+            return m_ImGuiLayer && m_ImGuiLayer->IsDebugUIEnabled();
+        }
+
         void GetVramStats(u64 &usage, u64 &budget) const {
             if (m_RhiDevice) {
                 const auto info = m_RhiDevice->GetAdapterInfo();
@@ -1493,7 +1501,7 @@ namespace Manro {
                                    m_PendingLights);
         }
 
-        if (m_ImGuiLayer && m_ImGuiLayer->IsDebugUIEnabled()) {
+        if (m_ImGuiLayer) {
             VkRenderingAttachmentInfo guiColorAtt{};
             guiColorAtt.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
             guiColorAtt.imageView = m_Swapchain->GetImageView(m_CurrentImageIndex);
@@ -2689,6 +2697,9 @@ namespace Manro {
     RenderSettings &Renderer::GetSettings() { return m_Impl->GetSettings(); }
 
     const FrameStats &Renderer::GetLastFrameStats() const { return m_Impl->GetLastFrameStats(); }
+    void Renderer::SetDebugUIEnabled(bool enabled) { m_Impl->SetDebugUIEnabled(enabled); }
+
+    bool Renderer::IsDebugUIEnabled() const { return m_Impl->IsDebugUIEnabled(); }
 
     void Renderer::GetVramStats(u64 &usage, u64 &budget) const { m_Impl->GetVramStats(usage, budget); }
 

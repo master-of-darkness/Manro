@@ -33,6 +33,7 @@ void Sponza::OnStartup(const Manro::InitContext &ctx) {
     m_Window = &ctx.Window;
     m_Jobs = &ctx.Jobs;
     m_Renderer = &ctx.Renderer;
+    m_Renderer->SetDebugUIEnabled(false);
 
     Manro::VirtualFS::Get().SetBaseDir(MANRO_ASSETS_DIR);
     m_InputManager.SetBackend(&m_InputBackend);
@@ -626,3 +627,4 @@ const BenchWaypoint Sponza::kWaypoints[] = {
         {{-1200.f, 150.f, 0.f},    -90.f,  -8.f},
 };
 const int Sponza::kWaypointCount = 17;
+

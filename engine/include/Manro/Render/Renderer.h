@@ -107,6 +107,10 @@ namespace Manro {
 
         const FrameStats &GetLastFrameStats() const;
 
+        void SetDebugUIEnabled(bool enabled);
+
+        bool IsDebugUIEnabled() const;
+
         void GetVramStats(u64 &usage, u64 &budget) const;
 
         std::string GetAdapterName() const;
