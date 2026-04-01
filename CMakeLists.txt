@@ -43,18 +43,47 @@ set(SDL3MIXER_VORBIS ON CACHE BOOL "" FORCE)
 # Make sure Jolt doesnt compile HLSL shader since  their build is broken on linux (idk why)
 set(JPH_USE_VK OFF CACHE BOOL "" FORCE)
 
-add_subdirectory(deps/SDL3)
-add_subdirectory(deps/SDL3_mixer)
-add_subdirectory(deps/vk-bootstrap)
-add_subdirectory(deps/volk)
-add_subdirectory(deps/VulkanMemoryAllocator)
-add_subdirectory(deps/flatbuffers)
-add_subdirectory(deps/glm)
-add_subdirectory(deps/enet)
-add_subdirectory(deps/tinyobjloader)
-add_subdirectory(deps/tinygltf)
-add_subdirectory(deps/JoltPhysics/Build)
-add_subdirectory(deps/spdlog)
+function(manro_pick_path OUT_VAR)
+    foreach(_candidate IN LISTS ARGN)
+        if(EXISTS "${_candidate}")
+            set(${OUT_VAR} "${_candidate}" PARENT_SCOPE)
+            return()
+        endif()
+    endforeach()
+
+    message(FATAL_ERROR "Unable to resolve path for ${OUT_VAR}. Tried: ${ARGN}")
+endfunction()
+
+manro_pick_path(MANRO_THIRD_PARTY_DIR
+        "${CMAKE_SOURCE_DIR}/third_party"
+        "${CMAKE_SOURCE_DIR}/deps")
+manro_pick_path(MANRO_ENGINE_ROOT
+        "${CMAKE_SOURCE_DIR}/engine"
+        "${CMAKE_SOURCE_DIR}")
+manro_pick_path(MANRO_SRC_DIR
+        "${CMAKE_SOURCE_DIR}/engine/src"
+        "${CMAKE_SOURCE_DIR}/src")
+manro_pick_path(MANRO_SAMPLES_ROOT
+        "${CMAKE_SOURCE_DIR}/samples"
+        "${CMAKE_SOURCE_DIR}/tests")
+manro_pick_path(MANRO_ASSETS_DIR
+        "${CMAKE_SOURCE_DIR}/content/raw"
+        "${CMAKE_SOURCE_DIR}/assets")
+
+set(MANRO_PUBLIC_INCLUDE_DIR "${MANRO_ENGINE_ROOT}/include")
+
+add_subdirectory("${MANRO_THIRD_PARTY_DIR}/SDL3")
+add_subdirectory("${MANRO_THIRD_PARTY_DIR}/SDL3_mixer")
+add_subdirectory("${MANRO_THIRD_PARTY_DIR}/vk-bootstrap")
+add_subdirectory("${MANRO_THIRD_PARTY_DIR}/volk")
+add_subdirectory("${MANRO_THIRD_PARTY_DIR}/VulkanMemoryAllocator")
+add_subdirectory("${MANRO_THIRD_PARTY_DIR}/flatbuffers")
+add_subdirectory("${MANRO_THIRD_PARTY_DIR}/glm")
+add_subdirectory("${MANRO_THIRD_PARTY_DIR}/enet")
+add_subdirectory("${MANRO_THIRD_PARTY_DIR}/tinyobjloader")
+add_subdirectory("${MANRO_THIRD_PARTY_DIR}/tinygltf")
+add_subdirectory("${MANRO_THIRD_PARTY_DIR}/JoltPhysics/Build")
+add_subdirectory("${MANRO_THIRD_PARTY_DIR}/spdlog")
 
 if(WIN32)
     set(SLANG_OS "windows")
@@ -83,6 +112,7 @@ FetchContent_MakeAvailable(slang_bin)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(Shaders)
 
-add_subdirectory(src)
-add_subdirectory(tests/Sponza)
-add_subdirectory(tests/DemoShooter)
+add_subdirectory(engine/src)
+# TODO: make flag for samples
+add_subdirectory(samples/Sponza)
+add_subdirectory(samples/DemoShooter)

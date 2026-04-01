@@ -10,6 +10,8 @@ add_custom_command(
 )
 add_custom_target(GenerateNetworkSchema DEPENDS "${GEN_DIR}/NetworkMessage_generated.h")
 
+set(MANRO_MIKKTSPACE_C "${MANRO_THIRD_PARTY_DIR}/mikktspace/mikktspace.c")
+
 add_library(Engine STATIC
         # Core systems
         Core/EngineLoop.cpp
@@ -50,39 +52,39 @@ add_library(Engine STATIC
         Platform/Window/SDL3Window.cpp
         Platform/Window/WindowManager.cpp
         Platform/PlatformContext.cpp
-        ../deps/mikktspace/mikktspace.c
-        ../deps/imgui/imgui.cpp
-        ../deps/imgui/imgui_draw.cpp
-        ../deps/imgui/imgui_widgets.cpp
-        ../deps/imgui/imgui_tables.cpp
-        ../deps/imgui/imgui_demo.cpp
-        ../deps/imgui/backends/imgui_impl_sdl3.cpp
-        ../deps/imgui/backends/imgui_impl_vulkan.cpp
+        ${MANRO_MIKKTSPACE_C}
+        ${MANRO_THIRD_PARTY_DIR}/imgui/imgui.cpp
+        ${MANRO_THIRD_PARTY_DIR}/imgui/imgui_draw.cpp
+        ${MANRO_THIRD_PARTY_DIR}/imgui/imgui_widgets.cpp
+        ${MANRO_THIRD_PARTY_DIR}/imgui/imgui_tables.cpp
+        ${MANRO_THIRD_PARTY_DIR}/imgui/imgui_demo.cpp
+        ${MANRO_THIRD_PARTY_DIR}/imgui/backends/imgui_impl_sdl3.cpp
+        ${MANRO_THIRD_PARTY_DIR}/imgui/backends/imgui_impl_vulkan.cpp
 )
 
-set_source_files_properties(../deps/mikktspace/mikktspace.c PROPERTIES COMPILE_FLAGS "-Wno-unused-but-set-variable")
+set_source_files_properties(${MANRO_MIKKTSPACE_C} PROPERTIES COMPILE_FLAGS "-Wno-unused-but-set-variable")
 
 add_dependencies(Engine GenerateNetworkSchema PrecompileShaders EmbedShaders)
 
 target_include_directories(Engine SYSTEM PUBLIC
-        ../deps/vk-bootstrap/src
-        ../deps/imgui
-        ../deps/imgui/backends
-        ../deps/enet/include
-        ../deps/tinyobjloader
-        ../deps/stb
-        ../deps/mikktspace
-        ../deps/VulkanMemoryAllocator/include
+        ${MANRO_THIRD_PARTY_DIR}/vk-bootstrap/src
+        ${MANRO_THIRD_PARTY_DIR}/imgui
+        ${MANRO_THIRD_PARTY_DIR}/imgui/backends
+        ${MANRO_THIRD_PARTY_DIR}/enet/include
+        ${MANRO_THIRD_PARTY_DIR}/tinyobjloader
+        ${MANRO_THIRD_PARTY_DIR}/stb
+        ${MANRO_THIRD_PARTY_DIR}/mikktspace
+        ${MANRO_THIRD_PARTY_DIR}/VulkanMemoryAllocator/include
 )
 
 target_include_directories(Engine PUBLIC
-        ../include
+        ${MANRO_PUBLIC_INCLUDE_DIR}
         ${GEN_DIR}
         ${SHADER_BIN_DIR}
         ${SHADER_SRC_DIR}
 )
 
-target_include_directories(Engine PRIVATE Render ../deps/stb)
+target_include_directories(Engine PRIVATE Render ${MANRO_THIRD_PARTY_DIR}/stb)
 target_compile_definitions(Engine PUBLIC VK_NO_PROTOTYPES)
 
 target_link_libraries(Engine PUBLIC

@@ -19,7 +19,7 @@ endif ()
 
 target_include_directories(slang INTERFACE "${slang_bin_SOURCE_DIR}/include")
 
-set(SHADER_SRC_DIR "${CMAKE_SOURCE_DIR}/assets/shaders")
+set(SHADER_SRC_DIR "${CMAKE_SOURCE_DIR}/shaders/source")
 set(SHADER_BIN_DIR "${CMAKE_BINARY_DIR}/assets/shaders/spv")
 file(MAKE_DIRECTORY "${SHADER_BIN_DIR}")
 

@@ -1,42 +1,42 @@
-[submodule "deps/vk-bootstrap"]
-	path = deps/vk-bootstrap
+[submodule "third_party/vk-bootstrap"]
+	path = third_party/vk-bootstrap
 	url = https://github.com/charles-lunarg/vk-bootstrap
-[submodule "deps/volk"]
-	path = deps/volk
+[submodule "third_party/volk"]
+	path = third_party/volk
 	url = https://github.com/zeux/volk.git
-[submodule "deps/VulkanMemoryAllocator"]
-	path = deps/VulkanMemoryAllocator
+[submodule "third_party/VulkanMemoryAllocator"]
+	path = third_party/VulkanMemoryAllocator
 	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
-[submodule "deps/imgui"]
-	path = deps/imgui
+[submodule "third_party/imgui"]
+	path = third_party/imgui
 	url = https://github.com/ocornut/imgui.git
-[submodule "deps/SDL3"]
-	path = deps/SDL3
+[submodule "third_party/SDL3"]
+	path = third_party/SDL3
 	url = https://github.com/libsdl-org/SDL.git
-[submodule "deps/SDL3_mixer"]
-	path = deps/SDL3_mixer
+[submodule "third_party/SDL3_mixer"]
+	path = third_party/SDL3_mixer
 	url = https://github.com/libsdl-org/SDL_mixer.git
-[submodule "deps/flatbuffers"]
-	path = deps/flatbuffers
+[submodule "third_party/flatbuffers"]
+	path = third_party/flatbuffers
 	url = https://github.com/google/flatbuffers.git
-[submodule "deps/glm"]
-	path = deps/glm
+[submodule "third_party/glm"]
+	path = third_party/glm
 	url = https://github.com/g-truc/glm.git
-[submodule "deps/enet"]
-	path = deps/enet
+[submodule "third_party/enet"]
+	path = third_party/enet
 	url = https://github.com/lsalzman/enet.git
-[submodule "deps/tinyobjloader"]
-	path = deps/tinyobjloader
+[submodule "third_party/tinyobjloader"]
+	path = third_party/tinyobjloader
 	url = https://github.com/tinyobjloader/tinyobjloader.git
-[submodule "deps/stb"]
-	path = deps/stb
+[submodule "third_party/stb"]
+	path = third_party/stb
 	url = https://github.com/nothings/stb.git
-[submodule "deps/tinygltf"]
-	path = deps/tinygltf
+[submodule "third_party/tinygltf"]
+	path = third_party/tinygltf
 	url = https://github.com/syoyo/tinygltf.git
-[submodule "deps/JoltPhysics"]
-	path = deps/JoltPhysics
+[submodule "third_party/JoltPhysics"]
+	path = third_party/JoltPhysics
 	url = https://github.com/jrouwe/JoltPhysics.git
-[submodule "deps/spdlog"]
-	path = deps/spdlog
+[submodule "third_party/spdlog"]
+	path = third_party/spdlog
 	url = https://github.com/gabime/spdlog.git

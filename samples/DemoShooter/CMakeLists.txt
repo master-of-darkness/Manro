@@ -7,7 +7,7 @@ add_executable(DemoShooterTest
 
 target_compile_definitions(DemoShooterTest PRIVATE
         VK_NO_PROTOTYPES
-        MANRO_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets"
+        MANRO_ASSETS_DIR="${MANRO_ASSETS_DIR}"
 )
 target_compile_options(DemoShooterTest PRIVATE ${ENGINE_FLAGS})
 target_link_libraries(DemoShooterTest PRIVATE Engine)
