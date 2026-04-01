@@ -63,7 +63,9 @@ namespace Manro {
         }
 
         std::vector<T> &GetDenseArray() { return m_ComponentArray; }
+
         size_t GetSize() const { return m_Size; }
+
         const std::array<Entity, MAX_ENTITIES> &GetDenseToEntityMap() const { return m_DenseToEntityMap; }
 
     private:

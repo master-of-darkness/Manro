@@ -1,4 +1,5 @@
 #pragma once
+
 #include <volk.h>
 #include <Manro/Core/Types.h>
 #include <vector>
@@ -50,6 +51,7 @@ namespace Manro {
         void Shutdown();
 
         VkPipeline GetHandle() const { return m_Pipeline; }
+
         VkPipelineLayout GetLayout() const { return m_PipelineLayout; }
 
     private:

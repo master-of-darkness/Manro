@@ -436,11 +436,9 @@ namespace Manro {
     static constexpr u32 kMaxDebugVertices = 65536;
 
     RendererImpl::RendererImpl(IWindow &window, u32 width, u32 height,
-                       const RenderSettings &settings)
+                               const RenderSettings &settings)
             : m_Context("GameEngine", window),
-              m_Textures(m_Context, m_BindlessAlloc)
-          , m_Meshes(m_Context)
-          , m_Settings(settings) {
+              m_Textures(m_Context, m_BindlessAlloc), m_Meshes(m_Context), m_Settings(settings) {
         {
             RHI::AdapterInfo info{};
             m_Context.GetVramStats(info.vramUsage, info.vramBudget);
@@ -453,8 +451,8 @@ namespace Manro {
 
         VkSampleCountFlagBits maxSamples = m_Context.GetMaxUsableSampleCount();
         m_Settings.msaaSamples = (static_cast<u32>(m_Settings.msaaSamples) <= static_cast<u32>(maxSamples))
-                                     ? m_Settings.msaaSamples
-                                     : maxSamples;
+                                 ? m_Settings.msaaSamples
+                                 : maxSamples;
 
         m_PendingWidth = width;
         m_PendingHeight = height;
@@ -501,22 +499,24 @@ namespace Manro {
         m_MaterialBuffer->LoadData(m_Materials.data(), sizeof(MaterialData));
 
         m_RGOffscreen = m_RenderGraph.DeclareTexture({
-            .name = "offscreen_color",
-            .format = m_OffscreenFormat,
-            .usageHint = RGTextureUsage_ColorAttachment | RGTextureUsage_ShaderRead,
-            .external = true,
-        });
+                                                             .name = "offscreen_color",
+                                                             .format = m_OffscreenFormat,
+                                                             .usageHint = RGTextureUsage_ColorAttachment |
+                                                                          RGTextureUsage_ShaderRead,
+                                                             .external = true,
+                                                     });
         m_RGDepth = m_RenderGraph.DeclareTexture({
-            .name = "depth",
-            .format = m_DepthFormat,
-            .usageHint = RGTextureUsage_DepthAttachment,
-            .external = true,
-        });
+                                                         .name = "depth",
+                                                         .format = m_DepthFormat,
+                                                         .usageHint = RGTextureUsage_DepthAttachment,
+                                                         .external = true,
+                                                 });
         m_RGSwapchain = m_RenderGraph.DeclareTexture({
-            .name = "swapchain",
-            .usageHint = RGTextureUsage_ColorAttachment | RGTextureUsage_Present,
-            .external = true,
-        });
+                                                             .name = "swapchain",
+                                                             .usageHint = RGTextureUsage_ColorAttachment |
+                                                                          RGTextureUsage_Present,
+                                                             .external = true,
+                                                     });
 
         ImGuiLayerInfo guiInfo{};
         guiInfo.context = &m_Context;
@@ -611,8 +611,8 @@ namespace Manro {
         if (needsResize) {
             VkSampleCountFlagBits maxSamples = m_Context.GetMaxUsableSampleCount();
             m_Settings.msaaSamples = (static_cast<u32>(m_Settings.msaaSamples) <= static_cast<u32>(maxSamples))
-                                         ? m_Settings.msaaSamples
-                                         : maxSamples;
+                                     ? m_Settings.msaaSamples
+                                     : maxSamples;
             m_PendingResize = true;
         }
     }
@@ -777,10 +777,10 @@ namespace Manro {
         }
 
         m_ShadowUniformBuffer = CreateScope<Buffer>(
-            m_Context,
-            sizeof(ShadowUniformData),
-            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-            VMA_MEMORY_USAGE_CPU_TO_GPU);
+                m_Context,
+                sizeof(ShadowUniformData),
+                VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                VMA_MEMORY_USAGE_CPU_TO_GPU);
 
         m_ShadowUniform.lightDir = Vec4(0.5f, -0.7f, 0.5f, 0.005f);
         m_ShadowUniform.shadowMapSize = Vec2(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
@@ -797,8 +797,8 @@ namespace Manro {
         Vec3 target = Vec3(0.f, 200.f, 0.f);
         Vec3 lightPos = target - normDir * (depth * 0.5f);
         Vec3 up = (std::abs(normDir.y) > 0.99f)
-                      ? Vec3(0.f, 0.f, 1.f)
-                      : Vec3(0.f, 1.f, 0.f);
+                  ? Vec3(0.f, 0.f, 1.f)
+                  : Vec3(0.f, 1.f, 0.f);
 
         Mat4 view = glm::lookAt(lightPos, target, up);
         Mat4 proj = glm::ortho(-worldRadius, worldRadius,
@@ -863,7 +863,8 @@ namespace Manro {
 
         VkViewport vp{0.f, 0.f, float(SHADOW_MAP_SIZE), float(SHADOW_MAP_SIZE), 0.f, 1.f};
         vkCmdSetViewport(cb, 0, 1, &vp);
-        VkRect2D scissor{{0, 0}, {SHADOW_MAP_SIZE, SHADOW_MAP_SIZE}};
+        VkRect2D scissor{{0,               0},
+                         {SHADOW_MAP_SIZE, SHADOW_MAP_SIZE}};
         vkCmdSetScissor(cb, 0, 1, &scissor);
         vkCmdSetDepthBias(cb, 1.0f, 0.0f, 2.0f);
 
@@ -1002,7 +1003,7 @@ namespace Manro {
         m_PerFrameAlloc[m_CurrentFrame].Reset();
 
         m_CurrentImageIndex = m_Swapchain->AcquireNextImage(
-            m_ImageAvailableSemaphores[m_CurrentFrame]);
+                m_ImageAvailableSemaphores[m_CurrentFrame]);
         if (m_CurrentImageIndex == UINT32_MAX) return false;
 
         m_LastFrameStats = m_CurrentFrameStats;
@@ -1024,12 +1025,12 @@ namespace Manro {
         if (m_ImGuiLayer && m_ImGuiLayer->IsDebugUIEnabled()) {
             bool settingsChanged = false;
             m_ImGuiLayer->DrawDebugUI(
-                m_LastFrameStats.drawCalls,
-                m_LastFrameStats.triangleCount,
-                m_LastFrameStats.instanceCount,
-                GetAdapterName(),
-                m_Settings,
-                settingsChanged
+                    m_LastFrameStats.drawCalls,
+                    m_LastFrameStats.triangleCount,
+                    m_LastFrameStats.instanceCount,
+                    GetAdapterName(),
+                    m_Settings,
+                    settingsChanged
             );
             if (settingsChanged) {
                 SetSettings(m_Settings);
@@ -1053,8 +1054,8 @@ namespace Manro {
         FrameData &frame = m_Frames[frameIndex];
         if (!m_PendingLights.empty())
             frame.lightBuffer->LoadData(
-                m_PendingLights.data(),
-                sizeof(LightData) * m_PendingLights.size());
+                    m_PendingLights.data(),
+                    sizeof(LightData) * m_PendingLights.size());
     }
 
     void RendererImpl::BeginRendering() {
@@ -1230,7 +1231,7 @@ namespace Manro {
                 Mat4 view;
                 Mat4 proj;
                 Vec4 screenTile;
-                u32   lightCount;
+                u32 lightCount;
                 u32 maxPerTile;
                 u32 tilesX;
                 u32 tilesY;
@@ -1241,7 +1242,7 @@ namespace Manro {
             cpc.proj = m_ProjectionMatrix;
             cpc.proj[1][1] *= -1;
             cpc.screenTile = Vec4((float) ext.width, (float) ext.height,
-                                 (float) TILE_SIZE, (float) TILE_SIZE);
+                                  (float) TILE_SIZE, (float) TILE_SIZE);
             cpc.lightCount = (u32) m_PendingLights.size();
             cpc.maxPerTile = MAX_LIGHTS_PER_TILE;
             cpc.tilesX = std::min((ext.width + TILE_SIZE - 1) / TILE_SIZE, kMaxTilesX);
@@ -1298,12 +1299,12 @@ namespace Manro {
         ubo.view = m_ViewMatrix;
         ubo.proj = m_ProjectionMatrix;
         ubo.proj[1][1] *= -1;
-        ubo.camPos                     = Vec4(m_CameraPosition, 1.f);
+        ubo.camPos = Vec4(m_CameraPosition, 1.f);
         ubo.exposure = m_Settings.postProcess.tonemapping.exposure;
         ubo.gamma = m_Settings.lighting.gamma;
-        ubo.prefilteredCubeMipLevels   = 1.f;
+        ubo.prefilteredCubeMipLevels = 1.f;
         ubo.scaleIBLAmbient = m_Settings.lighting.iblIntensity;
-        ubo.lightCount                 = (int) m_PendingLights.size();
+        ubo.lightCount = (int) m_PendingLights.size();
         ubo.screenDimensions = Vec2((float) ext.width, (float) ext.height);
         ubo.nearZ = m_Settings.nearZ;
         ubo.farZ = m_Settings.farZ;
@@ -1324,10 +1325,10 @@ namespace Manro {
             b[0].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
             b[0].srcStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
             b[0].srcAccessMask = VK_ACCESS_2_HOST_WRITE_BIT;
-            b[0].dstStageMask  = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+            b[0].dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
             b[0].dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
             b[0].buffer = m_MaterialBuffer->GetHandle();
-            b[0].offset        = 0;
+            b[0].offset = 0;
             b[0].size = VK_WHOLE_SIZE;
             b[1] = b[0];
             b[1].buffer = m_TextureInfoBuffer->GetHandle();
@@ -1336,7 +1337,7 @@ namespace Manro {
             b[2].buffer = frame.uboBuffer->GetHandle();
             b[3] = b[0];
             b[3].dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-            b[3].buffer        = frame.instanceBuffer->GetHandle();
+            b[3].buffer = frame.instanceBuffer->GetHandle();
             b[4] = b[0];
             b[4].buffer = frame.lightBuffer->GetHandle();
             VkDependencyInfo dep{};
@@ -1431,13 +1432,13 @@ namespace Manro {
     }
 
     void RendererImpl::EndFrameAndPresent() {
-        FrameData& frame = m_Frames[m_CurrentFrame];
+        FrameData &frame = m_Frames[m_CurrentFrame];
         VkCommandBuffer cb = frame.commandBuffer;
         VkExtent2D ext = m_Swapchain->GetExtent();
 
         {
             VkImageMemoryBarrier2 b{};
-            b.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+            b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
             b.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
             b.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
             b.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
@@ -1447,9 +1448,9 @@ namespace Manro {
             b.image = m_OffscreenColor.image;
             b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
             VkDependencyInfo dep{};
-            dep.sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+            dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
             dep.imageMemoryBarrierCount = 1;
-            dep.pImageMemoryBarriers    = &b;
+            dep.pImageMemoryBarriers = &b;
             vkCmdPipelineBarrier2(cb, &dep);
         }
 
@@ -1465,7 +1466,7 @@ namespace Manro {
             b.image = m_Swapchain->GetImage(m_CurrentImageIndex);
             b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
             VkDependencyInfo dep{};
-            dep.sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+            dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
             dep.imageMemoryBarrierCount = 1;
             dep.pImageMemoryBarriers = &b;
             vkCmdPipelineBarrier2(cb, &dep);
@@ -1575,7 +1576,7 @@ namespace Manro {
         inst.firstIndex = mesh->firstIndex;
         inst.indexCount = mesh->indexCount;
         inst.materialIndex = matIndex;
-        inst.center[0]     = mesh->center.x;
+        inst.center[0] = mesh->center.x;
         inst.center[1] = mesh->center.y;
         inst.center[2] = mesh->center.z;
         inst.radius = mesh->radius;
@@ -1588,7 +1589,7 @@ namespace Manro {
         cullData.center[1] = worldCenter.y;
         cullData.center[2] = worldCenter.z;
         cullData.radius = mesh->radius * std::sqrt(scaleSq);
-        cullData.instanceId = (u32)m_CurrentFrameInstances.size();
+        cullData.instanceId = (u32) m_CurrentFrameInstances.size();
 
         m_CurrentFrameInstances.push_back(inst);
         m_CurrentFrameCullData.push_back(cullData);
@@ -1685,15 +1686,15 @@ namespace Manro {
         {
             VkDescriptorSetLayoutBinding b[14];
             b[0] = {0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                nullptr
+                    nullptr
             };
             b[1] = {1, VK_DESCRIPTOR_TYPE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
             b[2] = {6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
             b[3] = {7, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
             b[4] = {8, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
             b[5] = {
-                9, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                nullptr
+                    9, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                    nullptr
             };
             b[6] = {10, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
             b[7] = {11, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
@@ -1701,15 +1702,16 @@ namespace Manro {
             b[9] = {13, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
             b[10] = {14, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
             b[11] = {
-                15, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                nullptr
+                    15, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                    nullptr
             };
             b[12] = {
-                16, VK_DESCRIPTOR_TYPE_SAMPLER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr
+                    16, VK_DESCRIPTOR_TYPE_SAMPLER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                    nullptr
             };
             b[13] = {
-                17, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                nullptr
+                    17, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                    nullptr
             };
 
             VkDescriptorBindingFlags flags[14];
@@ -1731,7 +1733,7 @@ namespace Manro {
 
         {
             VkDescriptorSetLayoutBinding b{
-                0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr
+                    0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr
             };
             VkDescriptorSetLayoutCreateInfo ci{};
             ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -1750,7 +1752,7 @@ namespace Manro {
             VkDescriptorSetLayoutCreateInfo ci{};
             ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
             ci.bindingCount = 4;
-            ci.pBindings    = b;
+            ci.pBindings = b;
             if (vkCreateDescriptorSetLayout(m_Context.GetDevice(), &ci, nullptr, &m_CullSetLayout) != VK_SUCCESS)
                 throw std::runtime_error("Failed to create cull descriptor set layout");
         }
@@ -1779,7 +1781,8 @@ namespace Manro {
             ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
             ci.bindingCount = 4;
             ci.pBindings = b;
-            if (vkCreateDescriptorSetLayout(m_Context.GetDevice(), &ci, nullptr, &m_ShadowMeshCullSetLayout) != VK_SUCCESS)
+            if (vkCreateDescriptorSetLayout(m_Context.GetDevice(), &ci, nullptr, &m_ShadowMeshCullSetLayout) !=
+                VK_SUCCESS)
                 throw std::runtime_error("Failed to create shadow mesh cull descriptor set layout");
         }
 
@@ -1798,12 +1801,12 @@ namespace Manro {
 
     void RendererImpl::CreateDescriptorPool() {
         VkDescriptorPoolSize sizes[] = {
-            {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,              u32(MAX_FRAMES_IN_FLIGHT * 10)},
-            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, u32(MAX_FRAMES_IN_FLIGHT * 20)},
-            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, u32(MAX_FRAMES_IN_FLIGHT * 10)},
-            {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, u32(MAX_FRAMES_IN_FLIGHT * 2)},
-            {VK_DESCRIPTOR_TYPE_SAMPLER, u32(MAX_FRAMES_IN_FLIGHT * 10)},
-            {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, u32(MAX_FRAMES_IN_FLIGHT * 10)},
+                {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,             u32(MAX_FRAMES_IN_FLIGHT * 10)},
+                {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,             u32(MAX_FRAMES_IN_FLIGHT * 20)},
+                {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,     u32(MAX_FRAMES_IN_FLIGHT * 10)},
+                {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, u32(MAX_FRAMES_IN_FLIGHT * 2)},
+                {VK_DESCRIPTOR_TYPE_SAMPLER,                    u32(MAX_FRAMES_IN_FLIGHT * 10)},
+                {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,              u32(MAX_FRAMES_IN_FLIGHT * 10)},
         };
         VkDescriptorPoolCreateInfo ci{};
         ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -1816,12 +1819,12 @@ namespace Manro {
 
     void RendererImpl::CreateGpuBuffers() {
         m_MaterialBuffer = CreateScope<Buffer>(
-            m_Context, sizeof(MaterialData) * 1024,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+                m_Context, sizeof(MaterialData) * 1024,
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
         m_TextureInfoBuffer = CreateScope<Buffer>(
-            m_Context, sizeof(shaderio::GltfTextureInfo) * 1024,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+                m_Context, sizeof(shaderio::GltfTextureInfo) * 1024,
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
         std::vector<shaderio::GltfTextureInfo> tis(1024);
         for (int i = 0; i < 1024; ++i) {
@@ -1870,12 +1873,12 @@ namespace Manro {
     }
 
     void RendererImpl::UpdatePbrDescriptorSet(u32 fi) {
-        FrameData& frame = m_Frames[fi];
+        FrameData &frame = m_Frames[fi];
 
         VkDescriptorBufferInfo uboI{frame.uboBuffer->GetHandle(), 0, sizeof(UniformBufferObject)};
         VkDescriptorBufferInfo lightI{frame.lightBuffer->GetHandle(), 0, VK_WHOLE_SIZE};
         VkDescriptorBufferInfo tileHI{frame.tileHeaderBuffer->GetHandle(), 0, VK_WHOLE_SIZE};
-        VkDescriptorBufferInfo tileLI {frame.tileLightIndexBuffer->GetHandle(), 0, VK_WHOLE_SIZE};
+        VkDescriptorBufferInfo tileLI{frame.tileLightIndexBuffer->GetHandle(), 0, VK_WHOLE_SIZE};
         VkDescriptorBufferInfo instI{frame.instanceBuffer->GetHandle(), 0, VK_WHOLE_SIZE};
         VkDescriptorBufferInfo matI{m_MaterialBuffer->GetHandle(), 0, VK_WHOLE_SIZE};
         VkDescriptorBufferInfo texI{m_TextureInfoBuffer->GetHandle(), 0, VK_WHOLE_SIZE};
@@ -1904,7 +1907,7 @@ namespace Manro {
         w(3, frame.pbrSet, 8, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &tileLI);
         w(4, frame.pbrSet, 9, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &instI);
         w(5, frame.pbrSet, 13, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &matI);
-        w(6, frame.pbrSet, 1, VK_DESCRIPTOR_TYPE_SAMPLER,         nullptr, &samplerInfo);
+        w(6, frame.pbrSet, 1, VK_DESCRIPTOR_TYPE_SAMPLER, nullptr, &samplerInfo);
         w(7, frame.pbrSet, 10, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, nullptr, &stubImg);
         w(8, frame.pbrSet, 14, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &texI);
         vkUpdateDescriptorSets(m_Context.GetDevice(), 9, writes, 0, nullptr);
@@ -1935,7 +1938,7 @@ namespace Manro {
             mw[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             mw[i].dstSet = frame.meshCullSet;
             mw[i].dstBinding = binding;
-            mw[i].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            mw[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
             mw[i].descriptorCount = 1;
             mw[i].pBufferInfo = bi;
         };
@@ -2065,7 +2068,7 @@ namespace Manro {
                 throw std::runtime_error("Failed to create command pool");
 
             VkCommandBufferAllocateInfo cbAI{};
-            cbAI.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+            cbAI.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
             cbAI.commandPool = f.commandPool;
             cbAI.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
             cbAI.commandBufferCount = 1;
@@ -2073,43 +2076,43 @@ namespace Manro {
                 throw std::runtime_error("Failed to allocate command buffer");
 
             f.uboBuffer = CreateScope<Buffer>(
-                m_Context, sizeof(UniformBufferObject),
-                VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+                    m_Context, sizeof(UniformBufferObject),
+                    VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
             f.lightBuffer = CreateScope<Buffer>(
-                m_Context, sizeof(LightData) * MAX_LIGHTS,
-                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+                    m_Context, sizeof(LightData) * MAX_LIGHTS,
+                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
             struct TileHeader {
                 u32 offset, count, pad0, pad1;
             };
             f.tileHeaderBuffer = CreateScope<Buffer>(
-                m_Context, sizeof(TileHeader) * kMaxTiles,
-                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
+                    m_Context, sizeof(TileHeader) * kMaxTiles,
+                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
 
             f.tileLightIndexBuffer = CreateScope<Buffer>(
-                m_Context, sizeof(u32) * kMaxTiles * MAX_LIGHTS_PER_TILE,
-                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
+                    m_Context, sizeof(u32) * kMaxTiles * MAX_LIGHTS_PER_TILE,
+                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
 
             f.instanceBuffer = CreateScope<Buffer>(
-                m_Context, sizeof(GpuMeshInstance) * MAX_INSTANCES,
-                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                VMA_MEMORY_USAGE_CPU_TO_GPU);
+                    m_Context, sizeof(GpuMeshInstance) * MAX_INSTANCES,
+                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                    VMA_MEMORY_USAGE_CPU_TO_GPU);
 
             f.cullDataBuffer = CreateScope<Buffer>(
-                m_Context, sizeof(GpuCullData) * MAX_INSTANCES,
-                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+                    m_Context, sizeof(GpuCullData) * MAX_INSTANCES,
+                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
             f.indirectBuffer = CreateScope<Buffer>(
-                m_Context, sizeof(GpuDrawCommand) * MAX_INSTANCES,
-                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
-                VMA_MEMORY_USAGE_GPU_ONLY);
+                    m_Context, sizeof(GpuDrawCommand) * MAX_INSTANCES,
+                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
+                    VMA_MEMORY_USAGE_GPU_ONLY);
 
             f.countBuffer = CreateScope<Buffer>(
-                m_Context, sizeof(u32),
-                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
-                VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                VMA_MEMORY_USAGE_GPU_ONLY);
+                    m_Context, sizeof(u32),
+                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
+                    VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                    VMA_MEMORY_USAGE_GPU_ONLY);
 
             f.shadowIndirectBuffer = CreateScope<Buffer>(
                     m_Context, sizeof(GpuDrawCommand) * MAX_INSTANCES,
@@ -2141,7 +2144,7 @@ namespace Manro {
             };
             VkDescriptorSet sets[5];
             VkDescriptorSetAllocateInfo dsAI{};
-            dsAI.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+            dsAI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
             dsAI.descriptorPool = m_DescriptorPool;
             dsAI.descriptorSetCount = 5;
             dsAI.pSetLayouts = layouts;
@@ -2171,14 +2174,14 @@ namespace Manro {
         binaryCI.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
         m_ImageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
-        for (auto& s : m_ImageAvailableSemaphores)
+        for (auto &s: m_ImageAvailableSemaphores)
             if (vkCreateSemaphore(m_Context.GetDevice(), &binaryCI, nullptr, &s) != VK_SUCCESS)
                 throw std::runtime_error("Failed to create image-available semaphore");
 
         VkSemaphoreTypeCreateInfo tlCI{};
         tlCI.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
         tlCI.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
-        tlCI.initialValue  = 0;
+        tlCI.initialValue = 0;
 
         VkSemaphoreCreateInfo tlSI{};
         tlSI.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -2187,7 +2190,7 @@ namespace Manro {
             throw std::runtime_error("Failed to create timeline semaphore");
 
         m_TimelineValue = 0;
-        for (auto& v : m_FrameBaseValue) v = 0;
+        for (auto &v: m_FrameBaseValue) v = 0;
 
         m_PresentSemaphores.resize(m_Swapchain->GetImageCount());
         for (auto &s: m_PresentSemaphores)
@@ -2204,7 +2207,7 @@ namespace Manro {
         }
 
         PipelineConfigParams cfg{};
-        cfg.vertexEntryPoint   = "main";
+        cfg.vertexEntryPoint = "main";
         cfg.fragmentEntryPoint = "main";
         cfg.colorAttachmentFormat = m_OffscreenFormat;
         cfg.depthAttachmentFormat = m_DepthFormat;
@@ -2295,14 +2298,14 @@ namespace Manro {
         cfg.fragmentEntryPoint = "main";
         cfg.colorAttachmentFormat = m_Swapchain->GetImageFormat();
         cfg.depthAttachmentFormat = VK_FORMAT_UNDEFINED;
-        cfg.msaaSamples           = VK_SAMPLE_COUNT_1_BIT;
+        cfg.msaaSamples = VK_SAMPLE_COUNT_1_BIT;
         cfg.pushConstantSize = sizeof(CompositePushConstants);
         cfg.pushConstantStages = VK_SHADER_STAGE_FRAGMENT_BIT;
         cfg.descriptorSetLayouts = {m_CompositeSetLayout};
 
         PipelineKey key{};
         key.vertHash = PipelineCache::HashSpirV(vertSpv);
-        key.fragHash       = PipelineCache::HashSpirV(fragSpv);
+        key.fragHash = PipelineCache::HashSpirV(fragSpv);
         key.colorFmt = m_Swapchain->GetImageFormat();
         key.pushConstantSize = sizeof(CompositePushConstants);
         VkDescriptorSetLayout layouts[] = {m_CompositeSetLayout};
@@ -2318,7 +2321,8 @@ namespace Manro {
     void RendererImpl::BuildCullPipeline() {
         {
             auto compSpv = VirtualFS::Get().ReadFile("shaders://forward_plus_cull.comp.spv");
-            if (compSpv.empty()) { LOG_ERROR("[Renderer] Cull shader not found");
+            if (compSpv.empty()) {
+                LOG_ERROR("[Renderer] Cull shader not found");
                 return;
             }
 
@@ -2343,17 +2347,18 @@ namespace Manro {
 
         {
             auto compSpv = VirtualFS::Get().ReadFile("shaders://mesh_cull.comp.spv");
-            if (compSpv.empty()) { LOG_ERROR("[Renderer] Mesh cull shader not found");
+            if (compSpv.empty()) {
+                LOG_ERROR("[Renderer] Mesh cull shader not found");
                 return;
             }
 
             PipelineConfigParams cfg{};
-            cfg.computeEntryPoint  = "main";
+            cfg.computeEntryPoint = "main";
             cfg.pushConstantSize = sizeof(MeshCullPushConstants);
             cfg.descriptorSetLayouts = {m_MeshCullSetLayout};
 
             PipelineKey key{};
-            key.compHash       = PipelineCache::HashSpirV(compSpv);
+            key.compHash = PipelineCache::HashSpirV(compSpv);
             key.variants = PipelineVariant_Compute;
             key.pushConstantSize = sizeof(MeshCullPushConstants);
             VkDescriptorSetLayout layouts[] = {m_MeshCullSetLayout};
@@ -2395,8 +2400,8 @@ namespace Manro {
                 5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, (u32) offsetof(GpuMeshInstance, modelMatrix) + 16
         };
         cfg.vertexInputAttributes[4] = {
-            6, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
-            (u32) offsetof(GpuMeshInstance, modelMatrix) + 32
+                6, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
+                (u32) offsetof(GpuMeshInstance, modelMatrix) + 32
         };
         cfg.vertexInputAttributes[5] = {
                 7, 1, VK_FORMAT_R32G32B32A32_SFLOAT, (u32) offsetof(GpuMeshInstance, modelMatrix) + 48
@@ -2543,6 +2548,7 @@ namespace Manro {
         m_DebugVertices.clear();
         m_DebugVerticesNoDepth.clear();
     }
+
     void RendererImpl::ImportPipelinesToRHI() {
         if (!m_VulkanCommandList) return;
 

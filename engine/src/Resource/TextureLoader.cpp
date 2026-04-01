@@ -1,7 +1,9 @@
 #include <Manro/Resource/TextureLoader.h>
 #include <Manro/Core/VirtualFS.h>
 #include <Manro/Core/JobSystem.h>
+
 #define STB_IMAGE_IMPLEMENTATION
+
 #include <stb_image.h>
 
 #include <Manro/Core/Logger.h>
@@ -151,7 +153,7 @@ namespace Manro {
             }
     }
 
-    static bool LoadDDS(const std::vector<u8>& data, TextureData &out) {
+    static bool LoadDDS(const std::vector<u8> &data, TextureData &out) {
         if (data.size() < 4 + sizeof(DDSHeader)) return false;
 
         u32 magic;
@@ -185,7 +187,7 @@ namespace Manro {
         size_t dataSize = static_cast<size_t>(bw) * bh * blockSize;
 
         if (data.size() < 4 + sizeof(hdr) + dataSize) return false;
-        const u8* compressedData = data.data() + 4 + sizeof(hdr);
+        const u8 *compressedData = data.data() + 4 + sizeof(hdr);
 
         out.width = w;
         out.height = h;
@@ -262,14 +264,14 @@ namespace Manro {
 
     std::vector<TextureData> TextureLoader::Load(const std::vector<std::string> &filepaths, JobSystem &jobs) {
         std::vector<TextureData> results(filepaths.size());
-        
+
         for (size_t i = 0; i < filepaths.size(); ++i) {
             jobs.Execute([&filepaths, &results, i]() {
                 LoadIndividual(filepaths[i], results[i]);
             });
         }
         jobs.WaitAll();
-        
+
         return results;
     }
 

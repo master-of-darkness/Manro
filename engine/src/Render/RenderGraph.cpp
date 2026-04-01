@@ -142,10 +142,10 @@ namespace Manro {
                     b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
                     b.image = VK_NULL_HANDLE; // sentinel; filled in Execute
                     b.subresourceRange = {
-                        acc.isDepth
+                            acc.isDepth
                             ? (VkImageAspectFlags) VK_IMAGE_ASPECT_DEPTH_BIT
                             : (VkImageAspectFlags) VK_IMAGE_ASPECT_COLOR_BIT,
-                        0, 1, 0, 1
+                            0, 1, 0, 1
                     };
 
                     cp.imageBarriers.push_back(b);
@@ -227,10 +227,10 @@ namespace Manro {
                     b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
                     b.image = resolved.image;
                     b.subresourceRange = {
-                        acc.isDepth
+                            acc.isDepth
                             ? (VkImageAspectFlags) VK_IMAGE_ASPECT_DEPTH_BIT
                             : (VkImageAspectFlags) VK_IMAGE_ASPECT_COLOR_BIT,
-                        0, 1, 0, 1
+                            0, 1, 0, 1
                     };
 
                     if (resolved.layout != acc.requiredLayout)

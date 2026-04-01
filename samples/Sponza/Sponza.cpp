@@ -8,24 +8,24 @@
 #include <cstdio>
 #include <random>
 
-static constexpr auto  kSponzaPath   = "models/sponza/Sponza.gltf";
-static float           kFov          = 100.f;
-static constexpr float kNearZ        = 1.f;
-static constexpr float kFarZ         = 10000.f;
-static constexpr Manro::u32 kWindowWidth  = 1920;
+static constexpr auto kSponzaPath = "models/sponza/Sponza.gltf";
+static float kFov = 100.f;
+static constexpr float kNearZ = 1.f;
+static constexpr float kFarZ = 10000.f;
+static constexpr Manro::u32 kWindowWidth = 1920;
 static constexpr Manro::u32 kWindowHeight = 1080;
 
-static float s_TimeOfDay  = 10.0f;
-static bool  s_AnimateSun = true;
-static float s_DaySpeed   = 0.5f;
+static float s_TimeOfDay = 10.0f;
+static bool s_AnimateSun = true;
+static float s_DaySpeed = 0.5f;
 
 Manro::WindowDesc Sponza::GetWindowDesc() const {
     Manro::WindowDesc d;
     d.Title = "Sponza";
-    d.Width      = kWindowWidth;
-    d.Height     = kWindowHeight;
+    d.Width = kWindowWidth;
+    d.Height = kWindowHeight;
     d.Fullscreen = false;
-    d.Resizable  = true;
+    d.Resizable = true;
     return d;
 }
 
@@ -45,7 +45,7 @@ void Sponza::OnShutdown() {
     m_Model.reset();
 }
 
-bool Sponza::OnUpdate(const Manro::FrameContext& ctx, const Manro::UserCmd& /*cmd*/) {
+bool Sponza::OnUpdate(const Manro::FrameContext &ctx, const Manro::UserCmd & /*cmd*/) {
     if (!m_IsRunning) return false;
 
     const float dt = ctx.DeltaTime;
@@ -57,7 +57,7 @@ bool Sponza::OnUpdate(const Manro::FrameContext& ctx, const Manro::UserCmd& /*cm
     }
 
     const bool ctrlDown = m_InputManager.IsKeyDown(Manro::Key::LeftCtrl);
-    const bool f11Down  = m_InputManager.IsKeyDown(Manro::Key::F11);
+    const bool f11Down = m_InputManager.IsKeyDown(Manro::Key::F11);
 
     if (ctrlDown && !m_CtrlWasDown) m_InputCaptured = !m_InputCaptured;
     if (f11Down && !m_F11WasDown) {
@@ -65,7 +65,7 @@ bool Sponza::OnUpdate(const Manro::FrameContext& ctx, const Manro::UserCmd& /*cm
         m_F11WasDown = !m_F11WasDown;
     }
     m_CtrlWasDown = ctrlDown;
-    m_F11WasDown  = f11Down;
+    m_F11WasDown = f11Down;
 
     if (m_InputManager.IsKeyDown(Manro::Key::Escape)) {
         if (m_BenchState == BenchmarkState::Running ||
@@ -73,9 +73,9 @@ bool Sponza::OnUpdate(const Manro::FrameContext& ctx, const Manro::UserCmd& /*cm
             m_BenchState = BenchmarkState::Idle;
             m_BenchFrameTimes.clear();
             m_Camera.Position = m_SavedCamPos;
-            m_Camera.Yaw      = m_SavedCamYaw;
-            m_Camera.Pitch    = m_SavedCamPitch;
-            m_InputCaptured   = true;
+            m_Camera.Yaw = m_SavedCamYaw;
+            m_Camera.Pitch = m_SavedCamPitch;
+            m_InputCaptured = true;
         } else {
             return false;
         }
@@ -110,25 +110,25 @@ void Sponza::OnRender(Manro::FrameContext &frame) {
 
     m_Renderer->ClearLights();
 
-    const float dayTau     = (s_TimeOfDay / 24.f) * 2.f * 3.14159265f;
-    const float sunAlt     = sinf(dayTau - 1.5707f);
+    const float dayTau = (s_TimeOfDay / 24.f) * 2.f * 3.14159265f;
+    const float sunAlt = sinf(dayTau - 1.5707f);
     const float sunAzimuth = cosf(dayTau - 1.5707f);
 
     Manro::LightData sun{};
-    sun.type      = shaderio::eLightTypeDirectional;
+    sun.type = shaderio::eLightTypeDirectional;
     sun.direction = glm::normalize(Manro::Vec3{sunAzimuth, -sunAlt, 0.3f});
 
     if (sunAlt > 0.05f) {
-        sun.color     = {1.0f, 0.98f, 0.90f};
+        sun.color = {1.0f, 0.98f, 0.90f};
         sun.intensity = 3.f * sunAlt;
     } else if (sunAlt > -0.1f) {
         const float t = (sunAlt + 0.1f) / 0.15f;
-        sun.color     = glm::mix(Manro::Vec3{1.f, 0.3f, 0.05f},
-                                 Manro::Vec3{1.f, 0.98f, 0.90f}, t);
+        sun.color = glm::mix(Manro::Vec3{1.f, 0.3f, 0.05f},
+                             Manro::Vec3{1.f, 0.98f, 0.90f}, t);
         sun.intensity = 0.8f;
     } else {
         sun.direction = glm::normalize(Manro::Vec3{-sunAzimuth, sunAlt, -0.3f});
-        sun.color     = {0.1f, 0.15f, 0.35f};
+        sun.color = {0.1f, 0.15f, 0.35f};
         sun.intensity = 0.2f;
     }
     m_Renderer->AddLight(sun);
@@ -161,7 +161,7 @@ void Sponza::LoadScene() {
     }
     m_Model = std::move(models[0]);
     m_Renderer->DrawModelStatic(*m_Model,
-                             glm::scale(glm::mat4(1.f), glm::vec3(100.f)));
+                                glm::scale(glm::mat4(1.f), glm::vec3(100.f)));
 
     auto skyFaces = Manro::TextureLoader::LoadCubemap("skyboxes/cubemap_sky.png");
     if (!skyFaces.empty()) {
@@ -172,12 +172,12 @@ void Sponza::LoadScene() {
 
 
 void Sponza::DrawGui(const float dt) {
-    const float fps   = dt > 0.f ? 1.f / dt : 0.f;
-    const float msdt  = dt * 1000.f;
-    const bool  benchActive = (m_BenchState == BenchmarkState::Warmup ||
-                               m_BenchState == BenchmarkState::Running);
+    const float fps = dt > 0.f ? 1.f / dt : 0.f;
+    const float msdt = dt * 1000.f;
+    const bool benchActive = (m_BenchState == BenchmarkState::Warmup ||
+                              m_BenchState == BenchmarkState::Running);
 
-    ImGui::SetNextWindowPos({10, 10},  ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos({10, 10}, ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize({320, 0}, ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowBgAlpha(0.88f);
 
@@ -206,46 +206,46 @@ void Sponza::DrawGui(const float dt) {
             bool changed = false;
 
             if (ImGui::SliderFloat("Resolution Scale", &settings.resolutionScale, 0.1f, 2.0f)) changed = true;
-            if (ImGui::Checkbox("VSync",              &settings.enableVSync))           changed = true;
-            if (ImGui::Checkbox("Frustum Culling",    &settings.enableFrustumCulling))  changed = true;
+            if (ImGui::Checkbox("VSync", &settings.enableVSync)) changed = true;
+            if (ImGui::Checkbox("Frustum Culling", &settings.enableFrustumCulling)) changed = true;
 
             if (ImGui::TreeNode("Camera")) {
-                if (ImGui::DragFloat("Near Z", &settings.nearZ, 0.01f, 0.001f, 10.f))       changed = true;
-                if (ImGui::DragFloat("Far Z",  &settings.farZ,  10.f,  100.f,  100000.f))   changed = true;
-                if (ImGui::SliderFloat("FoV",  &kFov,           50.f,  120.f))              {}
+                if (ImGui::DragFloat("Near Z", &settings.nearZ, 0.01f, 0.001f, 10.f)) changed = true;
+                if (ImGui::DragFloat("Far Z", &settings.farZ, 10.f, 100.f, 100000.f)) changed = true;
+                if (ImGui::SliderFloat("FoV", &kFov, 50.f, 120.f)) {}
                 ImGui::TreePop();
             }
 
             if (ImGui::TreeNode("Environment & Sun")) {
                 ImGui::Checkbox("Animate Day Cycle", &s_AnimateSun);
-                ImGui::SliderFloat("Time",      &s_TimeOfDay, 0.f, 24.f, "%.1f h");
-                ImGui::SliderFloat("Day Speed", &s_DaySpeed,  0.f,  5.f);
+                ImGui::SliderFloat("Time", &s_TimeOfDay, 0.f, 24.f, "%.1f h");
+                ImGui::SliderFloat("Day Speed", &s_DaySpeed, 0.f, 5.f);
                 ImGui::Separator();
-                if (ImGui::SliderFloat("IBL Intensity", &settings.lighting.iblIntensity, 0.f, 5.f))  changed = true;
-                if (ImGui::SliderFloat("Gamma",          &settings.lighting.gamma,        1.f, 3.f))  changed = true;
-                if (ImGui::Checkbox("AO Enabled", &settings.lighting.enableAmbientOcclusion))         changed = true;
+                if (ImGui::SliderFloat("IBL Intensity", &settings.lighting.iblIntensity, 0.f, 5.f)) changed = true;
+                if (ImGui::SliderFloat("Gamma", &settings.lighting.gamma, 1.f, 3.f)) changed = true;
+                if (ImGui::Checkbox("AO Enabled", &settings.lighting.enableAmbientOcclusion)) changed = true;
                 if (settings.lighting.enableAmbientOcclusion) {
                     if (ImGui::SliderFloat("AO Intensity", &settings.lighting.aoIntensity, 0.f, 2.f)) changed = true;
-                    if (ImGui::SliderFloat("AO Radius",    &settings.lighting.aoRadius,    0.01f, 2.f))changed = true;
+                    if (ImGui::SliderFloat("AO Radius", &settings.lighting.aoRadius, 0.01f, 2.f))changed = true;
                 }
                 ImGui::TreePop();
             }
 
             if (ImGui::TreeNode("Shadows")) {
-                if (ImGui::Checkbox("Enabled##Shadows",  &settings.shadows.enabled))                    changed = true;
-                if (ImGui::DragInt("Resolution",          &settings.shadows.resolution, 128, 128, 4096)) changed = true;
-                if (ImGui::SliderFloat("Bias",            &settings.shadows.bias,       0.f, 0.05f, "%.4f")) changed = true;
-                if (ImGui::SliderFloat("Slope Bias",      &settings.shadows.slopeBias,  0.f, 0.5f))          changed = true;
-                if (ImGui::SliderFloat("Softness",        &settings.shadows.softShadows, 0.f, 5.f))          changed = true;
+                if (ImGui::Checkbox("Enabled##Shadows", &settings.shadows.enabled)) changed = true;
+                if (ImGui::DragInt("Resolution", &settings.shadows.resolution, 128, 128, 4096)) changed = true;
+                if (ImGui::SliderFloat("Bias", &settings.shadows.bias, 0.f, 0.05f, "%.4f")) changed = true;
+                if (ImGui::SliderFloat("Slope Bias", &settings.shadows.slopeBias, 0.f, 0.5f)) changed = true;
+                if (ImGui::SliderFloat("Softness", &settings.shadows.softShadows, 0.f, 5.f)) changed = true;
                 ImGui::TreePop();
             }
 
             if (ImGui::TreeNode("Post-Processing")) {
-                auto& tm = settings.postProcess.tonemapping;
-                if (ImGui::SliderFloat("Exposure",   &tm.exposure,    0.f, 10.f)) changed = true;
-                if (ImGui::SliderFloat("Contrast",   &tm.contrast,    0.f,  3.f)) changed = true;
-                if (ImGui::SliderFloat("Saturation", &tm.saturation,  0.f,  3.f)) changed = true;
-                const char* methods[] = {"Filmic","Uncharted2","Clip","ACES","AgX","KhronosPBR"};
+                auto &tm = settings.postProcess.tonemapping;
+                if (ImGui::SliderFloat("Exposure", &tm.exposure, 0.f, 10.f)) changed = true;
+                if (ImGui::SliderFloat("Contrast", &tm.contrast, 0.f, 3.f)) changed = true;
+                if (ImGui::SliderFloat("Saturation", &tm.saturation, 0.f, 3.f)) changed = true;
+                const char *methods[] = {"Filmic", "Uncharted2", "Clip", "ACES", "AgX", "KhronosPBR"};
                 if (ImGui::Combo("Method", &tm.method, methods, IM_ARRAYSIZE(methods))) changed = true;
                 ImGui::TreePop();
             }
@@ -256,7 +256,7 @@ void Sponza::DrawGui(const float dt) {
         if (ImGui::CollapsingHeader("GPU")) {
             Manro::u64 used, budget;
             m_Renderer->GetVramStats(used, budget);
-            const float usedMB   = static_cast<float>(used)   / (1024.f * 1024.f);
+            const float usedMB = static_cast<float>(used) / (1024.f * 1024.f);
             const float budgetMB = static_cast<float>(budget) / (1024.f * 1024.f);
             ImGui::Text("VRAM  %.1f / %.1f MB", usedMB, budgetMB);
             ImGui::ProgressBar(usedMB / std::max(budgetMB, 1.f), {-FLT_MIN, 0});
@@ -300,24 +300,28 @@ void Sponza::DrawGui(const float dt) {
 
     if (!m_ShowBenchWindow) return;
 
-    ImGui::SetNextWindowPos({350, 10},  ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize({460, 0},  ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos({350, 10}, ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize({460, 0}, ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowBgAlpha(0.92f);
 
-    if (!ImGui::Begin("Benchmark", &m_ShowBenchWindow)) { ImGui::End(); return; }
+    if (!ImGui::Begin("Benchmark", &m_ShowBenchWindow)) {
+        ImGui::End();
+        return;
+    }
 
     if (m_BenchState == BenchmarkState::Idle || m_BenchState == BenchmarkState::Done) {
         ImGui::SeparatorText("Settings");
         ImGui::SetNextItemWidth(220);
-        ImGui::SliderInt("Duration (s)",   &m_BenchDuration,   5, 120);
-        ImGui::SameLine(); ImGui::TextDisabled("(+%.0fs warmup)", m_WarmupDuration);
+        ImGui::SliderInt("Duration (s)", &m_BenchDuration, 5, 120);
+        ImGui::SameLine();
+        ImGui::TextDisabled("(+%.0fs warmup)", m_WarmupDuration);
         ImGui::SetNextItemWidth(220);
-        ImGui::SliderInt("Random lights",  &m_BenchLightCount, 0,  64);
+        ImGui::SliderInt("Random lights", &m_BenchLightCount, 0, 64);
         ImGui::Spacing();
         ImGui::TextDisabled("Camera follows a pre-defined tour of the Sponza atrium.");
         ImGui::TextDisabled("Mouse and keyboard are locked during the run.");
         ImGui::Spacing();
-        ImGui::PushStyleColor(ImGuiCol_Button,        {0.12f, 0.50f, 0.12f, 1.f});
+        ImGui::PushStyleColor(ImGuiCol_Button, {0.12f, 0.50f, 0.12f, 1.f});
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {0.18f, 0.70f, 0.18f, 1.f});
         if (ImGui::Button("  Start Benchmark  ", {-FLT_MIN, 32}))
             StartBenchmark();
@@ -358,7 +362,7 @@ void Sponza::DrawGui(const float dt) {
     if (m_BenchState == BenchmarkState::Done) {
         ImGui::Spacing();
         ImGui::SeparatorText("Results");
-        const auto& r = m_BenchResult;
+        const auto &r = m_BenchResult;
         ImGui::PushStyleColor(ImGuiCol_Text, {0.4f, 1.f, 0.4f, 1.f});
         ImGui::Text("Avg %.2f FPS    Min %.2f    Max %.2f", r.avgFps, r.minFps, r.maxFps);
         ImGui::PopStyleColor();
@@ -367,23 +371,25 @@ void Sponza::DrawGui(const float dt) {
         if (ImGui::BeginTable("bt", 2,
                               ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV)) {
             ImGui::TableSetupColumn("Metric", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Value",  ImGuiTableColumnFlags_WidthFixed, 130.f);
+            ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthFixed, 130.f);
             ImGui::TableHeadersRow();
-            auto row = [](const char* label, const char* val) {
+            auto row = [](const char *label, const char *val) {
                 ImGui::TableNextRow();
-                ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted(label);
-                ImGui::TableSetColumnIndex(1); ImGui::TextUnformatted(val);
+                ImGui::TableSetColumnIndex(0);
+                ImGui::TextUnformatted(label);
+                ImGui::TableSetColumnIndex(1);
+                ImGui::TextUnformatted(val);
             };
             char buf[64];
 #define ROW(label, fmt, ...) snprintf(buf, sizeof(buf), fmt, __VA_ARGS__); row(label, buf)
-            ROW("Avg frame time",    "%.3f ms", r.avgFrameMs);
-            ROW("1%% low (99th)",    "%.3f ms", r.p1FrameMs);
-            ROW("0.1%% low (99.9th)","%.3f ms", r.p01FrameMs);
-            ROW("Total frames",      "%u",      r.totalFrames);
-            ROW("Total time",        "%.2f s",  r.totalSeconds);
-            ROW("Avg draw calls",    "%u",      r.avgDrawCalls);
-            ROW("Avg triangles",     "%u",      r.avgTriangles);
-            ROW("Random lights",     "%d",      m_BenchLightCount);
+            ROW("Avg frame time", "%.3f ms", r.avgFrameMs);
+            ROW("1%% low (99th)", "%.3f ms", r.p1FrameMs);
+            ROW("0.1%% low (99.9th)", "%.3f ms", r.p01FrameMs);
+            ROW("Total frames", "%u", r.totalFrames);
+            ROW("Total time", "%.2f s", r.totalSeconds);
+            ROW("Avg draw calls", "%u", r.avgDrawCalls);
+            ROW("Avg triangles", "%u", r.avgTriangles);
+            ROW("Random lights", "%d", m_BenchLightCount);
 #undef ROW
             ImGui::EndTable();
         }
@@ -421,20 +427,20 @@ void Sponza::DrawGui(const float dt) {
 }
 
 void Sponza::StartBenchmark() {
-    m_SavedCamPos   = m_Camera.Position;
-    m_SavedCamYaw   = m_Camera.Yaw;
+    m_SavedCamPos = m_Camera.Position;
+    m_SavedCamYaw = m_Camera.Yaw;
     m_SavedCamPitch = m_Camera.Pitch;
 
-    m_PathT      = 0.f;
-    m_PathSpeed  = static_cast<float>(kWaypointCount - 1) /
-                   static_cast<float>(m_BenchDuration);
+    m_PathT = 0.f;
+    m_PathSpeed = static_cast<float>(kWaypointCount - 1) /
+                  static_cast<float>(m_BenchDuration);
 
-    m_BenchState         = BenchmarkState::Warmup;
-    m_BenchElapsed       = 0.f;
-    m_WarmupElapsed      = 0.f;
-    m_BenchDrawCallsAcc  = 0;
-    m_BenchTrianglesAcc  = 0;
-    m_BenchResult        = {};
+    m_BenchState = BenchmarkState::Warmup;
+    m_BenchElapsed = 0.f;
+    m_WarmupElapsed = 0.f;
+    m_BenchDrawCallsAcc = 0;
+    m_BenchTrianglesAcc = 0;
+    m_BenchResult = {};
     m_BenchFrameTimes.clear();
     m_BenchFrameTimes.reserve(static_cast<size_t>(m_BenchDuration) * 500);
     m_InputCaptured = false;
@@ -443,15 +449,15 @@ void Sponza::StartBenchmark() {
     m_BenchLights.clear();
     std::mt19937 rng(0xBEEF1234);
     std::uniform_real_distribution<float> rx(-1200.f, 1200.f);
-    std::uniform_real_distribution<float> ry(50.f,    400.f);
-    std::uniform_real_distribution<float> rz(-500.f,  500.f);
-    std::uniform_real_distribution<float> rc(0.3f,    1.f);
+    std::uniform_real_distribution<float> ry(50.f, 400.f);
+    std::uniform_real_distribution<float> rz(-500.f, 500.f);
+    std::uniform_real_distribution<float> rc(0.3f, 1.f);
     for (int i = 0; i < m_BenchLightCount; ++i) {
         Manro::LightData l{};
-        l.type                  = shaderio::eLightTypePoint;
-        l.position              = {rx(rng), ry(rng), rz(rng)};
-        l.color                 = {rc(rng), rc(rng), rc(rng)};
-        l.intensity             = 800.f;
+        l.type = shaderio::eLightTypePoint;
+        l.position = {rx(rng), ry(rng), rz(rng)};
+        l.color = {rc(rng), rc(rng), rc(rng)};
+        l.intensity = 800.f;
         l.angularSizeOrInvRange = 1.f / 350.f;
         m_BenchLights.push_back(l);
     }
@@ -463,8 +469,8 @@ void Sponza::TickBenchmark(float dt) {
     if (m_BenchState == BenchmarkState::Warmup) {
         m_WarmupElapsed += dt;
         if (m_WarmupElapsed >= m_WarmupDuration) {
-            m_BenchState    = BenchmarkState::Running;
-            m_BenchElapsed  = 0.f;
+            m_BenchState = BenchmarkState::Running;
+            m_BenchElapsed = 0.f;
             LOG_INFO("[Benchmark] Warmup done, measuring...");
         }
         return;
@@ -473,15 +479,15 @@ void Sponza::TickBenchmark(float dt) {
     m_BenchFrameTimes.push_back(dt * 1000.f);
     m_BenchDrawCallsAcc += m_LastStats.drawCalls;
     m_BenchTrianglesAcc += m_LastStats.triangleCount;
-    m_BenchElapsed      += dt;
+    m_BenchElapsed += dt;
 
     if (m_BenchElapsed >= static_cast<float>(m_BenchDuration))
         FinishBenchmark();
 }
 
 void Sponza::FinishBenchmark() {
-    auto& r        = m_BenchResult;
-    r.totalFrames  = static_cast<Manro::u32>(m_BenchFrameTimes.size());
+    auto &r = m_BenchResult;
+    r.totalFrames = static_cast<Manro::u32>(m_BenchFrameTimes.size());
     r.totalSeconds = m_BenchElapsed;
     r.avgDrawCalls = static_cast<Manro::u32>(
             m_BenchDrawCallsAcc / std::max(r.totalFrames, 1u));
@@ -491,7 +497,7 @@ void Sponza::FinishBenchmark() {
     const float sum = std::accumulate(
             m_BenchFrameTimes.begin(), m_BenchFrameTimes.end(), 0.f);
     r.avgFrameMs = sum / static_cast<float>(r.totalFrames);
-    r.avgFps     = 1000.f / r.avgFrameMs;
+    r.avgFps = 1000.f / r.avgFrameMs;
 
     const float minMs = *std::ranges::min_element(m_BenchFrameTimes);
     const float maxMs = *std::ranges::max_element(m_BenchFrameTimes);
@@ -504,14 +510,14 @@ void Sponza::FinishBenchmark() {
         const size_t i = static_cast<size_t>(p * static_cast<float>(sorted.size() - 1));
         return sorted[std::min(i, sorted.size() - 1)];
     };
-    r.p1FrameMs  = pct(0.99f);
+    r.p1FrameMs = pct(0.99f);
     r.p01FrameMs = pct(0.999f);
 
-    m_BenchState      = BenchmarkState::Done;
+    m_BenchState = BenchmarkState::Done;
     m_Camera.Position = m_SavedCamPos;
-    m_Camera.Yaw      = m_SavedCamYaw;
-    m_Camera.Pitch    = m_SavedCamPitch;
-    m_InputCaptured   = true;
+    m_Camera.Yaw = m_SavedCamYaw;
+    m_Camera.Pitch = m_SavedCamPitch;
+    m_InputCaptured = true;
 
     LOG_INFO("[Benchmark] Done  {:.2f} avg FPS  |  {:.3f}ms avg  |"
              "  {:.3f}ms 1% low  |  {:.3f}ms 0.1% low",
@@ -524,60 +530,62 @@ void Sponza::AdvanceBenchCamera(float dt) {
     while (m_PathT >= static_cast<float>(loopCount))
         m_PathT -= static_cast<float>(loopCount);
 
-    const int   seg = static_cast<int>(m_PathT);
-    const float t   = m_PathT - static_cast<float>(seg);
+    const int seg = static_cast<int>(m_PathT);
+    const float t = m_PathT - static_cast<float>(seg);
 
-    auto wp = [&](int i) -> const BenchWaypoint& {
+    auto wp = [&](int i) -> const BenchWaypoint & {
         i = std::max(0, std::min(kWaypointCount - 1, i));
         return kWaypoints[i];
     };
 
-    m_Camera.Position = CatmullRomPos(wp(seg-1), wp(seg), wp(seg+1), wp(seg+2), t);
-    m_Camera.Yaw      = CatmullRomAngle(wp(seg-1).yaw,   wp(seg).yaw,
-                                        wp(seg+1).yaw,   wp(seg+2).yaw,   t);
-    m_Camera.Pitch    = CatmullRomAngle(wp(seg-1).pitch,  wp(seg).pitch,
-                                        wp(seg+1).pitch,  wp(seg+2).pitch,  t);
+    m_Camera.Position = CatmullRomPos(wp(seg - 1), wp(seg), wp(seg + 1), wp(seg + 2), t);
+    m_Camera.Yaw = CatmullRomAngle(wp(seg - 1).yaw, wp(seg).yaw,
+                                   wp(seg + 1).yaw, wp(seg + 2).yaw, t);
+    m_Camera.Pitch = CatmullRomAngle(wp(seg - 1).pitch, wp(seg).pitch,
+                                     wp(seg + 1).pitch, wp(seg + 2).pitch, t);
 }
 
-Manro::Vec3 Sponza::CatmullRomPos(const BenchWaypoint& p0, const BenchWaypoint& p1,
-                                  const BenchWaypoint& p2, const BenchWaypoint& p3,
+Manro::Vec3 Sponza::CatmullRomPos(const BenchWaypoint &p0, const BenchWaypoint &p1,
+                                  const BenchWaypoint &p2, const BenchWaypoint &p3,
                                   float t) {
     const float t2 = t * t, t3 = t2 * t;
-    const Manro::Vec3 a = -0.5f*p0.position + 1.5f*p1.position - 1.5f*p2.position + 0.5f*p3.position;
-    const Manro::Vec3 b =  p0.position - 2.5f*p1.position + 2.f*p2.position - 0.5f*p3.position;
-    const Manro::Vec3 c = -0.5f*p0.position + 0.5f*p2.position;
-    return a*t3 + b*t2 + c*t + p1.position;
+    const Manro::Vec3 a = -0.5f * p0.position + 1.5f * p1.position - 1.5f * p2.position + 0.5f * p3.position;
+    const Manro::Vec3 b = p0.position - 2.5f * p1.position + 2.f * p2.position - 0.5f * p3.position;
+    const Manro::Vec3 c = -0.5f * p0.position + 0.5f * p2.position;
+    return a * t3 + b * t2 + c * t + p1.position;
 }
 
 float Sponza::CatmullRomAngle(float a0, float a1, float a2, float a3, float t) {
     auto unwrap = [](float base, float angle) {
-        while (angle - base >  180.f) angle -= 360.f;
+        while (angle - base > 180.f) angle -= 360.f;
         while (angle - base < -180.f) angle += 360.f;
         return angle;
     };
-    a2 = unwrap(a1, a2); a3 = unwrap(a2, a3); a0 = unwrap(a1, a0);
-    const float t2 = t*t, t3 = t2*t;
-    return (-0.5f*a0 + 1.5f*a1 - 1.5f*a2 + 0.5f*a3)*t3
-           + (a0 - 2.5f*a1 + 2.f*a2 - 0.5f*a3)*t2
-           + (-0.5f*a0 + 0.5f*a2)*t
+    a2 = unwrap(a1, a2);
+    a3 = unwrap(a2, a3);
+    a0 = unwrap(a1, a0);
+    const float t2 = t * t, t3 = t2 * t;
+    return (-0.5f * a0 + 1.5f * a1 - 1.5f * a2 + 0.5f * a3) * t3
+           + (a0 - 2.5f * a1 + 2.f * a2 - 0.5f * a3) * t2
+           + (-0.5f * a0 + 0.5f * a2) * t
            + a1;
 }
 
 Manro::Vec3 FlyCamera::Forward() const {
     const float yR = glm::radians(Yaw), pR = glm::radians(Pitch);
-    return glm::normalize(Manro::Vec3{cosf(pR)*cosf(yR), sinf(pR), cosf(pR)*sinf(yR)});
+    return glm::normalize(Manro::Vec3{cosf(pR) * cosf(yR), sinf(pR), cosf(pR) * sinf(yR)});
 }
 
-void FlyCamera::Update(const Manro::InputManager& input, float dt) {
+void FlyCamera::Update(const Manro::InputManager &input, float dt) {
     using K = Manro::Key;
-    auto [x, y] = const_cast<Manro::InputManager&>(input).ConsumeMouseDelta();
-    Yaw   += x * MouseSensitivity;
-    Pitch  = std::clamp(Pitch - y * MouseSensitivity, -89.f, 89.f);
+    auto [x, y] = const_cast<Manro::InputManager &>(input).ConsumeMouseDelta();
+    Yaw += x * MouseSensitivity;
+    Pitch = std::clamp(Pitch - y * MouseSensitivity, -89.f, 89.f);
 
-    const Manro::Vec3 fwd   = Forward();
-    const Manro::Vec3 right = glm::normalize(glm::cross(fwd, Manro::Vec3{0,1,0}));
-    const Manro::Vec3 up    = {0, 1, 0};
-    const float       speed = input.IsKeyDown(K::LeftShift) ? SprintSpeed : NormalSpeed;
+    const Manro::Vec3 fwd = Forward();
+    const Manro::Vec3 right = glm::normalize(glm::cross(fwd, Manro::Vec3{0, 1, 0}));
+    const Manro::Vec3 up = {0, 1, 0};
+    const float speed = input.IsKeyDown(K::LeftShift) ? SprintSpeed : NormalSpeed;
 
     Manro::Vec3 move{0};
     if (input.IsKeyDown(K::W)) move += fwd;
@@ -591,7 +599,7 @@ void FlyCamera::Update(const Manro::InputManager& input, float dt) {
 }
 
 Manro::Mat4 FlyCamera::View() const {
-    return glm::lookAt(Position, Position + Forward(), {0,1,0});
+    return glm::lookAt(Position, Position + Forward(), {0, 1, 0});
 }
 
 Manro::Mat4 FlyCamera::Projection(float fovDeg, float aspect, float nearZ, float farZ) {
@@ -599,22 +607,22 @@ Manro::Mat4 FlyCamera::Projection(float fovDeg, float aspect, float nearZ, float
 }
 
 const BenchWaypoint Sponza::kWaypoints[] = {
-        {{-1200.f, 150.f,   0.f}, -90.f,  -8.f},
-        {{ -700.f, 150.f,   0.f}, -90.f,  -5.f},
-        {{ -200.f, 200.f,  40.f}, -60.f, -15.f},
-        {{    0.f, 350.f,   0.f}, -90.f, -35.f},
-        {{  200.f, 200.f, -40.f},-120.f, -15.f},
-        {{  700.f, 150.f,   0.f}, -90.f,  -5.f},
-        {{ 1200.f, 150.f,   0.f}, -90.f,  -8.f},
-        {{  900.f, 120.f, 300.f},-160.f,  -5.f},
-        {{    0.f, 120.f, 500.f}, 180.f,  -8.f},
-        {{ -900.f, 120.f, 300.f}, 160.f,  -5.f},
-        {{-1000.f, 400.f,   0.f}, -70.f, -20.f},
-        {{    0.f, 500.f,   0.f}, -90.f, -50.f},
-        {{ 1000.f, 400.f,   0.f},-110.f, -20.f},
-        {{  600.f,  80.f,-400.f},  10.f,  -3.f},
-        {{    0.f,  80.f,-600.f},   0.f,  -3.f},
-        {{ -600.f,  80.f,-400.f}, -10.f,  -3.f},
-        {{-1200.f, 150.f,   0.f}, -90.f,  -8.f},
+        {{-1200.f, 150.f, 0.f},    -90.f,  -8.f},
+        {{-700.f,  150.f, 0.f},    -90.f,  -5.f},
+        {{-200.f,  200.f, 40.f},   -60.f,  -15.f},
+        {{0.f,     350.f, 0.f},    -90.f,  -35.f},
+        {{200.f,   200.f, -40.f},  -120.f, -15.f},
+        {{700.f,   150.f, 0.f},    -90.f,  -5.f},
+        {{1200.f,  150.f, 0.f},    -90.f,  -8.f},
+        {{900.f,   120.f, 300.f},  -160.f, -5.f},
+        {{0.f,     120.f, 500.f},  180.f,  -8.f},
+        {{-900.f,  120.f, 300.f},  160.f,  -5.f},
+        {{-1000.f, 400.f, 0.f},    -70.f,  -20.f},
+        {{0.f,     500.f, 0.f},    -90.f,  -50.f},
+        {{1000.f,  400.f, 0.f},    -110.f, -20.f},
+        {{600.f,   80.f,  -400.f}, 10.f,   -3.f},
+        {{0.f,     80.f,  -600.f}, 0.f,    -3.f},
+        {{-600.f,  80.f,  -400.f}, -10.f,  -3.f},
+        {{-1200.f, 150.f, 0.f},    -90.f,  -8.f},
 };
 const int Sponza::kWaypointCount = 17;

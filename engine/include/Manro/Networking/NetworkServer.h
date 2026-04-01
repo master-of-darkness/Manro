@@ -11,6 +11,7 @@
 
 namespace Manro {
     class Registry;
+
     class PhysicsWorld;
 
     struct ServerPlayerState {
@@ -57,6 +58,7 @@ namespace Manro {
         using DespawnPlayerFn = std::function<void(u32 clientId, Entity entity)>;
 
         void SetSpawnPlayerCallback(SpawnPlayerFn fn) { m_SpawnPlayer = std::move(fn); }
+
         void SetDespawnPlayerCallback(DespawnPlayerFn fn) { m_DespawnPlayer = std::move(fn); }
 
         const std::unordered_map<u32, ServerPlayerState> &GetPlayers() const { return m_Players; }

@@ -1,4 +1,5 @@
 #pragma once
+
 #include <vk_mem_alloc.h>
 #include <Manro/Core/Types.h>
 #include "VkBootstrap.h"
@@ -18,16 +19,22 @@ namespace Manro {
         VulkanContext &operator=(const VulkanContext &) = delete;
 
         VkInstance GetInstance() const { return m_Instance; }
+
         VkPhysicalDevice GetPhysicalDevice() const { return m_PhysicalDevice; }
+
         VkDevice GetDevice() const { return m_Device; }
+
         VkQueue GetGraphicsQueue() const { return m_GraphicsQueue; }
+
         u32 GetGraphicsQueueFamilyIndex() const { return m_GraphicsQueueFamilyIndex; }
+
         VmaAllocator GetAllocator() const { return m_Allocator; }
+
         VkSurfaceKHR GetSurface() const { return m_Surface; }
 
         VkSampleCountFlagBits GetMaxUsableSampleCount() const;
 
-        void GetVramStats(u64& usage, u64& budget) const;
+        void GetVramStats(u64 &usage, u64 &budget) const;
 
         u64 GetTimelineSemaphoreCounterValue(VkSemaphore semaphore) const {
             u64 value = 0;

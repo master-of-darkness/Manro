@@ -5,28 +5,50 @@
 namespace Manro {
     Key SDL3InputBackend::SdlScancodeToKey(int sc) {
         switch (static_cast<SDL_Scancode>(sc)) {
-            case SDL_SCANCODE_W: return Key::W;
-            case SDL_SCANCODE_A: return Key::A;
-            case SDL_SCANCODE_S: return Key::S;
-            case SDL_SCANCODE_D: return Key::D;
-            case SDL_SCANCODE_Q: return Key::Q;
-            case SDL_SCANCODE_E: return Key::E;
-            case SDL_SCANCODE_SPACE: return Key::Space;
-            case SDL_SCANCODE_LSHIFT: return Key::LeftShift;
-            case SDL_SCANCODE_LCTRL: return Key::LeftCtrl;
-            case SDL_SCANCODE_ESCAPE: return Key::Escape;
-            case SDL_SCANCODE_TAB: return Key::Tab;
-            case SDL_SCANCODE_RETURN: return Key::Enter;
-            case SDL_SCANCODE_F1: return Key::F1;
-            case SDL_SCANCODE_F2: return Key::F2;
-            case SDL_SCANCODE_F3: return Key::F3;
-            case SDL_SCANCODE_F4: return Key::F4;
-            case SDL_SCANCODE_F11: return Key::F11;
-            case SDL_SCANCODE_UP: return Key::Up;
-            case SDL_SCANCODE_DOWN: return Key::Down;
-            case SDL_SCANCODE_LEFT: return Key::Left;
-            case SDL_SCANCODE_RIGHT: return Key::Right;
-            default: return Key::Unknown;
+            case SDL_SCANCODE_W:
+                return Key::W;
+            case SDL_SCANCODE_A:
+                return Key::A;
+            case SDL_SCANCODE_S:
+                return Key::S;
+            case SDL_SCANCODE_D:
+                return Key::D;
+            case SDL_SCANCODE_Q:
+                return Key::Q;
+            case SDL_SCANCODE_E:
+                return Key::E;
+            case SDL_SCANCODE_SPACE:
+                return Key::Space;
+            case SDL_SCANCODE_LSHIFT:
+                return Key::LeftShift;
+            case SDL_SCANCODE_LCTRL:
+                return Key::LeftCtrl;
+            case SDL_SCANCODE_ESCAPE:
+                return Key::Escape;
+            case SDL_SCANCODE_TAB:
+                return Key::Tab;
+            case SDL_SCANCODE_RETURN:
+                return Key::Enter;
+            case SDL_SCANCODE_F1:
+                return Key::F1;
+            case SDL_SCANCODE_F2:
+                return Key::F2;
+            case SDL_SCANCODE_F3:
+                return Key::F3;
+            case SDL_SCANCODE_F4:
+                return Key::F4;
+            case SDL_SCANCODE_F11:
+                return Key::F11;
+            case SDL_SCANCODE_UP:
+                return Key::Up;
+            case SDL_SCANCODE_DOWN:
+                return Key::Down;
+            case SDL_SCANCODE_LEFT:
+                return Key::Left;
+            case SDL_SCANCODE_RIGHT:
+                return Key::Right;
+            default:
+                return Key::Unknown;
         }
     }
 

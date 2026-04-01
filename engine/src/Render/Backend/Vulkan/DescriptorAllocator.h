@@ -16,12 +16,12 @@ namespace Manro {
     };
 
     static constexpr PoolSizeRatio kDefaultPoolSizes[] = {
-        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4.f},
-        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 10.f},
-        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4.f},
-        {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 4.f},
-        {VK_DESCRIPTOR_TYPE_SAMPLER, 2.f},
-        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2.f},
+            {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,         4.f},
+            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,         10.f},
+            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4.f},
+            {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,          4.f},
+            {VK_DESCRIPTOR_TYPE_SAMPLER,                2.f},
+            {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,          2.f},
     };
 
     class PerFrameAllocator {
@@ -74,6 +74,7 @@ namespace Manro {
         void Shutdown();
 
         VkDescriptorSet GetSet() const { return m_Set; }
+
         VkDescriptorSetLayout GetLayout() const { return m_Layout; }
 
         void UpdateSlot(u32 index, VkImageView view,

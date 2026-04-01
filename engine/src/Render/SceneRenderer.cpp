@@ -15,6 +15,7 @@ namespace Manro {
     void SceneRenderer::SetZPrepassState(const RHI::VulkanZPrepassState *state) {
         m_ZPrepassState = state;
     }
+
     void SceneRenderer::SetPbrPassState(const RHI::VulkanPbrPassState *state) {
         m_PbrPassState = state;
     }

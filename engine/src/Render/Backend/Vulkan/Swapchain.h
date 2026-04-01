@@ -1,4 +1,5 @@
 #pragma once
+
 #include <volk.h>
 #include <Manro/Core/Types.h>
 #include <vector>
@@ -27,10 +28,15 @@ namespace Manro {
         bool NeedsRecreate() const { return m_NeedsRecreate; }
 
         VkSwapchainKHR GetHandle() const { return m_Swapchain; }
+
         size_t GetImageCount() const { return m_Images.size(); }
+
         VkFormat GetImageFormat() const { return m_ImageFormat; }
+
         VkExtent2D GetExtent() const { return m_Extent; }
+
         VkImage GetImage(u32 index) const { return m_Images[index]; }
+
         VkImageView GetImageView(u32 index) const { return m_ImageViews[index]; }
 
     private:

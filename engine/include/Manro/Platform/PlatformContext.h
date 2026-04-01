@@ -20,6 +20,7 @@ namespace Manro {
         bool PollEvents(InputManager *inputManager = nullptr);
 
         WindowManager &GetWindowManager() { return m_WindowManager; }
+
         AudioManager &GetAudioManager() { return m_AudioManager; }
 
     private:

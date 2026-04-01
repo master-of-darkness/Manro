@@ -1,4 +1,5 @@
 #pragma once
+
 #include <Manro/Core/Types.h>
 #include <volk.h>
 #include <Manro/Interfaces/IWindow.h>
@@ -8,6 +9,7 @@
 
 namespace Manro {
     class VulkanContext;
+
     struct ImGuiLayerInfo {
         VulkanContext *context = nullptr;
         IWindow *window = nullptr;
@@ -24,11 +26,12 @@ namespace Manro {
         void NewFrame();
 
         void DrawDebugUI(u32 drawCalls, u32 triangles, u32 instances,
-                         const std::string& gpuName, RenderSettings& settings, bool& settingsChanged);
+                         const std::string &gpuName, RenderSettings &settings, bool &settingsChanged);
 
         void Render(VkCommandBuffer cb);
 
         bool IsDebugUIEnabled() const { return m_ShowDebugUI; }
+
         void SetDebugUIEnabled(bool e) { m_ShowDebugUI = e; }
 
     private:

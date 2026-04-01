@@ -22,7 +22,9 @@ namespace Manro {
 
     using RGBufferHandle = Handle<RGBufferTag>;
 
-    enum class QueueType : u8 { Graphics, Compute, Transfer };
+    enum class QueueType : u8 {
+        Graphics, Compute, Transfer
+    };
 
     enum RGTextureUsage : u32 {
         RGTextureUsage_None = 0,
@@ -143,7 +145,9 @@ namespace Manro {
         void SetExecute(PassExecuteFn fn) { m_Execute = std::move(fn); }
 
         const std::vector<RGTextureAccess> &TextureAccesses() const { return m_TextureAccesses; }
+
         const std::vector<RGBufferAccess> &BufferAccesses() const { return m_BufferAccesses; }
+
         const PassExecuteFn &Execute() const { return m_Execute; }
 
     private:
@@ -222,14 +226,14 @@ namespace Manro {
         void BuildBarriers();
 
         VkImageMemoryBarrier2 MakeImageBarrier(
-            VkImage image,
-            const TextureState &src, const TextureState &dst,
-            VkImageLayout srcLayout, VkImageLayout dstLayout,
-            VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT) const;
+                VkImage image,
+                const TextureState &src, const TextureState &dst,
+                VkImageLayout srcLayout, VkImageLayout dstLayout,
+                VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT) const;
 
         VkBufferMemoryBarrier2 MakeBufferBarrier(
-            VkBuffer buffer, VkDeviceSize size,
-            const BufferState &src, const BufferState &dst) const;
+                VkBuffer buffer, VkDeviceSize size,
+                const BufferState &src, const BufferState &dst) const;
 
         static VkImageLayout LayoutForAccess(const RGTextureAccess &acc);
 

@@ -34,6 +34,7 @@ namespace Manro {
         u32 triangleCount = 0;
         u32 instanceCount = 0;
         u32 lightCount = 0;
+
         void Reset() { drawCalls = triangleCount = instanceCount = lightCount = 0; }
     };
 
@@ -49,6 +50,7 @@ namespace Manro {
         ~Renderer();
 
         Renderer(const Renderer &) = delete;
+
         Renderer &operator=(const Renderer &) = delete;
 
         bool BeginFrame();

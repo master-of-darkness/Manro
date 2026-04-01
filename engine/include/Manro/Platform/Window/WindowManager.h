@@ -10,9 +10,11 @@ namespace Manro {
     class WindowManager {
     public:
         WindowManager() = default;
+
         ~WindowManager() { ShutdownAll(); }
 
         WindowManager(const WindowManager &) = delete;
+
         WindowManager &operator=(const WindowManager &) = delete;
 
         WindowHandle AddWindow(const WindowDesc &desc);
@@ -22,6 +24,7 @@ namespace Manro {
         void ShutdownAll();
 
         IWindow *Get(WindowHandle handle);
+
         const IWindow *Get(WindowHandle handle) const;
 
         bool IsValid(WindowHandle handle) const;

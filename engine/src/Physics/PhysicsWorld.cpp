@@ -50,17 +50,24 @@ namespace {
             m_Map[Layers::NON_MOVING] = BroadPhaseLayers::NON_MOVING;
             m_Map[Layers::MOVING] = BroadPhaseLayers::MOVING;
         }
+
         JPH::uint GetNumBroadPhaseLayers() const override { return BroadPhaseLayers::NUM_LAYERS; }
+
         JPH::BroadPhaseLayer GetBroadPhaseLayer(JPH::ObjectLayer l) const override { return m_Map[l]; }
+
 #if defined(JPH_EXTERNAL_PROFILE) || defined(JPH_PROFILE_ENABLED)
+
         const char *GetBroadPhaseLayerName(JPH::BroadPhaseLayer l) const override {
-            switch ((JPH::BroadPhaseLayer::Type)l) {
-                case (JPH::BroadPhaseLayer::Type)BroadPhaseLayers::NON_MOVING: return "NON_MOVING";
+            switch ((JPH::BroadPhaseLayer::Type) l) {
+                case (JPH::BroadPhaseLayer::Type) BroadPhaseLayers::NON_MOVING:
+                    return "NON_MOVING";
                 case (JPH::BroadPhaseLayer::Type) BroadPhaseLayers::MOVING:
                     return "MOVING";
-                default: return "INVALID";
+                default:
+                    return "INVALID";
             }
         }
+
 #endif
     private:
         JPH::BroadPhaseLayer m_Map[Layers::NUM_LAYERS];
@@ -70,7 +77,8 @@ namespace {
     public:
         bool ShouldCollide(JPH::ObjectLayer l1, JPH::BroadPhaseLayer l2) const override {
             switch (l1) {
-                case Layers::NON_MOVING: return l2 == BroadPhaseLayers::MOVING;
+                case Layers::NON_MOVING:
+                    return l2 == BroadPhaseLayers::MOVING;
                 case Layers::MOVING:
                     return true;
                 default:
@@ -83,7 +91,8 @@ namespace {
     public:
         bool ShouldCollide(JPH::ObjectLayer l1, JPH::ObjectLayer l2) const override {
             switch (l1) {
-                case Layers::NON_MOVING: return l2 == Layers::MOVING;
+                case Layers::NON_MOVING:
+                    return l2 == Layers::MOVING;
                 case Layers::MOVING:
                     return true;
                 default:
@@ -528,6 +537,7 @@ namespace Manro {
         class WC : public JPH::CollideShapeBodyCollector {
         public:
             std::vector<JPH::BodyID> hits;
+
             void AddHit(const JPH::BodyID &b) override { hits.push_back(b); }
         } collector;
 

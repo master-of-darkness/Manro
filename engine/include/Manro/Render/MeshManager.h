@@ -7,6 +7,7 @@
 
 namespace Manro {
     class VulkanContext;
+
     class Buffer;
 
     struct LoadedMesh {
@@ -20,12 +21,15 @@ namespace Manro {
     class MeshManager {
     public:
         explicit MeshManager(const VulkanContext &ctx);
+
         ~MeshManager();
 
         MeshManager(const MeshManager &) = delete;
+
         MeshManager &operator=(const MeshManager &) = delete;
 
         MeshHandle Upload(const ModelData &data);
+
         const LoadedMesh *Get(MeshHandle handle) const;
 
         Buffer *GetVertexBuffer() const { return m_VertexBuffer.get(); }

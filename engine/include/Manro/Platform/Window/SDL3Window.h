@@ -24,8 +24,11 @@ namespace Manro {
         bool IsFullscreen() const override { return m_Fullscreen; }
 
         bool IsOpen() const override { return m_Open; }
+
         u32 GetWidth() const override { return m_Width; }
+
         u32 GetHeight() const override { return m_Height; }
+
         std::string GetTitle() const override { return m_Title; }
 
         void *GetNativeHandle() const override;

@@ -44,12 +44,13 @@ namespace Manro {
     };
 
     class JobSystem;
+
     class ModelLoader {
     public:
         static std::vector<ModelData> Load(const std::vector<std::string> &filepaths, JobSystem &jobs);
 
         static std::vector<std::vector<SubMeshData>> LoadSubMeshes(const std::vector<std::string> &filepaths,
-                                                                  JobSystem &jobs);
+                                                                   JobSystem &jobs);
 
         static std::string NormalisePath(const std::string &p);
     };

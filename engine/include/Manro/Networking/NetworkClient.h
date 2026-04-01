@@ -10,6 +10,7 @@
 
 namespace Manro {
     class Registry;
+
     class PhysicsWorld;
 
     struct InterpolationState {
@@ -49,12 +50,15 @@ namespace Manro {
         using OnEntityDespawnedFn = std::function<void(Registry &, u32 entityId)>;
 
         void SetOnEntitySpawned(OnEntitySpawnedFn fn) { m_OnEntitySpawned = std::move(fn); }
+
         void SetOnEntityUpdated(OnEntityUpdatedFn fn) { m_OnEntityUpdated = std::move(fn); }
+
         void SetOnEntityDespawned(OnEntityDespawnedFn fn) { m_OnEntityDespawned = std::move(fn); }
 
         void SetLocalPlayerEntityId(Entity id) { m_LocalPlayerEntityId = id; }
 
         f32 GetServerTime() const { return m_ServerTime; }
+
         f32 GetRoundTripTime() const { return m_RoundTripTime; }
 
         Vec3 GetInterpolatedPosition(u32 entityId, f32 currentTime);

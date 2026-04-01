@@ -46,7 +46,7 @@ namespace Manro {
 
     void JobSystem::WorkerThread() {
         while (m_Running) {
-            std::function<void()> job;
+            std::function < void() > job;
 
             {
                 std::unique_lock<std::mutex> lock(m_Mutex);

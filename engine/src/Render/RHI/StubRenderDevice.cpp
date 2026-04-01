@@ -24,7 +24,7 @@ namespace Manro::RHI {
 
         class StubRenderDevice final : public IRenderDevice {
         public:
-            StubRenderDevice(u32 width, u32 height, const AdapterInfo& info)
+            StubRenderDevice(u32 width, u32 height, const AdapterInfo &info)
                     : m_Width(width), m_Height(height), m_AdapterInfo(info) {
                 TextureDesc scDesc{};
                 scDesc.width = width;
@@ -106,7 +106,8 @@ namespace Manro::RHI {
         };
     } // namespace
 
-    Scope<IRenderDevice> IRenderDevice::CreateVulkan(::Manro::IWindow &window, u32 width, u32 height, bool vsync, const AdapterInfo* pAdapterInfo) {
+    Scope<IRenderDevice> IRenderDevice::CreateVulkan(::Manro::IWindow &window, u32 width, u32 height, bool vsync,
+                                                     const AdapterInfo *pAdapterInfo) {
         (void) window;
         (void) vsync;
         AdapterInfo info{};

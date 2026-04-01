@@ -79,6 +79,7 @@ namespace Manro {
         static u64 HashSpirV(const u32 *data, size_t wordCount);
 
         static u64 HashLayouts(const VkDescriptorSetLayout *layouts, u32 count);
+
     private:
         VkDevice m_Device = VK_NULL_HANDLE;
         VkPipelineCache m_Cache = VK_NULL_HANDLE;

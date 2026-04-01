@@ -14,7 +14,7 @@ namespace Manro {
         }
 
         template<typename T>
-            requires std::is_trivially_copyable_v<T>
+        requires std::is_trivially_copyable_v<T>
         void Write(const T &data) {
             size_t size = sizeof(T);
             size_t current = m_Buffer.size();
@@ -23,7 +23,7 @@ namespace Manro {
         }
 
         template<typename T>
-            requires std::is_trivially_copyable_v<T>
+        requires std::is_trivially_copyable_v<T>
         void Write(const std::vector<T> &data) {
             u32 count = static_cast<u32>(data.size());
             Write(count);
@@ -35,7 +35,7 @@ namespace Manro {
         }
 
         template<typename T>
-            requires std::is_trivially_copyable_v<T>
+        requires std::is_trivially_copyable_v<T>
         void Read(T &outData) {
             size_t size = sizeof(T);
             std::memcpy(&outData, m_Buffer.data() + m_ReadOffset, size);
@@ -43,7 +43,7 @@ namespace Manro {
         }
 
         template<typename T>
-            requires std::is_trivially_copyable_v<T>
+        requires std::is_trivially_copyable_v<T>
         void Read(std::vector<T> &outData) {
             u32 count = 0;
             Read(count);

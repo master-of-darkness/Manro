@@ -62,10 +62,10 @@ namespace Manro {
                 case SDL_EVENT_WINDOW_MINIMIZED:
                 case SDL_EVENT_WINDOW_RESTORED:
                     m_WindowManager.DispatchWindowEvent(
-                        event.window.windowID,
-                        event.type,
-                        static_cast<u32>(event.window.data1),
-                        static_cast<u32>(event.window.data2));
+                            event.window.windowID,
+                            event.type,
+                            static_cast<u32>(event.window.data1),
+                            static_cast<u32>(event.window.data2));
                     break;
 
                 default:

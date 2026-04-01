@@ -7,11 +7,13 @@
 namespace Manro {
     MeshManager::MeshManager(const VulkanContext &ctx) : m_Context(ctx) {
         m_VertexBuffer = CreateScope<Buffer>(m_Context, sizeof(Vertex) * kMaxVertices,
-                                              VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-                                              VMA_MEMORY_USAGE_CPU_TO_GPU);
-        m_IndexBuffer = CreateScope<Buffer>(m_Context, sizeof(u32) * kMaxIndices,
-                                             VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                                             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                             VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                                              VMA_MEMORY_USAGE_CPU_TO_GPU);
+        m_IndexBuffer = CreateScope<Buffer>(m_Context, sizeof(u32) * kMaxIndices,
+                                            VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                            VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                                            VMA_MEMORY_USAGE_CPU_TO_GPU);
     }
 
     MeshManager::~MeshManager() = default;
@@ -29,7 +31,8 @@ namespace Manro {
         u32 firstIndex = m_CurrentIndexOffset;
         u32 indexCount = static_cast<u32>(data.indices.size());
 
-        m_VertexBuffer->LoadData(data.vertices.data(), sizeof(Vertex) * data.vertices.size(), sizeof(Vertex) * firstVertex);
+        m_VertexBuffer->LoadData(data.vertices.data(), sizeof(Vertex) * data.vertices.size(),
+                                 sizeof(Vertex) * firstVertex);
         m_IndexBuffer->LoadData(data.indices.data(), sizeof(u32) * data.indices.size(), sizeof(u32) * firstIndex);
 
         m_CurrentVertexOffset += static_cast<u32>(data.vertices.size());

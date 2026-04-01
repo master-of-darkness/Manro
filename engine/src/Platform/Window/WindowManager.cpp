@@ -36,8 +36,8 @@ namespace Manro {
 
         if (m_PrimaryHandle == handle) {
             m_PrimaryHandle = m_Windows.empty()
-                                  ? kInvalidWindow
-                                  : m_Windows.begin()->first;
+                              ? kInvalidWindow
+                              : m_Windows.begin()->first;
         }
 
         LOG_INFO("[WindowManager] Window {} destroyed", handle);

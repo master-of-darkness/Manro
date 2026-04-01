@@ -33,8 +33,8 @@ namespace Manro {
         }
 
         std::vector<VkDynamicState> dynamicStates = {
-            VK_DYNAMIC_STATE_VIEWPORT,
-            VK_DYNAMIC_STATE_SCISSOR,
+                VK_DYNAMIC_STATE_VIEWPORT,
+                VK_DYNAMIC_STATE_SCISSOR,
         };
         VkPipelineDynamicStateCreateInfo dynamicState{};
         dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
@@ -92,7 +92,8 @@ namespace Manro {
         depthStencil.stencilTestEnable = VK_FALSE;
 
         VkPushConstantRange pushRange{};
-        pushRange.stageFlags = config.pushConstantStages ? config.pushConstantStages : (VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
+        pushRange.stageFlags = config.pushConstantStages ? config.pushConstantStages : (VK_SHADER_STAGE_VERTEX_BIT |
+                                                                                        VK_SHADER_STAGE_FRAGMENT_BIT);
         pushRange.offset = 0;
         pushRange.size = config.pushConstantSize;
 
@@ -152,7 +153,8 @@ namespace Manro {
         VkShaderModule compModule = CreateShaderModule(computeSpv);
 
         VkPushConstantRange pushRange{};
-        pushRange.stageFlags = config.pushConstantStages ? config.pushConstantStages : static_cast<VkShaderStageFlags>(VK_SHADER_STAGE_COMPUTE_BIT);
+        pushRange.stageFlags = config.pushConstantStages ? config.pushConstantStages
+                                                         : static_cast<VkShaderStageFlags>(VK_SHADER_STAGE_COMPUTE_BIT);
         pushRange.offset = 0;
         pushRange.size = config.pushConstantSize;
 
@@ -178,7 +180,8 @@ namespace Manro {
         pipelineInfo.stage.module = compModule;
         pipelineInfo.stage.pName = config.computeEntryPoint.c_str();
 
-        if (vkCreateComputePipelines(m_Context.GetDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_Pipeline) != VK_SUCCESS)
+        if (vkCreateComputePipelines(m_Context.GetDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_Pipeline) !=
+            VK_SUCCESS)
             throw std::runtime_error("Failed to create compute pipeline!");
 
         vkDestroyShaderModule(m_Context.GetDevice(), compModule, nullptr);
@@ -195,9 +198,9 @@ namespace Manro {
         stage.pName = config.vertexEntryPoint.c_str();
 
         std::vector<VkDynamicState> dynamicStates = {
-            VK_DYNAMIC_STATE_VIEWPORT,
-            VK_DYNAMIC_STATE_SCISSOR,
-            VK_DYNAMIC_STATE_DEPTH_BIAS,
+                VK_DYNAMIC_STATE_VIEWPORT,
+                VK_DYNAMIC_STATE_SCISSOR,
+                VK_DYNAMIC_STATE_DEPTH_BIAS,
         };
         VkPipelineDynamicStateCreateInfo dynamicState{};
         dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;

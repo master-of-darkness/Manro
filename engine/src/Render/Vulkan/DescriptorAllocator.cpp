@@ -44,7 +44,7 @@ namespace Manro {
         VkDescriptorSet set = VK_NULL_HANDLE;
         VkResult result = vkAllocateDescriptorSets(m_Device, &ai, &set);
         if (result != VK_SUCCESS) {
-            LOG_ERROR("[PerFrameAllocator] vkAllocateDescriptorSets failed: {}", (int)result);
+            LOG_ERROR("[PerFrameAllocator] vkAllocateDescriptorSets failed: {}", (int) result);
             return VK_NULL_HANDLE;
         }
         return set;
@@ -83,7 +83,7 @@ namespace Manro {
         }
 
         if (result != VK_SUCCESS) {
-            LOG_ERROR("[PersistentAllocator] vkAllocateDescriptorSets failed: {}", (int)result);
+            LOG_ERROR("[PersistentAllocator] vkAllocateDescriptorSets failed: {}", (int) result);
             return VK_NULL_HANDLE;
         }
         return set;

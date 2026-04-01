@@ -6,7 +6,7 @@
 
 namespace Manro {
     Swapchain::Swapchain(const VulkanContext &context, u32 width, u32 height, bool vsync)
-        : m_Context(context) {
+            : m_Context(context) {
         Build(width, height, vsync);
     }
 
@@ -42,7 +42,7 @@ namespace Manro {
         }
 
         vkb::Swapchain vkb_swapchain = vkb_swapchain_ret.value();
-        LOG_INFO("[Swapchain] Present mode: {}", (int)vkb_swapchain.present_mode);
+        LOG_INFO("[Swapchain] Present mode: {}", (int) vkb_swapchain.present_mode);
 
         m_Swapchain = vkb_swapchain.swapchain;
         m_ImageFormat = vkb_swapchain.image_format;

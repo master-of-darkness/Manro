@@ -1,5 +1,7 @@
 #include "../Backend/Vulkan/VulkanContext.h"
+
 #define VMA_IMPLEMENTATION
+
 #include <vk_mem_alloc.h>
 #include <VkBootstrap.h>
 #include <SDL3/SDL.h>
@@ -49,9 +51,9 @@ namespace Manro {
                 .set_app_name(appName)
                 .request_validation_layers(
 #if defined(NDEBUG)
-    false
+                        false
 #else
-    true
+                        true
 #endif
                 )
                 .require_api_version(1, 4, 0)
@@ -185,7 +187,7 @@ namespace Manro {
         return VK_SAMPLE_COUNT_1_BIT;
     }
 
-    void VulkanContext::GetVramStats(u64& usage, u64& budget) const {
+    void VulkanContext::GetVramStats(u64 &usage, u64 &budget) const {
         VmaBudget budgets[VK_MAX_MEMORY_HEAPS];
         vmaGetHeapBudgets(m_Allocator, budgets);
         usage = 0;

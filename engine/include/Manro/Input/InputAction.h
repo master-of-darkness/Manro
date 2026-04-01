@@ -16,7 +16,9 @@ namespace Manro {
         _Count
     }; // TODO: Add all keys
 
-    enum class MouseButton : u8 { Left = 0, Right, Middle, _Count };
+    enum class MouseButton : u8 {
+        Left = 0, Right, Middle, _Count
+    };
 
     struct RawMouseDelta {
         f32 x{0.f}, y{0.f};

@@ -93,11 +93,11 @@ target_link_libraries(Engine PUBLIC
         SDL3::SDL3-static SDL3_mixer::SDL3_mixer-static tinygltf
 )
 
-if(WIN32)
+if (WIN32)
     target_link_libraries(Engine PRIVATE ws2_32 winmm)
-else()
+else ()
     target_link_libraries(Engine PRIVATE m dl pthread)
-endif()
+endif ()
 
 target_compile_options(Engine PRIVATE
         -Wall -Wextra -Werror -Wno-unused-parameter -Wunused

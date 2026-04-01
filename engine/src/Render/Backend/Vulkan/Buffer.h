@@ -1,4 +1,5 @@
 #pragma once
+
 #include <Manro/Core/Types.h>
 #include <vk_mem_alloc.h>
 
@@ -18,7 +19,9 @@ namespace Manro {
         void LoadData(const void *data, size_t size, size_t offset = 0);
 
         VkBuffer GetHandle() const { return m_Buffer; }
+
         VkDeviceSize GetSize() const { return m_Size; }
+
     private:
         const VulkanContext &m_Context;
         VkBuffer m_Buffer{nullptr};

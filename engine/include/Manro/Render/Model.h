@@ -8,6 +8,7 @@
 
 namespace Manro {
     class Renderer;
+
     class JobSystem;
 
     struct ModelSubMesh {
@@ -18,17 +19,18 @@ namespace Manro {
     class Model {
     public:
         Model() = default;
+
         ~Model() = default;
 
-        static std::vector<Scope<Model>> Load(const std::vector<std::string>& paths,
-                                               Renderer& renderer,
-                                               JobSystem& jobs);
+        static std::vector<Scope<Model>> Load(const std::vector<std::string> &paths,
+                                              Renderer &renderer,
+                                              JobSystem &jobs);
 
         void AddSubMesh(MeshHandle meshId, Scope<MaterialInstance> material) {
             m_SubMeshes.push_back({meshId, std::move(material)});
         }
 
-        const std::vector<ModelSubMesh>& GetSubMeshes() const { return m_SubMeshes; }
+        const std::vector<ModelSubMesh> &GetSubMeshes() const { return m_SubMeshes; }
 
     private:
         std::vector<ModelSubMesh> m_SubMeshes;

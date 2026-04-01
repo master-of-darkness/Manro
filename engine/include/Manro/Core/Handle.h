@@ -1,4 +1,5 @@
 #pragma once
+
 #include <Manro/Core/Types.h>
 #include <functional>
 #include <limits>
@@ -35,11 +36,15 @@ namespace Manro {
         operator Storage() const { return packed; }
 
         Storage Index() const { return packed & kIndexMask; }
+
         Storage Generation() const { return (packed >> kIndexBits) & kGenMask; }
+
         bool IsValid() const { return packed != kInvalid; }
 
         bool operator==(const Handle &o) const { return packed == o.packed; }
+
         bool operator!=(const Handle &o) const { return packed != o.packed; }
+
         bool operator<(const Handle &o) const { return packed < o.packed; }
     };
 

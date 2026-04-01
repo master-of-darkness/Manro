@@ -49,7 +49,7 @@ namespace Manro {
 
         bool enableVSync = true;
         bool enableFrustumCulling = true;
-        
+
         float nearZ = 0.1f;
         float farZ = 10000.0f;
 

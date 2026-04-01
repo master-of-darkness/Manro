@@ -113,6 +113,9 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(Shaders)
 
 add_subdirectory(engine/src)
-# TODO: make flag for samples
-add_subdirectory(samples/Sponza)
-add_subdirectory(samples/DemoShooter)
+
+option(MANRO_BUILD_SAMPLES "Build sample applications" ON)
+if(MANRO_BUILD_SAMPLES)
+    add_subdirectory("${MANRO_SAMPLES_ROOT}/Sponza")
+    add_subdirectory("${MANRO_SAMPLES_ROOT}/DemoShooter")
+endif()

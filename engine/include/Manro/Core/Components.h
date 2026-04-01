@@ -1,4 +1,5 @@
 #pragma once
+
 #include <Manro/Core/Types.h>
 #include <Manro/Core/Handles.h>
 #include <cstdint>

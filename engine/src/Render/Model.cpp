@@ -8,16 +8,16 @@
 #include <set>
 
 namespace Manro {
-    std::vector<Scope<Model>> Model::Load(const std::vector<std::string>& paths,
-                                           Renderer& renderer,
-                                           JobSystem& jobs) {
+    std::vector<Scope<Model>> Model::Load(const std::vector<std::string> &paths,
+                                          Renderer &renderer,
+                                          JobSystem &jobs) {
         auto allSubMeshes = ModelLoader::LoadSubMeshes(paths, jobs);
         std::vector<Scope<Model>> results;
         results.reserve(paths.size());
 
         std::set<std::string> uniqueTexturePaths;
-        for (const auto& modelSubMeshes : allSubMeshes) {
-            for (const auto& sm : modelSubMeshes) {
+        for (const auto &modelSubMeshes: allSubMeshes) {
+            for (const auto &sm: modelSubMeshes) {
                 if (!sm.diffuseTexturePath.empty()) {
                     uniqueTexturePaths.insert(sm.diffuseTexturePath);
                 }
@@ -40,7 +40,7 @@ namespace Manro {
 
         for (size_t i = 0; i < paths.size(); ++i) {
             auto model = CreateScope<Model>();
-            for (auto& sd : allSubMeshes[i]) {
+            for (auto &sd: allSubMeshes[i]) {
                 if (sd.vertices.empty()) continue;
 
                 ModelData md;

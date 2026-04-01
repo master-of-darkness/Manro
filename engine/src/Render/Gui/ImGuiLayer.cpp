@@ -33,17 +33,17 @@ namespace Manro {
 
     void ImGuiLayer::CreateDescriptorPool() {
         VkDescriptorPoolSize sizes[] = {
-            {VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
-            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
-            {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000},
-            {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000},
-            {VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000},
-            {VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000},
-            {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000},
-            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000},
-            {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000},
-            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000},
-            {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000},
+                {VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
+                {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
+                {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000},
+                {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000},
+                {VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000},
+                {VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000},
+                {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000},
+                {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000},
+                {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000},
+                {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000},
+                {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000},
         };
         VkDescriptorPoolCreateInfo ci{};
         ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -62,7 +62,7 @@ namespace Manro {
                                        }, m_Context->GetInstance());
 
         ImGui_ImplSDL3_InitForVulkan(
-            static_cast<SDL_Window *>(info.window->GetNativeHandle()));
+                static_cast<SDL_Window *>(info.window->GetNativeHandle()));
 
         ImGui_ImplVulkan_InitInfo ii{};
         ii.Instance = m_Context->GetInstance();
@@ -100,7 +100,7 @@ namespace Manro {
     }
 
     void ImGuiLayer::DrawDebugUI(u32 drawCalls, u32 triangles, u32 instances,
-                                 const std::string& gpuName, RenderSettings& settings, bool& settingsChanged) {
+                                 const std::string &gpuName, RenderSettings &settings, bool &settingsChanged) {
         if (!m_ShowDebugUI) return;
 
         float frameTime = ImGui::GetIO().DeltaTime * 1000.0f;
@@ -118,18 +118,23 @@ namespace Manro {
             }
             if (ImGui::CollapsingHeader("Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
                 if (ImGui::Checkbox("VSync", &settings.enableVSync)) settingsChanged = true;
-                if (ImGui::SliderFloat("Resolution Scale", &settings.resolutionScale, 0.1f, 2.0f)) settingsChanged = true;
+                if (ImGui::SliderFloat("Resolution Scale", &settings.resolutionScale, 0.1f, 2.0f))
+                    settingsChanged = true;
 
                 ImGui::SeparatorText("Lighting");
                 if (ImGui::SliderFloat("Gamma", &settings.lighting.gamma, 1.0f, 3.0f)) settingsChanged = true;
-                if (ImGui::SliderFloat("Intensity", &settings.lighting.iblIntensity, 0.0f, 5.0f)) settingsChanged = true;
+                if (ImGui::SliderFloat("Intensity", &settings.lighting.iblIntensity, 0.0f, 5.0f))
+                    settingsChanged = true;
 
                 ImGui::SeparatorText("Shadows");
                 if (ImGui::Checkbox("Enable Shadows", &settings.shadows.enabled)) settingsChanged = true;
-                if (ImGui::SliderFloat("Shadow Bias", &settings.shadows.bias, 0.0f, 0.1f, "%.4f")) settingsChanged = true; // TODO: fix me
+                if (ImGui::SliderFloat("Shadow Bias", &settings.shadows.bias, 0.0f, 0.1f, "%.4f"))
+                    settingsChanged = true; // TODO: fix me
 
                 ImGui::SeparatorText("Post Processing");
-                if (ImGui::SliderFloat("Exposure", &settings.postProcess.tonemapping.exposure, 0.1f, 10.0f)) settingsChanged = true;
+                if (ImGui::SliderFloat("Exposure", &settings.postProcess.tonemapping.exposure, 0.1f,
+                                       10.0f))
+                    settingsChanged = true;
             }
         }
         ImGui::End();

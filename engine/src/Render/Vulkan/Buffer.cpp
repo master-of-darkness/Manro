@@ -8,7 +8,7 @@
 namespace Manro {
     Buffer::Buffer(const VulkanContext &context, VkDeviceSize size, VkBufferUsageFlags usage,
                    VmaMemoryUsage memoryUsage)
-        : m_Context(context), m_Size(size) {
+            : m_Context(context), m_Size(size) {
         VkBufferCreateInfo bufferInfo{};
         bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         bufferInfo.size = size;
