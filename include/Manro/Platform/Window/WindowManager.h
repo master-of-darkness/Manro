@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Manro/Platform/Window/IWindow.h>
+#include <Manro/Interfaces/IWindow.h>
 #include <Manro/Core/Handles.h>
 #include <Manro/Core/Types.h>
 #include <unordered_map>

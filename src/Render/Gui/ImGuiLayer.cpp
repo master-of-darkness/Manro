@@ -1,5 +1,5 @@
 #include <Manro/Render/Gui/ImGuiLayer.h>
-#include <Manro/Platform/Window/IWindow.h>
+#include <Manro/Interfaces/IWindow.h>
 #include <Manro/Core/Logger.h>
 #include "../Backend/Vulkan/VulkanContext.h"
 #include <imgui.h>

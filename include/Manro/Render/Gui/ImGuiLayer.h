@@ -1,7 +1,7 @@
 #pragma once
 #include <Manro/Core/Types.h>
 #include <volk.h>
-#include <Manro/Platform/Window/IWindow.h>
+#include <Manro/Interfaces/IWindow.h>
 #include <Manro/Render/RenderSettings.h>
 #include <vector>
 #include <string>

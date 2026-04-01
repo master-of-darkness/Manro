@@ -1,7 +1,8 @@
 #pragma once
 
+#include <Manro/Interfaces/Interface.h>
+#include <Manro/Interfaces/ICommandList.h>
 #include <Manro/Render/RHI/RHITypes.h>
-#include <Manro/Render/RHI/ICommandList.h>
 #include <span>
 #include <string_view>
 
@@ -33,7 +34,7 @@ namespace Manro::RHI {
         u64 vramUsage{0};
     };
 
-    class IRenderDevice {
+    class IRenderDevice : public ::Manro::Interface {
     public:
         virtual ~IRenderDevice() = default;
 
@@ -41,9 +42,7 @@ namespace Manro::RHI {
 
         virtual void DestroyBuffer(BufferHandle handle) = 0;
 
-        virtual void WriteBuffer(BufferHandle handle,
-                                 const void *data, u64 size,
-                                 u64 offset = 0) = 0;
+        virtual void WriteBuffer(BufferHandle handle, const void *data, u64 size, u64 offset = 0) = 0;
 
         virtual TextureHandle CreateTexture(const TextureDesc &desc) = 0;
 
@@ -72,7 +71,7 @@ namespace Manro::RHI {
         static Scope<IRenderDevice> CreateVulkan(::Manro::IWindow &window,
                                                  u32 width, u32 height,
                                                  bool vsync = true,
-                                                 const AdapterInfo* pAdapterInfo = nullptr);
+                                                 const AdapterInfo *pAdapterInfo = nullptr);
     };
 
 } // namespace Manro::RHI

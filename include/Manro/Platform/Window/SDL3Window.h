@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Manro/Platform/Window/IWindow.h>
+#include <Manro/Interfaces/IWindow.h>
 
 struct SDL_Window;
 

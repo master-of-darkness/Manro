@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Manro/Platform/Input/IInputBackend.h>
+#include <Manro/Interfaces//IInputBackend.h>
 #include <Manro/Input/InputAction.h>
 #include <array>
 

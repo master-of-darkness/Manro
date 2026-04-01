@@ -7,7 +7,7 @@
 #include <Manro/Render/Gui/ImGuiLayer.h>
 #include <Manro/Render/Material/Material.h>
 #include <Manro/Render/Material/MaterialInstance.h>
-#include <Manro/Platform/Window/IWindow.h>
+#include <Manro/Interfaces/IWindow.h>
 #include <Manro/Core/VirtualFS.h>
 #include <nvshaders/gltf_scene_io.h.slang>
 #include <Manro/Render/Tonemap/Tonemapper.h>

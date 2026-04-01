@@ -3,7 +3,7 @@
 #include <Manro/Core/Logger.h>
 #include <Manro/Core/VirtualFS.h>
 #include <Manro/Render/Model.h>
-#include <Manro/Render/RHI/IRenderDevice.h>
+#include <Manro/Interfaces/IRenderDevice.h>
 #include <Manro/Render/SceneRenderer.h>
 #include <stdexcept>
 #include <cstring>
@@ -578,7 +578,7 @@ namespace Manro {
             vkDestroyDescriptorSetLayout(m_Context.GetDevice(), m_MeshCullSetLayout, nullptr);
         if (m_ShadowMeshCullSetLayout)
             vkDestroyDescriptorSetLayout(m_Context.GetDevice(), m_ShadowMeshCullSetLayout, nullptr);
-            if (m_SkyboxSetLayout)
+        if (m_SkyboxSetLayout)
             vkDestroyDescriptorSetLayout(m_Context.GetDevice(), m_SkyboxSetLayout, nullptr);
 
         if (m_Swapchain) m_Swapchain->Shutdown();

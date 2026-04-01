@@ -1,5 +1,5 @@
 #include <Manro/Input/InputManager.h>
-#include <Manro/Platform/Input/IInputBackend.h>
+#include <Manro/Interfaces/IInputBackend.h>
 #include <Manro/Platform/Input/SDL3InputBackend.h>
 
 namespace Manro {

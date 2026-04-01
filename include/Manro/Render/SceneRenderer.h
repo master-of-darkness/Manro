@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Manro/Render/RHI/IRenderDevice.h>
+#include <Manro/Interfaces/IRenderDevice.h>
 #include <Manro/Render/RHI/VulkanCommandList.h>
 #include <Manro/Render/MeshManager.h>
 #include <Manro/Render/Material/MaterialInstance.h>

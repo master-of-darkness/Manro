@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Manro/Core/IApplication.h>
+#include <Manro/Interfaces/IApplication.h>
 #include <Manro/Core/JobSystem.h>
 #include <Manro/Render/Model.h>
 #include <Manro/Input/InputManager.h>

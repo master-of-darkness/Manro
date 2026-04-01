@@ -4,7 +4,7 @@
 #include <VkBootstrap.h>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
-#include <Manro/Platform/Window/IWindow.h>
+#include <Manro/Interfaces/IWindow.h>
 #include <Manro/Core/Logger.h>
 #include <volk.h>
 

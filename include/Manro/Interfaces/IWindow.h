@@ -1,8 +1,9 @@
 #pragma once
 
 #include <Manro/Core/Types.h>
-#include <string>
+#include <Manro/Interfaces/Interface.h>
 #include <functional>
+#include <string>
 
 namespace Manro {
     enum class WindowEvent {
@@ -22,7 +23,7 @@ namespace Manro {
         bool Fullscreen = false;
     };
 
-    class IWindow {
+    class IWindow : public Interface {
     public:
         virtual ~IWindow() = default;
 
@@ -50,7 +51,7 @@ namespace Manro {
 
         virtual void *GetNativeHandle() const = 0;
 
-        using EventCallback = std::function<void(WindowEvent, u32 w, u32 h)>; // TODO: use??
+        using EventCallback = std::function<void(WindowEvent, u32 w, u32 h)>;
 
         virtual void SetEventCallback(EventCallback cb) = 0;
 

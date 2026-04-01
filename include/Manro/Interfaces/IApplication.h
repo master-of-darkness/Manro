@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Manro/Core/Types.h>
+#include <Manro/Interfaces/Interface.h>
 
 namespace Manro {
 
@@ -31,7 +32,7 @@ namespace Manro {
         const FrameContext &Frame;
     };
 
-    class IApplication {
+    class IApplication : public Interface {
     public:
         virtual ~IApplication() = default;
 

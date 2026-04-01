@@ -1,11 +1,12 @@
 #pragma once
 
+#include <Manro/Interfaces/Interface.h>
 #include <Manro/Render/RHI/RHITypes.h>
 #include <span>
 
 namespace Manro::RHI {
 
-    class ICommandList {
+    class ICommandList : public ::Manro::Interface {
     public:
         virtual ~ICommandList() = default;
 
@@ -28,8 +29,7 @@ namespace Manro::RHI {
 
         virtual void BindDescriptorSets(u32 firstSet, const void **sets, u32 setCount) = 0;
 
-        virtual void PushConstants(const void *data, u32 size,
-                                   u32 offset = 0) = 0;
+        virtual void PushConstants(const void *data, u32 size, u32 offset = 0) = 0;
 
         virtual void DrawIndexed(u32 indexCount, u32 instanceCount = 1,
                                  u32 firstIndex = 0, i32 vertexOffset = 0,

@@ -1,11 +1,12 @@
 #pragma once
 
 #include <Manro/Input/InputAction.h>
+#include <Manro/Interfaces/Interface.h>
 
 union SDL_Event;
 
 namespace Manro {
-    class IInputBackend {
+    class IInputBackend : public Interface {
     public:
         virtual ~IInputBackend() = default;
 

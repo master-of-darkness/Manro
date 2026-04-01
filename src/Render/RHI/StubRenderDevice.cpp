@@ -1,8 +1,7 @@
-#include <Manro/Render/RHI/IRenderDevice.h>
+#include <Manro/Interfaces/IRenderDevice.h>
 #include <Manro/Render/RHI/VulkanCommandList.h>
-
 #include <Manro/Core/Handle.h>
-#include <Manro/Platform/Window/IWindow.h>
+#include <Manro/Interfaces/IWindow.h>
 #include <algorithm>
 #include <cstring>
 

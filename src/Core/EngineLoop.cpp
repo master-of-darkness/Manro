@@ -1,5 +1,5 @@
 #include <Manro/Core/EngineLoop.h>
-#include <Manro/Core/IApplication.h>
+#include <Manro/Interfaces/IApplication.h>
 #include <Manro/Core/Logger.h>
 #include <Manro/Core/JobSystem.h>
 #include <Manro/Core/VirtualFS.h>
