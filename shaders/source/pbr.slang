@@ -146,7 +146,7 @@ PbrMaterial localEvaluateMaterial(GltfShadeMaterial material, float3 N, float3 T
     pbrMat.T = T;
     pbrMat.B = B;
 
-    if (material.pbrBaseColorTexture >= 0) {
+    if (material.pbrBaseColorTexture > 0) {
         GltfTextureInfo tinfo = texInfos[NonUniformResourceIndex(uint(material.pbrBaseColorTexture))];
         if (tinfo.index >= 0) {
             float2 tt = mul(float3(uv, 1.0), tinfo.uvTransform).xy;
@@ -158,7 +158,7 @@ PbrMaterial localEvaluateMaterial(GltfShadeMaterial material, float3 N, float3 T
 
     float roughness = material.pbrRoughnessFactor;
     float metallic  = material.pbrMetallicFactor;
-    if (material.pbrMetallicRoughnessTexture >= 0) {
+    if (material.pbrMetallicRoughnessTexture > 0) {
         GltfTextureInfo tinfo = texInfos[NonUniformResourceIndex(uint(material.pbrMetallicRoughnessTexture))];
         if (tinfo.index >= 0) {
             float2 tt    = mul(float3(uv, 1.0), tinfo.uvTransform).xy;
@@ -173,7 +173,7 @@ PbrMaterial localEvaluateMaterial(GltfShadeMaterial material, float3 N, float3 T
     pbrMat.emissive  = material.emissiveFactor;
 
     pbrMat.occlusion = material.occlusionStrength;
-    if (material.occlusionTexture >= 0) {
+    if (material.occlusionTexture > 0) {
         GltfTextureInfo tinfo = texInfos[NonUniformResourceIndex(uint(material.occlusionTexture))];
         if (tinfo.index >= 0) {
             float2 tt = mul(float3(uv, 1.0), tinfo.uvTransform).xy;
@@ -182,7 +182,7 @@ PbrMaterial localEvaluateMaterial(GltfShadeMaterial material, float3 N, float3 T
         }
     }
 
-    if (material.emissiveTexture >= 0) {
+    if (material.emissiveTexture > 0) {
         GltfTextureInfo tinfo = texInfos[NonUniformResourceIndex(uint(material.emissiveTexture))];
         if (tinfo.index >= 0) {
             float2 tt = mul(float3(uv, 1.0), tinfo.uvTransform).xy;
@@ -190,7 +190,7 @@ PbrMaterial localEvaluateMaterial(GltfShadeMaterial material, float3 N, float3 T
         }
     }
 
-    if (material.normalTexture >= 0) {
+    if (material.normalTexture > 0) {
         GltfTextureInfo tinfo = texInfos[NonUniformResourceIndex(uint(material.normalTexture))];
         if (tinfo.index >= 0) {
             float2 tt           = mul(float3(uv, 1.0), tinfo.uvTransform).xy;

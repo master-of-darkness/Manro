@@ -101,10 +101,10 @@ namespace {
         }
     };
 
-    static constexpr JPH::uint MAX_BODIES = 2048;
+    static constexpr JPH::uint MAX_BODIES = 16384;
     static constexpr JPH::uint NUM_BODY_MUTEXES = 0;
-    static constexpr JPH::uint MAX_BODY_PAIRS = 4096;
-    static constexpr JPH::uint MAX_CONTACT_CONSTRAINTS = 2048;
+    static constexpr JPH::uint MAX_BODY_PAIRS = 32768;
+    static constexpr JPH::uint MAX_CONTACT_CONSTRAINTS = 16384;
 }
 
 static inline Manro::PhysicsBodyHandle toHandle(JPH::BodyID id) {
@@ -118,6 +118,22 @@ static inline JPH::BodyID fromHandle(Manro::PhysicsBodyHandle handle) { return J
 static inline JPH::BodyID fromHandle(Manro::u32 handle) { return JPH::BodyID(handle); }
 
 namespace Manro {
+    namespace {
+        static void ApplyDynamicBodyDesc(JPH::BodyCreationSettings &bcs, const PhysicsWorld::DynamicBodyDesc &desc) {
+            bcs.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
+            bcs.mMassPropertiesOverride.mMass = desc.mass;
+            bcs.mAllowSleeping = desc.allowSleeping;
+            bcs.mMaxLinearVelocity = desc.maxLinearVelocity;
+            bcs.mMaxAngularVelocity = desc.maxAngularVelocity;
+            bcs.mFriction = desc.friction;
+            bcs.mRestitution = desc.restitution;
+            if (desc.lockRotation) {
+                bcs.mAllowedDOFs = JPH::EAllowedDOFs::TranslationX |
+                                   JPH::EAllowedDOFs::TranslationY |
+                                   JPH::EAllowedDOFs::TranslationZ;
+            }
+        }
+    }
 
     struct PhysicsWorld::Impl {
         std::unique_ptr<JPH::TempAllocatorImpl> tempAllocator;
@@ -202,7 +218,7 @@ namespace Manro {
         JPH::RegisterTypes();
 
         m_Impl = std::make_unique<Impl>();
-        m_Impl->tempAllocator = std::make_unique<JPH::TempAllocatorImpl>(10 * 1024 * 1024);
+        m_Impl->tempAllocator = std::make_unique<JPH::TempAllocatorImpl>(64 * 1024 * 1024);
         m_Impl->jobSystem = std::make_unique<JPH::JobSystemThreadPool>(
                 JPH::cMaxPhysicsJobs, JPH::cMaxPhysicsBarriers,
                 static_cast<int>(std::thread::hardware_concurrency()) - 1);
@@ -276,10 +292,11 @@ namespace Manro {
         }
     }
 
-    PhysicsBodyHandle PhysicsWorld::AddStaticBox(const Vec3 &position, const Vec3 &halfExtents) {
+    PhysicsBodyHandle PhysicsWorld::AddStaticBox(const Vec3 &position, const Vec3 &halfExtents,
+                                                 const StaticBodyDesc &desc) {
         auto &bi = m_Impl->physicsSystem->GetBodyInterface();
         JPH::BoxShapeSettings ss(JPH::Vec3(halfExtents.x, halfExtents.y, halfExtents.z));
-        ss.mConvexRadius = 0.01f;
+        ss.mConvexRadius = desc.convexRadius;
         auto sr = ss.Create();
         if (sr.HasError()) {
             LOG_ERROR("[PhysicsWorld] {}", sr.GetError());
@@ -289,16 +306,19 @@ namespace Manro {
         JPH::BodyCreationSettings bcs(sr.Get(),
                                       JPH::RVec3(position.x, position.y, position.z),
                                       JPH::Quat::sIdentity(), JPH::EMotionType::Static, Layers::NON_MOVING);
+        bcs.mFriction = desc.friction;
+        bcs.mRestitution = desc.restitution;
         JPH::Body *body = bi.CreateBody(bcs);
         if (!body) return kInvalidBodyHandle;
         bi.AddBody(body->GetID(), JPH::EActivation::DontActivate);
         return toHandle(body->GetID());
     }
 
-    PhysicsBodyHandle PhysicsWorld::AddDynamicBox(const Vec3 &position, const Vec3 &halfExtents, float mass) {
+    PhysicsBodyHandle PhysicsWorld::AddDynamicBox(const Vec3 &position, const Vec3 &halfExtents,
+                                                  const DynamicBodyDesc &desc) {
         auto &bi = m_Impl->physicsSystem->GetBodyInterface();
         JPH::BoxShapeSettings ss(JPH::Vec3(halfExtents.x, halfExtents.y, halfExtents.z));
-        ss.mConvexRadius = 0.02f;
+        ss.mConvexRadius = desc.convexRadius;
         auto sr = ss.Create();
         if (sr.HasError()) {
             LOG_ERROR("[PhysicsWorld] {}", sr.GetError());
@@ -308,9 +328,7 @@ namespace Manro {
         JPH::BodyCreationSettings bcs(sr.Get(),
                                       JPH::RVec3(position.x, position.y, position.z),
                                       JPH::Quat::sIdentity(), JPH::EMotionType::Dynamic, Layers::MOVING);
-        bcs.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
-        bcs.mMassPropertiesOverride.mMass = mass;
-        bcs.mAllowSleeping = false;
+        ApplyDynamicBodyDesc(bcs, desc);
         JPH::Body *body = bi.CreateBody(bcs);
         if (!body) return kInvalidBodyHandle;
         bi.AddBody(body->GetID(), JPH::EActivation::Activate);
@@ -318,7 +336,8 @@ namespace Manro {
     }
 
     PhysicsBodyHandle
-    PhysicsWorld::AddDynamicCapsule(const Vec3 &position, float radius, float halfHeight, float mass) {
+    PhysicsWorld::AddDynamicCapsule(const Vec3 &position, float radius, float halfHeight,
+                                    const DynamicBodyDesc &desc) {
         auto &bi = m_Impl->physicsSystem->GetBodyInterface();
         JPH::CapsuleShapeSettings cs(halfHeight, radius);
         auto sr = cs.Create();
@@ -339,13 +358,7 @@ namespace Manro {
         JPH::BodyCreationSettings bcs(rsr.Get(),
                                       JPH::RVec3(position.x, position.y, position.z),
                                       JPH::Quat::sIdentity(), JPH::EMotionType::Dynamic, Layers::MOVING);
-        bcs.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
-        bcs.mMassPropertiesOverride.mMass = mass;
-        bcs.mAllowSleeping = false;
-        bcs.mMaxLinearVelocity = 50000.f;
-        bcs.mAllowedDOFs =
-                JPH::EAllowedDOFs::TranslationX | JPH::EAllowedDOFs::TranslationY | JPH::EAllowedDOFs::TranslationZ;
-        bcs.mFriction = 0.0f;
+        ApplyDynamicBodyDesc(bcs, desc);
         JPH::Body *body = bi.CreateBody(bcs);
         if (!body) return kInvalidBodyHandle;
         bi.AddBody(body->GetID(), JPH::EActivation::Activate);
@@ -407,7 +420,8 @@ namespace Manro {
         return toHandle(body->GetID());
     }
 
-    PhysicsBodyHandle PhysicsWorld::AddDynamicCone(const Vec3 &position, float radius, float height, float mass) {
+    PhysicsBodyHandle PhysicsWorld::AddDynamicCone(const Vec3 &position, float radius, float height,
+                                                   const DynamicBodyDesc &desc) {
         auto &bi = m_Impl->physicsSystem->GetBodyInterface();
         std::vector<JPH::Vec3> points;
         points.push_back(JPH::Vec3(0, height * 0.5f, 0));
@@ -425,13 +439,7 @@ namespace Manro {
         JPH::BodyCreationSettings bcs(sr.Get(),
                                       JPH::RVec3(position.x, position.y + height * 0.5f, position.z),
                                       JPH::Quat::sIdentity(), JPH::EMotionType::Dynamic, Layers::MOVING);
-        bcs.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
-        bcs.mMassPropertiesOverride.mMass = mass;
-        bcs.mAllowSleeping = false;
-        bcs.mMaxLinearVelocity = 100.f;
-        bcs.mMaxAngularVelocity = 0.f;
-        bcs.mAllowedDOFs = JPH::EAllowedDOFs::TranslationX | JPH::EAllowedDOFs::TranslationY |
-                           JPH::EAllowedDOFs::TranslationZ;
+        ApplyDynamicBodyDesc(bcs, desc);
         JPH::Body *body = bi.CreateBody(bcs);
         if (!body) return kInvalidBodyHandle;
         bi.AddBody(body->GetID(), JPH::EActivation::Activate);
@@ -453,22 +461,86 @@ namespace Manro {
         auto &bi = m_Impl->physicsSystem->GetBodyInterface();
         JPH::RVec3 pos = bi.GetPosition(id);
 
-        float extent = 0.0f;
+        Vec3 extents(0.f);
         {
             JPH::BodyLockRead lock(m_Impl->physicsSystem->GetBodyLockInterface(), id);
             if (!lock.Succeeded()) return false;
-            extent = lock.GetBody().GetShape()->GetLocalBounds().GetExtent().GetY();
+            const JPH::Vec3 shapeExtents = lock.GetBody().GetShape()->GetLocalBounds().GetExtent();
+            extents = {shapeExtents.GetX(), shapeExtents.GetY(), shapeExtents.GetZ()};
         }
 
-        JPH::RVec3 origin = pos + JPH::Vec3(0, -extent + 0.1f, 0);
-        JPH::RRayCast ray{origin, JPH::Vec3(0, -0.2f, 0)};
-        JPH::RayCastResult hit;
+        constexpr float kProbeInset = 4.0f;
+        constexpr float kProbeDistance = 8.0f;
+        constexpr float kMaxGroundGap = 2.5f;
+        const float probeY = extents.y - kProbeInset;
+        const std::array<Vec3, 5> probeOffsets{
+            {
+                {0.f, 0.f, 0.f},
+                {extents.x * 0.55f, 0.f, extents.z * 0.55f},
+                {-extents.x * 0.55f, 0.f, extents.z * 0.55f},
+                {extents.x * 0.55f, 0.f, -extents.z * 0.55f},
+                {-extents.x * 0.55f, 0.f, -extents.z * 0.55f},
+            }
+        };
         JPH::IgnoreSingleBodyFilter bodyFilter(id);
-        return m_Impl->physicsSystem->GetNarrowPhaseQuery().CastRay(
+
+        for (const Vec3 &offset: probeOffsets) {
+            JPH::RVec3 origin = pos + JPH::Vec3(offset.x, -probeY, offset.z);
+            JPH::RRayCast ray{origin, JPH::Vec3(0, -kProbeDistance, 0)};
+            JPH::RayCastResult hit;
+            if (!m_Impl->physicsSystem->GetNarrowPhaseQuery().CastRay(
                 ray, hit,
                 JPH::SpecifiedBroadPhaseLayerFilter(BroadPhaseLayers::NON_MOVING),
                 JPH::SpecifiedObjectLayerFilter(Layers::NON_MOVING),
-                bodyFilter);
+                bodyFilter)) {
+                continue;
+            }
+
+            const float hitY = static_cast<float>(origin.GetY() - kProbeDistance * hit.mFraction);
+            const float feetY = static_cast<float>(pos.GetY()) - extents.y;
+            if ((feetY - hitY) <= kMaxGroundGap)
+                return true;
+        }
+
+        return false;
+    }
+
+    bool PhysicsWorld::RaycastClosest(const Vec3 &origin, const Vec3 &direction, float distance,
+                                      RaycastHit &outHit, PhysicsBodyHandle ignore) const {
+        if (distance <= 0.f) return false;
+
+        const float dirLen = glm::length(direction);
+        if (dirLen <= 0.0001f) return false;
+
+        const Vec3 dir = direction / dirLen;
+        JPH::RRayCast ray{
+            JPH::RVec3(origin.x, origin.y, origin.z),
+            JPH::Vec3(dir.x * distance, dir.y * distance, dir.z * distance)
+        };
+        JPH::RayCastResult hit;
+
+        if (ignore != kInvalidBodyHandle) {
+            JPH::IgnoreSingleBodyFilter bodyFilter(fromHandle(ignore));
+            if (!m_Impl->physicsSystem->GetNarrowPhaseQuery().CastRay(
+                ray, hit,
+                JPH::SpecifiedBroadPhaseLayerFilter(BroadPhaseLayers::NON_MOVING),
+                JPH::SpecifiedObjectLayerFilter(Layers::NON_MOVING),
+                bodyFilter)) {
+                return false;
+            }
+        } else {
+            if (!m_Impl->physicsSystem->GetNarrowPhaseQuery().CastRay(
+                ray, hit,
+                JPH::SpecifiedBroadPhaseLayerFilter(BroadPhaseLayers::NON_MOVING),
+                JPH::SpecifiedObjectLayerFilter(Layers::NON_MOVING))) {
+                return false;
+            }
+        }
+
+        outHit.body = toHandle(hit.mBodyID);
+        outHit.fraction = hit.mFraction;
+        outHit.position = origin + dir * (distance * hit.mFraction);
+        return true;
     }
 
     void PhysicsWorld::ApplyLinearImpulse(PhysicsBodyHandle handle, const Vec3 &impulse) {

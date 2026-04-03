@@ -1,67 +1,65 @@
 #include <Manro/Resource/Primitives.h>
 
+#include <array>
+#include <cmath>
+
 namespace Manro {
+    namespace {
+        struct CubeFace {
+            Vec3 normal;
+            Vec3 tangentDir;
+            Vec3 bitangentDir;
+        };
+    }
 
     ModelData Primitives::CreateCube(float size) {
         ModelData data;
         const float h = size * 0.5f;
 
-        Vec3 normals[6] = {
-                {0,  0,  1}, // Front
-                {0,  0,  -1}, // Back
-                {-1, 0,  0}, // Left
-                {1,  0,  0}, // Right
-                {0,  1,  0}, // Top
-                {0,  -1, 0}  // Bottom
+        const std::array<CubeFace, 6> faces{
+            {
+                {{0.f, 0.f, 1.f}, {1.f, 0.f, 0.f}, {0.f, 1.f, 0.f}},
+                {{0.f, 0.f, -1.f}, {-1.f, 0.f, 0.f}, {0.f, 1.f, 0.f}},
+                {{-1.f, 0.f, 0.f}, {0.f, 0.f, 1.f}, {0.f, 1.f, 0.f}},
+                {{1.f, 0.f, 0.f}, {0.f, 0.f, -1.f}, {0.f, 1.f, 0.f}},
+                {{0.f, 1.f, 0.f}, {1.f, 0.f, 0.f}, {0.f, 0.f, -1.f}},
+                {{0.f, -1.f, 0.f}, {1.f, 0.f, 0.f}, {0.f, 0.f, 1.f}},
+            }
         };
 
-        Vec4 tangents[6] = {
-                {1,  0, 0,  1}, // Front
-                {-1, 0, 0,  1}, // Back
-                {0,  0, 1,  1}, // Left
-                {0,  0, -1, 1}, // Right
-                {1,  0, 0,  1}, // Top
-                {1,  0, 0,  1}  // Bottom
+        const std::array<Vec2, 4> uvs{
+            {
+                {0.f, 0.f},
+                {1.f, 0.f},
+                {1.f, 1.f},
+                {0.f, 1.f},
+            }
         };
 
-        // Positions for each face
-        // Front
-        Vec3 p0{-h, -h, h}, p1{h, -h, h}, p2{h, h, h}, p3{-h, h, h};
-        // Back
-        Vec3 p4{h, -h, -h}, p5{-h, -h, -h}, p6{-h, h, -h}, p7{h, h, -h};
-        // Left
-        Vec3 p8{-h, -h, -h}, p9{-h, -h, h}, p10{-h, h, h}, p11{-h, h, -h};
-        // Right
-        Vec3 p12{h, -h, h}, p13{h, -h, -h}, p14{h, h, -h}, p15{h, h, h};
-        // Top
-        Vec3 p16{-h, h, h}, p17{h, h, h}, p18{h, h, -h}, p19{-h, h, -h};
-        // Bottom
-        Vec3 p20{-h, -h, -h}, p21{h, -h, -h}, p22{h, -h, h}, p23{-h, -h, h};
+        data.vertices.reserve(24);
+        data.indices.reserve(36);
 
-        Vec3 *facePos[6] = {
-                new Vec3[4]{p0, p1, p2, p3},
-                new Vec3[4]{p4, p5, p6, p7},
-                new Vec3[4]{p8, p9, p10, p11},
-                new Vec3[4]{p12, p13, p14, p15},
-                new Vec3[4]{p16, p17, p18, p19},
-                new Vec3[4]{p20, p21, p22, p23}
-        };
+        for (const CubeFace &face: faces) {
+            const u32 baseIdx = static_cast<u32>(data.vertices.size());
+            const Vec3 center = face.normal * h;
+            const Vec3 tangent = face.tangentDir * h;
+            const Vec3 bitangent = face.bitangentDir * h;
 
-        Vec2 uvs[4] = {
-                {0.0f, 0.0f},
-                {1.0f, 0.0f},
-                {1.0f, 1.0f},
-                {0.0f, 1.0f}
-        };
+            const std::array<Vec3, 4> positions{
+                {
+                    center - tangent - bitangent,
+                    center + tangent - bitangent,
+                    center + tangent + bitangent,
+                    center - tangent + bitangent,
+                }
+            };
 
-        for (int i = 0; i < 6; ++i) {
-            u32 baseIdx = static_cast<u32>(data.vertices.size());
-            for (int v = 0; v < 4; ++v) {
-                Vertex vert;
-                vert.position = facePos[i][v];
-                vert.normal = normals[i];
-                vert.tangent = tangents[i];
-                vert.uv = uvs[v];
+            for (size_t i = 0; i < positions.size(); ++i) {
+                Vertex vert{};
+                vert.position = positions[i];
+                vert.normal = face.normal;
+                vert.uv = uvs[i];
+                vert.tangent = Vec4(face.tangentDir, 1.f);
                 data.vertices.push_back(vert);
             }
 
@@ -71,18 +69,14 @@ namespace Manro {
             data.indices.push_back(baseIdx + 0);
             data.indices.push_back(baseIdx + 2);
             data.indices.push_back(baseIdx + 3);
-
-            delete[] facePos[i];
         }
 
-        data.center = Vec3(0.0f);
-        data.radius = std::sqrt(h * h + h * h + h * h);
-
-        data.baseColorFactor = Vec4(1.0f);
+        data.center = Vec3(0.f);
+        data.radius = std::sqrt(3.f * h * h);
+        data.baseColorFactor = Vec4(1.f);
         data.metallicFactor = 0.5f;
         data.roughnessFactor = 0.5f;
 
         return data;
     }
-
 } // namespace Manro

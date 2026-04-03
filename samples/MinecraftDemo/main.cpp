@@ -1,7 +1,7 @@
-#include "DemoShooter.h"
+#include "MinecraftDemo.h"
 #include "Manro/Core/EngineLoop.h"
 
 int main() {
-    DemoShooter app;
+    MinecraftDemo app;
     Manro::EngineLoop::Run(app);
 }

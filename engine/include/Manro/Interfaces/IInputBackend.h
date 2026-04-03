@@ -14,6 +14,8 @@ namespace Manro {
 
         virtual bool IsKeyDown(Key k) const = 0;
 
+        virtual bool IsMouseButtonDown(MouseButton button) const = 0;
+
         virtual RawMouseDelta ConsumeMouseDelta() = 0;
     };
 } // namespace Manro

@@ -23,6 +23,8 @@ namespace Manro {
 
         bool IsKeyDown(Key k) const;
 
+        bool IsMouseButtonDown(MouseButton button) const;
+
         RawMouseDelta ConsumeMouseDelta();
 
         void ProcessSDLEvent(const SDL_Event &event);

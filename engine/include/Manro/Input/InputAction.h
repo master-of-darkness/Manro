@@ -9,6 +9,7 @@ namespace Manro {
     enum class Key : u16 {
         Unknown = 0,
         W, A, S, D, Q, E,
+        Num1, Num2, Num3, Num4, Num5,
         Space, LeftShift, LeftCtrl,
         Escape, Tab, Enter,
         F1, F2, F3, F4, F11,

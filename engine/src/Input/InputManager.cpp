@@ -15,6 +15,11 @@ namespace Manro {
         return m_Backend->IsKeyDown(k);
     }
 
+    bool InputManager::IsMouseButtonDown(MouseButton button) const {
+        if (!m_Backend) return false;
+        return m_Backend->IsMouseButtonDown(button);
+    }
+
     RawMouseDelta InputManager::ConsumeMouseDelta() {
         if (!m_Backend) return {};
         return m_Backend->ConsumeMouseDelta();

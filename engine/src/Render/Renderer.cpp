@@ -673,6 +673,12 @@ namespace Manro {
         CreateColorResources(m_RenderExtent.width, m_RenderExtent.height);
         CreateDepthResources(m_RenderExtent.width, m_RenderExtent.height);
 
+        BuildPbrPipeline();
+        BuildCompositePipeline();
+        BuildSkyboxPipeline();
+        BuildDebugPipeline();
+        ImportPipelinesToRHI();
+
         for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
             UpdateCompositeDescriptorSet(i);
             UpdatePbrDescriptorSetShadow(i);
@@ -2260,22 +2266,8 @@ namespace Manro {
         cfg.depthWriteEnable = VK_FALSE;
         cfg.depthCompareOp = VK_COMPARE_OP_EQUAL;
 
-        PipelineKey key{};
-        key.vertHash = PipelineCache::HashSpirV(vertSpv);
-        key.fragHash = PipelineCache::HashSpirV(fragSpv);
-        key.colorFmt = m_OffscreenFormat;
-        key.depthFmt = m_DepthFormat;
-        key.msaaSamples = m_Settings.msaaSamples;
-        key.pushConstantSize = sizeof(PBRPushConstants);
-        VkDescriptorSetLayout layouts[] = {m_PbrSetLayout, m_Textures.GetBindlessLayout()};
-        key.setLayoutCount = 2;
-        key.setLayoutHash = PipelineCache::HashLayouts(layouts, 2);
-
         m_PbrPipeline = CreateScope<Pipeline>(m_Context);
-        m_PipelineCache.GetGraphics(key, [&](VkPipelineCache) -> VkPipeline {
-            m_PbrPipeline->BuildGraphics(vertSpv, fragSpv, cfg);
-            return m_PbrPipeline->GetHandle();
-        });
+        m_PbrPipeline->BuildGraphics(vertSpv, fragSpv, cfg);
 
         PipelineConfigParams zCfg = cfg;
         zCfg.fragmentEntryPoint = "";
@@ -2315,19 +2307,8 @@ namespace Manro {
         cfg.pushConstantStages = VK_SHADER_STAGE_FRAGMENT_BIT;
         cfg.descriptorSetLayouts = {m_CompositeSetLayout};
 
-        PipelineKey key{};
-        key.vertHash = PipelineCache::HashSpirV(vertSpv);
-        key.fragHash = PipelineCache::HashSpirV(fragSpv);
-        key.colorFmt = m_Swapchain->GetImageFormat();
-        key.pushConstantSize = sizeof(CompositePushConstants);
-        VkDescriptorSetLayout layouts[] = {m_CompositeSetLayout};
-        key.setLayoutHash = PipelineCache::HashLayouts(layouts, 1);
-
         m_CompositePipeline = CreateScope<Pipeline>(m_Context);
-        m_PipelineCache.GetGraphics(key, [&](VkPipelineCache) -> VkPipeline {
-            m_CompositePipeline->BuildGraphics(vertSpv, fragSpv, cfg);
-            return m_CompositePipeline->GetHandle();
-        });
+        m_CompositePipeline->BuildGraphics(vertSpv, fragSpv, cfg);
     }
 
     void RendererImpl::BuildCullPipeline() {
@@ -2394,7 +2375,7 @@ namespace Manro {
         PipelineConfigParams cfg{};
         cfg.vertexEntryPoint = "main";
         cfg.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
-        cfg.msaaSamples = VK_SAMPLE_COUNT_1_BIT;
+        cfg.msaaSamples = m_Settings.msaaSamples;
         cfg.pushConstantSize = sizeof(ShadowPushConstants);
         cfg.pushConstantStages = VK_SHADER_STAGE_VERTEX_BIT;
         cfg.descriptorSetLayouts = {m_PbrSetLayout};
@@ -2475,7 +2456,7 @@ namespace Manro {
         cfg.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
         cfg.colorAttachmentFormat = m_OffscreenFormat;
         cfg.depthAttachmentFormat = m_DepthFormat;
-        cfg.msaaSamples = VK_SAMPLE_COUNT_1_BIT;
+        cfg.msaaSamples = m_Settings.msaaSamples;
         cfg.vertexInputBindings = {
                 {0, sizeof(DebugVertex), VK_VERTEX_INPUT_RATE_VERTEX}
         };
@@ -2511,10 +2492,18 @@ namespace Manro {
 
             VkRenderingAttachmentInfo color{};
             color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-            color.imageView = m_OffscreenColor.view;
-            color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             color.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
             color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+            if (m_Settings.msaaSamples != VK_SAMPLE_COUNT_1_BIT) {
+                color.imageView = m_MsaaColorImage.view;
+                color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+                color.resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
+                color.resolveImageView = m_OffscreenColor.view;
+                color.resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            } else {
+                color.imageView = m_OffscreenColor.view;
+                color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            }
 
             VkRenderingAttachmentInfo depth{};
             depth.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;

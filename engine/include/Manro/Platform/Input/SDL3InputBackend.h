@@ -13,6 +13,8 @@ namespace Manro {
 
         bool IsKeyDown(Key k) const override;
 
+        bool IsMouseButtonDown(MouseButton button) const override;
+
         RawMouseDelta ConsumeMouseDelta() override;
 
         float GetGamepadAxis(int axis) const;
@@ -21,6 +23,7 @@ namespace Manro {
 
     private:
         std::array<bool, static_cast<size_t>(Key::_Count)> m_KeyDown{};
+        std::array<bool, static_cast<size_t>(MouseButton::_Count)> m_MouseButtons{};
         RawMouseDelta m_MouseDelta{};
 
         float m_GamepadAxes[6]{};

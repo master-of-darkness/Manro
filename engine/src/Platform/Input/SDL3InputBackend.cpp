@@ -17,6 +17,16 @@ namespace Manro {
                 return Key::Q;
             case SDL_SCANCODE_E:
                 return Key::E;
+            case SDL_SCANCODE_1:
+                return Key::Num1;
+            case SDL_SCANCODE_2:
+                return Key::Num2;
+            case SDL_SCANCODE_3:
+                return Key::Num3;
+            case SDL_SCANCODE_4:
+                return Key::Num4;
+            case SDL_SCANCODE_5:
+                return Key::Num5;
             case SDL_SCANCODE_SPACE:
                 return Key::Space;
             case SDL_SCANCODE_LSHIFT:
@@ -67,6 +77,29 @@ namespace Manro {
                 m_MouseDelta.y += event.motion.yrel;
                 break;
 
+            case SDL_EVENT_MOUSE_BUTTON_DOWN:
+            case SDL_EVENT_MOUSE_BUTTON_UP: {
+                MouseButton button = MouseButton::_Count;
+                switch (event.button.button) {
+                    case SDL_BUTTON_LEFT:
+                        button = MouseButton::Left;
+                        break;
+                    case SDL_BUTTON_RIGHT:
+                        button = MouseButton::Right;
+                        break;
+                    case SDL_BUTTON_MIDDLE:
+                        button = MouseButton::Middle;
+                        break;
+                    default:
+                        break;
+                }
+
+                const auto idx = static_cast<size_t>(button);
+                if (idx < m_MouseButtons.size())
+                    m_MouseButtons[idx] = (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN);
+                break;
+            }
+
             case SDL_EVENT_GAMEPAD_AXIS_MOTION: {
                 int axis = event.gaxis.axis;
                 if (axis >= 0 && axis < 6) {
@@ -97,6 +130,11 @@ namespace Manro {
     bool SDL3InputBackend::IsKeyDown(Key k) const {
         auto idx = static_cast<size_t>(k);
         return idx < m_KeyDown.size() && m_KeyDown[idx];
+    }
+
+    bool SDL3InputBackend::IsMouseButtonDown(MouseButton button) const {
+        const auto idx = static_cast<size_t>(button);
+        return idx < m_MouseButtons.size() && m_MouseButtons[idx];
     }
 
     RawMouseDelta SDL3InputBackend::ConsumeMouseDelta() {
