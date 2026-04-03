@@ -40,6 +40,7 @@ private:
         Stone,
         Wood,
         Leaf,
+        Water,
         Count
     };
 
@@ -90,6 +91,8 @@ private:
 
     bool CanPlaceBlock(const BlockCoord &coord) const;
 
+    void ApplyGroundClearance();
+
     void DrawGui(float dt) const;
 
     Manro::Vec3 GetForwardVector() const;
@@ -138,7 +141,7 @@ private:
     bool m_LeftMouseWasDown{false};
     bool m_RightMouseWasDown{false};
     bool m_SpaceWasDown{false};
-    std::array<bool, 5> m_NumberWasDown{};
+    std::array<bool, 6> m_NumberWasDown{};
 
     float m_InteractionCooldown{0.f};
     int m_SelectedBlockIndex{0};

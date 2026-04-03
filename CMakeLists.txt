@@ -66,9 +66,6 @@ manro_pick_path(MANRO_SRC_DIR
 manro_pick_path(MANRO_SAMPLES_ROOT
         "${CMAKE_SOURCE_DIR}/samples"
         "${CMAKE_SOURCE_DIR}/tests")
-manro_pick_path(MANRO_ASSETS_DIR
-        "${CMAKE_SOURCE_DIR}/content/raw"
-        "${CMAKE_SOURCE_DIR}/assets")
 
 set(MANRO_PUBLIC_INCLUDE_DIR "${MANRO_ENGINE_ROOT}/include")
 
