@@ -23,17 +23,16 @@ namespace {
     constexpr float kPlayerHalfHeight = kPlayerHeight * 0.5f;
     constexpr float kPlayerEyeHeight  = 162.f;
 
-    // Camera
     constexpr float kTPSDistance = 360.f;
     constexpr float kTPSPivotOffset = 132.f;
 
-    // Interaction
     constexpr float kReachDistance = 825.f;
     constexpr float kInteractInterval = 0.18f;
 
-    // Deceleration
     constexpr float kGroundDrag = 0.68f;
     constexpr float kAirDrag = 0.91f;
+
+    constexpr float kMaxFallSpeed = 4000.f;
 }
 
 size_t MinecraftDemo::BlockCoordHash::operator()(const BlockCoord &coord) const {
@@ -76,7 +75,7 @@ void MinecraftDemo::OnStartup(const Manro::InitContext &ctx) {
     playerBodyDesc.convexRadius = 0.f;
     playerBodyDesc.allowSleeping = false;
     playerBodyDesc.lockRotation = true;
-    playerBodyDesc.maxLinearVelocity = 50000.f;
+    playerBodyDesc.maxLinearVelocity = kMaxFallSpeed;
     playerBodyDesc.maxAngularVelocity = 0.f;
 
     m_PlayerBody = m_PhysicsWorld->AddDynamicBox(
@@ -95,7 +94,7 @@ void MinecraftDemo::OnShutdown() {
     m_PhysicsWorld.reset();
 }
 
-bool MinecraftDemo::OnUpdate(const Manro::FrameContext &ctx, const Manro::UserCmd & /*cmd*/) {
+bool MinecraftDemo::OnUpdate(const Manro::FrameContext &ctx, const Manro::UserCmd &) {
     if (!m_IsRunning) return false;
 
     const float dt = ctx.DeltaTime;
@@ -116,14 +115,14 @@ bool MinecraftDemo::OnUpdate(const Manro::FrameContext &ctx, const Manro::UserCm
         m_PhysicsWorld->SetLinearVelocity(m_PlayerBody, {0.f, 0.f, 0.f});
         m_PhysicsWorld->SetBodyMotionType(m_PlayerBody, m_NoClip);
     }
-    if (f2Down && !m_F2WasDown) m_ShowPhysics  = !m_ShowPhysics;
+    if (f2Down && !m_F2WasDown) m_ShowPhysics = !m_ShowPhysics;
     if (f3Down && !m_F3WasDown) m_ThirdPerson = !m_ThirdPerson;
 
     m_CtrlWasDown = ctrlDown;
-    m_F11WasDown = f11Down;
+    m_F11WasDown  = f11Down;
     m_F1WasDown = f1Down;
-    m_F2WasDown   = f2Down;
-    m_F3WasDown = f3Down;
+    m_F2WasDown = f2Down;
+    m_F3WasDown   = f3Down;
 
     if (m_InputManager.IsKeyDown(Manro::Key::Escape)) return false;
 
@@ -169,6 +168,8 @@ bool MinecraftDemo::OnUpdate(const Manro::FrameContext &ctx, const Manro::UserCm
 
             Manro::Vec3 vel = m_PhysicsWorld->GetBodyLinearVelocity(m_PlayerBody);
 
+            vel.y = std::max(vel.y, -kMaxFallSpeed);
+
             Manro::Vec3 moveDir{0.f};
             if (m_InputManager.IsKeyDown(K::W)) moveDir += forwardFlat;
             if (m_InputManager.IsKeyDown(K::S)) moveDir -= forwardFlat;
@@ -188,8 +189,8 @@ bool MinecraftDemo::OnUpdate(const Manro::FrameContext &ctx, const Manro::UserCm
                     targetVz = vel.z * kGroundDrag;
                 }
             } else {
-                const float airControl = 0.18f;
                 if (hasInput) {
+                    constexpr float airControl = 0.18f;
                     targetVx = vel.x + (moveDir.x * speed - vel.x) * airControl;
                     targetVz = vel.z + (moveDir.z * speed - vel.z) * airControl;
                 } else {
@@ -199,13 +200,16 @@ bool MinecraftDemo::OnUpdate(const Manro::FrameContext &ctx, const Manro::UserCm
             }
 
             float targetVy = vel.y;
-            if (m_IsGrounded && jumpPressed) {
-                targetVy = m_JumpVelocity;
-                m_IsGrounded = false;
+            if (m_IsGrounded) {
+                if (vel.y < 0.f)
+                    targetVy = 0.f;
+                if (jumpPressed) {
+                    targetVy = m_JumpVelocity;
+                    m_IsGrounded = false;
+                }
             }
 
-            m_PhysicsWorld->SetLinearVelocity(m_PlayerBody,
-                                              {targetVx, targetVy, targetVz});
+            m_PhysicsWorld->SetLinearVelocity(m_PlayerBody, {targetVx, targetVy, targetVz});
         }
 
         m_SpaceWasDown = spaceDown;
@@ -217,11 +221,18 @@ bool MinecraftDemo::OnUpdate(const Manro::FrameContext &ctx, const Manro::UserCm
     m_PhysicsWorld->Step(dt);
 
     if (!m_NoClip && m_PlayerBody != Manro::kInvalidBodyHandle) {
-        if (m_PhysicsWorld->IsGrounded(m_PlayerBody)) {
-            const Manro::Vec3 v = m_PhysicsWorld->GetBodyLinearVelocity(m_PlayerBody);
-            if (v.y < 0.f)
-                m_PhysicsWorld->SetLinearVelocity(m_PlayerBody, {v.x, 0.f, v.z});
+        Manro::Vec3 v = m_PhysicsWorld->GetBodyLinearVelocity(m_PlayerBody);
+        bool changed = false;
+        if (m_PhysicsWorld->IsGrounded(m_PlayerBody) && v.y < 0.f) {
+            v.y = 0.f;
+            changed = true;
         }
+        if (v.y < -kMaxFallSpeed) {
+            v.y = -kMaxFallSpeed;
+            changed = true;
+        }
+        if (changed)
+            m_PhysicsWorld->SetLinearVelocity(m_PlayerBody, v);
     }
 
     if (m_PlayerBody != Manro::kInvalidBodyHandle)
@@ -252,7 +263,7 @@ void MinecraftDemo::OnRender(Manro::FrameContext &frame) {
     m_Renderer->SetCameraPosition(eyePos);
     m_Renderer->ClearLights();
 
-    const float dayTau     = (m_TimeOfDay / 24.f) * 2.f * 3.14159265f;
+    const float dayTau = (m_TimeOfDay / 24.f) * 2.f * 3.14159265f;
     const float sunAltitude = sinf(dayTau - 1.5707963f);
     const float sunAzimuth  = cosf(dayTau - 1.5707963f);
 
@@ -320,14 +331,32 @@ void MinecraftDemo::LoadAssets() {
 }
 
 void MinecraftDemo::GenerateWorld() {
-    for (int x = kWorldMin; x <= kWorldMax; ++x)
-        for (int z = kWorldMin; z <= kWorldMax; ++z)
-            BuildTerrainColumn(x, z);
+    const int worldWidth = kWorldMax - kWorldMin + 1;
+    const int worldDepth = kWorldMax - kWorldMin + 1;
+    const Manro::u32 columnCount = static_cast<Manro::u32>(worldWidth * worldDepth);
+
+    std::vector<GeneratedColumn> generatedColumns(columnCount);
+    const auto handle = m_Jobs->CreateHandle();
+    m_Jobs->Dispatch(handle, columnCount, [&](Manro::u32 index) {
+        const int xOffset = static_cast<int>(index) / worldDepth;
+        const int zOffset = static_cast<int>(index) % worldDepth;
+        const int x = kWorldMin + xOffset;
+        const int z = kWorldMin + zOffset;
+        generatedColumns[index] = BuildTerrainColumn(x, z);
+    });
+    m_Jobs->Wait(handle);
+
+    for (const auto &column: generatedColumns) {
+        for (const auto &block: column.blocks) {
+            SetBlock(block.coord, block.type);
+        }
+    }
 
     LOG_INFO("[MinecraftDemo] Generated {} voxel blocks.", m_WorldBlocks.size());
 }
 
-void MinecraftDemo::BuildTerrainColumn(int x, int z) {
+MinecraftDemo::GeneratedColumn MinecraftDemo::BuildTerrainColumn(int x, int z) const {
+    GeneratedColumn column;
     const int height = TerrainHeight(x, z);
 
     for (int y = 0; y < height; ++y) {
@@ -336,19 +365,20 @@ void MinecraftDemo::BuildTerrainColumn(int x, int z) {
         else if (y == height - 1) type = BlockType::Grass;
         else if (y >= height - 4) type = BlockType::Dirt;
         else type = BlockType::Stone;
-        SetBlock({x, y, z}, type);
+        AppendBlock(column, {x, y, z}, type);
     }
 
     const int waterLevel = 3;
     if (height <= waterLevel) {
         for (int y = height; y <= waterLevel; ++y)
-            SetBlock({x, y, z}, BlockType::Water);
+            AppendBlock(column, {x, y, z}, BlockType::Water);
     }
 
-    TrySpawnTree(x, z, height);
+    TrySpawnTree(x, z, height, column);
+    return column;
 }
 
-void MinecraftDemo::TrySpawnTree(int x, int z, int groundHeight) {
+void MinecraftDemo::TrySpawnTree(int x, int z, int groundHeight, GeneratedColumn &column) const {
     const int hash = std::abs(x * 7349 + z * 9151 + x * z * 193);
     if (groundHeight <= 4) return;
     if ((hash % 13) != 0) return;
@@ -356,7 +386,7 @@ void MinecraftDemo::TrySpawnTree(int x, int z, int groundHeight) {
 
     const int trunkHeight = 4 + (hash % 3);
     for (int i = 0; i < trunkHeight; ++i)
-        SetBlock({x, groundHeight + i, z}, BlockType::Wood);
+        AppendBlock(column, {x, groundHeight + i, z}, BlockType::Wood);
 
     const int leafBase = groundHeight + trunkHeight - 1;
     for (int lx = -2; lx <= 2; ++lx) {
@@ -365,10 +395,15 @@ void MinecraftDemo::TrySpawnTree(int x, int z, int groundHeight) {
                 const int dist = std::abs(lx) + std::abs(lz) + ly;
                 if (dist > 4) continue;
                 if (lx == 0 && lz == 0 && ly < 2) continue;
-                SetBlock({x + lx, leafBase + ly, z + lz}, BlockType::Leaf);
+                AppendBlock(column, {x + lx, leafBase + ly, z + lz}, BlockType::Leaf);
             }
         }
     }
+}
+
+void MinecraftDemo::AppendBlock(GeneratedColumn &column, const BlockCoord &coord, BlockType type) const {
+    if (coord.y < 0 || coord.y >= kMaxBuildHeight) return;
+    column.blocks.push_back(PendingBlock{coord, type});
 }
 
 bool MinecraftDemo::SetBlock(const BlockCoord &coord, BlockType type) {
@@ -379,7 +414,7 @@ bool MinecraftDemo::SetBlock(const BlockCoord &coord, BlockType type) {
     if (type != BlockType::Water) {
         const Manro::Vec3 center = BlockCenter(coord);
         Manro::PhysicsWorld::StaticBodyDesc desc{};
-        desc.friction = 0.6f;
+        desc.friction    = 0.6f;
         desc.restitution = 0.f;
         desc.convexRadius = 0.f;
         body = m_PhysicsWorld->AddStaticBox(center, {kHalfBlock, kHalfBlock, kHalfBlock}, desc);
@@ -425,7 +460,7 @@ void MinecraftDemo::UpdateSelectionInput() {
 }
 
 void MinecraftDemo::UpdateInteraction(
-    const Manro::Vec3 &eyePos, const Manro::Vec3 &forward, float /*dt*/) {
+    const Manro::Vec3 &eyePos, const Manro::Vec3 &forward, float) {
     const bool leftDown = m_InputManager.IsMouseButtonDown(Manro::MouseButton::Left);
     const bool rightDown = m_InputManager.IsMouseButtonDown(Manro::MouseButton::Right);
 
@@ -469,21 +504,25 @@ void MinecraftDemo::RefreshTargetBlock(const Manro::Vec3 &eyePos, const Manro::V
     m_TargetBlock.valid       = true;
     m_TargetBlock.coord       = it->second;
     m_TargetBlock.hitPosition = hit.position;
+    m_TargetBlock.hitNormal   = hit.normal;
 }
 
 bool MinecraftDemo::TryGetPlacementCoord(BlockCoord &outCoord) const {
     if (!m_TargetBlock.valid) return false;
 
-    const Manro::Vec3 center = BlockCenter(m_TargetBlock.coord);
-    const Manro::Vec3 local  = m_TargetBlock.hitPosition - center;
-    const float ax = std::abs(local.x);
-    const float ay = std::abs(local.y);
-    const float az = std::abs(local.z);
+    const Manro::Vec3 &n = m_TargetBlock.hitNormal;
+
+    const float ax = std::abs(n.x);
+    const float ay = std::abs(n.y);
+    const float az = std::abs(n.z);
 
     outCoord = m_TargetBlock.coord;
-    if      (ax >= ay && ax >= az) outCoord.x += (local.x >= 0.f) ? 1 : -1;
-    else if (ay >= ax && ay >= az) outCoord.y += (local.y >= 0.f) ? 1 : -1;
-    else outCoord.z += (local.z >= 0.f) ? 1 : -1;
+    if (ax >= ay && ax >= az)
+        outCoord.x += (n.x >= 0.f) ? 1 : -1;
+    else if (ay >= ax && ay >= az)
+        outCoord.y += (n.y >= 0.f) ? 1 : -1;
+    else
+        outCoord.z += (n.z >= 0.f) ? 1 : -1;
 
     return true;
 }
@@ -493,13 +532,17 @@ bool MinecraftDemo::CanPlaceBlock(const BlockCoord &coord) const {
     if (IsOccupied(coord)) return false;
 
     const Manro::Vec3 center = BlockCenter(coord);
+
     const float dx = std::abs(center.x - m_PlayerPosition.x);
     const float dy = std::abs(center.y - m_PlayerPosition.y);
     const float dz = std::abs(center.z - m_PlayerPosition.z);
 
-    return !(dx < (kHalfBlock + kPlayerHalfWidth)  &&
-             dy < (kHalfBlock + kPlayerHalfHeight) &&
-             dz < (kHalfBlock + kPlayerHalfWidth));
+    constexpr float kEpsilon = 2.f;
+    const float overlapX = (kHalfBlock + kPlayerHalfWidth - kEpsilon) - dx;
+    const float overlapY = (kHalfBlock + kPlayerHalfHeight - kEpsilon) - dy;
+    const float overlapZ = (kHalfBlock + kPlayerHalfWidth - kEpsilon) - dz;
+
+    return !(overlapX > 0.f && overlapY > 0.f && overlapZ > 0.f);
 }
 
 void MinecraftDemo::DrawGui(float dt) const {
@@ -537,15 +580,15 @@ void MinecraftDemo::DrawGui(float dt) const {
     }
     ImGui::End();
 
-    const float slotW = 116.f;
+    const float slotW  = 116.f;
     const float slotH = 42.f;
     const float gap = 8.f;
-    const int   nSlots = 6;
+    const int nSlots = 6;
     const float totalW = slotW * nSlots + gap * (nSlots - 1);
     const float startX = display.x * 0.5f - totalW * 0.5f;
-    const float y = display.y - 72.f;
+    const float y      = display.y - 72.f;
     ImFont *font = ImGui::GetFont();
-    const float labelSize  = ImGui::GetFontSize() * 0.84f;
+    const float labelSize = ImGui::GetFontSize() * 0.84f;
 
     for (int i = 0; i < nSlots; ++i) {
         const bool selected = (i == m_SelectedBlockIndex);
@@ -560,11 +603,11 @@ void MinecraftDemo::DrawGui(float dt) const {
         draw->AddRectFilled(a, b, IM_COL32(26, 27, 30, 210), 6.f);
         draw->AddRect(a, b,
                       selected ? IM_COL32(255, 241, 166, 255) : IM_COL32(110, 110, 110, 255),
-            6.f, 0, selected ? 3.f : 1.5f);
+                      6.f, 0, selected ? 3.f : 1.5f);
         draw->AddRectFilled({a.x + 8.f, a.y + 8.f}, {a.x + 28.f, a.y + 28.f}, fill, 4.f);
 
         const char *label = BlockName(static_cast<BlockType>(i));
-        const ImVec2 labelDim  = font->CalcTextSizeA(labelSize, FLT_MAX, 0.f, label);
+        const ImVec2 labelDim = font->CalcTextSizeA(labelSize, FLT_MAX, 0.f, label);
         draw->AddText(font, labelSize,
                       {a.x + 36.f, a.y + 7.f + (20.f - labelDim.y) * 0.5f},
                       IM_COL32(245, 245, 245, 255), label);
@@ -604,7 +647,7 @@ const char *MinecraftDemo::BlockName(BlockType type) {
     switch (type) {
         case BlockType::Grass:  return "Grass";
         case BlockType::Dirt:   return "Dirt";
-        case BlockType::Stone: return "Stone";
+        case BlockType::Stone:  return "Stone";
         case BlockType::Wood: return "Wood";
         case BlockType::Leaf: return "Leaf";
         case BlockType::Water: return "Water";
@@ -615,12 +658,12 @@ const char *MinecraftDemo::BlockName(BlockType type) {
 Manro::Vec4 MinecraftDemo::BlockColor(BlockType type) {
     switch (type) {
         case BlockType::Grass: return {0.42f, 0.69f, 0.28f, 1.f};
-        case BlockType::Dirt:   return {0.50f, 0.32f, 0.18f, 1.f};
+        case BlockType::Dirt:  return {0.50f, 0.32f, 0.18f, 1.f};
         case BlockType::Stone: return {0.58f, 0.60f, 0.63f, 1.f};
-        case BlockType::Wood: return {0.56f, 0.40f, 0.21f, 1.f};
+        case BlockType::Wood:  return {0.56f, 0.40f, 0.21f, 1.f};
         case BlockType::Leaf: return {0.24f, 0.52f, 0.19f, 1.f};
         case BlockType::Water: return {0.18f, 0.42f, 0.78f, 0.6f};
-        default: return {1.f, 1.f, 1.f, 1.f};
+        default:               return {1.f, 1.f, 1.f, 1.f};
     }
 }
 
@@ -628,13 +671,9 @@ int MinecraftDemo::TerrainHeight(int x, int z) {
     const float fx = static_cast<float>(x);
     const float fz = static_cast<float>(z);
 
-    // large rolling hills
     float n  =        sinf(fx * 0.031f) * cosf(fz * 0.027f);
-    // medium undulation
     n += 0.50f * sinf(fx * 0.071f + 1.3f) * cosf(fz * 0.063f + 0.9f);
-    // small bumps
     n += 0.25f * sinf(fx * 0.157f + 2.1f) * cosf(fz * 0.149f + 1.7f);
-    // fine surface roughness
     n += 0.125f * sinf(fx * 0.311f + 0.5f) * cosf(fz * 0.293f + 2.3f);
 
     const float normalized = (n + 1.875f) / 3.75f;

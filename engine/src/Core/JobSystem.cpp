@@ -7,6 +7,7 @@ namespace Manro {
             numThreads = std::max(1u, std::thread::hardware_concurrency() - 1u);
         }
 
+        m_GlobalHandle = CreateHandle();
         m_Running = true;
 
         for (u32 i = 0; i < numThreads; ++i) {
@@ -26,27 +27,59 @@ namespace Manro {
         m_Threads.clear();
     }
 
+    JobHandle JobSystem::CreateHandle() {
+        return JobHandle(std::make_shared<std::atomic<u32> >(0));
+    }
+
     void JobSystem::Execute(std::function<void()> job) {
+        Execute(m_GlobalHandle, std::move(job));
+    }
+
+    void JobSystem::Execute(JobHandle handle, std::function<void()> job) {
         if (!m_Running) return;
+        if (!handle.IsValid()) {
+            handle = m_GlobalHandle;
+        }
 
         {
             std::scoped_lock lock(m_Mutex);
-            m_Jobs.push(std::move(job));
+            handle.m_PendingJobs->fetch_add(1, std::memory_order_relaxed);
+            m_Jobs.push(JobEntry{std::move(job), handle.m_PendingJobs});
             m_JobsInFlight++;
         }
         m_WakeCondition.notify_one();
     }
 
-    void JobSystem::WaitAll() {
-        while (m_JobsInFlight > 0) {
-            std::unique_lock<std::mutex> lock(m_Mutex);
-            m_WakeMain.wait(lock, [this]() { return m_JobsInFlight == 0; });
+    void JobSystem::Dispatch(u32 jobCount, const std::function<void(u32)> &job) {
+        Dispatch(m_GlobalHandle, jobCount, job);
+    }
+
+    void JobSystem::Dispatch(JobHandle handle, u32 jobCount, const std::function<void(u32)> &job) {
+        if (jobCount == 0) return;
+
+        for (u32 i = 0; i < jobCount; ++i) {
+            Execute(handle, [job, i]() { job(i); });
         }
+    }
+
+    void JobSystem::Wait(const JobHandle &handle) {
+        if (!handle.IsValid()) return;
+
+        while (handle.m_PendingJobs->load(std::memory_order_acquire) > 0) {
+            std::unique_lock<std::mutex> lock(m_Mutex);
+            m_WakeMain.wait(lock, [&handle]() {
+                return handle.m_PendingJobs->load(std::memory_order_acquire) == 0;
+            });
+        }
+    }
+
+    void JobSystem::WaitAll() {
+        Wait(m_GlobalHandle);
     }
 
     void JobSystem::WorkerThread() {
         while (m_Running) {
-            std::function < void() > job;
+            JobEntry job;
 
             {
                 std::unique_lock<std::mutex> lock(m_Mutex);
@@ -62,10 +95,11 @@ namespace Manro {
                 m_Jobs.pop();
             }
 
-            if (job) {
-                job();
+            if (job.work) {
+                job.work();
+                job.pendingJobs->fetch_sub(1, std::memory_order_release);
                 m_JobsInFlight--;
-                if (m_JobsInFlight == 0) {
+                if (m_JobsInFlight == 0 || job.pendingJobs->load(std::memory_order_acquire) == 0) {
                     m_WakeMain.notify_all();
                 }
             }

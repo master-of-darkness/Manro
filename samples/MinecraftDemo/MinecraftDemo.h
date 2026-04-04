@@ -9,6 +9,7 @@
 
 #include <array>
 #include <unordered_map>
+#include <vector>
 
 namespace Manro {
     class Renderer;
@@ -61,19 +62,31 @@ private:
         Manro::PhysicsBodyHandle body{Manro::kInvalidBodyHandle};
     };
 
+    struct PendingBlock {
+        BlockCoord coord{};
+        BlockType type{BlockType::Grass};
+    };
+
+    struct GeneratedColumn {
+        std::vector<PendingBlock> blocks;
+    };
+
     struct TargetBlock {
         bool valid{false};
         BlockCoord coord{};
         Manro::Vec3 hitPosition{0.f};
+        Manro::Vec3 hitNormal{0.f};
     };
 
     void LoadAssets();
 
     void GenerateWorld();
 
-    void BuildTerrainColumn(int x, int z);
+    GeneratedColumn BuildTerrainColumn(int x, int z) const;
 
-    void TrySpawnTree(int x, int z, int groundHeight);
+    void TrySpawnTree(int x, int z, int groundHeight, GeneratedColumn &column) const;
+
+    void AppendBlock(GeneratedColumn &column, const BlockCoord &coord, BlockType type) const;
 
     bool SetBlock(const BlockCoord &coord, BlockType type);
 

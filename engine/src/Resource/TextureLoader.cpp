@@ -165,7 +165,7 @@ namespace Manro {
 
         u32 fourCC = hdr.ddspf.fourCC;
         int blockSize;
-        void (*decodeBlock)(const u8 *, u8 [4][4][4]);
+        void(*decodeBlock)(const u8 *, u8[4][4][4]);
 
         if (fourCC == kFourCC_DXT1) {
             blockSize = 8;
@@ -264,15 +264,22 @@ namespace Manro {
 
     std::vector<TextureData> TextureLoader::Load(const std::vector<std::string> &filepaths, JobSystem &jobs) {
         std::vector<TextureData> results(filepaths.size());
+        const JobHandle handle = jobs.CreateHandle();
 
         for (size_t i = 0; i < filepaths.size(); ++i) {
-            jobs.Execute([&filepaths, &results, i]() {
+            jobs.Execute(handle, [&filepaths, &results, i]() {
                 LoadIndividual(filepaths[i], results[i]);
             });
         }
-        jobs.WaitAll();
+        jobs.Wait(handle);
 
         return results;
+    }
+
+    TextureData TextureLoader::LoadOne(const std::string &filepath) {
+        TextureData result;
+        LoadIndividual(filepath, result);
+        return result;
     }
 
     std::vector<TextureData> TextureLoader::LoadCubemap(const std::string &filepath) {
@@ -287,17 +294,18 @@ namespace Manro {
         struct FaceCoord {
             int col, row;
         } coords[6] = {
-                {2, 1}, // +X
-                {0, 1}, // -X
-                {1, 0}, // +Y
-                {1, 2}, // -Y
-                {1, 1}, // +Z
-                {3, 1}  // -Z
+            {2, 1}, // +X
+            {0, 1}, // -X
+            {1, 0}, // +Y
+            {1, 2}, // -Y
+            {1, 1}, // +Z
+            {3, 1} // -Z
         };
 
         if (rawData.width == rawData.height * 4 / 3) {
             faceSize = rawData.height / 3;
-        } else if (rawData.height == rawData.width * 4 / 3) { // TODO:
+        } else if (rawData.height == rawData.width * 4 / 3) {
+            // TODO:
             // ... (3x4)
         } else if (rawData.width == rawData.height * 6) {
             // ... (6x1)
@@ -327,6 +335,4 @@ namespace Manro {
 
         return faces;
     }
-
 } // namespace Manro
-

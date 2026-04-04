@@ -505,45 +505,59 @@ namespace Manro {
         return false;
     }
 
-    bool PhysicsWorld::RaycastClosest(const Vec3 &origin, const Vec3 &direction, float distance,
-                                      RaycastHit &outHit, PhysicsBodyHandle ignore) const {
-        if (distance <= 0.f) return false;
+bool PhysicsWorld::RaycastClosest(const Vec3 &origin, const Vec3 &direction, float distance,
+                                  RaycastHit &outHit, PhysicsBodyHandle ignore) const {
+    if (distance <= 0.f) return false;
 
-        const float dirLen = glm::length(direction);
-        if (dirLen <= 0.0001f) return false;
+    const float dirLen = glm::length(direction);
+    if (dirLen <= 0.0001f) return false;
 
-        const Vec3 dir = direction / dirLen;
-        JPH::RRayCast ray{
-            JPH::RVec3(origin.x, origin.y, origin.z),
-            JPH::Vec3(dir.x * distance, dir.y * distance, dir.z * distance)
-        };
-        JPH::RayCastResult hit;
+    const Vec3 dir = direction / dirLen;
+    JPH::RRayCast ray{
+        JPH::RVec3(origin.x, origin.y, origin.z),
+        JPH::Vec3(dir.x * distance, dir.y * distance, dir.z * distance)
+    };
+    JPH::RayCastResult hit;
 
-        if (ignore != kInvalidBodyHandle) {
-            JPH::IgnoreSingleBodyFilter bodyFilter(fromHandle(ignore));
-            if (!m_Impl->physicsSystem->GetNarrowPhaseQuery().CastRay(
-                ray, hit,
-                JPH::SpecifiedBroadPhaseLayerFilter(BroadPhaseLayers::NON_MOVING),
-                JPH::SpecifiedObjectLayerFilter(Layers::NON_MOVING),
-                bodyFilter)) {
-                return false;
-            }
-        } else {
-            if (!m_Impl->physicsSystem->GetNarrowPhaseQuery().CastRay(
-                ray, hit,
-                JPH::SpecifiedBroadPhaseLayerFilter(BroadPhaseLayers::NON_MOVING),
-                JPH::SpecifiedObjectLayerFilter(Layers::NON_MOVING))) {
-                return false;
-            }
-        }
-
-        outHit.body = toHandle(hit.mBodyID);
-        outHit.fraction = hit.mFraction;
-        outHit.position = origin + dir * (distance * hit.mFraction);
-        return true;
+    if (ignore != kInvalidBodyHandle) {
+        JPH::IgnoreSingleBodyFilter bodyFilter(fromHandle(ignore));
+        if (!m_Impl->physicsSystem->GetNarrowPhaseQuery().CastRay(
+            ray, hit,
+            JPH::SpecifiedBroadPhaseLayerFilter(BroadPhaseLayers::NON_MOVING),
+            JPH::SpecifiedObjectLayerFilter(Layers::NON_MOVING),
+            bodyFilter))
+            return false;
+    } else {
+        if (!m_Impl->physicsSystem->GetNarrowPhaseQuery().CastRay(
+            ray, hit,
+            JPH::SpecifiedBroadPhaseLayerFilter(BroadPhaseLayers::NON_MOVING),
+            JPH::SpecifiedObjectLayerFilter(Layers::NON_MOVING)))
+            return false;
     }
 
-    void PhysicsWorld::ApplyLinearImpulse(PhysicsBodyHandle handle, const Vec3 &impulse) {
+    outHit.body = toHandle(hit.mBodyID);
+    outHit.fraction = hit.mFraction;
+    outHit.position = origin + dir * (distance * hit.mFraction);
+
+    // Compute surface normal
+    {
+        JPH::BodyLockRead lock(m_Impl->physicsSystem->GetBodyLockInterface(), hit.mBodyID);
+        if (lock.Succeeded()) {
+            const JPH::Body &body = lock.GetBody();
+            JPH::Vec3 jDir(dir.x, dir.y, dir.z);
+            JPH::SubShapeID subShapeID = hit.mSubShapeID2;
+            JPH::RVec3 hitPos(outHit.position.x, outHit.position.y, outHit.position.z);
+            JPH::Vec3 normal = body.GetWorldSpaceSurfaceNormal(subShapeID, hitPos);
+            outHit.normal = Vec3(normal.GetX(), normal.GetY(), normal.GetZ());
+        } else {
+            outHit.normal = Vec3(0.f, 1.f, 0.f);
+        }
+    }
+
+    return true;
+}
+
+void PhysicsWorld::ApplyLinearImpulse(PhysicsBodyHandle handle, const Vec3 &impulse) {
         JPH::BodyID id = fromHandle(handle);
         if (id.IsInvalid()) return;
         m_Impl->physicsSystem->GetBodyInterface().AddImpulse(

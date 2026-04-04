@@ -57,6 +57,7 @@ namespace Manro {
             PhysicsBodyHandle body{kInvalidBodyHandle};
             Vec3 position{0.f};
             float fraction{0.f};
+            Vec3 normal{0.f};
         };
 
         PhysicsWorld();

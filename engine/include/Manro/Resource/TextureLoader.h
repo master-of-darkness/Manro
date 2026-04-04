@@ -18,6 +18,8 @@ namespace Manro {
     public:
         static std::vector<TextureData> Load(const std::vector<std::string> &filepaths, JobSystem &jobs);
 
+        static TextureData LoadOne(const std::string &filepath);
+
         static std::vector<TextureData> LoadCubemap(const std::string &filepath);
     };
 } // namespace Manro

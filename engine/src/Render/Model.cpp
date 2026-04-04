@@ -8,15 +8,11 @@
 #include <set>
 
 namespace Manro {
-    std::vector<Scope<Model>> Model::Load(const std::vector<std::string> &paths,
-                                          Renderer &renderer,
-                                          JobSystem &jobs) {
-        auto allSubMeshes = ModelLoader::LoadSubMeshes(paths, jobs);
-        std::vector<Scope<Model>> results;
-        results.reserve(paths.size());
-
+    Model::PreparedAssets Model::Prepare(const std::vector<std::string> &paths, JobSystem &jobs) {
+        PreparedAssets prepared;
+        prepared.subMeshes = ModelLoader::LoadSubMeshes(paths, jobs);
         std::set<std::string> uniqueTexturePaths;
-        for (const auto &modelSubMeshes: allSubMeshes) {
+        for (const auto &modelSubMeshes: prepared.subMeshes) {
             for (const auto &sm: modelSubMeshes) {
                 if (!sm.diffuseTexturePath.empty()) {
                     uniqueTexturePaths.insert(sm.diffuseTexturePath);
@@ -27,20 +23,25 @@ namespace Manro {
             }
         }
 
-        std::vector<std::string> texturePathList(uniqueTexturePaths.begin(), uniqueTexturePaths.end());
-        auto loadedTextures = TextureLoader::Load(texturePathList, jobs);
+        prepared.texturePaths.assign(uniqueTexturePaths.begin(), uniqueTexturePaths.end());
+        prepared.textures = TextureLoader::Load(prepared.texturePaths, jobs);
+        return prepared;
+    }
 
+    std::vector<Scope<Model> > Model::CommitPrepared(PreparedAssets prepared, Renderer &renderer) {
+        std::vector<Scope<Model> > results;
+        results.reserve(prepared.subMeshes.size());
         std::unordered_map<std::string, TextureHandle> textureCache;
-        for (size_t i = 0; i < texturePathList.size(); ++i) {
-            if (!loadedTextures[i].pixels.empty()) {
-                TextureHandle tex = renderer.UploadTexture(loadedTextures[i]);
-                textureCache[texturePathList[i]] = tex;
+        for (size_t i = 0; i < prepared.texturePaths.size(); ++i) {
+            if (!prepared.textures[i].pixels.empty()) {
+                TextureHandle tex = renderer.UploadTexture(prepared.textures[i]);
+                textureCache[prepared.texturePaths[i]] = tex;
             }
         }
 
-        for (size_t i = 0; i < paths.size(); ++i) {
+        for (size_t i = 0; i < prepared.subMeshes.size(); ++i) {
             auto model = CreateScope<Model>();
-            for (auto &sd: allSubMeshes[i]) {
+            for (auto &sd: prepared.subMeshes[i]) {
                 if (sd.vertices.empty()) continue;
 
                 ModelData md;
@@ -80,7 +81,14 @@ namespace Manro {
             }
             results.push_back(std::move(model));
         }
+        return results;
+    }
 
+    std::vector<Scope<Model> > Model::Load(const std::vector<std::string> &paths,
+                                           Renderer &renderer,
+                                           JobSystem &jobs) {
+        auto prepared = Prepare(paths, jobs);
+        auto results = CommitPrepared(std::move(prepared), renderer);
         LOG_INFO("[Model] Load of {} models completed", paths.size());
         return results;
     }
