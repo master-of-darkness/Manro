@@ -67,6 +67,8 @@ namespace Manro {
 
         void DrawMeshStatic(MeshHandle mesh, MaterialInstance &mat, const Mat4 &model);
 
+        void ClearStaticDraws();
+
         void DrawModel(const Model &model, const Mat4 &transform);
 
         void DrawModelStatic(const Model &model, const Mat4 &transform);

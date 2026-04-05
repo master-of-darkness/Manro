@@ -58,6 +58,7 @@ void MinecraftDemo::OnStartup(const Manro::InitContext &ctx) {
     m_Renderer = &ctx.Renderer;
 
     m_Renderer->SetDebugUIEnabled(false);
+
     Manro::VirtualFS::Get().SetBaseDir(MANRO_ASSETS_DIR);
     m_InputManager.SetBackend(&m_InputBackend);
 
@@ -284,13 +285,17 @@ void MinecraftDemo::OnRender(Manro::FrameContext &frame) {
     }
     m_Renderer->AddLight(sun);
 
-    for (const auto &[coord, block] : m_WorldBlocks) {
-        glm::mat4 model = glm::translate(glm::mat4(1.f), BlockCenter(coord));
-        model = glm::scale(model, Manro::Vec3(kHalfBlock));
-        m_Renderer->DrawMesh(
-            m_CubeMesh,
-            *m_BlockMaterials[static_cast<size_t>(block.type)],
-            model);
+    if (!m_WorldMeshUploaded) {
+        m_Renderer->ClearStaticDraws();
+        for (const auto &[coord, block]: m_WorldBlocks) {
+            glm::mat4 model = glm::translate(glm::mat4(1.f), BlockCenter(coord));
+            model = glm::scale(model, Manro::Vec3(kHalfBlock));
+            m_Renderer->DrawMeshStatic(
+                m_CubeMesh,
+                *m_BlockMaterials[static_cast<size_t>(block.type)],
+                model);
+        }
+        m_WorldMeshUploaded = true;
     }
 
     if (m_TargetBlock.valid) {
@@ -427,6 +432,7 @@ bool MinecraftDemo::SetBlock(const BlockCoord &coord, BlockType type) {
     }
 
     m_WorldBlocks.emplace(coord, BlockData{type, body});
+    m_WorldMeshUploaded = false;
     return true;
 }
 
@@ -439,6 +445,9 @@ bool MinecraftDemo::RemoveBlock(const BlockCoord &coord) {
         m_BodyToCoord.erase(it->second.body.packed);
     }
     m_WorldBlocks.erase(it);
+
+    // Mark world as dirty so mesh will be reuploaded
+    m_WorldMeshUploaded = false;
     return true;
 }
 

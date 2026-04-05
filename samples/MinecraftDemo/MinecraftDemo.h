@@ -171,6 +171,7 @@ private:
     static constexpr int kWorldMax = 8;
     static constexpr int kMaxBuildHeight = 12;
 
+    bool m_WorldMeshUploaded = false; // Track if static blocks are uploaded
     TargetBlock m_TargetBlock;
     std::unordered_map<BlockCoord, BlockData, BlockCoordHash> m_WorldBlocks;
     std::unordered_map<Manro::u32, BlockCoord> m_BodyToCoord;

@@ -20,6 +20,8 @@ namespace Manro {
         RendererImplDrawMeshStatic(*m_Impl, mesh, mat, model);
     }
 
+    void Renderer::ClearStaticDraws() { RendererImplClearStaticDraws(*m_Impl); }
+
     void Renderer::DrawModel(const Model &model, const Mat4 &transform) {
         RendererImplDrawModel(*m_Impl, model, transform);
     }

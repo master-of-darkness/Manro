@@ -173,6 +173,8 @@ namespace Manro {
 
         void DrawMeshStatic(MeshHandle mesh, MaterialInstance &mat, const Mat4 &model);
 
+        void ClearStaticDraws();
+
         void DrawModel(const Model &model, const Mat4 &transform);
 
         void DrawModelStatic(const Model &model, const Mat4 &transform);
@@ -1753,6 +1755,14 @@ namespace Manro {
         m_StaticCullData.push_back(cullData);
     }
 
+    void RendererImpl::ClearStaticDraws() {
+        m_StaticInstances.clear();
+        m_StaticCullData.clear();
+        for (auto &frame: m_Frames) {
+            frame.staticUploaded = false;
+        }
+    }
+
     void RendererImpl::CreateDescriptorLayouts() {
         {
             VkDescriptorSetLayoutBinding b[14];
@@ -2691,6 +2701,8 @@ namespace Manro {
     void RendererImplDrawMeshStatic(RendererImpl &impl, MeshHandle mesh, MaterialInstance &mat, const Mat4 &model) {
         impl.DrawMeshStatic(mesh, mat, model);
     }
+
+    void RendererImplClearStaticDraws(RendererImpl &impl) { impl.ClearStaticDraws(); }
 
     void RendererImplDrawModel(RendererImpl &impl, const Model &model, const Mat4 &transform) {
         impl.DrawModel(model, transform);
