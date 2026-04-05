@@ -7,6 +7,7 @@
 #include <Manro/Render/Gui/ImGuiLayer.h>
 #include <Manro/Render/Material/Material.h>
 #include <Manro/Render/Material/MaterialInstance.h>
+#include <Manro/Render/RendererConfig.h>
 #include <Manro/Interfaces/IWindow.h>
 #include <Manro/Core/VirtualFS.h>
 #include <nvshaders/gltf_scene_io.h.slang>
@@ -21,13 +22,6 @@ namespace Manro {
     class Model;
 
     class RendererImpl;
-
-    static constexpr u32 MAX_FRAMES_IN_FLIGHT = 3;
-    static constexpr u32 MAX_INSTANCES = 65536;
-    static constexpr u32 MAX_LIGHTS = 1024;
-    static constexpr u32 MAX_LIGHTS_PER_TILE = 64;
-    static constexpr u32 TILE_SIZE = 16;
-    static constexpr u32 SHADOW_MAP_SIZE = 2048;
 
     struct FrameStats {
         u32 drawCalls = 0;
@@ -44,8 +38,14 @@ namespace Manro {
 
     class Renderer {
     public:
+        /// Constructor with default RendererConfig
         Renderer(IWindow &window, u32 width, u32 height,
                  const RenderSettings &settings = {});
+
+        /// Constructor with custom RendererConfig
+        Renderer(IWindow &window, u32 width, u32 height,
+                 const RenderSettings &settings,
+                 const RendererConfig &config);
 
         ~Renderer();
 
@@ -104,6 +104,9 @@ namespace Manro {
         const RenderSettings &GetSettings() const;
 
         RenderSettings &GetSettings();
+
+        /// Get the renderer configuration (read-only, set at construction time)
+        const RendererConfig &GetConfig() const;
 
         const FrameStats &GetLastFrameStats() const;
 

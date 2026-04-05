@@ -11,11 +11,11 @@
 
 
 #include "Backend/Vulkan/VulkanContext.h"
-#include "Backend/Vulkan/Swapchain.h"
 #include "Backend/Vulkan/Buffer.h"
 #include "Backend/Vulkan/Pipeline.h"
 #include "Backend/Vulkan/DescriptorAllocator.h"
 #include "Backend/Vulkan/PipelineCache.h"
+#include "RHI/VulkanRenderDevice.h"
 #include "Manro/Render/DebugDraw.h"
 
 namespace Manro {
@@ -156,7 +156,8 @@ namespace Manro {
 
     class RendererImpl {
     public:
-        RendererImpl(IWindow &window, u32 width, u32 height, const RenderSettings &settings);
+        RendererImpl(IWindow &window, u32 width, u32 height, const RenderSettings &settings,
+                     const RendererConfig &config = RendererConfig::Default());
 
         ~RendererImpl();
 
@@ -196,7 +197,7 @@ namespace Manro {
                 LOG_INFO("[Renderer] Skybox texture set: {}", cubemap);
             }
             m_SkyboxTexture = cubemap;
-            for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+            for (u32 i = 0; i < GetFrameCount(); ++i) {
                 UpdateSkyboxDescriptorSet(i);
             }
         }
@@ -230,6 +231,8 @@ namespace Manro {
         const RenderSettings &GetSettings() const { return m_Settings; }
 
         RenderSettings &GetSettings() { return m_Settings; }
+
+        const RendererConfig &GetConfig() const { return m_Config; }
 
         const FrameStats &GetLastFrameStats() const { return m_LastFrameStats; }
 
@@ -318,10 +321,20 @@ namespace Manro {
 
         void FinalizeFrameAndPresent(VkCommandBuffer cb);
 
+        u32 GetFrameCount() const { return std::max(1u, m_Config.maxFramesInFlight); }
+        u32 GetMaxInstances() const { return std::max(1u, m_Config.maxInstances); }
+        u32 GetMaxLights() const { return std::max(1u, m_Config.maxLights); }
+        u32 GetMaxLightsPerTile() const { return std::max(1u, m_Config.maxLightsPerTile); }
+        u32 GetTileSize() const { return std::max(1u, m_Config.tileSize); }
+        u32 GetShadowMapSize() const { return std::max(1u, m_Config.shadowMapSize); }
+        u32 GetMaxTilesX() const { return std::max(1u, 4096u / GetTileSize()); }
+        u32 GetMaxTilesY() const { return std::max(1u, 2304u / GetTileSize()); }
+        u32 GetMaxTiles() const { return GetMaxTilesX() * GetMaxTilesY(); }
+
         VulkanContext m_Context;
         Scope<RHI::IRenderDevice> m_RhiDevice;
-        Scope<RHI::VulkanCommandList> m_VulkanCommandList;
-        Scope<Swapchain> m_Swapchain;
+        RHI::VulkanRenderDevice *m_VulkanRhiDevice = nullptr;
+        RHI::VulkanCommandList *m_VulkanCommandList = nullptr;
         Scope<SceneRenderer> m_SceneRenderer;
 
         TextureManager m_Textures;
@@ -338,7 +351,7 @@ namespace Manro {
 
         void ImportPipelinesToRHI();
 
-        PerFrameAllocator m_PerFrameAlloc[MAX_FRAMES_IN_FLIGHT];
+        std::vector<PerFrameAllocator> m_PerFrameAlloc;
         PersistentAllocator m_PersistentAlloc;
         BindlessAllocator m_BindlessAlloc;
         PipelineCache m_PipelineCache;
@@ -395,12 +408,6 @@ namespace Manro {
         u32 m_CurrentFrame = 0;
         u32 m_CurrentImageIndex = 0;
 
-        VkSemaphore m_TimelineSemaphore = VK_NULL_HANDLE;
-        u64 m_TimelineValue = 0;
-        std::array<u64, MAX_FRAMES_IN_FLIGHT> m_FrameBaseValue{};
-        std::vector<VkSemaphore> m_ImageAvailableSemaphores;
-        std::vector<VkSemaphore> m_PresentSemaphores;
-
         std::vector<MaterialData> m_Materials;
         std::unordered_map<MaterialData, u32, MaterialDataHash> m_MaterialCache;
         Scope<Buffer> m_MaterialBuffer;
@@ -426,6 +433,7 @@ namespace Manro {
         FrameStats m_LastFrameStats{};
 
         RenderSettings m_Settings{};
+        RendererConfig m_Config{};
         VkExtent2D m_RenderExtent{};
 
         void BuildSkyboxPipeline();
@@ -438,24 +446,24 @@ namespace Manro {
 
     };
 
-    static constexpr u32 kMaxTilesX = 256u;
-    static constexpr u32 kMaxTilesY = 144u;
-    static constexpr u32 kMaxTiles = kMaxTilesX * kMaxTilesY;
     static constexpr u32 kMaxDebugVertices = 65536;
 
     RendererImpl::RendererImpl(IWindow &window, u32 width, u32 height,
-                               const RenderSettings &settings)
-            : m_Context("GameEngine", window),
-              m_Textures(m_Context, m_BindlessAlloc), m_Meshes(m_Context), m_Settings(settings) {
-        {
-            RHI::AdapterInfo info{};
-            m_Context.GetVramStats(info.vramUsage, info.vramBudget);
-            VkPhysicalDeviceProperties props{};
-            vkGetPhysicalDeviceProperties(m_Context.GetPhysicalDevice(), &props);
-            std::strncpy(info.name, props.deviceName, sizeof(info.name) - 1);
-            m_RhiDevice = RHI::IRenderDevice::CreateVulkan(window, width, height, settings.enableVSync, &info);
+                               const RenderSettings &settings,
+                               const RendererConfig &config)
+        : m_Context("GameEngine", window),
+          m_Textures(m_Context, m_BindlessAlloc), m_Meshes(m_Context), m_Settings(settings),
+          m_Config(config) {
+        m_RhiDevice = RHI::IRenderDevice::CreateVulkan(
+            m_Context, width, height, config.vsync, true, m_Config.maxFramesInFlight);
+        m_VulkanRhiDevice = dynamic_cast<RHI::VulkanRenderDevice *>(m_RhiDevice.get());
+        if (!m_VulkanRhiDevice) {
+            throw std::runtime_error("Renderer requires VulkanRenderDevice implementation");
         }
-        m_Swapchain = CreateScope<Swapchain>(m_Context, width, height, m_Settings.enableVSync);
+        m_VulkanCommandList = dynamic_cast<RHI::VulkanCommandList *>(&m_RhiDevice->GetCommandList());
+        if (!m_VulkanCommandList) {
+            throw std::runtime_error("Renderer requires VulkanCommandList from render device");
+        }
 
         VkSampleCountFlagBits maxSamples = m_Context.GetMaxUsableSampleCount();
         m_Settings.msaaSamples = (static_cast<u32>(m_Settings.msaaSamples) <= static_cast<u32>(maxSamples))
@@ -469,14 +477,14 @@ namespace Manro {
 
         VkDevice device = m_Context.GetDevice();
 
-        for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-            m_PerFrameAlloc[i].Init(device, 256);
+        m_PerFrameAlloc.resize(GetFrameCount());
+        for (auto &alloc: m_PerFrameAlloc)
+            alloc.Init(device, 256);
 
         m_PersistentAlloc.Init(device, 64);
         m_BindlessAlloc.Init(device);
         m_Textures.InitDefaults();
         m_PipelineCache.Init(device, "manro_pipeline_cache.bin");
-        m_VulkanCommandList = CreateScope<RHI::VulkanCommandList>();
         if (m_RhiDevice) {
             m_SceneRenderer = CreateScope<SceneRenderer>();
         }
@@ -499,9 +507,9 @@ namespace Manro {
 
         ImportPipelinesToRHI();
 
-        m_CurrentFrameInstances.reserve(MAX_INSTANCES);
-        m_CurrentFrameCullData.reserve(MAX_INSTANCES);
-        m_PendingLights.reserve(MAX_LIGHTS);
+        m_CurrentFrameInstances.reserve(GetMaxInstances());
+        m_CurrentFrameCullData.reserve(GetMaxInstances());
+        m_PendingLights.reserve(GetMaxLights());
 
         m_Materials.push_back(shaderio::defaultGltfMaterial());
         m_MaterialBuffer->LoadData(m_Materials.data(), sizeof(MaterialData));
@@ -529,8 +537,8 @@ namespace Manro {
         ImGuiLayerInfo guiInfo{};
         guiInfo.context = &m_Context;
         guiInfo.window = &window;
-        guiInfo.colorFormat = m_Swapchain->GetImageFormat();
-        guiInfo.imageCount = MAX_FRAMES_IN_FLIGHT;
+        guiInfo.colorFormat = m_VulkanRhiDevice->GetVkSwapchainFormat();
+        guiInfo.imageCount = GetFrameCount();
         m_ImGuiLayer = CreateScope<ImGuiLayer>(guiInfo);
     }
 
@@ -541,8 +549,8 @@ namespace Manro {
         m_PipelineCache.Shutdown();
         m_BindlessAlloc.Shutdown();
         m_PersistentAlloc.Shutdown();
-        for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-            m_PerFrameAlloc[i].Shutdown();
+        for (auto &alloc: m_PerFrameAlloc)
+            alloc.Shutdown();
 
         m_ImGuiLayer.reset();
         m_DefaultMaterial.reset();
@@ -567,13 +575,6 @@ namespace Manro {
             if (f.commandPool)
                 vkDestroyCommandPool(m_Context.GetDevice(), f.commandPool, nullptr);
 
-        for (auto s: m_ImageAvailableSemaphores)
-            vkDestroySemaphore(m_Context.GetDevice(), s, nullptr);
-        for (auto s: m_PresentSemaphores)
-            vkDestroySemaphore(m_Context.GetDevice(), s, nullptr);
-        if (m_TimelineSemaphore)
-            vkDestroySemaphore(m_Context.GetDevice(), m_TimelineSemaphore, nullptr);
-
         if (m_DescriptorPool)
             vkDestroyDescriptorPool(m_Context.GetDevice(), m_DescriptorPool, nullptr);
         if (m_PbrSetLayout)
@@ -588,14 +589,12 @@ namespace Manro {
             vkDestroyDescriptorSetLayout(m_Context.GetDevice(), m_ShadowMeshCullSetLayout, nullptr);
         if (m_SkyboxSetLayout)
             vkDestroyDescriptorSetLayout(m_Context.GetDevice(), m_SkyboxSetLayout, nullptr);
-
-        if (m_Swapchain) m_Swapchain->Shutdown();
     }
 
     void RendererImpl::AddLight(const LightData &light) {
         if (m_SceneRenderer)
             m_SceneRenderer->AddLight(light);
-        if (m_PendingLights.size() < MAX_LIGHTS)
+        if (m_PendingLights.size() < GetMaxLights())
             m_PendingLights.push_back(light);
     }
 
@@ -635,27 +634,8 @@ namespace Manro {
         m_PendingResize = false;
         if (w == 0 || h == 0) return;
 
-        if (m_TimelineValue > 0) {
-            VkSemaphoreWaitInfo wi{};
-            wi.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
-            wi.semaphoreCount = 1;
-            wi.pSemaphores = &m_TimelineSemaphore;
-            wi.pValues = &m_TimelineValue;
-            vkWaitSemaphores(m_Context.GetDevice(), &wi, UINT64_MAX);
-        }
-
-        m_Swapchain->Recreate(w, h, m_Settings.enableVSync);
-        if (m_RhiDevice) m_RhiDevice->OnResize(w, h);
-
-        if (m_PresentSemaphores.size() != m_Swapchain->GetImageCount()) {
-            for (auto s: m_PresentSemaphores)
-                vkDestroySemaphore(m_Context.GetDevice(), s, nullptr);
-            VkSemaphoreCreateInfo si{};
-            si.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-            m_PresentSemaphores.resize(m_Swapchain->GetImageCount());
-            for (auto &s: m_PresentSemaphores)
-                if (vkCreateSemaphore(m_Context.GetDevice(), &si, nullptr, &s) != VK_SUCCESS)
-                    throw std::runtime_error("Failed to create present semaphore");
+        if (m_RhiDevice) {
+            m_RhiDevice->OnResize(w, h);
         }
 
         if (m_OffscreenSampler) {
@@ -679,7 +659,7 @@ namespace Manro {
         BuildDebugPipeline();
         ImportPipelinesToRHI();
 
-        for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        for (u32 i = 0; i < GetFrameCount(); ++i) {
             UpdateCompositeDescriptorSet(i);
             UpdatePbrDescriptorSetShadow(i);
         }
@@ -746,10 +726,11 @@ namespace Manro {
     }
 
     void RendererImpl::CreateShadowResources() {
+        const u32 shadowMapSize = GetShadowMapSize();
         {
             ImageCreateParams p{};
-            p.width = SHADOW_MAP_SIZE;
-            p.height = SHADOW_MAP_SIZE;
+            p.width = shadowMapSize;
+            p.height = shadowMapSize;
             p.format = VK_FORMAT_D32_SFLOAT;
             p.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
             p.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -797,10 +778,10 @@ namespace Manro {
                 VMA_MEMORY_USAGE_CPU_TO_GPU);
 
         m_ShadowUniform.lightDir = Vec4(0.5f, -0.7f, 0.5f, 0.005f);
-        m_ShadowUniform.shadowMapSize = Vec2(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
+        m_ShadowUniform.shadowMapSize = Vec2(shadowMapSize, shadowMapSize);
         m_ShadowUniform.normalBias = m_Settings.shadows.bias;
 
-        LOG_INFO("[Renderer] Shadow resources created ({}x{} D32)", SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
+        LOG_INFO("[Renderer] Shadow resources created ({}x{} D32)", shadowMapSize, shadowMapSize);
     }
 
     Mat4 RendererImpl::ComputeLightViewProj(const Vec3 &lightDir) const {
@@ -823,6 +804,7 @@ namespace Manro {
     }
 
     void RendererImpl::RenderShadowPass(VkCommandBuffer cb) {
+        const u32 shadowMapSize = GetShadowMapSize();
         u32 totalInstCount = static_cast<u32>(m_StaticInstances.size() + m_CurrentFrameInstances.size());
         if (!m_ShadowPipeline || totalInstCount == 0) return;
 
@@ -870,15 +852,17 @@ namespace Manro {
 
         VkRenderingInfo ri{};
         ri.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-        ri.renderArea.extent = {SHADOW_MAP_SIZE, SHADOW_MAP_SIZE};
+        ri.renderArea.extent = {shadowMapSize, shadowMapSize};
         ri.layerCount = 1;
         ri.pDepthAttachment = &depthAtt;
         vkCmdBeginRendering(cb, &ri);
 
-        VkViewport vp{0.f, 0.f, float(SHADOW_MAP_SIZE), float(SHADOW_MAP_SIZE), 0.f, 1.f};
+        VkViewport vp{0.f, 0.f, float(shadowMapSize), float(shadowMapSize), 0.f, 1.f};
         vkCmdSetViewport(cb, 0, 1, &vp);
-        VkRect2D scissor{{0,               0},
-                         {SHADOW_MAP_SIZE, SHADOW_MAP_SIZE}};
+        VkRect2D scissor{
+            {0, 0},
+            {shadowMapSize, shadowMapSize}
+        };
         vkCmdSetScissor(cb, 0, 1, &scissor);
         vkCmdSetDepthBias(cb, 1.0f, 0.0f, 2.0f);
 
@@ -939,7 +923,7 @@ namespace Manro {
             b.dstAccessMask = 0;
             b.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             b.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-            b.image = m_Swapchain->GetImage(m_CurrentImageIndex);
+            b.image = m_VulkanRhiDevice->GetSwapchainImage(m_CurrentImageIndex);
             b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
             VkDependencyInfo dep{};
             dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
@@ -947,83 +931,43 @@ namespace Manro {
             dep.pImageMemoryBarriers = &b;
             vkCmdPipelineBarrier2(cb, &dep);
         }
-
-        if (vkEndCommandBuffer(cb) != VK_SUCCESS)
-            throw std::runtime_error("Failed to record command buffer");
-
-        const u64 signalValue = ++m_TimelineValue;
-        m_FrameBaseValue[m_CurrentFrame] = signalValue;
-
-        VkCommandBufferSubmitInfo cmdInfo{};
-        cmdInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
-        cmdInfo.commandBuffer = cb;
-
-        VkSemaphoreSubmitInfo waitInfo{};
-        waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-        waitInfo.semaphore = m_ImageAvailableSemaphores[m_CurrentFrame];
-        waitInfo.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-
-        VkSemaphoreSubmitInfo signalInfos[2]{};
-        signalInfos[0].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-        signalInfos[0].semaphore = m_TimelineSemaphore;
-        signalInfos[0].value = signalValue;
-        signalInfos[0].stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-        signalInfos[1].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-        signalInfos[1].semaphore = m_PresentSemaphores[m_CurrentImageIndex];
-        signalInfos[1].stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-
-        VkSubmitInfo2 submit{};
-        submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
-        submit.waitSemaphoreInfoCount = 1;
-        submit.pWaitSemaphoreInfos = &waitInfo;
-        submit.signalSemaphoreInfoCount = 2;
-        submit.pSignalSemaphoreInfos = signalInfos;
-        submit.commandBufferInfoCount = 1;
-        submit.pCommandBufferInfos = &cmdInfo;
-
-        VkResult result = vkQueueSubmit2(m_Context.GetGraphicsQueue(), 1, &submit, VK_NULL_HANDLE);
-        if (result != VK_SUCCESS) {
-            LOG_ERROR("[Renderer] vkQueueSubmit2 failed with result: %d", (int) result);
-            throw std::runtime_error("Failed to submit command buffer");
-        }
-
-        if (m_Swapchain->Present(m_CurrentImageIndex, m_PresentSemaphores[m_CurrentImageIndex]))
-            m_PendingResize = true;
-
-        if (m_RhiDevice)
+        if (m_RhiDevice) {
             m_RhiDevice->EndFrame();
-
-        m_CurrentFrame = (m_CurrentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+        }
+        if (m_VulkanRhiDevice) {
+            m_CurrentFrame = m_VulkanRhiDevice->GetCurrentFrame();
+        }
     }
 
     bool RendererImpl::BeginFrame() {
-        if (m_RhiDevice && !m_RhiDevice->BeginFrame())
-            return false;
-
-        if (m_PendingResize || m_Swapchain->NeedsRecreate()) {
+        // Handle recreate before acquiring a new swapchain image.
+        // Acquiring first and then bailing out can leave frame fences unsignaled.
+        if (m_PendingWidth == 0 || m_PendingHeight == 0) return false;
+        if (m_PendingResize || (m_VulkanRhiDevice && m_VulkanRhiDevice->NeedsSwapchainRecreate())) {
             RecreateSwapchain();
             return false;
         }
-        if (m_PendingWidth == 0 || m_PendingHeight == 0) return false;
 
-        const u64 waitValue = m_FrameBaseValue[m_CurrentFrame];
-        VkSemaphoreWaitInfo wi{};
-        wi.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
-        wi.semaphoreCount = 1;
-        wi.pSemaphores = &m_TimelineSemaphore;
-        wi.pValues = &waitValue;
-        vkWaitSemaphores(m_Context.GetDevice(), &wi, UINT64_MAX);
+        if (m_RhiDevice && !m_RhiDevice->BeginFrame()) {
+            if (m_VulkanRhiDevice && m_VulkanRhiDevice->NeedsSwapchainRecreate()) {
+                RecreateSwapchain();
+            }
+            return false;
+        }
+
+        if (m_VulkanRhiDevice) {
+            m_CurrentFrame = m_VulkanRhiDevice->GetCurrentFrame();
+            m_CurrentImageIndex = m_VulkanRhiDevice->GetCurrentImageIndex();
+        }
 
         m_PerFrameAlloc[m_CurrentFrame].Reset();
-
-        m_CurrentImageIndex = m_Swapchain->AcquireNextImage(
-                m_ImageAvailableSemaphores[m_CurrentFrame]);
-        if (m_CurrentImageIndex == UINT32_MAX) return false;
 
         m_LastFrameStats = m_CurrentFrameStats;
 
         FrameData &frame = m_Frames[m_CurrentFrame];
-        vkResetCommandBuffer(frame.commandBuffer, 0);
+        if (m_VulkanCommandList) {
+            frame.commandBuffer = m_VulkanCommandList->GetHandle();
+        }
         m_CurrentFrameInstances.clear();
         m_CurrentFrameCullData.clear();
 
@@ -1052,12 +996,9 @@ namespace Manro {
             }
         }
 
-        VkCommandBufferBeginInfo bi{};
-        bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        if (vkBeginCommandBuffer(frame.commandBuffer, &bi) != VK_SUCCESS)
-            throw std::runtime_error("Failed to begin command buffer");
-        if (m_VulkanCommandList)
-            m_VulkanCommandList->SetCommandBuffer(frame.commandBuffer);
+        if (frame.commandBuffer == VK_NULL_HANDLE) {
+            throw std::runtime_error("RHI command buffer is not available");
+        }
 
         UploadLights(m_CurrentFrame);
 
@@ -1256,12 +1197,13 @@ namespace Manro {
             cpc.view = m_ViewMatrix;
             cpc.proj = m_ProjectionMatrix;
             cpc.proj[1][1] *= -1;
+            const u32 tileSize = GetTileSize();
             cpc.screenTile = Vec4((float) ext.width, (float) ext.height,
-                                  (float) TILE_SIZE, (float) TILE_SIZE);
+                                  (float) tileSize, (float) tileSize);
             cpc.lightCount = (u32) m_PendingLights.size();
-            cpc.maxPerTile = MAX_LIGHTS_PER_TILE;
-            cpc.tilesX = std::min((ext.width + TILE_SIZE - 1) / TILE_SIZE, kMaxTilesX);
-            cpc.tilesY = std::min((ext.height + TILE_SIZE - 1) / TILE_SIZE, kMaxTilesY);
+            cpc.maxPerTile = GetMaxLightsPerTile();
+            cpc.tilesX = std::min((ext.width + tileSize - 1) / tileSize, GetMaxTilesX());
+            cpc.tilesY = std::min((ext.height + tileSize - 1) / tileSize, GetMaxTilesY());
             cpc.zParams = Vec4(0.1f, 10000.f, 1.f, 0.f);
 
             vkCmdPushConstants(cb, m_CullPipeline->GetLayout(),
@@ -1449,7 +1391,7 @@ namespace Manro {
     void RendererImpl::EndFrameAndPresent() {
         FrameData &frame = m_Frames[m_CurrentFrame];
         VkCommandBuffer cb = frame.commandBuffer;
-        VkExtent2D ext = m_Swapchain->GetExtent();
+        VkExtent2D ext = m_VulkanRhiDevice->GetSwapchainExtent();
 
         {
             VkImageMemoryBarrier2 b{};
@@ -1478,7 +1420,7 @@ namespace Manro {
             b.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
             b.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
             b.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            b.image = m_Swapchain->GetImage(m_CurrentImageIndex);
+            b.image = m_VulkanRhiDevice->GetSwapchainImage(m_CurrentImageIndex);
             b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
             VkDependencyInfo dep{};
             dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
@@ -1495,7 +1437,7 @@ namespace Manro {
 
             RHI::VulkanCompositePassState compositeState{};
             compositeState.extent = ext;
-            compositeState.colorView = m_Swapchain->GetImageView(m_CurrentImageIndex);
+            compositeState.colorView = m_VulkanRhiDevice->GetSwapchainImageView(m_CurrentImageIndex);
             compositeState.pipeline = m_CompositePipeline->GetHandle();
             compositeState.pipelineLayout = m_CompositePipeline->GetLayout();
             compositeState.descriptorSet = frame.compositeSet;
@@ -1511,7 +1453,7 @@ namespace Manro {
         if (m_ImGuiLayer) {
             VkRenderingAttachmentInfo guiColorAtt{};
             guiColorAtt.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-            guiColorAtt.imageView = m_Swapchain->GetImageView(m_CurrentImageIndex);
+            guiColorAtt.imageView = m_VulkanRhiDevice->GetSwapchainImageView(m_CurrentImageIndex);
             guiColorAtt.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             guiColorAtt.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
             guiColorAtt.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -1815,19 +1757,20 @@ namespace Manro {
     }
 
     void RendererImpl::CreateDescriptorPool() {
+        const u32 frameCount = GetFrameCount();
         VkDescriptorPoolSize sizes[] = {
-                {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,             u32(MAX_FRAMES_IN_FLIGHT * 10)},
-                {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,             u32(MAX_FRAMES_IN_FLIGHT * 20)},
-                {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,     u32(MAX_FRAMES_IN_FLIGHT * 10)},
-                {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, u32(MAX_FRAMES_IN_FLIGHT * 2)},
-                {VK_DESCRIPTOR_TYPE_SAMPLER,                    u32(MAX_FRAMES_IN_FLIGHT * 10)},
-                {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,              u32(MAX_FRAMES_IN_FLIGHT * 10)},
+            {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, u32(frameCount * 10)},
+            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, u32(frameCount * 20)},
+            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, u32(frameCount * 10)},
+            {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, u32(frameCount * 2)},
+            {VK_DESCRIPTOR_TYPE_SAMPLER, u32(frameCount * 10)},
+            {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, u32(frameCount * 10)},
         };
         VkDescriptorPoolCreateInfo ci{};
         ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         ci.poolSizeCount = 6;
         ci.pPoolSizes = sizes;
-        ci.maxSets = u32(MAX_FRAMES_IN_FLIGHT * 24);
+        ci.maxSets = u32(frameCount * 24);
         if (vkCreateDescriptorPool(m_Context.GetDevice(), &ci, nullptr, &m_DescriptorPool) != VK_SUCCESS)
             throw std::runtime_error("Failed to create descriptor pool");
     }
@@ -2069,59 +2012,49 @@ namespace Manro {
     }
 
     void RendererImpl::CreateCommandBuffers() {
-        m_Frames.resize(MAX_FRAMES_IN_FLIGHT);
+        const u32 frameCount = GetFrameCount();
+        const u32 maxLights = GetMaxLights();
+        const u32 maxInstances = GetMaxInstances();
+        const u32 maxTiles = GetMaxTiles();
+        const u32 maxLightsPerTile = GetMaxLightsPerTile();
 
-        VkCommandPoolCreateInfo poolCI{};
-        poolCI.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        poolCI.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-        poolCI.queueFamilyIndex = m_Context.GetGraphicsQueueFamilyIndex();
+        m_Frames.resize(frameCount);
 
-        for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        for (u32 i = 0; i < frameCount; ++i) {
             FrameData &f = m_Frames[i];
-
-            if (vkCreateCommandPool(m_Context.GetDevice(), &poolCI, nullptr, &f.commandPool) != VK_SUCCESS)
-                throw std::runtime_error("Failed to create command pool");
-
-            VkCommandBufferAllocateInfo cbAI{};
-            cbAI.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-            cbAI.commandPool = f.commandPool;
-            cbAI.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-            cbAI.commandBufferCount = 1;
-            if (vkAllocateCommandBuffers(m_Context.GetDevice(), &cbAI, &f.commandBuffer) != VK_SUCCESS)
-                throw std::runtime_error("Failed to allocate command buffer");
 
             f.uboBuffer = CreateScope<Buffer>(
                     m_Context, sizeof(UniformBufferObject),
                     VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
             f.lightBuffer = CreateScope<Buffer>(
-                    m_Context, sizeof(LightData) * MAX_LIGHTS,
-                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+                m_Context, sizeof(LightData) * maxLights,
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
             struct TileHeader {
                 u32 offset, count, pad0, pad1;
             };
             f.tileHeaderBuffer = CreateScope<Buffer>(
-                    m_Context, sizeof(TileHeader) * kMaxTiles,
-                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
+                m_Context, sizeof(TileHeader) * maxTiles,
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
 
             f.tileLightIndexBuffer = CreateScope<Buffer>(
-                    m_Context, sizeof(u32) * kMaxTiles * MAX_LIGHTS_PER_TILE,
-                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
+                m_Context, sizeof(u32) * maxTiles * maxLightsPerTile,
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
 
             f.instanceBuffer = CreateScope<Buffer>(
-                m_Context, sizeof(MeshInstance) * MAX_INSTANCES,
+                m_Context, sizeof(MeshInstance) * maxInstances,
                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                 VMA_MEMORY_USAGE_CPU_TO_GPU);
 
             f.cullDataBuffer = CreateScope<Buffer>(
-                m_Context, sizeof(CullData) * MAX_INSTANCES,
+                m_Context, sizeof(CullData) * maxInstances,
                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
             f.indirectBuffer = CreateScope<Buffer>(
-                m_Context, sizeof(DrawCommand) * MAX_INSTANCES,
+                m_Context, sizeof(DrawCommand) * maxInstances,
                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
-                    VMA_MEMORY_USAGE_GPU_ONLY);
+                VMA_MEMORY_USAGE_GPU_ONLY);
 
             f.countBuffer = CreateScope<Buffer>(
                     m_Context, sizeof(u32),
@@ -2130,9 +2063,9 @@ namespace Manro {
                     VMA_MEMORY_USAGE_GPU_ONLY);
 
             f.shadowIndirectBuffer = CreateScope<Buffer>(
-                m_Context, sizeof(DrawCommand) * MAX_INSTANCES,
+                m_Context, sizeof(DrawCommand) * maxInstances,
                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
-                    VMA_MEMORY_USAGE_GPU_ONLY);
+                VMA_MEMORY_USAGE_GPU_ONLY);
 
             f.shadowCountBuffer = CreateScope<Buffer>(
                     m_Context, sizeof(u32),
@@ -2185,32 +2118,7 @@ namespace Manro {
     }
 
     void RendererImpl::CreateSyncObjects() {
-        VkSemaphoreCreateInfo binaryCI{};
-        binaryCI.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-
-        m_ImageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
-        for (auto &s: m_ImageAvailableSemaphores)
-            if (vkCreateSemaphore(m_Context.GetDevice(), &binaryCI, nullptr, &s) != VK_SUCCESS)
-                throw std::runtime_error("Failed to create image-available semaphore");
-
-        VkSemaphoreTypeCreateInfo tlCI{};
-        tlCI.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
-        tlCI.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
-        tlCI.initialValue = 0;
-
-        VkSemaphoreCreateInfo tlSI{};
-        tlSI.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-        tlSI.pNext = &tlCI;
-        if (vkCreateSemaphore(m_Context.GetDevice(), &tlSI, nullptr, &m_TimelineSemaphore) != VK_SUCCESS)
-            throw std::runtime_error("Failed to create timeline semaphore");
-
-        m_TimelineValue = 0;
-        for (auto &v: m_FrameBaseValue) v = 0;
-
-        m_PresentSemaphores.resize(m_Swapchain->GetImageCount());
-        for (auto &s: m_PresentSemaphores)
-            if (vkCreateSemaphore(m_Context.GetDevice(), &binaryCI, nullptr, &s) != VK_SUCCESS)
-                throw std::runtime_error("Failed to create present semaphore");
+        // Frame synchronization and present semaphores are managed by VulkanRenderDevice.
     }
 
     void RendererImpl::BuildPbrPipeline() {
@@ -2300,7 +2208,7 @@ namespace Manro {
         PipelineConfigParams cfg{};
         cfg.vertexEntryPoint = "main";
         cfg.fragmentEntryPoint = "main";
-        cfg.colorAttachmentFormat = m_Swapchain->GetImageFormat();
+        cfg.colorAttachmentFormat = m_VulkanRhiDevice->GetVkSwapchainFormat();
         cfg.depthAttachmentFormat = VK_FORMAT_UNDEFINED;
         cfg.msaaSamples = VK_SAMPLE_COUNT_1_BIT;
         cfg.pushConstantSize = sizeof(CompositePushConstants);
@@ -2620,7 +2528,13 @@ namespace Manro {
     }
 
     Renderer::Renderer(IWindow &window, u32 width, u32 height, const RenderSettings &settings)
-            : m_Impl(CreateScope<RendererImpl>(window, width, height, settings)) {}
+        : m_Impl(CreateScope<RendererImpl>(window, width, height, settings, RendererConfig::Default())) {
+    }
+
+    Renderer::Renderer(IWindow &window, u32 width, u32 height, const RenderSettings &settings,
+                       const RendererConfig &config)
+        : m_Impl(CreateScope<RendererImpl>(window, width, height, settings, config)) {
+    }
 
     Renderer::~Renderer() = default;
 
@@ -2691,6 +2605,8 @@ namespace Manro {
     const RenderSettings &Renderer::GetSettings() const { return m_Impl->GetSettings(); }
 
     RenderSettings &Renderer::GetSettings() { return m_Impl->GetSettings(); }
+
+    const RendererConfig &Renderer::GetConfig() const { return m_Impl->GetConfig(); }
 
     const FrameStats &Renderer::GetLastFrameStats() const { return m_Impl->GetLastFrameStats(); }
     void Renderer::SetDebugUIEnabled(bool enabled) { m_Impl->SetDebugUIEnabled(enabled); }

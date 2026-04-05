@@ -27,14 +27,14 @@ add_library(Engine STATIC
         Render/Material.cpp
         Render/Vulkan/VulkanContext.cpp
         Render/Vulkan/VulkanHelpers.cpp
-        Render/Vulkan/Swapchain.cpp
         Render/Vulkan/Buffer.cpp
         Render/Vulkan/Pipeline.cpp
         Render/Vulkan/DescriptorAllocator.cpp
         Render/Vulkan/PipelineCache.cpp
         Render/RenderGraph.cpp
         Render/Renderer.cpp
-        Render/RHI/StubRenderDevice.cpp
+        Render/RHI/RenderDeviceFactory.cpp
+        Render/RHI/VulkanRenderDevice.cpp
         Render/RHI/VulkanCommandList.cpp
         Render/SceneRenderer.cpp
         Render/TextureManager.cpp
