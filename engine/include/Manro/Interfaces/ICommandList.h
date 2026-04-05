@@ -5,10 +5,34 @@
 #include <span>
 
 namespace Manro::RHI {
+    struct ZPrepassPassState;
+    struct PbrPassState;
+    struct CompositePassState;
+    struct SkyboxPassState;
+
+    enum class GraphicsBackend : u8 {
+        Vulkan = 0
+    };
 
     class ICommandList : public ::Manro::Interface {
     public:
         virtual ~ICommandList() = default;
+
+        virtual GraphicsBackend GetBackendType() const = 0;
+
+        // Backend-native command list handle encoded as u64.
+        virtual u64 GetNativeHandle() const = 0;
+
+        // Import backend-native graphics pipeline objects into command-list lookup tables
+        virtual void ImportGraphicsPipeline(PipelineHandle handle, u64 pipeline, u64 layout) = 0;
+
+        virtual void ExecuteZPrepass(const ZPrepassPassState &state) = 0;
+
+        virtual void ExecutePbrPass(const PbrPassState &state) = 0;
+
+        virtual void ExecuteCompositePass(const CompositePassState &state) = 0;
+
+        virtual void ExecuteSkyboxPass(const SkyboxPassState &state) = 0;
 
         virtual void BeginRendering(std::span<const ColorAttachment> color,
                                     const DepthAttachment *depth = nullptr) = 0;
@@ -56,5 +80,4 @@ namespace Manro::RHI {
 
         virtual void EndDebugLabel() = 0;
     };
-
 } // namespace Manro::RHI

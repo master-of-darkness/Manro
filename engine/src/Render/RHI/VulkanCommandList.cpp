@@ -1,8 +1,34 @@
 #include <Manro/Render/RHI/VulkanCommandList.h>
 #include <volk.h>
 #include <algorithm>
+#include <cstdint>
+#include <type_traits>
 
 namespace Manro::RHI {
+    namespace {
+        template<typename T>
+        T FromNativeHandle(u64 handle) {
+            if constexpr (std::is_pointer_v<T>) {
+                return reinterpret_cast<T>(static_cast<uintptr_t>(handle));
+            } else {
+                return static_cast<T>(handle);
+            }
+        }
+
+        template<typename T>
+        u64 ToNativeHandle(T handle) {
+            if constexpr (std::is_pointer_v<T>) {
+                return static_cast<u64>(reinterpret_cast<uintptr_t>(handle));
+            } else {
+                return static_cast<u64>(handle);
+            }
+        }
+    } // namespace
+
+    u64 VulkanCommandList::GetNativeHandle() const {
+        return ToNativeHandle(m_CommandBuffer);
+    }
+
 
     void VulkanCommandList::ImportBuffer(BufferHandle handle, VkBuffer buffer) {
         m_Buffers[handle.packed] = buffer;
@@ -12,12 +38,15 @@ namespace Manro::RHI {
         m_Textures[handle.packed] = texture;
     }
 
-    void
-    VulkanCommandList::ImportGraphicsPipeline(PipelineHandle handle, VkPipeline pipeline, VkPipelineLayout layout) {
-        m_Pipelines[handle.packed] = VulkanPipelineBinding{pipeline, layout, VK_PIPELINE_BIND_POINT_GRAPHICS};
+    void VulkanCommandList::ImportGraphicsPipeline(PipelineHandle handle, u64 pipeline, u64 layout) {
+        m_Pipelines[handle.packed] = VulkanPipelineBinding{
+            FromNativeHandle<VkPipeline>(pipeline),
+            FromNativeHandle<VkPipelineLayout>(layout),
+            VK_PIPELINE_BIND_POINT_GRAPHICS
+        };
     }
 
-    void VulkanCommandList::ExecuteZPrepass(const VulkanZPrepassState &state) {
+    void VulkanCommandList::ExecuteZPrepass(const ZPrepassPassState &state) {
         if (!m_CommandBuffer || !state.depthView)
             return;
 
@@ -63,7 +92,7 @@ namespace Manro::RHI {
         vkCmdEndRendering(m_CommandBuffer);
     }
 
-    void VulkanCommandList::ExecutePbrPass(const VulkanPbrPassState &state) {
+    void VulkanCommandList::ExecutePbrPass(const PbrPassState &state) {
         if (!m_CommandBuffer)
             return;
 
@@ -124,7 +153,7 @@ namespace Manro::RHI {
         vkCmdEndRendering(m_CommandBuffer);
     }
 
-    void VulkanCommandList::ExecuteCompositePass(const VulkanCompositePassState &state) {
+    void VulkanCommandList::ExecuteCompositePass(const CompositePassState &state) {
         if (!m_CommandBuffer || !state.colorView || !state.pipeline) return;
 
         VkRenderingAttachmentInfo colorAtt{};
@@ -162,7 +191,7 @@ namespace Manro::RHI {
         vkCmdEndRendering(m_CommandBuffer);
     }
 
-    void VulkanCommandList::ExecuteSkyboxPass(const VulkanSkyboxPassState &state) {
+    void VulkanCommandList::ExecuteSkyboxPass(const SkyboxPassState &state) {
         if (!m_CommandBuffer || !state.pipeline || !state.vertexBuffer || !state.indexBuffer ||
             !state.offscreenColorView)
             return;
@@ -422,4 +451,3 @@ namespace Manro::RHI {
     }
 
 } // namespace Manro::RHI
-

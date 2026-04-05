@@ -7,6 +7,8 @@
 #include <Manro/Render/SceneRenderer.h>
 #include <stdexcept>
 #include <cstring>
+#include <cstdint>
+#include <type_traits>
 #include <glm/gtc/matrix_transform.hpp>
 
 
@@ -15,10 +17,29 @@
 #include "Backend/Vulkan/Pipeline.h"
 #include "Backend/Vulkan/DescriptorAllocator.h"
 #include "Backend/Vulkan/PipelineCache.h"
-#include "RHI/VulkanRenderDevice.h"
 #include "Manro/Render/DebugDraw.h"
 
 namespace Manro {
+    namespace {
+        template<typename T>
+        T FromNativeHandle(u64 handle) {
+            if constexpr (std::is_pointer_v<T>) {
+                return reinterpret_cast<T>(static_cast<uintptr_t>(handle));
+            } else {
+                return static_cast<T>(handle);
+            }
+        }
+
+        template<typename T>
+        u64 ToNativeHandle(T handle) {
+            if constexpr (std::is_pointer_v<T>) {
+                return static_cast<u64>(reinterpret_cast<uintptr_t>(handle));
+            } else {
+                return static_cast<u64>(handle);
+            }
+        }
+    } // namespace
+
 
     struct FrameData {
         VkCommandPool commandPool = VK_NULL_HANDLE;
@@ -333,8 +354,7 @@ namespace Manro {
 
         VulkanContext m_Context;
         Scope<RHI::IRenderDevice> m_RhiDevice;
-        RHI::VulkanRenderDevice *m_VulkanRhiDevice = nullptr;
-        RHI::VulkanCommandList *m_VulkanCommandList = nullptr;
+        RHI::ICommandList *m_CommandList = nullptr;
         Scope<SceneRenderer> m_SceneRenderer;
 
         TextureManager m_Textures;
@@ -456,13 +476,12 @@ namespace Manro {
           m_Config(config) {
         m_RhiDevice = RHI::IRenderDevice::CreateVulkan(
             m_Context, width, height, config.vsync, true, m_Config.maxFramesInFlight);
-        m_VulkanRhiDevice = dynamic_cast<RHI::VulkanRenderDevice *>(m_RhiDevice.get());
-        if (!m_VulkanRhiDevice) {
-            throw std::runtime_error("Renderer requires VulkanRenderDevice implementation");
+        if (!m_RhiDevice || m_RhiDevice->GetBackendType() != RHI::GraphicsBackend::Vulkan) {
+            throw std::runtime_error("Renderer requires Vulkan graphics backend");
         }
-        m_VulkanCommandList = dynamic_cast<RHI::VulkanCommandList *>(&m_RhiDevice->GetCommandList());
-        if (!m_VulkanCommandList) {
-            throw std::runtime_error("Renderer requires VulkanCommandList from render device");
+        m_CommandList = &m_RhiDevice->GetCommandList();
+        if (!m_CommandList || m_CommandList->GetBackendType() != RHI::GraphicsBackend::Vulkan) {
+            throw std::runtime_error("Renderer requires Vulkan command list backend");
         }
 
         VkSampleCountFlagBits maxSamples = m_Context.GetMaxUsableSampleCount();
@@ -537,7 +556,7 @@ namespace Manro {
         ImGuiLayerInfo guiInfo{};
         guiInfo.context = &m_Context;
         guiInfo.window = &window;
-        guiInfo.colorFormat = m_VulkanRhiDevice->GetVkSwapchainFormat();
+        guiInfo.colorFormat = static_cast<VkFormat>(m_RhiDevice->GetNativeSwapchainFormat());
         guiInfo.imageCount = GetFrameCount();
         m_ImGuiLayer = CreateScope<ImGuiLayer>(guiInfo);
     }
@@ -923,7 +942,7 @@ namespace Manro {
             b.dstAccessMask = 0;
             b.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             b.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-            b.image = m_VulkanRhiDevice->GetSwapchainImage(m_CurrentImageIndex);
+            b.image = FromNativeHandle<VkImage>(m_RhiDevice->GetNativeSwapchainImage(m_CurrentImageIndex));
             b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
             VkDependencyInfo dep{};
             dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
@@ -934,39 +953,35 @@ namespace Manro {
         if (m_RhiDevice) {
             m_RhiDevice->EndFrame();
         }
-        if (m_VulkanRhiDevice) {
-            m_CurrentFrame = m_VulkanRhiDevice->GetCurrentFrame();
-        }
+        m_CurrentFrame = m_RhiDevice->GetCurrentFrameIndex();
     }
 
     bool RendererImpl::BeginFrame() {
         // Handle recreate before acquiring a new swapchain image.
         // Acquiring first and then bailing out can leave frame fences unsignaled.
         if (m_PendingWidth == 0 || m_PendingHeight == 0) return false;
-        if (m_PendingResize || (m_VulkanRhiDevice && m_VulkanRhiDevice->NeedsSwapchainRecreate())) {
+        if (m_PendingResize || m_RhiDevice->NeedsSwapchainRecreate()) {
             RecreateSwapchain();
             return false;
         }
 
         if (m_RhiDevice && !m_RhiDevice->BeginFrame()) {
-            if (m_VulkanRhiDevice && m_VulkanRhiDevice->NeedsSwapchainRecreate()) {
+            if (m_RhiDevice->NeedsSwapchainRecreate()) {
                 RecreateSwapchain();
             }
             return false;
         }
 
-        if (m_VulkanRhiDevice) {
-            m_CurrentFrame = m_VulkanRhiDevice->GetCurrentFrame();
-            m_CurrentImageIndex = m_VulkanRhiDevice->GetCurrentImageIndex();
-        }
+        m_CurrentFrame = m_RhiDevice->GetCurrentFrameIndex();
+        m_CurrentImageIndex = m_RhiDevice->GetCurrentImageIndex();
 
         m_PerFrameAlloc[m_CurrentFrame].Reset();
 
         m_LastFrameStats = m_CurrentFrameStats;
 
         FrameData &frame = m_Frames[m_CurrentFrame];
-        if (m_VulkanCommandList) {
-            frame.commandBuffer = m_VulkanCommandList->GetHandle();
+        if (m_CommandList) {
+            frame.commandBuffer = FromNativeHandle<VkCommandBuffer>(m_CommandList->GetNativeHandle());
         }
         m_CurrentFrameInstances.clear();
         m_CurrentFrameCullData.clear();
@@ -1317,7 +1332,7 @@ namespace Manro {
                                 m_DepthImage.image != VK_NULL_HANDLE);
         const bool hasSkybox = (m_SkyboxTexture != kInvalidTexture && m_SkyboxPipeline);
 
-        RHI::VulkanZPrepassState zState{};
+        RHI::ZPrepassPassState zState{};
         if (hasMeshes || m_DepthImage.image != VK_NULL_HANDLE) {
             zState.extent = m_RenderExtent;
             zState.depthView = m_DepthImage.view;
@@ -1338,7 +1353,7 @@ namespace Manro {
             m_SceneRenderer->SetZPrepassState(&zState);
         }
 
-        RHI::VulkanPbrPassState pbrState{};
+        RHI::PbrPassState pbrState{};
         if (hasMeshes) {
             pbrState.extent = m_RenderExtent;
             pbrState.msaaSamples = m_Settings.msaaSamples;
@@ -1360,7 +1375,7 @@ namespace Manro {
             m_SceneRenderer->SetPbrPassState(&pbrState);
         }
 
-        RHI::VulkanSkyboxPassState skyState{};
+        RHI::SkyboxPassState skyState{};
         if (hasSkybox) {
             skyState.extent = m_RenderExtent;
             skyState.offscreenColorView = m_OffscreenColor.view;
@@ -1376,22 +1391,22 @@ namespace Manro {
             m_SceneRenderer->SetSkyboxPassState(&skyState);
         }
 
-        if (m_SceneRenderer && m_VulkanCommandList) {
-            m_SceneRenderer->Flush(*m_VulkanCommandList, m_ViewMatrix, m_ProjectionMatrix, m_CameraPosition,
+        if (m_SceneRenderer && m_CommandList) {
+            m_SceneRenderer->Flush(*m_CommandList, m_ViewMatrix, m_ProjectionMatrix, m_CameraPosition,
                                    m_PendingLights);
         }
     }
 
 
     void RendererImpl::EndRendering() {
-        if (m_VulkanCommandList)
-            FlushDebugDraw(m_VulkanCommandList->GetHandle());
+        if (m_CommandList)
+            FlushDebugDraw(FromNativeHandle<VkCommandBuffer>(m_CommandList->GetNativeHandle()));
     }
 
     void RendererImpl::EndFrameAndPresent() {
         FrameData &frame = m_Frames[m_CurrentFrame];
         VkCommandBuffer cb = frame.commandBuffer;
-        VkExtent2D ext = m_VulkanRhiDevice->GetSwapchainExtent();
+        VkExtent2D ext{m_RhiDevice->GetSwapchainWidth(), m_RhiDevice->GetSwapchainHeight()};
 
         {
             VkImageMemoryBarrier2 b{};
@@ -1420,7 +1435,7 @@ namespace Manro {
             b.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
             b.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
             b.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            b.image = m_VulkanRhiDevice->GetSwapchainImage(m_CurrentImageIndex);
+            b.image = FromNativeHandle<VkImage>(m_RhiDevice->GetNativeSwapchainImage(m_CurrentImageIndex));
             b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
             VkDependencyInfo dep{};
             dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
@@ -1429,15 +1444,16 @@ namespace Manro {
             vkCmdPipelineBarrier2(cb, &dep);
         }
 
-        if (m_SceneRenderer && m_VulkanCommandList) {
+        if (m_SceneRenderer && m_CommandList) {
             CompositePushConstants cpc{};
             cpc.tm = m_Settings.postProcess.tonemapping;
             cpc.tm.inputMatrix = SlangFloat3x3(glm::mat3(cpc.tm.exposure));
             cpc.imageSize = Vec2((float) m_RenderExtent.width, (float) m_RenderExtent.height);
 
-            RHI::VulkanCompositePassState compositeState{};
+            RHI::CompositePassState compositeState{};
             compositeState.extent = ext;
-            compositeState.colorView = m_VulkanRhiDevice->GetSwapchainImageView(m_CurrentImageIndex);
+            compositeState.colorView = FromNativeHandle<VkImageView>(
+                m_RhiDevice->GetNativeSwapchainImageView(m_CurrentImageIndex));
             compositeState.pipeline = m_CompositePipeline->GetHandle();
             compositeState.pipelineLayout = m_CompositePipeline->GetLayout();
             compositeState.descriptorSet = frame.compositeSet;
@@ -1446,14 +1462,15 @@ namespace Manro {
             compositeState.pushConstantStages = VK_SHADER_STAGE_FRAGMENT_BIT;
 
             m_SceneRenderer->SetCompositePassState(&compositeState);
-            m_SceneRenderer->Flush(*m_VulkanCommandList, m_ViewMatrix, m_ProjectionMatrix, m_CameraPosition,
+            m_SceneRenderer->Flush(*m_CommandList, m_ViewMatrix, m_ProjectionMatrix, m_CameraPosition,
                                    m_PendingLights);
         }
 
         if (m_ImGuiLayer) {
             VkRenderingAttachmentInfo guiColorAtt{};
             guiColorAtt.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-            guiColorAtt.imageView = m_VulkanRhiDevice->GetSwapchainImageView(m_CurrentImageIndex);
+            guiColorAtt.imageView = FromNativeHandle<VkImageView>(
+                m_RhiDevice->GetNativeSwapchainImageView(m_CurrentImageIndex));
             guiColorAtt.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             guiColorAtt.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
             guiColorAtt.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -2118,7 +2135,7 @@ namespace Manro {
     }
 
     void RendererImpl::CreateSyncObjects() {
-        // Frame synchronization and present semaphores are managed by VulkanRenderDevice.
+        // Frame synchronization and present semaphores are managed by the active RHI backend.
     }
 
     void RendererImpl::BuildPbrPipeline() {
@@ -2208,7 +2225,7 @@ namespace Manro {
         PipelineConfigParams cfg{};
         cfg.vertexEntryPoint = "main";
         cfg.fragmentEntryPoint = "main";
-        cfg.colorAttachmentFormat = m_VulkanRhiDevice->GetVkSwapchainFormat();
+        cfg.colorAttachmentFormat = static_cast<VkFormat>(m_RhiDevice->GetNativeSwapchainFormat());
         cfg.depthAttachmentFormat = VK_FORMAT_UNDEFINED;
         cfg.msaaSamples = VK_SAMPLE_COUNT_1_BIT;
         cfg.pushConstantSize = sizeof(CompositePushConstants);
@@ -2462,32 +2479,32 @@ namespace Manro {
     }
 
     void RendererImpl::ImportPipelinesToRHI() {
-        if (!m_VulkanCommandList) return;
+        if (!m_CommandList) return;
 
         if (m_PbrPipeline) {
-            m_VulkanCommandList->ImportGraphicsPipeline(m_PbrPipelineHandle,
-                                                        m_PbrPipeline->GetHandle(),
-                                                        m_PbrPipeline->GetLayout());
+            m_CommandList->ImportGraphicsPipeline(m_PbrPipelineHandle,
+                                                  ToNativeHandle(m_PbrPipeline->GetHandle()),
+                                                  ToNativeHandle(m_PbrPipeline->GetLayout()));
         }
         if (m_ZPrepassPipeline) {
-            m_VulkanCommandList->ImportGraphicsPipeline(m_ZPrepassPipelineHandle,
-                                                        m_ZPrepassPipeline->GetHandle(),
-                                                        m_ZPrepassPipeline->GetLayout());
+            m_CommandList->ImportGraphicsPipeline(m_ZPrepassPipelineHandle,
+                                                  ToNativeHandle(m_ZPrepassPipeline->GetHandle()),
+                                                  ToNativeHandle(m_ZPrepassPipeline->GetLayout()));
         }
         if (m_CompositePipeline) {
-            m_VulkanCommandList->ImportGraphicsPipeline(m_CompositePipelineHandle,
-                                                        m_CompositePipeline->GetHandle(),
-                                                        m_CompositePipeline->GetLayout());
+            m_CommandList->ImportGraphicsPipeline(m_CompositePipelineHandle,
+                                                  ToNativeHandle(m_CompositePipeline->GetHandle()),
+                                                  ToNativeHandle(m_CompositePipeline->GetLayout()));
         }
         if (m_ShadowPipeline) {
-            m_VulkanCommandList->ImportGraphicsPipeline(m_ShadowPipelineHandle,
-                                                        m_ShadowPipeline->GetHandle(),
-                                                        m_ShadowPipeline->GetLayout());
+            m_CommandList->ImportGraphicsPipeline(m_ShadowPipelineHandle,
+                                                  ToNativeHandle(m_ShadowPipeline->GetHandle()),
+                                                  ToNativeHandle(m_ShadowPipeline->GetLayout()));
         }
         if (m_SkyboxPipeline) {
-            m_VulkanCommandList->ImportGraphicsPipeline(m_SkyboxPipelineHandle,
-                                                        m_SkyboxPipeline->GetHandle(),
-                                                        m_SkyboxPipeline->GetLayout());
+            m_CommandList->ImportGraphicsPipeline(m_SkyboxPipelineHandle,
+                                                  ToNativeHandle(m_SkyboxPipeline->GetHandle()),
+                                                  ToNativeHandle(m_SkyboxPipeline->GetLayout()));
         }
     }
 

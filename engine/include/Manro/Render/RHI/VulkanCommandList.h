@@ -1,101 +1,42 @@
 #pragma once
 
 #include <Manro/Interfaces/ICommandList.h>
+#include <Manro/Render/RHI/ScenePassState.h>
 #include <volk.h>
 #include <span>
 #include <unordered_map>
 
 namespace Manro::RHI {
-
     struct VulkanTextureBinding {
         VkImage image{VK_NULL_HANDLE};
         VkImageView view{VK_NULL_HANDLE};
-    };
-
-    struct VulkanZPrepassState {
-        VkExtent2D extent{};
-        VkImageView depthView{VK_NULL_HANDLE};
-        VkPipeline pipeline{VK_NULL_HANDLE};
-        VkPipelineLayout pipelineLayout{VK_NULL_HANDLE};
-        VkDescriptorSet descriptorSets[2]{VK_NULL_HANDLE, VK_NULL_HANDLE};
-        u32 descriptorSetCount{0};
-        VkBuffer indexBuffer{VK_NULL_HANDLE};
-        VkBuffer vertexBuffers[2]{VK_NULL_HANDLE, VK_NULL_HANDLE};
-        VkDeviceSize vertexOffsets[2]{0, 0};
-        VkBuffer indirectBuffer{VK_NULL_HANDLE};
-        VkBuffer countBuffer{VK_NULL_HANDLE};
-        u32 instanceCount{0};
-        u32 drawStride{0};
-    };
-
-    struct VulkanPbrPassState {
-        VkExtent2D extent{};
-        VkSampleCountFlagBits msaaSamples{VK_SAMPLE_COUNT_1_BIT};
-        VkImageView msaaColorView{VK_NULL_HANDLE};
-        VkImageView offscreenColorView{VK_NULL_HANDLE};
-        VkImageView depthView{VK_NULL_HANDLE};
-
-        VkPipeline pipeline{VK_NULL_HANDLE};
-        VkPipelineLayout pipelineLayout{VK_NULL_HANDLE};
-        VkDescriptorSet descriptorSets[2]{VK_NULL_HANDLE, VK_NULL_HANDLE};
-        u32 descriptorSetCount{0};
-
-        VkBuffer indexBuffer{VK_NULL_HANDLE};
-        VkBuffer vertexBuffers[2]{VK_NULL_HANDLE, VK_NULL_HANDLE};
-        VkDeviceSize vertexOffsets[2]{0, 0};
-        VkBuffer indirectBuffer{VK_NULL_HANDLE};
-        VkBuffer countBuffer{VK_NULL_HANDLE};
-        u32 instanceCount{0};
-        u32 drawStride{0};
-    };
-
-    struct VulkanCompositePassState {
-        VkExtent2D extent{};
-        VkImageView colorView{VK_NULL_HANDLE};
-        VkPipeline pipeline{VK_NULL_HANDLE};
-        VkPipelineLayout pipelineLayout{VK_NULL_HANDLE};
-        VkDescriptorSet descriptorSet{VK_NULL_HANDLE};
-        const void *pushConstants{nullptr};
-        Manro::u32 pushConstantSize{0};
-        VkShaderStageFlags pushConstantStages{VK_SHADER_STAGE_FRAGMENT_BIT};
-    };
-
-    struct VulkanSkyboxPassState {
-        VkExtent2D extent{};
-        VkImageView offscreenColorView{VK_NULL_HANDLE};
-        VkImageView msaaColorView{VK_NULL_HANDLE};
-        VkSampleCountFlagBits msaaSamples{VK_SAMPLE_COUNT_1_BIT};
-        VkImageView depthView{VK_NULL_HANDLE};
-        VkPipeline pipeline{VK_NULL_HANDLE};
-
-        VkPipelineLayout pipelineLayout{VK_NULL_HANDLE};
-        VkDescriptorSet descriptorSet{VK_NULL_HANDLE};
-        VkBuffer vertexBuffer{VK_NULL_HANDLE};
-        VkBuffer indexBuffer{VK_NULL_HANDLE};
-        Manro::u32 indexCount{0};
     };
 
     class VulkanCommandList final : public ICommandList {
     public:
         VulkanCommandList() = default;
 
+        GraphicsBackend GetBackendType() const override { return GraphicsBackend::Vulkan; }
+
         void SetCommandBuffer(VkCommandBuffer cmd) { m_CommandBuffer = cmd; }
 
         VkCommandBuffer GetHandle() const { return m_CommandBuffer; }
+
+        u64 GetNativeHandle() const override;
 
         void ImportBuffer(BufferHandle handle, VkBuffer buffer);
 
         void ImportTexture(TextureHandle handle, VulkanTextureBinding texture);
 
-        void ImportGraphicsPipeline(PipelineHandle handle, VkPipeline pipeline, VkPipelineLayout layout);
+        void ImportGraphicsPipeline(PipelineHandle handle, u64 pipeline, u64 layout) override;
 
-        void ExecuteZPrepass(const VulkanZPrepassState &state);
+        void ExecuteZPrepass(const ZPrepassPassState &state) override;
 
-        void ExecutePbrPass(const VulkanPbrPassState &state);
+        void ExecutePbrPass(const PbrPassState &state) override;
 
-        void ExecuteCompositePass(const VulkanCompositePassState &state);
+        void ExecuteCompositePass(const CompositePassState &state) override;
 
-        void ExecuteSkyboxPass(const VulkanSkyboxPassState &state);
+        void ExecuteSkyboxPass(const SkyboxPassState &state) override;
 
         void BeginRendering(std::span<const ColorAttachment> color, const DepthAttachment *depth = nullptr) override;
 
@@ -157,6 +98,4 @@ namespace Manro::RHI {
         std::unordered_map<u32, VulkanTextureBinding> m_Textures;
         std::unordered_map<u32, VulkanPipelineBinding> m_Pipelines;
     };
-
 } // namespace Manro::RHI
-

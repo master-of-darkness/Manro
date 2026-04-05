@@ -125,6 +125,8 @@ namespace Manro::RHI {
     public:
         virtual ~IRenderDevice() = default;
 
+        virtual GraphicsBackend GetBackendType() const = 0;
+
         // Buffer operations
         virtual BufferHandle CreateBuffer(const BufferDesc &desc) = 0;
 
@@ -188,6 +190,23 @@ namespace Manro::RHI {
         virtual Format GetSwapchainFormat() const = 0;
 
         virtual void OnResize(u32 w, u32 h) = 0;
+
+        virtual bool NeedsSwapchainRecreate() const = 0;
+
+        virtual u32 GetCurrentFrameIndex() const = 0;
+
+        virtual u32 GetCurrentImageIndex() const = 0;
+
+        virtual u32 GetSwapchainWidth() const = 0;
+
+        virtual u32 GetSwapchainHeight() const = 0;
+
+        // Backend native swapchain image handles and format encoded as u64.
+        virtual u64 GetNativeSwapchainImage(u32 index) const = 0;
+
+        virtual u64 GetNativeSwapchainImageView(u32 index) const = 0;
+
+        virtual u64 GetNativeSwapchainFormat() const = 0;
 
         // Device info & capabilities
         virtual AdapterInfo GetAdapterInfo() const = 0;

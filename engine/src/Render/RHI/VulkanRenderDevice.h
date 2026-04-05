@@ -5,6 +5,8 @@
 #include <Manro/Core/Handle.h>
 #include <volk.h>
 #include <vk_mem_alloc.h>
+#include <cstdint>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
@@ -14,6 +16,17 @@ namespace Manro {
 }
 
 namespace Manro::RHI {
+    namespace Detail {
+        template<typename T>
+        u64 ToNativeHandle(T handle) {
+            if constexpr (std::is_pointer_v<T>) {
+                return static_cast<u64>(reinterpret_cast<uintptr_t>(handle));
+            } else {
+                return static_cast<u64>(handle);
+            }
+        }
+    } // namespace Detail
+
     struct VulkanBuffer {
         VkBuffer buffer{VK_NULL_HANDLE};
         VmaAllocation allocation{nullptr};
@@ -53,6 +66,8 @@ namespace Manro::RHI {
                            u32 maxFramesInFlight = 3);
 
         ~VulkanRenderDevice() override;
+
+        GraphicsBackend GetBackendType() const override { return GraphicsBackend::Vulkan; }
 
         // Buffer operations
         BufferHandle CreateBuffer(const BufferDesc &desc) override;
@@ -118,6 +133,28 @@ namespace Manro::RHI {
 
         void OnResize(u32 w, u32 h) override;
 
+        bool NeedsSwapchainRecreate() const override { return m_NeedsRecreate; }
+
+        u32 GetCurrentFrameIndex() const override { return m_CurrentFrame; }
+
+        u32 GetCurrentImageIndex() const override { return m_ImageIndex; }
+
+        u32 GetSwapchainWidth() const override { return m_SwapchainExtent.width; }
+
+        u32 GetSwapchainHeight() const override { return m_SwapchainExtent.height; }
+
+        u64 GetNativeSwapchainImage(u32 index) const override {
+            return Detail::ToNativeHandle(m_SwapchainImages[index]);
+        }
+
+        u64 GetNativeSwapchainImageView(u32 index) const override {
+            return Detail::ToNativeHandle(m_SwapchainImageViews[index]);
+        }
+
+        u64 GetNativeSwapchainFormat() const override {
+            return Detail::ToNativeHandle(m_VkSwapchainFormat);
+        }
+
         // Device info & capabilities
         AdapterInfo GetAdapterInfo() const override;
 
@@ -150,10 +187,8 @@ namespace Manro::RHI {
         size_t GetSwapchainImageCount() const { return m_SwapchainImages.size(); }
         VkImage GetSwapchainImage(u32 index) const { return m_SwapchainImages[index]; }
         VkImageView GetSwapchainImageView(u32 index) const { return m_SwapchainImageViews[index]; }
-        u32 GetCurrentImageIndex() const { return m_ImageIndex; }
         u32 GetCurrentFrame() const { return m_CurrentFrame; }
         u32 GetMaxFramesInFlight() const { return m_MaxFramesInFlight; }
-        bool NeedsSwapchainRecreate() const { return m_NeedsRecreate; }
         VkSemaphore GetImageAvailableSemaphore() const { return m_ImageAvailableSemaphores[m_CurrentFrame]; }
         VkSemaphore GetRenderFinishedSemaphore() const { return m_RenderFinishedSemaphores[m_ImageIndex]; }
 
