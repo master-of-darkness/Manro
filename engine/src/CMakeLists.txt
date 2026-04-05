@@ -33,9 +33,6 @@ add_library(Engine STATIC
         Render/Vulkan/PipelineCache.cpp
         Render/RenderGraph.cpp
         Render/Renderer.cpp
-        Render/RHI/RenderDeviceFactory.cpp
-        Render/RHI/VulkanRenderDevice.cpp
-        Render/RHI/VulkanCommandList.cpp
         Render/SceneRenderer.cpp
         Render/TextureManager.cpp
         Render/MeshManager.cpp

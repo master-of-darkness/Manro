@@ -1,13 +1,19 @@
 #pragma once
 
-#include <Manro/Interfaces/IRenderDevice.h>
-#include <Manro/Render/RHI/ScenePassState.h>
 #include <Manro/Render/MeshManager.h>
 #include <Manro/Render/Material/MaterialInstance.h>
 #include <Manro/Render/Renderer.h>
 #include <Manro/Core/Types.h>
+#include <volk.h>
 #include <span>
 #include <vector>
+
+namespace Manro::Internal {
+    struct ZPrepassPassState;
+    struct PbrPassState;
+    struct SkyboxPassState;
+    struct CompositePassState;
+}
 
 namespace Manro {
     class SceneRenderer {
@@ -18,16 +24,16 @@ namespace Manro {
 
         void DrawMeshStatic(MeshHandle mesh, MaterialInstance &mat, const Mat4 &model);
 
-        void Flush(RHI::ICommandList &cmd, const Mat4 &view, const Mat4 &proj,
+        void Flush(VkCommandBuffer cmd, const Mat4 &view, const Mat4 &proj,
                    const Vec3 &camPos, std::span<const LightData> lights);
 
-        void SetZPrepassState(const RHI::ZPrepassPassState *state);
+        void SetZPrepassState(const Internal::ZPrepassPassState *state);
 
-        void SetPbrPassState(const RHI::PbrPassState *state);
+        void SetPbrPassState(const Internal::PbrPassState *state);
 
-        void SetSkyboxPassState(const Manro::RHI::SkyboxPassState *state);
+        void SetSkyboxPassState(const Internal::SkyboxPassState *state);
 
-        void SetCompositePassState(const RHI::CompositePassState *state);
+        void SetCompositePassState(const Internal::CompositePassState *state);
 
         void AddLight(const LightData &light);
 
@@ -47,9 +53,9 @@ namespace Manro {
 
         std::vector<DrawItem> m_DrawQueue;
         std::vector<LightData> m_Lights;
-        const RHI::ZPrepassPassState *m_ZPrepassState{nullptr};
-        const RHI::PbrPassState *m_PbrPassState{nullptr};
-        const RHI::SkyboxPassState *m_SkyboxPassState{nullptr};
-        const RHI::CompositePassState *m_CompositePassState{nullptr};
+        const Internal::ZPrepassPassState *m_ZPrepassState{nullptr};
+        const Internal::PbrPassState *m_PbrPassState{nullptr};
+        const Internal::SkyboxPassState *m_SkyboxPassState{nullptr};
+        const Internal::CompositePassState *m_CompositePassState{nullptr};
     };
 } // namespace Manro

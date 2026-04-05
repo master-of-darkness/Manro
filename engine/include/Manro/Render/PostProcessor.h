@@ -1,22 +1,24 @@
 #pragma once
 
-#include <Manro/Render/RHI/IRenderDevice.h>
+#include <Manro/Core/Handles.h>
 #include <Manro/Render/Tonemap/Tonemapper.h>
 
 namespace Manro {
 
     class PostProcessor {
     public:
-        explicit PostProcessor(RHI::IRenderDevice &device);
+        PostProcessor() = default;
 
-        void Apply(RHI::ICommandList &cmd,
-                   RHI::TextureHandle offscreenTex,
-                   RHI::TextureHandle targetTex,
-                   const TonemapperData &settings);
+        void Apply(TextureHandle offscreenTex,
+                   TextureHandle targetTex,
+                   const TonemapperData &settings) {
+            (void) offscreenTex;
+            (void) targetTex;
+            (void) settings;
+        }
 
     private:
-        RHI::IRenderDevice &m_Device;
-        RHI::PipelineHandle m_CompositePipeline;
+        PipelineHandle m_CompositePipeline{};
     };
 
 } // namespace Manro

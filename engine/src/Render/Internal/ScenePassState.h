@@ -3,7 +3,7 @@
 #include <Manro/Core/Types.h>
 #include <volk.h>
 
-namespace Manro::RHI {
+namespace Manro::Internal {
     struct ZPrepassPassState {
         VkExtent2D extent{};
         VkImageView depthView{VK_NULL_HANDLE};
@@ -48,7 +48,7 @@ namespace Manro::RHI {
         VkPipelineLayout pipelineLayout{VK_NULL_HANDLE};
         VkDescriptorSet descriptorSet{VK_NULL_HANDLE};
         const void *pushConstants{nullptr};
-        Manro::u32 pushConstantSize{0};
+        u32 pushConstantSize{0};
         VkShaderStageFlags pushConstantStages{VK_SHADER_STAGE_FRAGMENT_BIT};
     };
 
@@ -59,11 +59,10 @@ namespace Manro::RHI {
         VkSampleCountFlagBits msaaSamples{VK_SAMPLE_COUNT_1_BIT};
         VkImageView depthView{VK_NULL_HANDLE};
         VkPipeline pipeline{VK_NULL_HANDLE};
-
         VkPipelineLayout pipelineLayout{VK_NULL_HANDLE};
         VkDescriptorSet descriptorSet{VK_NULL_HANDLE};
         VkBuffer vertexBuffer{VK_NULL_HANDLE};
         VkBuffer indexBuffer{VK_NULL_HANDLE};
-        Manro::u32 indexCount{0};
+        u32 indexCount{0};
     };
-} // namespace Manro::RHI
+} // namespace Manro::Internal

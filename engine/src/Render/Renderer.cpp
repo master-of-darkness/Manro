@@ -3,12 +3,10 @@
 #include <Manro/Core/Logger.h>
 #include <Manro/Core/VirtualFS.h>
 #include <Manro/Render/Model.h>
-#include <Manro/Interfaces/IRenderDevice.h>
 #include <Manro/Render/SceneRenderer.h>
+#include <VkBootstrap.h>
 #include <stdexcept>
 #include <cstring>
-#include <cstdint>
-#include <type_traits>
 #include <glm/gtc/matrix_transform.hpp>
 
 
@@ -17,30 +15,10 @@
 #include "Backend/Vulkan/Pipeline.h"
 #include "Backend/Vulkan/DescriptorAllocator.h"
 #include "Backend/Vulkan/PipelineCache.h"
+#include "Internal/ScenePassState.h"
 #include "Manro/Render/DebugDraw.h"
 
 namespace Manro {
-    namespace {
-        template<typename T>
-        T FromNativeHandle(u64 handle) {
-            if constexpr (std::is_pointer_v<T>) {
-                return reinterpret_cast<T>(static_cast<uintptr_t>(handle));
-            } else {
-                return static_cast<T>(handle);
-            }
-        }
-
-        template<typename T>
-        u64 ToNativeHandle(T handle) {
-            if constexpr (std::is_pointer_v<T>) {
-                return static_cast<u64>(reinterpret_cast<uintptr_t>(handle));
-            } else {
-                return static_cast<u64>(handle);
-            }
-        }
-    } // namespace
-
-
     struct FrameData {
         VkCommandPool commandPool = VK_NULL_HANDLE;
         VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
@@ -255,6 +233,22 @@ namespace Manro {
 
         const RendererConfig &GetConfig() const { return m_Config; }
 
+        void SetRenderHints(const RenderHints &hints) { m_RenderHints = hints; }
+
+        const RenderHints &GetRenderHints() const { return m_RenderHints; }
+
+        void SetPassHints(RenderPass pass, const PassHints &hints) {
+            const auto idx = static_cast<size_t>(pass);
+            if (idx < m_PassHints.size()) m_PassHints[idx] = hints;
+        }
+
+        PassHints GetPassHints(RenderPass pass) const {
+            const auto idx = static_cast<size_t>(pass);
+            return (idx < m_PassHints.size()) ? m_PassHints[idx] : PassHints{};
+        }
+
+        void SetBatchingStrategy(BatchingStrategy strategy) { m_RenderHints.batching = strategy; }
+
         const FrameStats &GetLastFrameStats() const { return m_LastFrameStats; }
 
         void SetDebugUIEnabled(bool enabled) {
@@ -266,20 +260,10 @@ namespace Manro {
         }
 
         void GetVramStats(u64 &usage, u64 &budget) const {
-            if (m_RhiDevice) {
-                const auto info = m_RhiDevice->GetAdapterInfo();
-                usage = info.vramUsage;
-                budget = info.vramBudget;
-                if (usage || budget) return;
-            }
             m_Context.GetVramStats(usage, budget);
         }
 
         std::string GetAdapterName() const {
-            if (m_RhiDevice) {
-                const auto info = m_RhiDevice->GetAdapterInfo();
-                if (info.name[0] != '\0') return info.name;
-            }
             VkPhysicalDeviceProperties props{};
             vkGetPhysicalDeviceProperties(m_Context.GetPhysicalDevice(), &props);
             return props.deviceName;
@@ -332,6 +316,10 @@ namespace Manro {
 
         void UpdateCompositeDescriptorSet(u32 fi);
 
+        void InitializeSwapchain(u32 width, u32 height, bool vsync);
+
+        void CleanupSwapchain();
+
         void RecreateSwapchain();
 
         void UploadLights(u32 frameIndex);
@@ -353,23 +341,10 @@ namespace Manro {
         u32 GetMaxTiles() const { return GetMaxTilesX() * GetMaxTilesY(); }
 
         VulkanContext m_Context;
-        Scope<RHI::IRenderDevice> m_RhiDevice;
-        RHI::ICommandList *m_CommandList = nullptr;
         Scope<SceneRenderer> m_SceneRenderer;
 
         TextureManager m_Textures;
         MeshManager m_Meshes;
-
-        RHI::PipelineHandle m_PbrPipelineHandle{};
-        RHI::PipelineHandle m_ZPrepassPipelineHandle{};
-        RHI::PipelineHandle m_CompositePipelineHandle{};
-        RHI::PipelineHandle m_ShadowPipelineHandle{};
-        RHI::PipelineHandle m_CullPipelineHandle{};
-        RHI::PipelineHandle m_MeshCullPipelineHandle{};
-        RHI::PipelineHandle m_ShadowMeshCullPipelineHandle{};
-        RHI::PipelineHandle m_SkyboxPipelineHandle{};
-
-        void ImportPipelinesToRHI();
 
         std::vector<PerFrameAllocator> m_PerFrameAlloc;
         PersistentAllocator m_PersistentAlloc;
@@ -427,6 +402,16 @@ namespace Manro {
         std::vector<FrameData> m_Frames;
         u32 m_CurrentFrame = 0;
         u32 m_CurrentImageIndex = 0;
+        VkSwapchainKHR m_Swapchain{VK_NULL_HANDLE};
+        VkFormat m_SwapchainFormat{VK_FORMAT_UNDEFINED};
+        VkExtent2D m_SwapchainExtent{};
+        std::vector<VkImage> m_SwapchainImages;
+        std::vector<VkImageView> m_SwapchainImageViews;
+        std::vector<VkImageLayout> m_SwapchainImageLayouts;
+        std::vector<VkSemaphore> m_ImageAvailableSemaphores;
+        std::vector<VkSemaphore> m_RenderFinishedSemaphores;
+        std::vector<VkFence> m_InFlightFences;
+        bool m_SwapchainNeedsRecreate{false};
 
         std::vector<MaterialData> m_Materials;
         std::unordered_map<MaterialData, u32, MaterialDataHash> m_MaterialCache;
@@ -454,6 +439,8 @@ namespace Manro {
 
         RenderSettings m_Settings{};
         RendererConfig m_Config{};
+        RenderHints m_RenderHints{};
+        std::array<PassHints, static_cast<size_t>(RenderPass::UI) + 1> m_PassHints{};
         VkExtent2D m_RenderExtent{};
 
         void BuildSkyboxPipeline();
@@ -474,15 +461,7 @@ namespace Manro {
         : m_Context("GameEngine", window),
           m_Textures(m_Context, m_BindlessAlloc), m_Meshes(m_Context), m_Settings(settings),
           m_Config(config) {
-        m_RhiDevice = RHI::IRenderDevice::CreateVulkan(
-            m_Context, width, height, config.vsync, true, m_Config.maxFramesInFlight);
-        if (!m_RhiDevice || m_RhiDevice->GetBackendType() != RHI::GraphicsBackend::Vulkan) {
-            throw std::runtime_error("Renderer requires Vulkan graphics backend");
-        }
-        m_CommandList = &m_RhiDevice->GetCommandList();
-        if (!m_CommandList || m_CommandList->GetBackendType() != RHI::GraphicsBackend::Vulkan) {
-            throw std::runtime_error("Renderer requires Vulkan command list backend");
-        }
+        InitializeSwapchain(width, height, m_Settings.enableVSync);
 
         VkSampleCountFlagBits maxSamples = m_Context.GetMaxUsableSampleCount();
         m_Settings.msaaSamples = (static_cast<u32>(m_Settings.msaaSamples) <= static_cast<u32>(maxSamples))
@@ -504,9 +483,7 @@ namespace Manro {
         m_BindlessAlloc.Init(device);
         m_Textures.InitDefaults();
         m_PipelineCache.Init(device, "manro_pipeline_cache.bin");
-        if (m_RhiDevice) {
-            m_SceneRenderer = CreateScope<SceneRenderer>();
-        }
+        m_SceneRenderer = CreateScope<SceneRenderer>();
 
         CreateOffscreenResources(m_RenderExtent.width, m_RenderExtent.height);
         CreateColorResources(m_RenderExtent.width, m_RenderExtent.height);
@@ -523,8 +500,6 @@ namespace Manro {
         BuildDebugPipeline();
         CreateCommandBuffers();
         CreateSyncObjects();
-
-        ImportPipelinesToRHI();
 
         m_CurrentFrameInstances.reserve(GetMaxInstances());
         m_CurrentFrameCullData.reserve(GetMaxInstances());
@@ -556,8 +531,8 @@ namespace Manro {
         ImGuiLayerInfo guiInfo{};
         guiInfo.context = &m_Context;
         guiInfo.window = &window;
-        guiInfo.colorFormat = static_cast<VkFormat>(m_RhiDevice->GetNativeSwapchainFormat());
-        guiInfo.imageCount = GetFrameCount();
+        guiInfo.colorFormat = m_SwapchainFormat;
+        guiInfo.imageCount = static_cast<u32>(m_SwapchainImages.size());
         m_ImGuiLayer = CreateScope<ImGuiLayer>(guiInfo);
     }
 
@@ -590,9 +565,24 @@ namespace Manro {
         DestroyImage(m_Context, m_DepthImage);
         DestroyImage(m_Context, m_ShadowMap);
 
+        for (auto fence: m_InFlightFences) {
+            if (fence != VK_NULL_HANDLE)
+                vkDestroyFence(m_Context.GetDevice(), fence, nullptr);
+        }
+        for (auto sem: m_ImageAvailableSemaphores) {
+            if (sem != VK_NULL_HANDLE)
+                vkDestroySemaphore(m_Context.GetDevice(), sem, nullptr);
+        }
+        for (auto sem: m_RenderFinishedSemaphores) {
+            if (sem != VK_NULL_HANDLE)
+                vkDestroySemaphore(m_Context.GetDevice(), sem, nullptr);
+        }
+
         for (auto &f: m_Frames)
             if (f.commandPool)
                 vkDestroyCommandPool(m_Context.GetDevice(), f.commandPool, nullptr);
+
+        CleanupSwapchain();
 
         if (m_DescriptorPool)
             vkDestroyDescriptorPool(m_Context.GetDevice(), m_DescriptorPool, nullptr);
@@ -647,14 +637,91 @@ namespace Manro {
         return CreateScope<MaterialInstance>(material);
     }
 
+    void RendererImpl::InitializeSwapchain(u32 width, u32 height, bool vsync) {
+        vkb::SwapchainBuilder swapchainBuilder{
+            m_Context.GetPhysicalDevice(),
+            m_Context.GetDevice(),
+            m_Context.GetSurface()
+        };
+
+        if (vsync) {
+            swapchainBuilder
+                .set_desired_present_mode(VK_PRESENT_MODE_MAILBOX_KHR)
+                .add_fallback_present_mode(VK_PRESENT_MODE_FIFO_KHR);
+        } else {
+            swapchainBuilder
+                .set_desired_present_mode(VK_PRESENT_MODE_IMMEDIATE_KHR)
+                .add_fallback_present_mode(VK_PRESENT_MODE_MAILBOX_KHR)
+                .add_fallback_present_mode(VK_PRESENT_MODE_FIFO_KHR);
+        }
+
+        auto vkbSwapchainRet = swapchainBuilder
+            .use_default_format_selection()
+            .set_desired_extent(width, height)
+            .add_image_usage_flags(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)
+            .build();
+
+        if (!vkbSwapchainRet) {
+            throw std::runtime_error("Failed to create Vulkan swapchain");
+        }
+
+        vkb::Swapchain vkbSwapchain = vkbSwapchainRet.value();
+        m_Swapchain = vkbSwapchain.swapchain;
+        m_SwapchainExtent = vkbSwapchain.extent;
+        m_SwapchainFormat = vkbSwapchain.image_format;
+
+        auto imagesRet = vkbSwapchain.get_images();
+        auto imageViewsRet = vkbSwapchain.get_image_views();
+        if (!imagesRet || !imageViewsRet) {
+            throw std::runtime_error("Failed to get swapchain images/views");
+        }
+
+        m_SwapchainImages = imagesRet.value();
+        m_SwapchainImageViews = imageViewsRet.value();
+        m_SwapchainImageLayouts.assign(m_SwapchainImages.size(), VK_IMAGE_LAYOUT_UNDEFINED);
+        m_SwapchainNeedsRecreate = false;
+    }
+
+    void RendererImpl::CleanupSwapchain() {
+        VkDevice device = m_Context.GetDevice();
+        for (auto view: m_SwapchainImageViews) {
+            if (view != VK_NULL_HANDLE)
+                vkDestroyImageView(device, view, nullptr);
+        }
+        m_SwapchainImageViews.clear();
+        m_SwapchainImages.clear();
+        m_SwapchainImageLayouts.clear();
+        if (m_Swapchain != VK_NULL_HANDLE) {
+            vkDestroySwapchainKHR(device, m_Swapchain, nullptr);
+            m_Swapchain = VK_NULL_HANDLE;
+        }
+    }
+
     void RendererImpl::RecreateSwapchain() {
         const u32 w = m_PendingWidth;
         const u32 h = m_PendingHeight;
         m_PendingResize = false;
         if (w == 0 || h == 0) return;
 
-        if (m_RhiDevice) {
-            m_RhiDevice->OnResize(w, h);
+        vkDeviceWaitIdle(m_Context.GetDevice());
+
+        for (auto sem: m_RenderFinishedSemaphores) {
+            if (sem != VK_NULL_HANDLE)
+                vkDestroySemaphore(m_Context.GetDevice(), sem, nullptr);
+        }
+        m_RenderFinishedSemaphores.clear();
+
+        CleanupSwapchain();
+        InitializeSwapchain(w, h, m_Settings.enableVSync);
+
+        VkSemaphoreCreateInfo semaphoreInfo{};
+        semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+        m_RenderFinishedSemaphores.resize(m_SwapchainImages.size());
+        for (size_t i = 0; i < m_RenderFinishedSemaphores.size(); ++i) {
+            if (vkCreateSemaphore(m_Context.GetDevice(), &semaphoreInfo, nullptr, &m_RenderFinishedSemaphores[i]) !=
+                VK_SUCCESS) {
+                throw std::runtime_error("Failed to recreate render-finished semaphores");
+            }
         }
 
         if (m_OffscreenSampler) {
@@ -676,12 +743,12 @@ namespace Manro {
         BuildCompositePipeline();
         BuildSkyboxPipeline();
         BuildDebugPipeline();
-        ImportPipelinesToRHI();
 
         for (u32 i = 0; i < GetFrameCount(); ++i) {
             UpdateCompositeDescriptorSet(i);
             UpdatePbrDescriptorSetShadow(i);
         }
+        m_SwapchainNeedsRecreate = false;
     }
 
     void RendererImpl::CreateOffscreenResources(u32 width, u32 height) {
@@ -860,7 +927,6 @@ namespace Manro {
             dep.pImageMemoryBarriers = &b;
             vkCmdPipelineBarrier2(cb, &dep);
         }
-
         VkRenderingAttachmentInfo depthAtt{};
         depthAtt.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
         depthAtt.imageView = m_ShadowMap.view;
@@ -942,7 +1008,7 @@ namespace Manro {
             b.dstAccessMask = 0;
             b.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             b.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-            b.image = FromNativeHandle<VkImage>(m_RhiDevice->GetNativeSwapchainImage(m_CurrentImageIndex));
+            b.image = m_SwapchainImages[m_CurrentImageIndex];
             b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
             VkDependencyInfo dep{};
             dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
@@ -950,39 +1016,88 @@ namespace Manro {
             dep.pImageMemoryBarriers = &b;
             vkCmdPipelineBarrier2(cb, &dep);
         }
-        if (m_RhiDevice) {
-            m_RhiDevice->EndFrame();
+        m_SwapchainImageLayouts[m_CurrentImageIndex] = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+        if (vkEndCommandBuffer(cb) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to end frame command buffer");
         }
-        m_CurrentFrame = m_RhiDevice->GetCurrentFrameIndex();
+
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        VkSemaphore waitSemaphores[] = {m_ImageAvailableSemaphores[m_CurrentFrame]};
+        VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+        submitInfo.waitSemaphoreCount = 1;
+        submitInfo.pWaitSemaphores = waitSemaphores;
+        submitInfo.pWaitDstStageMask = waitStages;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &cb;
+        VkSemaphore signalSemaphores[] = {m_RenderFinishedSemaphores[m_CurrentImageIndex]};
+        submitInfo.signalSemaphoreCount = 1;
+        submitInfo.pSignalSemaphores = signalSemaphores;
+
+        if (vkQueueSubmit(m_Context.GetGraphicsQueue(), 1, &submitInfo, m_InFlightFences[m_CurrentFrame]) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to submit frame command buffer");
+        }
+
+        VkPresentInfoKHR presentInfo{};
+        presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+        presentInfo.waitSemaphoreCount = 1;
+        presentInfo.pWaitSemaphores = signalSemaphores;
+        VkSwapchainKHR swapchains[] = {m_Swapchain};
+        presentInfo.swapchainCount = 1;
+        presentInfo.pSwapchains = swapchains;
+        presentInfo.pImageIndices = &m_CurrentImageIndex;
+
+        VkResult presentResult = vkQueuePresentKHR(m_Context.GetGraphicsQueue(), &presentInfo);
+        if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR) {
+            m_SwapchainNeedsRecreate = true;
+        } else if (presentResult != VK_SUCCESS) {
+            throw std::runtime_error("Failed to present swapchain image");
+        }
+
+        m_CurrentFrame = (m_CurrentFrame + 1) % GetFrameCount();
     }
 
     bool RendererImpl::BeginFrame() {
         // Handle recreate before acquiring a new swapchain image.
         // Acquiring first and then bailing out can leave frame fences unsignaled.
         if (m_PendingWidth == 0 || m_PendingHeight == 0) return false;
-        if (m_PendingResize || m_RhiDevice->NeedsSwapchainRecreate()) {
+        if (m_PendingResize || m_SwapchainNeedsRecreate) {
             RecreateSwapchain();
             return false;
         }
 
-        if (m_RhiDevice && !m_RhiDevice->BeginFrame()) {
-            if (m_RhiDevice->NeedsSwapchainRecreate()) {
-                RecreateSwapchain();
-            }
+        VkDevice device = m_Context.GetDevice();
+        FrameData &frame = m_Frames[m_CurrentFrame];
+
+        vkWaitForFences(device, 1, &m_InFlightFences[m_CurrentFrame], VK_TRUE, UINT64_MAX);
+
+        VkResult acquireResult = vkAcquireNextImageKHR(device, m_Swapchain, UINT64_MAX,
+                                                       m_ImageAvailableSemaphores[m_CurrentFrame],
+                                                       VK_NULL_HANDLE, &m_CurrentImageIndex);
+        if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR) {
+            m_SwapchainNeedsRecreate = true;
+            return false;
+        }
+        if (acquireResult == VK_SUBOPTIMAL_KHR) {
+            m_SwapchainNeedsRecreate = true;
+        } else if (acquireResult != VK_SUCCESS) {
             return false;
         }
 
-        m_CurrentFrame = m_RhiDevice->GetCurrentFrameIndex();
-        m_CurrentImageIndex = m_RhiDevice->GetCurrentImageIndex();
+        vkResetFences(device, 1, &m_InFlightFences[m_CurrentFrame]);
+        vkResetCommandPool(device, frame.commandPool, 0);
+
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        if (vkBeginCommandBuffer(frame.commandBuffer, &beginInfo) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to begin frame command buffer");
+        }
 
         m_PerFrameAlloc[m_CurrentFrame].Reset();
 
         m_LastFrameStats = m_CurrentFrameStats;
-
-        FrameData &frame = m_Frames[m_CurrentFrame];
-        if (m_CommandList) {
-            frame.commandBuffer = FromNativeHandle<VkCommandBuffer>(m_CommandList->GetNativeHandle());
-        }
         m_CurrentFrameInstances.clear();
         m_CurrentFrameCullData.clear();
 
@@ -1012,7 +1127,7 @@ namespace Manro {
         }
 
         if (frame.commandBuffer == VK_NULL_HANDLE) {
-            throw std::runtime_error("RHI command buffer is not available");
+            throw std::runtime_error("Command buffer is not available");
         }
 
         UploadLights(m_CurrentFrame);
@@ -1332,7 +1447,7 @@ namespace Manro {
                                 m_DepthImage.image != VK_NULL_HANDLE);
         const bool hasSkybox = (m_SkyboxTexture != kInvalidTexture && m_SkyboxPipeline);
 
-        RHI::ZPrepassPassState zState{};
+        Internal::ZPrepassPassState zState{};
         if (hasMeshes || m_DepthImage.image != VK_NULL_HANDLE) {
             zState.extent = m_RenderExtent;
             zState.depthView = m_DepthImage.view;
@@ -1353,7 +1468,7 @@ namespace Manro {
             m_SceneRenderer->SetZPrepassState(&zState);
         }
 
-        RHI::PbrPassState pbrState{};
+        Internal::PbrPassState pbrState{};
         if (hasMeshes) {
             pbrState.extent = m_RenderExtent;
             pbrState.msaaSamples = m_Settings.msaaSamples;
@@ -1375,7 +1490,7 @@ namespace Manro {
             m_SceneRenderer->SetPbrPassState(&pbrState);
         }
 
-        RHI::SkyboxPassState skyState{};
+        Internal::SkyboxPassState skyState{};
         if (hasSkybox) {
             skyState.extent = m_RenderExtent;
             skyState.offscreenColorView = m_OffscreenColor.view;
@@ -1391,22 +1506,21 @@ namespace Manro {
             m_SceneRenderer->SetSkyboxPassState(&skyState);
         }
 
-        if (m_SceneRenderer && m_CommandList) {
-            m_SceneRenderer->Flush(*m_CommandList, m_ViewMatrix, m_ProjectionMatrix, m_CameraPosition,
+        if (m_SceneRenderer) {
+            m_SceneRenderer->Flush(frame.commandBuffer, m_ViewMatrix, m_ProjectionMatrix, m_CameraPosition,
                                    m_PendingLights);
         }
     }
 
 
     void RendererImpl::EndRendering() {
-        if (m_CommandList)
-            FlushDebugDraw(FromNativeHandle<VkCommandBuffer>(m_CommandList->GetNativeHandle()));
+        FlushDebugDraw(m_Frames[m_CurrentFrame].commandBuffer);
     }
 
     void RendererImpl::EndFrameAndPresent() {
         FrameData &frame = m_Frames[m_CurrentFrame];
         VkCommandBuffer cb = frame.commandBuffer;
-        VkExtent2D ext{m_RhiDevice->GetSwapchainWidth(), m_RhiDevice->GetSwapchainHeight()};
+        VkExtent2D ext{m_SwapchainExtent.width, m_SwapchainExtent.height};
 
         {
             VkImageMemoryBarrier2 b{};
@@ -1433,9 +1547,9 @@ namespace Manro {
             b.srcAccessMask = 0;
             b.dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
             b.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-            b.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            b.oldLayout = m_SwapchainImageLayouts[m_CurrentImageIndex];
             b.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            b.image = FromNativeHandle<VkImage>(m_RhiDevice->GetNativeSwapchainImage(m_CurrentImageIndex));
+            b.image = m_SwapchainImages[m_CurrentImageIndex];
             b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
             VkDependencyInfo dep{};
             dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
@@ -1443,17 +1557,17 @@ namespace Manro {
             dep.pImageMemoryBarriers = &b;
             vkCmdPipelineBarrier2(cb, &dep);
         }
+        m_SwapchainImageLayouts[m_CurrentImageIndex] = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-        if (m_SceneRenderer && m_CommandList) {
+        if (m_SceneRenderer) {
             CompositePushConstants cpc{};
             cpc.tm = m_Settings.postProcess.tonemapping;
             cpc.tm.inputMatrix = SlangFloat3x3(glm::mat3(cpc.tm.exposure));
             cpc.imageSize = Vec2((float) m_RenderExtent.width, (float) m_RenderExtent.height);
 
-            RHI::CompositePassState compositeState{};
+            Internal::CompositePassState compositeState{};
             compositeState.extent = ext;
-            compositeState.colorView = FromNativeHandle<VkImageView>(
-                m_RhiDevice->GetNativeSwapchainImageView(m_CurrentImageIndex));
+            compositeState.colorView = m_SwapchainImageViews[m_CurrentImageIndex];
             compositeState.pipeline = m_CompositePipeline->GetHandle();
             compositeState.pipelineLayout = m_CompositePipeline->GetLayout();
             compositeState.descriptorSet = frame.compositeSet;
@@ -1462,15 +1576,14 @@ namespace Manro {
             compositeState.pushConstantStages = VK_SHADER_STAGE_FRAGMENT_BIT;
 
             m_SceneRenderer->SetCompositePassState(&compositeState);
-            m_SceneRenderer->Flush(*m_CommandList, m_ViewMatrix, m_ProjectionMatrix, m_CameraPosition,
+            m_SceneRenderer->Flush(cb, m_ViewMatrix, m_ProjectionMatrix, m_CameraPosition,
                                    m_PendingLights);
         }
 
         if (m_ImGuiLayer) {
             VkRenderingAttachmentInfo guiColorAtt{};
             guiColorAtt.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-            guiColorAtt.imageView = FromNativeHandle<VkImageView>(
-                m_RhiDevice->GetNativeSwapchainImageView(m_CurrentImageIndex));
+            guiColorAtt.imageView = m_SwapchainImageViews[m_CurrentImageIndex];
             guiColorAtt.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             guiColorAtt.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
             guiColorAtt.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -2040,6 +2153,23 @@ namespace Manro {
         for (u32 i = 0; i < frameCount; ++i) {
             FrameData &f = m_Frames[i];
 
+            VkCommandPoolCreateInfo poolInfo{};
+            poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+            poolInfo.queueFamilyIndex = m_Context.GetGraphicsQueueFamilyIndex();
+            poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+            if (vkCreateCommandPool(m_Context.GetDevice(), &poolInfo, nullptr, &f.commandPool) != VK_SUCCESS) {
+                throw std::runtime_error("Failed to create frame command pool");
+            }
+
+            VkCommandBufferAllocateInfo allocInfo{};
+            allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+            allocInfo.commandPool = f.commandPool;
+            allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+            allocInfo.commandBufferCount = 1;
+            if (vkAllocateCommandBuffers(m_Context.GetDevice(), &allocInfo, &f.commandBuffer) != VK_SUCCESS) {
+                throw std::runtime_error("Failed to allocate frame command buffer");
+            }
+
             f.uboBuffer = CreateScope<Buffer>(
                     m_Context, sizeof(UniformBufferObject),
                     VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
@@ -2135,7 +2265,34 @@ namespace Manro {
     }
 
     void RendererImpl::CreateSyncObjects() {
-        // Frame synchronization and present semaphores are managed by the active RHI backend.
+        const u32 frameCount = GetFrameCount();
+        m_ImageAvailableSemaphores.resize(frameCount);
+        m_InFlightFences.resize(frameCount);
+        m_RenderFinishedSemaphores.resize(m_SwapchainImages.size());
+
+        VkSemaphoreCreateInfo semaphoreInfo{};
+        semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+        VkFenceCreateInfo fenceInfo{};
+        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+        for (u32 i = 0; i < frameCount; ++i) {
+            if (vkCreateSemaphore(m_Context.GetDevice(), &semaphoreInfo, nullptr, &m_ImageAvailableSemaphores[i]) !=
+                VK_SUCCESS) {
+                throw std::runtime_error("Failed to create image-available semaphore");
+            }
+            if (vkCreateFence(m_Context.GetDevice(), &fenceInfo, nullptr, &m_InFlightFences[i]) != VK_SUCCESS) {
+                throw std::runtime_error("Failed to create in-flight fence");
+            }
+        }
+
+        for (size_t i = 0; i < m_RenderFinishedSemaphores.size(); ++i) {
+            if (vkCreateSemaphore(m_Context.GetDevice(), &semaphoreInfo, nullptr, &m_RenderFinishedSemaphores[i]) !=
+                VK_SUCCESS) {
+                throw std::runtime_error("Failed to create render-finished semaphore");
+            }
+        }
     }
 
     void RendererImpl::BuildPbrPipeline() {
@@ -2225,7 +2382,7 @@ namespace Manro {
         PipelineConfigParams cfg{};
         cfg.vertexEntryPoint = "main";
         cfg.fragmentEntryPoint = "main";
-        cfg.colorAttachmentFormat = static_cast<VkFormat>(m_RhiDevice->GetNativeSwapchainFormat());
+        cfg.colorAttachmentFormat = m_SwapchainFormat;
         cfg.depthAttachmentFormat = VK_FORMAT_UNDEFINED;
         cfg.msaaSamples = VK_SAMPLE_COUNT_1_BIT;
         cfg.pushConstantSize = sizeof(CompositePushConstants);
@@ -2478,36 +2635,6 @@ namespace Manro {
         m_DebugVerticesNoDepth.clear();
     }
 
-    void RendererImpl::ImportPipelinesToRHI() {
-        if (!m_CommandList) return;
-
-        if (m_PbrPipeline) {
-            m_CommandList->ImportGraphicsPipeline(m_PbrPipelineHandle,
-                                                  ToNativeHandle(m_PbrPipeline->GetHandle()),
-                                                  ToNativeHandle(m_PbrPipeline->GetLayout()));
-        }
-        if (m_ZPrepassPipeline) {
-            m_CommandList->ImportGraphicsPipeline(m_ZPrepassPipelineHandle,
-                                                  ToNativeHandle(m_ZPrepassPipeline->GetHandle()),
-                                                  ToNativeHandle(m_ZPrepassPipeline->GetLayout()));
-        }
-        if (m_CompositePipeline) {
-            m_CommandList->ImportGraphicsPipeline(m_CompositePipelineHandle,
-                                                  ToNativeHandle(m_CompositePipeline->GetHandle()),
-                                                  ToNativeHandle(m_CompositePipeline->GetLayout()));
-        }
-        if (m_ShadowPipeline) {
-            m_CommandList->ImportGraphicsPipeline(m_ShadowPipelineHandle,
-                                                  ToNativeHandle(m_ShadowPipeline->GetHandle()),
-                                                  ToNativeHandle(m_ShadowPipeline->GetLayout()));
-        }
-        if (m_SkyboxPipeline) {
-            m_CommandList->ImportGraphicsPipeline(m_SkyboxPipelineHandle,
-                                                  ToNativeHandle(m_SkyboxPipeline->GetHandle()),
-                                                  ToNativeHandle(m_SkyboxPipeline->GetLayout()));
-        }
-    }
-
     void RendererImpl::DebugLine(const Vec3 &a, const Vec3 &b, u32 color, bool depthTest) {
         auto &target = depthTest ? m_DebugVertices : m_DebugVerticesNoDepth;
         DebugDraw::Line(target, a, b, color, depthTest);
@@ -2624,6 +2751,16 @@ namespace Manro {
     RenderSettings &Renderer::GetSettings() { return m_Impl->GetSettings(); }
 
     const RendererConfig &Renderer::GetConfig() const { return m_Impl->GetConfig(); }
+
+    void Renderer::SetRenderHints(const RenderHints &hints) { m_Impl->SetRenderHints(hints); }
+
+    const RenderHints &Renderer::GetRenderHints() const { return m_Impl->GetRenderHints(); }
+
+    void Renderer::SetPassHints(RenderPass pass, const PassHints &hints) { m_Impl->SetPassHints(pass, hints); }
+
+    PassHints Renderer::GetPassHints(RenderPass pass) const { return m_Impl->GetPassHints(pass); }
+
+    void Renderer::SetBatchingStrategy(BatchingStrategy strategy) { m_Impl->SetBatchingStrategy(strategy); }
 
     const FrameStats &Renderer::GetLastFrameStats() const { return m_Impl->GetLastFrameStats(); }
     void Renderer::SetDebugUIEnabled(bool enabled) { m_Impl->SetDebugUIEnabled(enabled); }

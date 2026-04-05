@@ -8,6 +8,7 @@
 #include <Manro/Render/Material/Material.h>
 #include <Manro/Render/Material/MaterialInstance.h>
 #include <Manro/Render/RendererConfig.h>
+#include <Manro/Render/RenderHints.h>
 #include <Manro/Interfaces/IWindow.h>
 #include <Manro/Core/VirtualFS.h>
 #include <nvshaders/gltf_scene_io.h.slang>
@@ -107,6 +108,16 @@ namespace Manro {
 
         /// Get the renderer configuration (read-only, set at construction time)
         const RendererConfig &GetConfig() const;
+
+        void SetRenderHints(const RenderHints &hints);
+
+        const RenderHints &GetRenderHints() const;
+
+        void SetPassHints(RenderPass pass, const PassHints &hints);
+
+        PassHints GetPassHints(RenderPass pass) const;
+
+        void SetBatchingStrategy(BatchingStrategy strategy);
 
         const FrameStats &GetLastFrameStats() const;
 
