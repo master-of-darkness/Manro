@@ -58,6 +58,12 @@ void MinecraftDemo::OnStartup(const Manro::InitContext &ctx) {
     m_Renderer = &ctx.Renderer;
 
     m_Renderer->SetDebugUIEnabled(false);
+    auto settings = m_Renderer->GetSettings();
+    settings.enableVSync = false;
+    settings.aaMode = Manro::AntiAliasingMode::None;
+    settings.msaaSamples = VK_SAMPLE_COUNT_1_BIT;
+    settings.shadows.enabled = false;
+    m_Renderer->SetSettings(settings);
 
     Manro::VirtualFS::Get().SetBaseDir(MANRO_ASSETS_DIR);
     m_InputManager.SetBackend(&m_InputBackend);
@@ -569,7 +575,18 @@ void MinecraftDemo::DrawGui(float dt) const {
     if (ImGui::Begin("HUD", nullptr,
                      ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
                      ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove)) {
-        const float fps = dt > 0.f ? 1.f / dt : 0.f;
+        float avgMs = dt * 1000.f;
+        float sumMs = 0.f;
+        int samples = 0;
+        for (float ft: m_FrameTimeHistory) {
+            if (ft > 0.f) {
+                sumMs += ft;
+                ++samples;
+            }
+        }
+        if (samples > 0)
+            avgMs = sumMs / static_cast<float>(samples);
+        const float fps = avgMs > 0.f ? 1000.f / avgMs : 0.f;
         ImGui::Text("FPS %.1f | Blocks %zu | Draws %u",
                     fps, m_WorldBlocks.size(), m_LastStats.drawCalls);
         ImGui::Text("Mode: %s", m_NoClip ? "noclip" : "survival");

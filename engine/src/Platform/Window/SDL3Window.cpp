@@ -84,6 +84,7 @@ namespace Manro {
                 m_Callback(WindowEvent::Close, 0, 0);
                 break;
             case SDL_EVENT_WINDOW_RESIZED:
+            case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
                 m_Width = data1;
                 m_Height = data2;
                 m_Callback(WindowEvent::Resized, m_Width, m_Height);

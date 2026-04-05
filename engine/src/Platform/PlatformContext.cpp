@@ -57,6 +57,7 @@ namespace Manro {
 
                 case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
                 case SDL_EVENT_WINDOW_RESIZED:
+                case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
                 case SDL_EVENT_WINDOW_FOCUS_GAINED:
                 case SDL_EVENT_WINDOW_FOCUS_LOST:
                 case SDL_EVENT_WINDOW_MINIMIZED:

@@ -54,7 +54,7 @@ namespace Manro {
         InitContext ictx{*win, jobs, renderer};
         app.OnStartup(ictx);
 
-        using Clock = std::chrono::high_resolution_clock;
+        using Clock = std::chrono::steady_clock;
         auto lastTime = Clock::now();
         u64 frameIndex = 0;
         f32 totalTime = 0.f;

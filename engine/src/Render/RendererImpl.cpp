@@ -632,6 +632,10 @@ namespace Manro {
     }
 
     void RendererImpl::OnResize(u32 width, u32 height) {
+        if (m_PendingWidth == width && m_PendingHeight == height &&
+            m_SwapchainExtent.width == width && m_SwapchainExtent.height == height) {
+            return;
+        }
         m_PendingWidth = width;
         m_PendingHeight = height;
         m_PendingResize = true;
@@ -670,8 +674,7 @@ namespace Manro {
 
         if (vsync) {
             swapchainBuilder
-                    .set_desired_present_mode(VK_PRESENT_MODE_MAILBOX_KHR)
-                    .add_fallback_present_mode(VK_PRESENT_MODE_FIFO_KHR);
+                    .set_desired_present_mode(VK_PRESENT_MODE_FIFO_KHR);
         } else {
             swapchainBuilder
                     .set_desired_present_mode(VK_PRESENT_MODE_IMMEDIATE_KHR)
