@@ -55,16 +55,6 @@ namespace Manro {
 
     const RendererConfig &RendererImplGetConfig(const RendererImpl &impl);
 
-    void RendererImplSetRenderHints(RendererImpl &impl, const RenderHints &hints);
-
-    const RenderHints &RendererImplGetRenderHints(const RendererImpl &impl);
-
-    void RendererImplSetPassHints(RendererImpl &impl, RenderPass pass, const PassHints &hints);
-
-    PassHints RendererImplGetPassHints(const RendererImpl &impl, RenderPass pass);
-
-    void RendererImplSetBatchingStrategy(RendererImpl &impl, BatchingStrategy strategy);
-
     const FrameStats &RendererImplGetLastFrameStats(const RendererImpl &impl);
 
     void RendererImplSetDebugUIEnabled(RendererImpl &impl, bool enabled);

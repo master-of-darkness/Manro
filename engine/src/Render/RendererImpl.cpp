@@ -232,22 +232,6 @@ namespace Manro {
 
         const RendererConfig &GetConfig() const { return m_Config; }
 
-        void SetRenderHints(const RenderHints &hints) { m_RenderHints = hints; }
-
-        const RenderHints &GetRenderHints() const { return m_RenderHints; }
-
-        void SetPassHints(RenderPass pass, const PassHints &hints) {
-            const auto idx = static_cast<size_t>(pass);
-            if (idx < kPassHintCount) m_PassHints[idx] = hints;
-        }
-
-        PassHints GetPassHints(RenderPass pass) const {
-            const auto idx = static_cast<size_t>(pass);
-            return (idx < kPassHintCount) ? m_PassHints[idx] : PassHints{};
-        }
-
-        void SetBatchingStrategy(BatchingStrategy strategy) { m_RenderHints.batching = strategy; }
-
         const FrameStats &GetLastFrameStats() const { return m_LastFrameStats; }
 
         void SetDebugUIEnabled(bool enabled) {
@@ -283,8 +267,6 @@ namespace Manro {
         void DebugAxes(const Mat4 &transform, float size);
 
     private:
-        static constexpr size_t kPassHintCount = static_cast<size_t>(RenderPass::UI) + 1;
-
         void CreateOffscreenResources(u32 w, u32 h);
 
         void CreateDepthResources(u32 w, u32 h);
@@ -440,8 +422,6 @@ namespace Manro {
 
         RenderSettings m_Settings{};
         RendererConfig m_Config{};
-        RenderHints m_RenderHints{};
-        PassHints m_PassHints[kPassHintCount]{};
         VkExtent2D m_RenderExtent{};
 
         void BuildSkyboxPipeline();
@@ -2753,18 +2733,6 @@ namespace Manro {
     const RenderSettings &RendererImplGetSettingsConst(const RendererImpl &impl) { return impl.GetSettings(); }
     RenderSettings &RendererImplGetSettings(RendererImpl &impl) { return impl.GetSettings(); }
     const RendererConfig &RendererImplGetConfig(const RendererImpl &impl) { return impl.GetConfig(); }
-    void RendererImplSetRenderHints(RendererImpl &impl, const RenderHints &hints) { impl.SetRenderHints(hints); }
-    const RenderHints &RendererImplGetRenderHints(const RendererImpl &impl) { return impl.GetRenderHints(); }
-
-    void RendererImplSetPassHints(RendererImpl &impl, RenderPass pass, const PassHints &hints) {
-        impl.SetPassHints(pass, hints);
-    }
-
-    PassHints RendererImplGetPassHints(const RendererImpl &impl, RenderPass pass) { return impl.GetPassHints(pass); }
-
-    void RendererImplSetBatchingStrategy(RendererImpl &impl, BatchingStrategy strategy) {
-        impl.SetBatchingStrategy(strategy);
-    }
 
     const FrameStats &RendererImplGetLastFrameStats(const RendererImpl &impl) { return impl.GetLastFrameStats(); }
     void RendererImplSetDebugUIEnabled(RendererImpl &impl, bool enabled) { impl.SetDebugUIEnabled(enabled); }
