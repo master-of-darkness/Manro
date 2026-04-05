@@ -4,14 +4,6 @@
 namespace Manro {
     SceneRenderer::SceneRenderer() = default;
 
-    void SceneRenderer::DrawMesh(MeshHandle mesh, MaterialInstance &mat, const Mat4 &model) {
-        m_DrawQueue.push_back({mesh, &mat, model, false});
-    }
-
-    void SceneRenderer::DrawMeshStatic(MeshHandle mesh, MaterialInstance &mat, const Mat4 &model) {
-        m_DrawQueue.push_back({mesh, &mat, model, true});
-    }
-
     void SceneRenderer::SetZPrepassState(const Internal::ZPrepassPassState *state) {
         m_ZPrepassState = state;
     }
@@ -28,18 +20,16 @@ namespace Manro {
         m_CompositePassState = state;
     }
 
-    void SceneRenderer::Flush(VkCommandBuffer cmd, const Mat4 &view, const Mat4 &proj,
-                              const Vec3 &camPos, std::span<const LightData> lights) {
-        (void) view;
-        (void) proj;
-        (void) camPos;
-        (void) lights;
+    void SceneRenderer::Flush(VkCommandBuffer cmd) {
         if (!cmd) {
-            m_DrawQueue.clear();
             return;
         }
 
-        if (m_ZPrepassState && m_ZPrepassState->depthView) {
+        if (m_ZPrepassState &&m_ZPrepassState
+        ->
+        depthView
+        )
+        {
             const auto &state = *m_ZPrepassState;
             VkRenderingAttachmentInfo depthAtt{};
             depthAtt.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -58,8 +48,10 @@ namespace Manro {
             vkCmdBeginRendering(cmd, &ri);
 
             if (state.pipeline && state.indexBuffer && state.indirectBuffer && state.countBuffer) {
-                VkViewport vp{0.f, 0.f, static_cast<float>(state.extent.width), static_cast<float>(state.extent.height),
-                              0.f, 1.f};
+                VkViewport vp{
+                    0.f, 0.f, static_cast<float>(state.extent.width), static_cast<float>(state.extent.height),
+                    0.f, 1.f
+                };
                 vkCmdSetViewport(cmd, 0, 1, &vp);
                 VkRect2D sc{{0, 0}, state.extent};
                 vkCmdSetScissor(cmd, 0, 1, &sc);
@@ -114,8 +106,10 @@ namespace Manro {
             vkCmdBeginRendering(cmd, &ri);
 
             if (state.pipeline && state.indexBuffer && state.indirectBuffer && state.countBuffer) {
-                VkViewport vp{0.f, 0.f, static_cast<float>(state.extent.width), static_cast<float>(state.extent.height),
-                              0.f, 1.f};
+                VkViewport vp{
+                    0.f, 0.f, static_cast<float>(state.extent.width), static_cast<float>(state.extent.height),
+                    0.f, 1.f
+                };
                 VkRect2D sc{{0, 0}, state.extent};
                 vkCmdSetViewport(cmd, 0, 1, &vp);
                 vkCmdSetScissor(cmd, 0, 1, &sc);
@@ -170,8 +164,10 @@ namespace Manro {
                 ri.pDepthAttachment = (state.depthView != VK_NULL_HANDLE) ? &depthAtt : nullptr;
                 vkCmdBeginRendering(cmd, &ri);
 
-                VkViewport vp{0.f, 0.f, static_cast<float>(state.extent.width), static_cast<float>(state.extent.height),
-                              0.f, 1.f};
+                VkViewport vp{
+                    0.f, 0.f, static_cast<float>(state.extent.width), static_cast<float>(state.extent.height),
+                    0.f, 1.f
+                };
                 VkRect2D sc{{0, 0}, state.extent};
                 vkCmdSetViewport(cmd, 0, 1, &vp);
                 vkCmdSetScissor(cmd, 0, 1, &sc);
@@ -207,8 +203,10 @@ namespace Manro {
                 ri.pColorAttachments = &colorAtt;
                 vkCmdBeginRendering(cmd, &ri);
 
-                VkViewport vp{0.f, 0.f, static_cast<float>(state.extent.width), static_cast<float>(state.extent.height),
-                              0.f, 1.f};
+                VkViewport vp{
+                    0.f, 0.f, static_cast<float>(state.extent.width), static_cast<float>(state.extent.height),
+                    0.f, 1.f
+                };
                 VkRect2D sc{{0, 0}, state.extent};
                 vkCmdSetViewport(cmd, 0, 1, &vp);
                 vkCmdSetScissor(cmd, 0, 1, &sc);
@@ -227,24 +225,5 @@ namespace Manro {
             }
         }
         m_CompositePassState = nullptr;
-        m_DrawQueue.clear();
-    }
-
-    void SceneRenderer::AddLight(const LightData &light) {
-        m_Lights.push_back(light);
-    }
-
-    void SceneRenderer::ClearLights() {
-        m_Lights.clear();
-    }
-
-    MeshHandle SceneRenderer::UploadMesh(const ModelData &data) {
-        (void) data;
-        return kInvalidMesh;
-    }
-
-    TextureHandle SceneRenderer::UploadTexture(const TextureData &data) {
-        (void) data;
-        return kInvalidTexture;
     }
 } // namespace Manro

@@ -2,7 +2,7 @@
 
 #include <Manro/Resource/Primitives.h>
 #include <Manro/Render/DebugDraw.h>
-
+#include <Manro/Core/Logger.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <imgui.h>
 

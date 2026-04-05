@@ -341,7 +341,6 @@ namespace Manro {
         PersistentAllocator m_PersistentAlloc;
         BindlessAllocator m_BindlessAlloc;
         PipelineCache m_PipelineCache;
-        RenderGraph m_RenderGraph;
 
         Scope<Overlay> m_ImGuiLayer;
         Ref<Material> m_DefaultMaterial;
@@ -371,8 +370,6 @@ namespace Manro {
 
         Scope<Buffer> m_SkyboxVertexBuffer;
         Scope<Buffer> m_SkyboxIndexBuffer;
-        Scope<Buffer> m_debugVertexBuffer;
-        Scope<Buffer> m_debugVertexBufferNoDepth;
         TextureHandle m_SkyboxTexture = kInvalidTexture;
 
         AllocatedImage m_OffscreenColor{};
@@ -385,10 +382,6 @@ namespace Manro {
 
         VkFormat m_OffscreenFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
         VkFormat m_DepthFormat = VK_FORMAT_D32_SFLOAT;
-
-        RGTextureHandle m_RGOffscreen{};
-        RGTextureHandle m_RGDepth{};
-        RGTextureHandle m_RGSwapchain{};
 
         std::vector<FrameData> m_Frames;
         u32 m_CurrentFrame = 0;
@@ -526,27 +519,7 @@ namespace Manro {
         m_Materials.push_back(shaderio::defaultGltfMaterial());
         m_MaterialBuffer->LoadData(m_Materials.data(), sizeof(MaterialData));
 
-        m_RGOffscreen = m_RenderGraph.DeclareTexture({
-            .name = "offscreen_color",
-            .format = m_OffscreenFormat,
-            .usageHint = RGTextureUsage_ColorAttachment |
-                         RGTextureUsage_ShaderRead,
-            .external = true,
-        });
-        m_RGDepth = m_RenderGraph.DeclareTexture({
-            .name = "depth",
-            .format = m_DepthFormat,
-            .usageHint = RGTextureUsage_DepthAttachment,
-            .external = true,
-        });
-        m_RGSwapchain = m_RenderGraph.DeclareTexture({
-            .name = "swapchain",
-            .usageHint = RGTextureUsage_ColorAttachment |
-                         RGTextureUsage_Present,
-            .external = true,
-        });
-
-        ImGuiLayerInfo guiInfo{};
+        OverlayInfo guiInfo{};
         guiInfo.context = &m_Context;
         guiInfo.window = &window;
         guiInfo.colorFormat = m_SwapchainFormat;
@@ -619,15 +592,11 @@ namespace Manro {
     }
 
     void RendererImpl::AddLight(const LightData &light) {
-        if (m_SceneRenderer)
-            m_SceneRenderer->AddLight(light);
         if (m_PendingLights.size() < GetMaxLights())
             m_PendingLights.push_back(light);
     }
 
     void RendererImpl::ClearLights() {
-        if (m_SceneRenderer)
-            m_SceneRenderer->ClearLights();
         m_PendingLights.clear();
     }
 
@@ -1571,8 +1540,7 @@ namespace Manro {
         }
 
         if (m_SceneRenderer) {
-            m_SceneRenderer->Flush(frame.commandBuffer, m_ViewMatrix, m_ProjectionMatrix, m_CameraPosition,
-                                   m_PendingLights);
+            m_SceneRenderer->Flush(frame.commandBuffer);
         }
     }
 
@@ -1643,8 +1611,7 @@ namespace Manro {
             compositeState.pushConstantStages = VK_SHADER_STAGE_FRAGMENT_BIT;
 
             m_SceneRenderer->SetCompositePassState(&compositeState);
-            m_SceneRenderer->Flush(cb, m_ViewMatrix, m_ProjectionMatrix, m_CameraPosition,
-                                   m_PendingLights);
+            m_SceneRenderer->Flush(cb);
         }
 
         if (m_ImGuiLayer) {
@@ -1670,9 +1637,6 @@ namespace Manro {
     }
 
     void RendererImpl::DrawMesh(MeshHandle meshId, MaterialInstance &material, const Mat4 &model) {
-        if (m_SceneRenderer)
-            m_SceneRenderer->DrawMesh(meshId, material, model);
-
         const auto *mesh = m_Meshes.Get(meshId);
         if (!mesh) return;
 
@@ -1760,9 +1724,6 @@ namespace Manro {
     }
 
     void RendererImpl::DrawMeshStatic(MeshHandle meshId, MaterialInstance &material, const Mat4 &model) {
-        if (m_SceneRenderer)
-            m_SceneRenderer->DrawMeshStatic(meshId, material, model);
-
         const auto *mesh = m_Meshes.Get(meshId);
         if (!mesh) return;
 
@@ -2023,17 +1984,6 @@ namespace Manro {
                                                   VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
         m_SkyboxIndexBuffer->LoadData(skyboxIndices, sizeof(skyboxIndices));
 
-        m_debugVertexBuffer = CreateScope<Buffer>(
-            m_Context,
-            sizeof(DebugVertex) * kMaxDebugVertices,
-            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-            VMA_MEMORY_USAGE_CPU_TO_GPU);
-
-        m_debugVertexBufferNoDepth = CreateScope<Buffer>(
-            m_Context,
-            sizeof(DebugVertex) * kMaxDebugVertices,
-            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-            VMA_MEMORY_USAGE_CPU_TO_GPU);
     }
 
     void RendererImpl::UpdatePbrDescriptorSet(u32 fi) {

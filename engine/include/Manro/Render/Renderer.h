@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Manro/Core/Types.h>
-#include <Manro/Render/RenderGraph.h>
 #include <Manro/Render/TextureManager.h>
 #include <Manro/Render/MeshManager.h>
 #include <Manro/Render/Overlay/Overlay.h>

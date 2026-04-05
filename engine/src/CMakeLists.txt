@@ -31,7 +31,6 @@ add_library(Engine STATIC
         Render/Vulkan/Pipeline.cpp
         Render/Vulkan/DescriptorAllocator.cpp
         Render/Vulkan/PipelineCache.cpp
-        Render/RenderGraph.cpp
         Render/Renderer.cpp
         Render/RendererImpl.cpp
         Render/SceneRenderer.cpp

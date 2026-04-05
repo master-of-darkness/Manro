@@ -11,7 +11,7 @@
 #include <imgui_frag_spv.h>
 
 namespace Manro {
-    Overlay::Overlay(const ImGuiLayerInfo &info) : m_Context(info.context) {
+    Overlay::Overlay(const OverlayInfo &info) : m_Context(info.context) {
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
         ImGui::GetIO().IniFilename = nullptr;
@@ -55,7 +55,7 @@ namespace Manro {
             LOG_ERROR("[Overlay] Failed to create descriptor pool");
     }
 
-    void Overlay::SetupBackend(const ImGuiLayerInfo &info) {
+    void Overlay::SetupBackend(const OverlayInfo &info) {
         ImGui_ImplVulkan_LoadFunctions(VK_API_VERSION_1_3,
                                        [](const char *fn, void *ud) {
                                            return vkGetInstanceProcAddr(static_cast<VkInstance>(ud), fn);
@@ -90,7 +90,7 @@ namespace Manro {
         ii.CustomShaderFragCreateInfo.codeSize = imgui_frag_spv_len;
 
         if (!ImGui_ImplVulkan_Init(&ii))
-            LOG_ERROR("[ImGui] Failed to initialize ImGui Vulkan backend");
+            LOG_ERROR("[Overlay] Failed to initialize ImGui Vulkan backend");
     }
 
     void Overlay::NewFrame() {

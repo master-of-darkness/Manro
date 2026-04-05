@@ -1,5 +1,6 @@
 #include "Sponza.h"
 #include <glm/gtc/matrix_transform.hpp>
+#include <Manro/Core/Logger.h>
 #include <imgui.h>
 
 #include <algorithm>

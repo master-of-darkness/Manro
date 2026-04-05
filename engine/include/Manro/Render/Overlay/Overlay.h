@@ -10,7 +10,7 @@
 namespace Manro {
     class VulkanContext;
 
-    struct ImGuiLayerInfo {
+    struct OverlayInfo {
         VulkanContext *context = nullptr;
         IWindow *window = nullptr;
         VkFormat colorFormat = VK_FORMAT_UNDEFINED;
@@ -19,7 +19,7 @@ namespace Manro {
 
     class Overlay {
     public:
-        explicit Overlay(const ImGuiLayerInfo &info);
+        explicit Overlay(const OverlayInfo &info);
 
         ~Overlay();
 
@@ -37,7 +37,7 @@ namespace Manro {
     private:
         void CreateDescriptorPool();
 
-        void SetupBackend(const ImGuiLayerInfo &info);
+        void SetupBackend(const OverlayInfo &info);
 
         VulkanContext *m_Context = nullptr;
         VkDescriptorPool m_Pool = VK_NULL_HANDLE;
