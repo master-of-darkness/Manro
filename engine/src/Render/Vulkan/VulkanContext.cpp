@@ -9,6 +9,7 @@
 #include <Manro/Interfaces/IWindow.h>
 #include <Manro/Core/Logger.h>
 #include <volk.h>
+#include <stdexcept>
 
 namespace Manro {
     VulkanContext::VulkanContext(const char *appName, IWindow &window) {
@@ -23,6 +24,15 @@ namespace Manro {
     }
 
     VulkanContext::~VulkanContext() {
+        if (m_Device && m_OneShotFence) {
+            vkDestroyFence(m_Device, m_OneShotFence, nullptr);
+            m_OneShotFence = VK_NULL_HANDLE;
+        }
+        if (m_Device && m_OneShotCommandPool) {
+            vkDestroyCommandPool(m_Device, m_OneShotCommandPool, nullptr);
+            m_OneShotCommandPool = VK_NULL_HANDLE;
+            m_OneShotCommandBuffer = VK_NULL_HANDLE;
+        }
         if (m_Allocator) {
             vmaDestroyAllocator(m_Allocator);
             m_Allocator = nullptr;
@@ -51,9 +61,9 @@ namespace Manro {
                 .set_app_name(appName)
                 .request_validation_layers(
 #if defined(NDEBUG)
-                        false
+                    false
 #else
-                        true
+                    true
 #endif
                 )
                 .require_api_version(1, 4, 0)
@@ -170,6 +180,54 @@ namespace Manro {
         allocatorInfo.pVulkanFunctions = &vulkanFunctions;
 
         vmaCreateAllocator(&allocatorInfo, &m_Allocator);
+    }
+
+    void VulkanContext::EnsureOneShotResources() const {
+        if (m_OneShotCommandPool != VK_NULL_HANDLE) return;
+
+        VkCommandPoolCreateInfo poolInfo{};
+        poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        poolInfo.queueFamilyIndex = m_GraphicsQueueFamilyIndex;
+        poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+        if (vkCreateCommandPool(m_Device, &poolInfo, nullptr, &m_OneShotCommandPool) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create one-shot command pool");
+        }
+
+        VkCommandBufferAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocInfo.commandPool = m_OneShotCommandPool;
+        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocInfo.commandBufferCount = 1;
+        if (vkAllocateCommandBuffers(m_Device, &allocInfo, &m_OneShotCommandBuffer) != VK_SUCCESS) {
+            vkDestroyCommandPool(m_Device, m_OneShotCommandPool, nullptr);
+            m_OneShotCommandPool = VK_NULL_HANDLE;
+            throw std::runtime_error("Failed to allocate one-shot command buffer");
+        }
+
+        VkFenceCreateInfo fenceInfo{};
+        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+        if (vkCreateFence(m_Device, &fenceInfo, nullptr, &m_OneShotFence) != VK_SUCCESS) {
+            vkDestroyCommandPool(m_Device, m_OneShotCommandPool, nullptr);
+            m_OneShotCommandPool = VK_NULL_HANDLE;
+            m_OneShotCommandBuffer = VK_NULL_HANDLE;
+            throw std::runtime_error("Failed to create one-shot fence");
+        }
+    }
+
+    VkCommandPool VulkanContext::GetOneShotCommandPool() const {
+        EnsureOneShotResources();
+        return m_OneShotCommandPool;
+    }
+
+    VkCommandBuffer VulkanContext::GetOneShotCommandBuffer() const {
+        EnsureOneShotResources();
+        return m_OneShotCommandBuffer;
+    }
+
+    VkFence VulkanContext::GetOneShotFence() const {
+        EnsureOneShotResources();
+        return m_OneShotFence;
     }
 
     VkSampleCountFlagBits VulkanContext::GetMaxUsableSampleCount() const {

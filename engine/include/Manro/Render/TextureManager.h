@@ -28,6 +28,8 @@ namespace Manro {
 
         TextureHandle UploadCubemap(const std::vector<TextureData> &faces);
 
+        void FlushPendingUploads();
+
         VkImageView GetView(TextureHandle handle) const;
 
         VkSampler GetSampler() const;

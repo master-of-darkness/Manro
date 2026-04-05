@@ -28,6 +28,12 @@ namespace Manro {
 
         u32 GetGraphicsQueueFamilyIndex() const { return m_GraphicsQueueFamilyIndex; }
 
+        VkCommandPool GetOneShotCommandPool() const;
+
+        VkCommandBuffer GetOneShotCommandBuffer() const;
+
+        VkFence GetOneShotFence() const;
+
         VmaAllocator GetAllocator() const { return m_Allocator; }
 
         VkSurfaceKHR GetSurface() const { return m_Surface; }
@@ -51,6 +57,8 @@ namespace Manro {
 
         void CreateLogicalDevice();
 
+        void EnsureOneShotResources() const;
+
         VkInstance m_Instance{nullptr};
         VkPhysicalDevice m_PhysicalDevice{nullptr};
         VkDevice m_Device{nullptr};
@@ -62,5 +70,8 @@ namespace Manro {
         u32 m_GraphicsQueueFamilyIndex{0};
         VkSurfaceKHR m_Surface{nullptr};
         VmaAllocator m_Allocator{nullptr};
+        mutable VkCommandPool m_OneShotCommandPool{VK_NULL_HANDLE};
+        mutable VkCommandBuffer m_OneShotCommandBuffer{VK_NULL_HANDLE};
+        mutable VkFence m_OneShotFence{VK_NULL_HANDLE};
     };
 } // namespace Manro

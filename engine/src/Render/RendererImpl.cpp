@@ -347,6 +347,7 @@ namespace Manro {
 
         std::vector<MeshInstance> m_StaticInstances;
         std::vector<CullData> m_StaticCullData;
+        u32 m_StaticTriangleCount = 0;
         std::vector<DebugVertex> m_DebugVertices;
         std::vector<DebugVertex> m_DebugVerticesNoDepth;
 
@@ -1092,6 +1093,8 @@ namespace Manro {
             return false;
         }
 
+        m_Textures.FlushPendingUploads();
+
         VkDevice device = m_Context.GetDevice();
         FrameData &frame = m_Frames[m_CurrentFrame];
 
@@ -1129,9 +1132,7 @@ namespace Manro {
         m_CurrentFrameStats.Reset();
         m_CurrentFrameStats.drawCalls = (u32) m_StaticInstances.size();
         m_CurrentFrameStats.instanceCount = (u32) m_StaticInstances.size();
-        for (const auto &inst: m_StaticInstances) {
-            m_CurrentFrameStats.triangleCount += inst.indexCount / 3;
-        }
+        m_CurrentFrameStats.triangleCount = m_StaticTriangleCount;
 
         if (m_ImGuiLayer) m_ImGuiLayer->NewFrame();
 
@@ -1170,6 +1171,8 @@ namespace Manro {
     }
 
     void RendererImpl::BeginRendering() {
+        m_Textures.FlushPendingUploads();
+
         FrameData &frame = m_Frames[m_CurrentFrame];
         VkCommandBuffer cb = frame.commandBuffer;
         VkExtent2D ext = m_RenderExtent;
@@ -1795,11 +1798,16 @@ namespace Manro {
 
         m_StaticInstances.push_back(inst);
         m_StaticCullData.push_back(cullData);
+        m_StaticTriangleCount += inst.indexCount / 3;
+        for (auto &frame: m_Frames) {
+            frame.staticUploaded = false;
+        }
     }
 
     void RendererImpl::ClearStaticDraws() {
         m_StaticInstances.clear();
         m_StaticCullData.clear();
+        m_StaticTriangleCount = 0;
         for (auto &frame: m_Frames) {
             frame.staticUploaded = false;
         }

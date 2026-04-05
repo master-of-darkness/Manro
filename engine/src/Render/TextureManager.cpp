@@ -1,6 +1,5 @@
 #include <Manro/Render/TextureManager.h>
 #include "Backend/Vulkan/VulkanContext.h"
-#include "Backend/Vulkan/VulkanHelpers.h"
 #include "Backend/Vulkan/DescriptorAllocator.h"
 #include <Manro/Core/Logger.h>
 #include <cstring>
@@ -10,7 +9,6 @@
 #include "volk.h"
 
 namespace Manro {
-
     struct TextureManager::Impl {
         const VulkanContext &context;
         BindlessAllocator &bindlessAlloc;
@@ -21,18 +19,130 @@ namespace Manro {
             VmaAllocation allocation{nullptr};
         };
 
+        struct PendingStagingBuffer {
+            VkBuffer buffer{VK_NULL_HANDLE};
+            VmaAllocation allocation{nullptr};
+        };
+
         std::unordered_map<TextureHandle, LoadedTexture> textures;
         TextureHandle nextId{0};
 
         VkSampler sampler{VK_NULL_HANDLE};
         TextureHandle whiteTextureId{kInvalidTexture};
 
+        VkCommandPool transferCommandPool{VK_NULL_HANDLE};
+        VkCommandBuffer transferCommandBuffer{VK_NULL_HANDLE};
+        VkFence transferFence{VK_NULL_HANDLE};
+        bool transferRecording{false};
+        std::vector<PendingStagingBuffer> pendingStagingBuffers;
+
         Impl(const VulkanContext &ctx, BindlessAllocator &alloc)
-                : context(ctx), bindlessAlloc(alloc) {}
+            : context(ctx), bindlessAlloc(alloc) {
+            VkCommandPoolCreateInfo poolInfo{};
+            poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+            poolInfo.queueFamilyIndex = context.GetGraphicsQueueFamilyIndex();
+            poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+            if (vkCreateCommandPool(context.GetDevice(), &poolInfo, nullptr, &transferCommandPool) != VK_SUCCESS) {
+                throw std::runtime_error("[TextureManager] Failed to create transfer command pool");
+            }
+
+            VkCommandBufferAllocateInfo allocInfo{};
+            allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+            allocInfo.commandPool = transferCommandPool;
+            allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+            allocInfo.commandBufferCount = 1;
+            if (vkAllocateCommandBuffers(context.GetDevice(), &allocInfo, &transferCommandBuffer) != VK_SUCCESS) {
+                vkDestroyCommandPool(context.GetDevice(), transferCommandPool, nullptr);
+                transferCommandPool = VK_NULL_HANDLE;
+                throw std::runtime_error("[TextureManager] Failed to allocate transfer command buffer");
+            }
+
+            VkFenceCreateInfo fenceInfo{};
+            fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+            if (vkCreateFence(context.GetDevice(), &fenceInfo, nullptr, &transferFence) != VK_SUCCESS) {
+                vkDestroyCommandPool(context.GetDevice(), transferCommandPool, nullptr);
+                transferCommandPool = VK_NULL_HANDLE;
+                transferCommandBuffer = VK_NULL_HANDLE;
+                throw std::runtime_error("[TextureManager] Failed to create transfer fence");
+            }
+        }
+
+        bool EnsureTransferRecording() {
+            if (transferRecording) return true;
+
+            if (vkResetCommandPool(context.GetDevice(), transferCommandPool, 0) != VK_SUCCESS) {
+                LOG_ERROR("[TextureManager] Failed to reset transfer command pool");
+                return false;
+            }
+
+            VkCommandBufferBeginInfo beginInfo{};
+            beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+            if (vkBeginCommandBuffer(transferCommandBuffer, &beginInfo) != VK_SUCCESS) {
+                LOG_ERROR("[TextureManager] Failed to begin transfer command buffer");
+                return false;
+            }
+
+            transferRecording = true;
+            return true;
+        }
+
+        void DestroyPendingStagingBuffers() {
+            for (auto &staging: pendingStagingBuffers) {
+                if (staging.buffer != VK_NULL_HANDLE) {
+                    vmaDestroyBuffer(context.GetAllocator(), staging.buffer, staging.allocation);
+                    staging.buffer = VK_NULL_HANDLE;
+                    staging.allocation = nullptr;
+                }
+            }
+            pendingStagingBuffers.clear();
+        }
+
+        bool FlushPendingUploads() {
+            if (!transferRecording) return true;
+
+            if (vkEndCommandBuffer(transferCommandBuffer) != VK_SUCCESS) {
+                LOG_ERROR("[TextureManager] Failed to end transfer command buffer");
+                transferRecording = false;
+                DestroyPendingStagingBuffers();
+                return false;
+            }
+
+            if (vkResetFences(context.GetDevice(), 1, &transferFence) != VK_SUCCESS) {
+                LOG_ERROR("[TextureManager] Failed to reset transfer fence");
+                transferRecording = false;
+                DestroyPendingStagingBuffers();
+                return false;
+            }
+
+            VkSubmitInfo submitInfo{};
+            submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            submitInfo.commandBufferCount = 1;
+            submitInfo.pCommandBuffers = &transferCommandBuffer;
+            if (vkQueueSubmit(context.GetGraphicsQueue(), 1, &submitInfo, transferFence) != VK_SUCCESS) {
+                LOG_ERROR("[TextureManager] Failed to submit transfer command buffer");
+                transferRecording = false;
+                DestroyPendingStagingBuffers();
+                return false;
+            }
+
+            if (vkWaitForFences(context.GetDevice(), 1, &transferFence, VK_TRUE, UINT64_MAX) != VK_SUCCESS) {
+                LOG_ERROR("[TextureManager] Failed waiting for transfer fence");
+                transferRecording = false;
+                DestroyPendingStagingBuffers();
+                return false;
+            }
+
+            transferRecording = false;
+            DestroyPendingStagingBuffers();
+            return true;
+        }
     };
 
+    static constexpr size_t kMaxPendingUploadsBeforeFlush = 32;
+
     TextureManager::TextureManager(const VulkanContext &ctx, BindlessAllocator &bindlessAlloc)
-            : m_Impl(new Impl(ctx, bindlessAlloc)) {
+        : m_Impl(new Impl(ctx, bindlessAlloc)) {
         VkSamplerCreateInfo si{};
         si.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
         si.magFilter = VK_FILTER_LINEAR;
@@ -54,6 +164,11 @@ namespace Manro {
     }
 
     TextureManager::~TextureManager() {
+        if (!m_Impl->FlushPendingUploads()) {
+            LOG_ERROR("[TextureManager] Failed to flush pending uploads during shutdown");
+        }
+        m_Impl->DestroyPendingStagingBuffers();
+
         for (auto &[id, tex]: m_Impl->textures) {
             if (tex.view) vkDestroyImageView(m_Impl->context.GetDevice(), tex.view, nullptr);
             if (tex.image) vmaDestroyImage(m_Impl->context.GetAllocator(), tex.image, tex.allocation);
@@ -61,6 +176,10 @@ namespace Manro {
         m_Impl->textures.clear();
 
         if (m_Impl->sampler) vkDestroySampler(m_Impl->context.GetDevice(), m_Impl->sampler, nullptr);
+
+        if (m_Impl->transferFence) vkDestroyFence(m_Impl->context.GetDevice(), m_Impl->transferFence, nullptr);
+        if (m_Impl->transferCommandPool)
+            vkDestroyCommandPool(m_Impl->context.GetDevice(), m_Impl->transferCommandPool, nullptr);
 
         delete m_Impl;
     }
@@ -79,6 +198,12 @@ namespace Manro {
 
     TextureHandle TextureManager::GetWhiteTextureId() const {
         return m_Impl->whiteTextureId;
+    }
+
+    void TextureManager::FlushPendingUploads() {
+        if (!m_Impl->FlushPendingUploads()) {
+            throw std::runtime_error("[TextureManager] Failed to flush pending uploads");
+        }
     }
 
     TextureHandle TextureManager::Upload(const TextureData &data) {
@@ -150,7 +275,29 @@ namespace Manro {
             return kInvalidTexture;
         }
 
-        ExecuteOneShot(m_Impl->context, [&](VkCommandBuffer cmd) {
+        VkImageViewCreateInfo viewCI{};
+        viewCI.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        viewCI.image = tex.image;
+        viewCI.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
+        viewCI.format = VK_FORMAT_R8G8B8A8_UNORM;
+        viewCI.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 6};
+
+        if (vkCreateImageView(m_Impl->context.GetDevice(), &viewCI, nullptr, &tex.view) != VK_SUCCESS) {
+            LOG_ERROR("[TextureManager] Failed to create cubemap image view");
+            vmaDestroyImage(m_Impl->context.GetAllocator(), tex.image, tex.allocation);
+            vmaDestroyBuffer(m_Impl->context.GetAllocator(), stagingBuf, stagingAlloc);
+            return kInvalidTexture;
+        }
+
+        if (!m_Impl->EnsureTransferRecording()) {
+            vkDestroyImageView(m_Impl->context.GetDevice(), tex.view, nullptr);
+            vmaDestroyImage(m_Impl->context.GetAllocator(), tex.image, tex.allocation);
+            vmaDestroyBuffer(m_Impl->context.GetAllocator(), stagingBuf, stagingAlloc);
+            return kInvalidTexture;
+        }
+
+        VkCommandBuffer cmd = m_Impl->transferCommandBuffer;
+        {
             VkImageMemoryBarrier barrier{};
             barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
             barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -182,21 +329,11 @@ namespace Manro {
             vkCmdPipelineBarrier(cmd,
                                  VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
                                  0, 0, nullptr, 0, nullptr, 1, &barrier);
-        });
+        }
 
-        vmaDestroyBuffer(m_Impl->context.GetAllocator(), stagingBuf, stagingAlloc);
-
-        VkImageViewCreateInfo viewCI{};
-        viewCI.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        viewCI.image = tex.image;
-        viewCI.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
-        viewCI.format = VK_FORMAT_R8G8B8A8_UNORM;
-        viewCI.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 6};
-
-        if (vkCreateImageView(m_Impl->context.GetDevice(), &viewCI, nullptr, &tex.view) != VK_SUCCESS) {
-            LOG_ERROR("[TextureManager] Failed to create cubemap image view");
-            vmaDestroyImage(m_Impl->context.GetAllocator(), tex.image, tex.allocation);
-            return kInvalidTexture;
+        m_Impl->pendingStagingBuffers.push_back({stagingBuf, stagingAlloc});
+        if (m_Impl->pendingStagingBuffers.size() >= kMaxPendingUploadsBeforeFlush) {
+            FlushPendingUploads();
         }
 
         TextureHandle id = m_Impl->nextId++;
@@ -207,7 +344,6 @@ namespace Manro {
     }
 
     TextureHandle TextureManager::Upload(const u8 *pixels, int width, int height) {
-
         VkDeviceSize imageSize = static_cast<VkDeviceSize>(width) * height * 4;
 
         VkBuffer stagingBuf{};
@@ -258,7 +394,29 @@ namespace Manro {
             return kInvalidTexture;
         }
 
-        ExecuteOneShot(m_Impl->context, [&](VkCommandBuffer cmd) {
+        VkImageViewCreateInfo viewCI{};
+        viewCI.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        viewCI.image = tex.image;
+        viewCI.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        viewCI.format = VK_FORMAT_R8G8B8A8_UNORM;
+        viewCI.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+
+        if (vkCreateImageView(m_Impl->context.GetDevice(), &viewCI, nullptr, &tex.view) != VK_SUCCESS) {
+            LOG_ERROR("[TextureManager] Failed to create image view");
+            vmaDestroyImage(m_Impl->context.GetAllocator(), tex.image, tex.allocation);
+            vmaDestroyBuffer(m_Impl->context.GetAllocator(), stagingBuf, stagingAlloc);
+            return kInvalidTexture;
+        }
+
+        if (!m_Impl->EnsureTransferRecording()) {
+            vkDestroyImageView(m_Impl->context.GetDevice(), tex.view, nullptr);
+            vmaDestroyImage(m_Impl->context.GetAllocator(), tex.image, tex.allocation);
+            vmaDestroyBuffer(m_Impl->context.GetAllocator(), stagingBuf, stagingAlloc);
+            return kInvalidTexture;
+        }
+
+        VkCommandBuffer cmd = m_Impl->transferCommandBuffer;
+        {
             VkImageMemoryBarrier barrier{};
             barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
             barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -287,21 +445,11 @@ namespace Manro {
             vkCmdPipelineBarrier(cmd,
                                  VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
                                  0, 0, nullptr, 0, nullptr, 1, &barrier);
-        });
+        }
 
-        vmaDestroyBuffer(m_Impl->context.GetAllocator(), stagingBuf, stagingAlloc);
-
-        VkImageViewCreateInfo viewCI{};
-        viewCI.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        viewCI.image = tex.image;
-        viewCI.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        viewCI.format = VK_FORMAT_R8G8B8A8_UNORM;
-        viewCI.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-
-        if (vkCreateImageView(m_Impl->context.GetDevice(), &viewCI, nullptr, &tex.view) != VK_SUCCESS) {
-            LOG_ERROR("[TextureManager] Failed to create image view");
-            vmaDestroyImage(m_Impl->context.GetAllocator(), tex.image, tex.allocation);
-            return kInvalidTexture;
+        m_Impl->pendingStagingBuffers.push_back({stagingBuf, stagingAlloc});
+        if (m_Impl->pendingStagingBuffers.size() >= kMaxPendingUploadsBeforeFlush) {
+            FlushPendingUploads();
         }
 
         TextureHandle id = m_Impl->nextId++;
@@ -318,5 +466,4 @@ namespace Manro {
         auto white = m_Impl->textures.find(m_Impl->whiteTextureId);
         return (white != m_Impl->textures.end()) ? white->second.view : VK_NULL_HANDLE;
     }
-
 } // namespace Manro

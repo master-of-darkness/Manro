@@ -64,39 +64,44 @@ namespace Manro {
     }
 
     void ExecuteOneShot(const VulkanContext &ctx, const OneShotWork &work) {
-        VkCommandPool tmpPool{};
-        VkCommandBuffer tmpCmd{};
+        VkDevice device = ctx.GetDevice();
+        VkCommandPool commandPool = ctx.GetOneShotCommandPool();
+        VkCommandBuffer commandBuffer = ctx.GetOneShotCommandBuffer();
+        VkFence fence = ctx.GetOneShotFence();
 
-        VkCommandPoolCreateInfo poolInfo{};
-        poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        poolInfo.queueFamilyIndex = ctx.GetGraphicsQueueFamilyIndex();
-        poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-        vkCreateCommandPool(ctx.GetDevice(), &poolInfo, nullptr, &tmpPool);
-
-        VkCommandBufferAllocateInfo allocInfo{};
-        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        allocInfo.commandPool = tmpPool;
-        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        allocInfo.commandBufferCount = 1;
-        vkAllocateCommandBuffers(ctx.GetDevice(), &allocInfo, &tmpCmd);
+        if (vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX) != VK_SUCCESS) {
+            throw std::runtime_error("[VulkanHelpers] Failed to wait for one-shot fence");
+        }
+        if (vkResetFences(device, 1, &fence) != VK_SUCCESS) {
+            throw std::runtime_error("[VulkanHelpers] Failed to reset one-shot fence");
+        }
+        if (vkResetCommandPool(device, commandPool, 0) != VK_SUCCESS) {
+            throw std::runtime_error("[VulkanHelpers] Failed to reset one-shot command pool");
+        }
 
         VkCommandBufferBeginInfo beginInfo{};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        vkBeginCommandBuffer(tmpCmd, &beginInfo);
+        if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
+            throw std::runtime_error("[VulkanHelpers] Failed to begin one-shot command buffer");
+        }
 
-        work(tmpCmd);
+        work(commandBuffer);
 
-        vkEndCommandBuffer(tmpCmd);
+        if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
+            throw std::runtime_error("[VulkanHelpers] Failed to end one-shot command buffer");
+        }
 
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = &tmpCmd;
-        vkQueueSubmit(ctx.GetGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE);
-        vkQueueWaitIdle(ctx.GetGraphicsQueue());
-
-        vkDestroyCommandPool(ctx.GetDevice(), tmpPool, nullptr);
+        submitInfo.pCommandBuffers = &commandBuffer;
+        if (vkQueueSubmit(ctx.GetGraphicsQueue(), 1, &submitInfo, fence) != VK_SUCCESS) {
+            throw std::runtime_error("[VulkanHelpers] Failed to submit one-shot command buffer");
+        }
+        if (vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX) != VK_SUCCESS) {
+            throw std::runtime_error("[VulkanHelpers] Failed waiting for one-shot submission");
+        }
     }
 
     std::vector<u8> ReadBinaryFile(const std::string &filepath) {
