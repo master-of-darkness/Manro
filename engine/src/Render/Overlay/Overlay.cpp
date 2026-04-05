@@ -1,4 +1,4 @@
-#include <Manro/Render/Gui/ImGuiLayer.h>
+#include <Manro/Render/Overlay/Overlay.h>
 #include <Manro/Interfaces/IWindow.h>
 #include <Manro/Core/Logger.h>
 #include "../Backend/Vulkan/VulkanContext.h"
@@ -11,7 +11,7 @@
 #include <imgui_frag_spv.h>
 
 namespace Manro {
-    ImGuiLayer::ImGuiLayer(const ImGuiLayerInfo &info) : m_Context(info.context) {
+    Overlay::Overlay(const ImGuiLayerInfo &info) : m_Context(info.context) {
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
         ImGui::GetIO().IniFilename = nullptr;
@@ -22,7 +22,7 @@ namespace Manro {
         SetupBackend(info);
     }
 
-    ImGuiLayer::~ImGuiLayer() {
+    Overlay::~Overlay() {
         vkDeviceWaitIdle(m_Context->GetDevice());
         ImGui_ImplVulkan_Shutdown();
         ImGui_ImplSDL3_Shutdown();
@@ -31,7 +31,7 @@ namespace Manro {
             vkDestroyDescriptorPool(m_Context->GetDevice(), m_Pool, nullptr);
     }
 
-    void ImGuiLayer::CreateDescriptorPool() {
+    void Overlay::CreateDescriptorPool() {
         VkDescriptorPoolSize sizes[] = {
             {VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
             {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
@@ -52,10 +52,10 @@ namespace Manro {
         ci.poolSizeCount = (u32) IM_ARRAYSIZE(sizes);
         ci.pPoolSizes = sizes;
         if (vkCreateDescriptorPool(m_Context->GetDevice(), &ci, nullptr, &m_Pool) != VK_SUCCESS)
-            LOG_ERROR("[ImGuiLayer] Failed to create descriptor pool");
+            LOG_ERROR("[Overlay] Failed to create descriptor pool");
     }
 
-    void ImGuiLayer::SetupBackend(const ImGuiLayerInfo &info) {
+    void Overlay::SetupBackend(const ImGuiLayerInfo &info) {
         ImGui_ImplVulkan_LoadFunctions(VK_API_VERSION_1_3,
                                        [](const char *fn, void *ud) {
                                            return vkGetInstanceProcAddr(static_cast<VkInstance>(ud), fn);
@@ -93,13 +93,13 @@ namespace Manro {
             LOG_ERROR("[ImGui] Failed to initialize ImGui Vulkan backend");
     }
 
-    void ImGuiLayer::NewFrame() {
+    void Overlay::NewFrame() {
         ImGui_ImplVulkan_NewFrame();
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
     }
 
-    void ImGuiLayer::DrawDebugUI(u32 drawCalls, u32 triangles, u32 instances,
+    void Overlay::DrawDebugUI(u32 drawCalls, u32 triangles, u32 instances,
                                  const std::string &gpuName, RenderSettings &settings, bool &settingsChanged) {
         if (!m_ShowDebugUI) return;
 
@@ -142,7 +142,7 @@ namespace Manro {
         ImGui::End();
     }
 
-    void ImGuiLayer::Render(VkCommandBuffer cb) {
+    void Overlay::Render(VkCommandBuffer cb) {
         ImGui::Render();
         if (auto *dd = ImGui::GetDrawData())
             ImGui_ImplVulkan_RenderDrawData(dd, cb);

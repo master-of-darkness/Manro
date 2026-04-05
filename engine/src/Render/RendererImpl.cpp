@@ -343,7 +343,7 @@ namespace Manro {
         PipelineCache m_PipelineCache;
         RenderGraph m_RenderGraph;
 
-        Scope<ImGuiLayer> m_ImGuiLayer;
+        Scope<Overlay> m_ImGuiLayer;
         Ref<Material> m_DefaultMaterial;
 
         std::vector<MeshInstance> m_StaticInstances;
@@ -551,7 +551,7 @@ namespace Manro {
         guiInfo.window = &window;
         guiInfo.colorFormat = m_SwapchainFormat;
         guiInfo.imageCount = static_cast<u32>(m_SwapchainImages.size());
-        m_ImGuiLayer = CreateScope<ImGuiLayer>(guiInfo);
+        m_ImGuiLayer = CreateScope<Overlay>(guiInfo);
     }
 
     RendererImpl::~RendererImpl() {

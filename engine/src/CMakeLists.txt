@@ -38,7 +38,7 @@ add_library(Engine STATIC
         Render/TextureManager.cpp
         Render/MeshManager.cpp
         Render/Model.cpp
-        Render/Gui/ImGuiLayer.cpp
+        Render/Overlay/Overlay.cpp
         Resource/ModelLoader.cpp
         Resource/TextureLoader.cpp
         Resource/Primitives.cpp

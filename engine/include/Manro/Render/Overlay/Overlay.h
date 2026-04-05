@@ -17,11 +17,11 @@ namespace Manro {
         u32 imageCount = 2;
     };
 
-    class ImGuiLayer {
+    class Overlay {
     public:
-        explicit ImGuiLayer(const ImGuiLayerInfo &info);
+        explicit Overlay(const ImGuiLayerInfo &info);
 
-        ~ImGuiLayer();
+        ~Overlay();
 
         void NewFrame();
 

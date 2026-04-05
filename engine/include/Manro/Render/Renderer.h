@@ -4,7 +4,7 @@
 #include <Manro/Render/RenderGraph.h>
 #include <Manro/Render/TextureManager.h>
 #include <Manro/Render/MeshManager.h>
-#include <Manro/Render/Gui/ImGuiLayer.h>
+#include <Manro/Render/Overlay/Overlay.h>
 #include <Manro/Render/Material/Material.h>
 #include <Manro/Render/Material/MaterialInstance.h>
 #include <Manro/Render/RendererConfig.h>
