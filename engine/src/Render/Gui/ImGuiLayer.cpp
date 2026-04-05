@@ -33,17 +33,17 @@ namespace Manro {
 
     void ImGuiLayer::CreateDescriptorPool() {
         VkDescriptorPoolSize sizes[] = {
-                {VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
-                {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
-                {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000},
-                {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000},
-                {VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000},
-                {VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000},
-                {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000},
-                {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000},
-                {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000},
-                {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000},
-                {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000},
+            {VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
+            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
+            {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000},
+            {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000},
+            {VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000},
+            {VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000},
+            {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000},
+            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000},
+            {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000},
+            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000},
+            {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000},
         };
         VkDescriptorPoolCreateInfo ci{};
         ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -62,7 +62,7 @@ namespace Manro {
                                        }, m_Context->GetInstance());
 
         ImGui_ImplSDL3_InitForVulkan(
-                static_cast<SDL_Window *>(info.window->GetNativeHandle()));
+            static_cast<SDL_Window *>(info.window->GetNativeHandle()));
 
         ImGui_ImplVulkan_InitInfo ii{};
         ii.Instance = m_Context->GetInstance();
@@ -119,6 +119,8 @@ namespace Manro {
             if (ImGui::CollapsingHeader("Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
                 if (ImGui::Checkbox("VSync", &settings.enableVSync)) settingsChanged = true;
                 if (ImGui::SliderFloat("Resolution Scale", &settings.resolutionScale, 0.1f, 2.0f))
+                    settingsChanged = true;
+                if (ImGui::SliderFloat("Max Draw Distance", &settings.maxDrawDistance, 1.0f, 50000.0f))
                     settingsChanged = true;
 
                 ImGui::SeparatorText("Lighting");

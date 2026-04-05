@@ -52,6 +52,7 @@ namespace Manro {
 
         float nearZ = 0.1f;
         float farZ = 10000.0f;
+        float maxDrawDistance = 10000.0f;
 
         ShadowSettings shadows;
         LightingSettings lighting;

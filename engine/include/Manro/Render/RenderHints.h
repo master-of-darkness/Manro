@@ -36,24 +36,20 @@ namespace Manro {
     };
 
     struct RenderHints {
-        // === Memory Hints ===
         u64 estimatedSceneMemory = 0;     // Hint for staging buffer sizing
         u32 expectedMeshCount = 1000;
         u32 expectedTextureCount = 500;
         u32 expectedLightCount = 100;
 
-        // === Performance Hints ===
         BatchingStrategy batching = BatchingStrategy::Default;
         bool preferLowLatency = false;     // Minimize frame latency vs throughput
         bool allowMultithreading = true;   // Use job system for CPU work
 
-        // === Quality vs Performance ===
         float lodBias = 0.0f;              // Negative = higher quality
         bool enableOcclusionCulling = true;
         bool enableDistanceCulling = true;
         float maxDrawDistance = 10000.0f;
 
-        // === Debug ===
         bool enableGPUValidation = false;   // Vulkan validation layers
         bool enablePipelineStatistics = false;
     };

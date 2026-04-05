@@ -33,6 +33,7 @@ add_library(Engine STATIC
         Render/Vulkan/PipelineCache.cpp
         Render/RenderGraph.cpp
         Render/Renderer.cpp
+        Render/RendererImpl.cpp
         Render/SceneRenderer.cpp
         Render/TextureManager.cpp
         Render/MeshManager.cpp
