@@ -7,6 +7,7 @@
 #include <VkBootstrap.h>
 #include <stdexcept>
 #include <cstring>
+#include <algorithm>
 #include <glm/gtc/matrix_transform.hpp>
 
 
@@ -56,9 +57,9 @@ namespace Manro {
         float prefilteredCubeMipLevels{1.0f};
         float scaleIBLAmbient{1.0f};
         int lightCount{0};
-        int padding0{0};
-        float padding1{0.0f};
-        float padding2{0.0f};
+        int shadowsEnabled{1};
+        float aoIntensity{0.0f};
+        float aoRadius{0.5f};
         Vec2 screenDimensions;
         float nearZ{0.1f};
         float farZ{1000.0f};
@@ -73,7 +74,7 @@ namespace Manro {
         int enableRayQueryReflections{0};
         int enableRayQueryTransparency{0};
         float _padReflect[1]{};
-        int geometryInfoCount{0};
+        int rayMaxBounces{1};
         int _padGeo[3]{};
         Vec4 _rqReservedWorldPos;
         int materialCount{0};
@@ -85,7 +86,9 @@ namespace Manro {
         Vec4 lightDir;
         Vec2 shadowMapSize;
         float normalBias;
-        float _pad;
+        float softShadows;
+        int shadowsEnabled;
+        float _pad[3];
     };
 
     struct ShadowPushConstants {
@@ -121,7 +124,8 @@ namespace Manro {
         Vec4 cameraPos;
         u32 instanceCount;
         float maxDrawDistance;
-        u32 _pad[2];
+        u32 enableFrustumCulling;
+        u32 _pad;
     };
 
     struct CullData {
@@ -277,6 +281,8 @@ namespace Manro {
 
         void CreateShadowResources();
 
+        void RecreateShadowResources();
+
         void CreateDescriptorLayouts();
 
         void CreateDescriptorPool();
@@ -418,6 +424,7 @@ namespace Manro {
         u32 m_PendingWidth = 0;
         u32 m_PendingHeight = 0;
         bool m_PendingResize = false;
+        bool m_PendingShadowRecreate = false;
 
         FrameStats m_CurrentFrameStats{};
         FrameStats m_LastFrameStats{};
@@ -437,18 +444,47 @@ namespace Manro {
 
     static constexpr u32 kMaxDebugVertices = 65536;
 
+    static void NormalizeRenderSettings(RenderSettings &settings, VkSampleCountFlagBits maxSamples) {
+        settings.resolutionScale = std::clamp(settings.resolutionScale, 0.1f, 2.0f);
+
+        if (settings.aaMode != AntiAliasingMode::MSAA) {
+            settings.msaaSamples = VK_SAMPLE_COUNT_1_BIT;
+        } else if (static_cast<u32>(settings.msaaSamples) > static_cast<u32>(maxSamples)) {
+            settings.msaaSamples = maxSamples;
+        }
+
+        settings.nearZ = std::max(settings.nearZ, 0.001f);
+        settings.farZ = std::max(settings.farZ, settings.nearZ + 0.001f);
+        if (settings.maxDrawDistance <= 0.0f) {
+            settings.maxDrawDistance = settings.farZ;
+        } else {
+            settings.maxDrawDistance = std::max(settings.maxDrawDistance, settings.nearZ);
+        }
+
+        settings.shadows.resolution = std::clamp(settings.shadows.resolution, 128, 8192);
+        settings.shadows.bias = std::max(settings.shadows.bias, 0.0f);
+        settings.shadows.slopeBias = std::max(settings.shadows.slopeBias, 0.0f);
+        settings.shadows.softShadows = std::max(settings.shadows.softShadows, 0.0f);
+
+        settings.lighting.iblIntensity = std::max(settings.lighting.iblIntensity, 0.0f);
+        settings.lighting.gamma = std::clamp(settings.lighting.gamma, 1.0f, 3.0f);
+        settings.lighting.aoIntensity = std::max(settings.lighting.aoIntensity, 0.0f);
+        settings.lighting.aoRadius = std::max(settings.lighting.aoRadius, 0.0f);
+
+        settings.postProcess.bloomIntensity = std::max(settings.postProcess.bloomIntensity, 0.0f);
+        settings.postProcess.bloomThreshold = std::max(settings.postProcess.bloomThreshold, 0.0f);
+
+        settings.rayTracing.maxBounces = std::clamp(settings.rayTracing.maxBounces, 1, 8);
+    }
+
     RendererImpl::RendererImpl(IWindow &window, u32 width, u32 height,
                                const RenderSettings &settings,
                                const RendererConfig &config)
         : m_Context("GameEngine", window),
           m_Textures(m_Context, m_BindlessAlloc), m_Meshes(m_Context), m_Settings(settings),
           m_Config(config) {
+        NormalizeRenderSettings(m_Settings, m_Context.GetMaxUsableSampleCount());
         InitializeSwapchain(width, height, m_Settings.enableVSync);
-
-        VkSampleCountFlagBits maxSamples = m_Context.GetMaxUsableSampleCount();
-        m_Settings.msaaSamples = (static_cast<u32>(m_Settings.msaaSamples) <= static_cast<u32>(maxSamples))
-                                     ? m_Settings.msaaSamples
-                                     : maxSamples;
 
         m_PendingWidth = width;
         m_PendingHeight = height;
@@ -602,18 +638,21 @@ namespace Manro {
     }
 
     void RendererImpl::SetSettings(const RenderSettings &settings) {
-        bool needsResize = (m_Settings.resolutionScale != settings.resolutionScale) ||
-                           (m_Settings.msaaSamples != settings.msaaSamples) ||
-                           (m_Settings.enableVSync != settings.enableVSync);
-        m_Settings = settings;
-        if (m_Settings.maxDrawDistance <= 0.0f) {
-            m_Settings.maxDrawDistance = m_Settings.farZ;
+        RenderSettings normalized = settings;
+        NormalizeRenderSettings(normalized, m_Context.GetMaxUsableSampleCount());
+
+        bool needsResize = (m_Settings.resolutionScale != normalized.resolutionScale) ||
+                           (m_Settings.msaaSamples != normalized.msaaSamples) ||
+                           (m_Settings.enableVSync != normalized.enableVSync);
+        bool needsShadowRecreate = (m_Settings.shadows.resolution != normalized.shadows.resolution);
+
+        m_Settings = normalized;
+
+        if (needsShadowRecreate) {
+            m_PendingShadowRecreate = true;
         }
+
         if (needsResize) {
-            VkSampleCountFlagBits maxSamples = m_Context.GetMaxUsableSampleCount();
-            m_Settings.msaaSamples = (static_cast<u32>(m_Settings.msaaSamples) <= static_cast<u32>(maxSamples))
-                                         ? m_Settings.msaaSamples
-                                         : maxSamples;
             m_PendingResize = true;
         }
     }
@@ -797,7 +836,7 @@ namespace Manro {
     }
 
     void RendererImpl::CreateShadowResources() {
-        const u32 shadowMapSize = GetShadowMapSize();
+        const u32 shadowMapSize = static_cast<u32>(std::max(128, m_Settings.shadows.resolution));
         {
             ImageCreateParams p{};
             p.width = shadowMapSize;
@@ -851,8 +890,27 @@ namespace Manro {
         m_ShadowUniform.lightDir = Vec4(0.5f, -0.7f, 0.5f, 0.005f);
         m_ShadowUniform.shadowMapSize = Vec2(shadowMapSize, shadowMapSize);
         m_ShadowUniform.normalBias = m_Settings.shadows.bias;
+        m_ShadowUniform.softShadows = m_Settings.shadows.softShadows;
+        m_ShadowUniform.shadowsEnabled = m_Settings.shadows.enabled ? 1 : 0;
 
         LOG_INFO("[Renderer] Shadow resources created ({}x{} D32)", shadowMapSize, shadowMapSize);
+    }
+
+    void RendererImpl::RecreateShadowResources() {
+        vkDeviceWaitIdle(m_Context.GetDevice());
+
+        if (m_ShadowSampler != VK_NULL_HANDLE) {
+            vkDestroySampler(m_Context.GetDevice(), m_ShadowSampler, nullptr);
+            m_ShadowSampler = VK_NULL_HANDLE;
+        }
+        DestroyImage(m_Context, m_ShadowMap);
+        m_ShadowUniformBuffer.reset();
+
+        CreateShadowResources();
+
+        for (u32 i = 0; i < GetFrameCount(); ++i) {
+            UpdatePbrDescriptorSetShadow(i);
+        }
     }
 
     Mat4 RendererImpl::ComputeLightViewProj(const Vec3 &lightDir) const {
@@ -875,7 +933,9 @@ namespace Manro {
     }
 
     void RendererImpl::RenderShadowPass(VkCommandBuffer cb) {
-        const u32 shadowMapSize = GetShadowMapSize();
+        if (!m_Settings.shadows.enabled) return;
+
+        const u32 shadowMapSize = static_cast<u32>(std::max(128, m_Settings.shadows.resolution));
         u32 totalInstCount = static_cast<u32>(m_StaticInstances.size() + m_CurrentFrameInstances.size());
         if (!m_ShadowPipeline || totalInstCount == 0) return;
 
@@ -888,8 +948,10 @@ namespace Manro {
                 break;
             }
         m_ShadowUniform.lightViewProj = ComputeLightViewProj(lightDir);
-        m_ShadowUniform.lightDir = Vec4(lightDir, 0.005f);
+        m_ShadowUniform.lightDir = Vec4(lightDir, m_Settings.shadows.bias);
         m_ShadowUniform.normalBias = m_Settings.shadows.bias;
+        m_ShadowUniform.softShadows = m_Settings.shadows.softShadows;
+        m_ShadowUniform.shadowsEnabled = m_Settings.shadows.enabled ? 1 : 0;
         m_ShadowUniformBuffer->LoadData(&m_ShadowUniform, sizeof(ShadowUniformData));
 
         {
@@ -934,7 +996,7 @@ namespace Manro {
             {shadowMapSize, shadowMapSize}
         };
         vkCmdSetScissor(cb, 0, 1, &scissor);
-        vkCmdSetDepthBias(cb, 1.0f, 0.0f, 2.0f);
+        vkCmdSetDepthBias(cb, m_Settings.shadows.bias, 0.0f, m_Settings.shadows.slopeBias);
 
         vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_ShadowPipeline->GetHandle());
         vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -1050,6 +1112,11 @@ namespace Manro {
         if (m_PendingWidth == 0 || m_PendingHeight == 0) return false;
         if (m_PendingResize || m_SwapchainNeedsRecreate) {
             RecreateSwapchain();
+            return false;
+        }
+        if (m_PendingShadowRecreate) {
+            RecreateShadowResources();
+            m_PendingShadowRecreate = false;
             return false;
         }
 
@@ -1194,6 +1261,7 @@ namespace Manro {
             mcpc.instanceCount = totalInstCount;
             mcpc.cameraPos = Vec4(m_CameraPosition, 1.0f);
             mcpc.maxDrawDistance = m_Settings.maxDrawDistance;
+            mcpc.enableFrustumCulling = m_Settings.enableFrustumCulling ? 1u : 0u;
 
             vkCmdPushConstants(cb, m_MeshCullPipeline->GetLayout(),
                                VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(MeshCullPushConstants), &mcpc);
@@ -1218,82 +1286,85 @@ namespace Manro {
             meshDep.pBufferMemoryBarriers = meshCullBarriers;
             vkCmdPipelineBarrier2(cb, &meshDep);
 
-            vkCmdFillBuffer(cb, frame.shadowCountBuffer->GetHandle(), 0, sizeof(u32), 0);
+            if (m_Settings.shadows.enabled) {
+                vkCmdFillBuffer(cb, frame.shadowCountBuffer->GetHandle(), 0, sizeof(u32), 0);
 
-            VkBufferMemoryBarrier2 shadowFillBarrier{};
-            shadowFillBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
-            shadowFillBarrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-            shadowFillBarrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-            shadowFillBarrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-            shadowFillBarrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT;
-            shadowFillBarrier.buffer = frame.shadowCountBuffer->GetHandle();
-            shadowFillBarrier.offset = 0;
-            shadowFillBarrier.size = VK_WHOLE_SIZE;
-            VkDependencyInfo shadowFillDep{};
-            shadowFillDep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-            shadowFillDep.bufferMemoryBarrierCount = 1;
-            shadowFillDep.pBufferMemoryBarriers = &shadowFillBarrier;
-            vkCmdPipelineBarrier2(cb, &shadowFillDep);
+                VkBufferMemoryBarrier2 shadowFillBarrier{};
+                shadowFillBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+                shadowFillBarrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+                shadowFillBarrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+                shadowFillBarrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+                shadowFillBarrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT;
+                shadowFillBarrier.buffer = frame.shadowCountBuffer->GetHandle();
+                shadowFillBarrier.offset = 0;
+                shadowFillBarrier.size = VK_WHOLE_SIZE;
+                VkDependencyInfo shadowFillDep{};
+                shadowFillDep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+                shadowFillDep.bufferMemoryBarrierCount = 1;
+                shadowFillDep.pBufferMemoryBarriers = &shadowFillBarrier;
+                vkCmdPipelineBarrier2(cb, &shadowFillDep);
 
-            vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, m_MeshCullPipeline->GetHandle());
-            vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE,
-                                    m_MeshCullPipeline->GetLayout(), 0, 1,
-                                    &frame.shadowMeshCullSet, 0, nullptr);
+                vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, m_MeshCullPipeline->GetHandle());
+                vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE,
+                                        m_MeshCullPipeline->GetLayout(), 0, 1,
+                                        &frame.shadowMeshCullSet, 0, nullptr);
 
-            {
-                Vec3 lightDir = Vec3(m_ShadowUniform.lightDir);
-                for (const auto &l: m_PendingLights)
-                    if (l.type == shaderio::eLightTypeDirectional) {
-                        lightDir = Vec3(l.direction.x, l.direction.y, l.direction.z);
-                        break;
+                {
+                    Vec3 lightDir = Vec3(m_ShadowUniform.lightDir);
+                    for (const auto &l: m_PendingLights)
+                        if (l.type == shaderio::eLightTypeDirectional) {
+                            lightDir = Vec3(l.direction.x, l.direction.y, l.direction.z);
+                            break;
+                        }
+                    Mat4 shadowVP = ComputeLightViewProj(lightDir);
+
+                    MeshCullPushConstants shadowPc{};
+                    m = glm::transpose(shadowVP);
+
+                    r0 = m[0];
+                    r1 = m[1];
+                    r2 = m[2];
+                    r3 = m[3];
+
+                    shadowPc.planes[0] = r3 + r0;
+                    shadowPc.planes[1] = r3 - r0;
+                    shadowPc.planes[2] = r3 + r1;
+                    shadowPc.planes[3] = r3 - r1;
+                    shadowPc.planes[4] = r3 + r2;
+                    shadowPc.planes[5] = r3 - r2;
+                    for (int i = 0; i < 6; ++i) {
+                        float len = glm::length(Vec3(shadowPc.planes[i]));
+                        shadowPc.planes[i] /= len;
                     }
-                Mat4 shadowVP = ComputeLightViewProj(lightDir);
+                    shadowPc.instanceCount = totalInstCount;
+                    shadowPc.cameraPos = Vec4(m_CameraPosition, 1.0f);
+                    shadowPc.maxDrawDistance = m_Settings.maxDrawDistance;
+                    shadowPc.enableFrustumCulling = m_Settings.enableFrustumCulling ? 1u : 0u;
 
-                MeshCullPushConstants shadowPc{};
-                m = glm::transpose(shadowVP);
-
-                r0 = m[0];
-                r1 = m[1];
-                r2 = m[2];
-                r3 = m[3];
-
-                shadowPc.planes[0] = r3 + r0;
-                shadowPc.planes[1] = r3 - r0;
-                shadowPc.planes[2] = r3 + r1;
-                shadowPc.planes[3] = r3 - r1;
-                shadowPc.planes[4] = r3 + r2;
-                shadowPc.planes[5] = r3 - r2;
-                for (int i = 0; i < 6; ++i) {
-                    float len = glm::length(Vec3(shadowPc.planes[i]));
-                    shadowPc.planes[i] /= len;
+                    vkCmdPushConstants(cb, m_MeshCullPipeline->GetLayout(),
+                                       VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(shadowPc), &shadowPc);
+                    vkCmdDispatch(cb, (totalInstCount + 63) / 64, 1, 1);
                 }
-                shadowPc.instanceCount = totalInstCount;
-                shadowPc.cameraPos = Vec4(m_CameraPosition, 1.0f);
-                shadowPc.maxDrawDistance = m_Settings.farZ;
 
-                vkCmdPushConstants(cb, m_MeshCullPipeline->GetLayout(),
-                                   VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(shadowPc), &shadowPc);
-                vkCmdDispatch(cb, (totalInstCount + 63) / 64, 1, 1);
+                VkBufferMemoryBarrier2 shadowCullBarriers[2]{};
+                shadowCullBarriers[0].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+                shadowCullBarriers[0].srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+                shadowCullBarriers[0].srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+                shadowCullBarriers[0].dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
+                shadowCullBarriers[0].dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
+                shadowCullBarriers[0].buffer = frame.shadowIndirectBuffer->GetHandle();
+                shadowCullBarriers[0].offset = 0;
+                shadowCullBarriers[0].size = VK_WHOLE_SIZE;
+                shadowCullBarriers[1] = shadowCullBarriers[0];
+                shadowCullBarriers[1].buffer = frame.shadowCountBuffer->GetHandle();
+                VkDependencyInfo shadowCullDep{};
+                shadowCullDep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+                shadowCullDep.bufferMemoryBarrierCount = 2;
+                shadowCullDep.pBufferMemoryBarriers = shadowCullBarriers;
+                vkCmdPipelineBarrier2(cb, &shadowCullDep);
+
+                RenderShadowPass(cb);
             }
-
-            VkBufferMemoryBarrier2 shadowCullBarriers[2]{};
-            shadowCullBarriers[0].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
-            shadowCullBarriers[0].srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-            shadowCullBarriers[0].srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
-            shadowCullBarriers[0].dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
-            shadowCullBarriers[0].dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
-            shadowCullBarriers[0].buffer = frame.shadowIndirectBuffer->GetHandle();
-            shadowCullBarriers[0].offset = 0;
-            shadowCullBarriers[0].size = VK_WHOLE_SIZE;
-            shadowCullBarriers[1] = shadowCullBarriers[0];
-            shadowCullBarriers[1].buffer = frame.shadowCountBuffer->GetHandle();
-            VkDependencyInfo shadowCullDep{};
-            shadowCullDep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-            shadowCullDep.bufferMemoryBarrierCount = 2;
-            shadowCullDep.pBufferMemoryBarriers = shadowCullBarriers;
-            vkCmdPipelineBarrier2(cb, &shadowCullDep);
-
-            RenderShadowPass(cb);
 
             vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, m_CullPipeline->GetHandle());
             vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE,
@@ -1320,7 +1391,7 @@ namespace Manro {
             cpc.maxPerTile = GetMaxLightsPerTile();
             cpc.tilesX = std::min((ext.width + tileSize - 1) / tileSize, GetMaxTilesX());
             cpc.tilesY = std::min((ext.height + tileSize - 1) / tileSize, GetMaxTilesY());
-            cpc.zParams = Vec4(0.1f, 10000.f, 1.f, 0.f);
+            cpc.zParams = Vec4(m_Settings.nearZ, m_Settings.farZ, 1.f, 0.f);
 
             vkCmdPushConstants(cb, m_CullPipeline->GetLayout(),
                                VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(cpc), &cpc);
@@ -1378,13 +1449,17 @@ namespace Manro {
         ubo.prefilteredCubeMipLevels = 1.f;
         ubo.scaleIBLAmbient = m_Settings.lighting.iblIntensity;
         ubo.lightCount = (int) m_PendingLights.size();
+        ubo.shadowsEnabled = m_Settings.shadows.enabled ? 1 : 0;
+        ubo.aoIntensity = m_Settings.lighting.enableAmbientOcclusion ? m_Settings.lighting.aoIntensity : 0.0f;
+        ubo.aoRadius = m_Settings.lighting.aoRadius;
         ubo.screenDimensions = Vec2((float) ext.width, (float) ext.height);
         ubo.nearZ = m_Settings.nearZ;
         ubo.farZ = m_Settings.farZ;
         ubo.slicesZ = 1.f;
-        ubo.reflectionEnabled = m_Settings.rayTracing.enableReflections;
-        ubo.enableRayQueryReflections = m_Settings.rayTracing.enableReflections;
-        ubo.enableRayQueryTransparency = m_Settings.rayTracing.enableTransparency;
+        ubo.reflectionEnabled = m_Settings.rayTracing.enableReflections ? 1 : 0;
+        ubo.enableRayQueryReflections = m_Settings.rayTracing.enableReflections ? 1 : 0;
+        ubo.enableRayQueryTransparency = m_Settings.rayTracing.enableTransparency ? 1 : 0;
+        ubo.rayMaxBounces = m_Settings.rayTracing.maxBounces;
         ubo.materialCount = (int) m_Materials.size();
         frame.uboBuffer->LoadData(&ubo, sizeof(ubo));
 
@@ -1550,6 +1625,9 @@ namespace Manro {
             cpc.tm = m_Settings.postProcess.tonemapping;
             cpc.tm.inputMatrix = SlangFloat3x3(glm::mat3(cpc.tm.exposure));
             cpc.imageSize = Vec2((float) m_RenderExtent.width, (float) m_RenderExtent.height);
+            cpc.bloomIntensity = m_Settings.postProcess.bloomIntensity;
+            cpc.bloomThreshold = m_Settings.postProcess.bloomThreshold;
+            cpc.bloomEnabled = m_Settings.postProcess.enableBloom ? 1 : 0;
 
             Internal::CompositePassState compositeState{};
             compositeState.extent = ext;

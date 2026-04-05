@@ -9,7 +9,9 @@ struct ShadowData {
     float4   lightDir;
     float2   shadowMapSize;
     float    normalBias;
-    float    _pad;
+    float    softShadows;
+    int      shadowsEnabled;
+    float3   _pad;
 };
 
 layout(set = 0, binding = 17) ConstantBuffer<ShadowData> shadowData;

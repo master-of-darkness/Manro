@@ -45,7 +45,7 @@ namespace Manro {
         float saturation = 1.0f;
         float vignette = 0.0f;
 
-        // Advanced color grading TODO: fix me pls. I don't update onChange
+        // Advanced color grading
         float vibrance = 0.0f;
         float shadowBias = 0.0f;
         float midtoneBias = 0.0f;
@@ -71,6 +71,9 @@ namespace Manro {
     struct CompositePushConstants {
         TonemapperData tm;
         glm::vec2 imageSize;
-        float _pad[2];
+        float bloomIntensity{1.0f};
+        float bloomThreshold{1.0f};
+        int bloomEnabled{0};
+        int _pad{0};
     };
 } // namespace Manro

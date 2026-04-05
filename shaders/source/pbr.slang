@@ -13,9 +13,9 @@ struct UniformBufferObject {
     float prefilteredCubeMipLevels;
     float scaleIBLAmbient;
     int lightCount;
-    int padding0;
-    float padding1;
-    float padding2;
+    int shadowsEnabled;
+    float aoIntensity;
+    float aoRadius;
     float2 screenDimensions;
     float nearZ;
     float farZ;
@@ -30,7 +30,7 @@ struct UniformBufferObject {
     int enableRayQueryReflections;
     int enableRayQueryTransparency;
     float _padReflect[1];
-    int geometryInfoCount;
+    int rayMaxBounces;
     int _padGeo[3];
     float4 _rqReservedWorldPos;
     int materialCount;
@@ -42,7 +42,9 @@ struct ShadowData {
     float4   lightDir;
     float2   shadowMapSize;
     float    normalBias;
-    float    _pad;
+    float    softShadows;
+    int      shadowsEnabled;
+    float3   _pad;
 };
 
 // TileHeader (16 bytes)
@@ -117,12 +119,15 @@ float2 ShadowUV(float4 shadowPos) {
 }
 
 float SampleShadowPCF(float4 shadowPos) {
+    if (shadowData.shadowsEnabled == 0) return 1.0;
+
     float3 proj   = shadowPos.xyz / shadowPos.w;
     float2 uv     = proj.xy * 0.5 + 0.5;
     float  depth  = proj.z - shadowData.lightDir.w;
 
     if (any(uv < 0.0) || any(uv > 1.0) || depth < 0.0 || depth > 1.0) return 1.0;
 
+    float softness = max(shadowData.softShadows, 1.0);
     float2 texelSize = 1.0 / shadowData.shadowMapSize;
     float shadow = 0.0;
 
@@ -130,7 +135,7 @@ float SampleShadowPCF(float4 shadowPos) {
     for (int dy = -1; dy <= 1; ++dy) {
         [unroll]
         for (int dx = -1; dx <= 1; ++dx) {
-            float2 offset = float2(dx, dy) * texelSize;
+            float2 offset = float2(dx, dy) * texelSize * softness;
             shadow += shadowMap.SampleCmpLevelZero(shadowSampler, uv + offset, depth);
         }
     }
@@ -226,7 +231,7 @@ float4 PSMain(VSOutput input) : SV_Target {
     uint  tileOffset = hdr.x;
     uint  tileCount  = hdr.y;
 
-    float shadowFactor = SampleShadowPCF(input.shadowPos);
+    float shadowFactor = (ubo.shadowsEnabled != 0) ? SampleShadowPCF(input.shadowPos) : 1.0;
 
     for (uint ti = 0; ti < tileCount; ++ti) {
         uint      i     = tileLightIndices[tileOffset + ti];
@@ -247,10 +252,19 @@ float4 PSMain(VSOutput input) : SV_Target {
         evalData.k2 = L;
         bsdfEvaluateSimple(evalData, pbrMat);
 
-        result += (evalData.bsdf_diffuse + evalData.bsdf_glossy) * contrib.intensity;
+        float3 glossy = evalData.bsdf_glossy;
+        if (ubo.reflectionEnabled != 0 || ubo.enableRayQueryReflections != 0) {
+            float bounceBoost = 1.0 + max(float(ubo.rayMaxBounces - 1), 0.0) * 0.15;
+            glossy *= bounceBoost;
+        }
+
+        result += (evalData.bsdf_diffuse + glossy) * contrib.intensity;
     }
 
-    result += pbrMat.baseColor * (ubo.scaleIBLAmbient * 0.1 * pbrMat.occlusion) + pbrMat.emissive;
+    float aoMix = saturate(ubo.aoIntensity / (1.0 + ubo.aoRadius));
+    float ao = lerp(1.0, pbrMat.occlusion, aoMix);
+    result += pbrMat.baseColor * (ubo.scaleIBLAmbient * 0.1 * ao) + pbrMat.emissive;
 
-    return float4(result, pbrMat.opacity);
+    float opacity = (ubo.enableRayQueryTransparency != 0) ? pbrMat.opacity : 1.0;
+    return float4(result, opacity);
 }

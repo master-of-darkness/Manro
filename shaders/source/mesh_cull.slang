@@ -31,7 +31,8 @@ struct CullPushConstants {
     float4 cameraPos;
     uint instanceCount;
     float maxDrawDistance;
-    uint _pad[2];
+    uint enableFrustumCulling;
+    uint _pad;
 };
 
 [[vk::binding(0, 0)]]
@@ -69,7 +70,7 @@ void main(uint3 dtid : SV_DispatchThreadID) {
         visible = false;
     }
 
-    if (visible) {
+    if (visible && pc.enableFrustumCulling != 0) {
         for (int i = 0; i < 6; ++i) {
             float4 plane = pc.planes[i];
             float dist = dot(plane.xyz, worldCenter) + plane.w;
