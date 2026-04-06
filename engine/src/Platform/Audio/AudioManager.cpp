@@ -5,19 +5,18 @@ namespace Manro {
     bool AudioManager::Initialize(Scope<IAudioBackend> backend) {
         if (m_Initialized) return true;
         if (!backend) {
-            LOG_ERROR("[AudioManager] Null backend provided.");
+            LOG_ERROR("[Audio] Null backend provided.");
             return false;
         }
 
         m_Backend = std::move(backend);
         if (!m_Backend->Initialize()) {
-            LOG_ERROR("[AudioManager] Backend initialization failed.");
+            LOG_ERROR("[Audio] Backend initialization failed.");
             m_Backend.reset();
             return false;
         }
 
         m_Initialized = true;
-        LOG_INFO("[AudioManager] Ready.");
         return true;
     }
 

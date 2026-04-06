@@ -7,19 +7,18 @@ namespace Manro {
         if (m_Initialized) return true;
 
         if (!MIX_Init()) {
-            LOG_ERROR("[SDL3AudioBackend] MIX_Init failed: {}", SDL_GetError());
+            LOG_ERROR("[Audio] MIX_Init failed: {}", SDL_GetError());
             return false;
         }
 
         m_Mixer = MIX_CreateMixerDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, nullptr);
         if (!m_Mixer) {
-            LOG_ERROR("[SDL3AudioBackend] MIX_CreateMixerDevice failed: {}", SDL_GetError());
+            LOG_ERROR("[Audio] MIX_CreateMixerDevice failed: {}", SDL_GetError());
             MIX_Quit();
             return false;
         }
 
         m_Initialized = true;
-        LOG_INFO("[SDL3AudioBackend] Initialized SDL3_mixer device.");
         return true;
     }
 
@@ -49,7 +48,6 @@ namespace Manro {
 
         MIX_Quit();
         m_Initialized = false;
-        LOG_INFO("[SDL3AudioBackend] Shut down.");
     }
 
     SoundHandle SDL3AudioBackend::LoadSound(const std::string &filepath) {
@@ -57,7 +55,7 @@ namespace Manro {
 
         MIX_Audio *audio = MIX_LoadAudio(m_Mixer, filepath.c_str(), true);
         if (!audio) {
-            LOG_ERROR("[SDL3AudioBackend] Failed to load '{}': {}", filepath, SDL_GetError());
+            LOG_ERROR("[Audio] Failed to load '{}': {}", filepath, SDL_GetError());
             return kInvalidSound;
         }
 
@@ -67,7 +65,6 @@ namespace Manro {
         SoundHandle handle = m_NextHandle++;
         m_Sounds[handle] = {audio, track};
 
-        LOG_INFO("[SDL3AudioBackend] Loaded sound '{}' -> handle {}", filepath, handle);
         return handle;
     }
 
@@ -154,7 +151,7 @@ namespace Manro {
 
         m_MusicAudio = MIX_LoadAudio(m_Mixer, filepath.c_str(), false);
         if (!m_MusicAudio) {
-            LOG_ERROR("[SDL3AudioBackend] Failed to load music '{}': {}", filepath, SDL_GetError());
+            LOG_ERROR("[Audio] Failed to load music '{}': {}", filepath, SDL_GetError());
             return;
         }
 
@@ -163,7 +160,6 @@ namespace Manro {
         MIX_SetTrackLoops(m_MusicTrack, loop ? -1 : 0);
 
         MIX_PlayTrack(m_MusicTrack, 0);
-        LOG_INFO("[SDL3AudioBackend] Playing music '{}'", filepath);
     }
 
     void SDL3AudioBackend::StopMusic() {

@@ -17,13 +17,12 @@ namespace Manro {
                                     static_cast<int>(m_Height),
                                     flags);
         if (!m_Handle) {
-            LOG_ERROR("[SDL3Window] SDL_CreateWindow failed: {}", SDL_GetError());
+            LOG_ERROR("[Windowing] SDL_CreateWindow failed: {}", SDL_GetError());
             return false;
         }
 
         m_Open = true;
         m_Fullscreen = desc.Fullscreen;
-        LOG_INFO("[SDL3Window] Created '{}' ({}x{})", m_Title, m_Width, m_Height);
         return true;
     }
 
@@ -32,7 +31,6 @@ namespace Manro {
             SDL_DestroyWindow(m_Handle);
             m_Handle = nullptr;
             m_Open = false;
-            LOG_INFO("[SDL3Window] Destroyed '{}'", m_Title);
         }
     }
 

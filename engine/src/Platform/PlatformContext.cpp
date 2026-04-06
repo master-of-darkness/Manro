@@ -17,15 +17,12 @@ namespace Manro {
         if (!m_AudioManager.Initialize(std::move(audioBackend))) {
             LOG_WARN("[PlatformContext] Audio backend failed – continuing without audio.");
         }
-
-        LOG_INFO("[PlatformContext] SDL3 platform initialized.");
     }
 
     PlatformContext::~PlatformContext() {
         m_AudioManager.Shutdown();
         m_WindowManager.ShutdownAll();
         SDL_Quit();
-        LOG_INFO("[PlatformContext] SDL3 platform shut down.");
     }
 
     bool PlatformContext::PollEvents(InputManager *inputManager) {

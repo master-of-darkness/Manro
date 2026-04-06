@@ -229,8 +229,6 @@ namespace Manro {
                 m_Impl->bpLayerInterface, m_Impl->objVsBroadPhase, m_Impl->objLayerFilter);
 
         m_Impl->physicsSystem->SetGravity(JPH::Vec3(0.f, -981.f, 0.f));
-
-        LOG_INFO("[PhysicsWorld] Jolt Physics initialized.");
     }
 
     PhysicsWorld::~PhysicsWorld() {
@@ -238,7 +236,6 @@ namespace Manro {
         JPH::UnregisterTypes();
         delete JPH::Factory::sInstance;
         JPH::Factory::sInstance = nullptr;
-        LOG_INFO("[PhysicsWorld] Jolt Physics shut down.");
     }
 
     void PhysicsWorld::Step(float deltaTime) {

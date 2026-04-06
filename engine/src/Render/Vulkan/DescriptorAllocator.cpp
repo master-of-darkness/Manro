@@ -177,8 +177,6 @@ namespace Manro {
 
         if (vkAllocateDescriptorSets(m_Device, &allocInfo, &m_Set) != VK_SUCCESS)
             throw std::runtime_error("[BindlessAllocator] Failed to allocate set");
-
-        LOG_INFO("[BindlessAllocator] Initialized ({} texture slots)", kMaxTextures);
     }
 
     void BindlessAllocator::Shutdown() {

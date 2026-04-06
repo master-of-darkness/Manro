@@ -865,8 +865,6 @@ namespace Manro {
         m_ShadowUniform.normalBias = m_Settings.shadows.bias;
         m_ShadowUniform.softShadows = m_Settings.shadows.softShadows;
         m_ShadowUniform.shadowsEnabled = m_Settings.shadows.enabled ? 1 : 0;
-
-        LOG_INFO("[Renderer] Shadow resources created ({}x{} D32)", shadowMapSize, shadowMapSize);
     }
 
     void RendererImpl::RecreateShadowResources() {
