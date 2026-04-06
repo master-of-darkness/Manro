@@ -25,8 +25,8 @@ namespace Manro {
 
         void NewFrame();
 
-        void DrawDebugUI(u32 drawCalls, u32 triangles, u32 instances,
-                         const std::string &gpuName, RenderSettings &settings, bool &settingsChanged);
+        void DrawDebugger(u32 drawCalls, u32 triangles, u32 instances,
+                          const std::string &gpuName, RenderSettings &settings, bool &settingsChanged);
 
         void Render(VkCommandBuffer cb);
 

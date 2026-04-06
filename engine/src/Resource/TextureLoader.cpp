@@ -7,10 +7,8 @@
 #include <stb_image.h>
 
 #include <Manro/Core/Logger.h>
-#include <cstdio>
 #include <cstring>
 #include <algorithm>
-#include <mutex>
 
 namespace Manro {
     static constexpr u32 kDDSMagic = 0x20534444;
@@ -220,8 +218,8 @@ namespace Manro {
     static bool HasExtension(const std::string &path, const std::string &ext) {
         if (path.size() < ext.size()) return false;
         std::string tail = path.substr(path.size() - ext.size());
-        std::transform(tail.begin(), tail.end(), tail.begin(),
-                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        std::ranges::transform(tail, tail.begin(),
+                               [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         return tail == ext;
     }
 
@@ -291,17 +289,6 @@ namespace Manro {
         std::vector<TextureData> faces(6);
         int faceSize = 0;
 
-        struct FaceCoord {
-            int col, row;
-        } coords[6] = {
-            {2, 1}, // +X
-            {0, 1}, // -X
-            {1, 0}, // +Y
-            {1, 2}, // -Y
-            {1, 1}, // +Z
-            {3, 1} // -Z
-        };
-
         if (rawData.width == rawData.height * 4 / 3) {
             faceSize = rawData.height / 3;
         } else if (rawData.height == rawData.width * 4 / 3) {
@@ -318,6 +305,16 @@ namespace Manro {
         }
 
         for (int i = 0; i < 6; ++i) {
+            const struct FaceCoord {
+                int col, row;
+            } coords[6] = {
+                {2, 1}, // +X
+                {0, 1}, // -X
+                {1, 0}, // +Y
+                {1, 2}, // -Y
+                {1, 1}, // +Z
+                {3, 1} // -Z
+            };
             faces[i].width = faceSize;
             faces[i].height = faceSize;
             faces[i].channels = 4;

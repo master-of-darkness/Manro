@@ -8,7 +8,7 @@
 namespace Manro {
     class IAudioBackend : public Interface {
     public:
-        virtual ~IAudioBackend() = default;
+        ~IAudioBackend() override = default;
 
         virtual bool Initialize() = 0;
 

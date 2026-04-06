@@ -1,7 +1,8 @@
-#include <Manro/Render/Overlay/Overlay.h>
+#include "Overlay.h"
+#include "Vulkan/VulkanContext.h"
+
 #include <Manro/Interfaces/IWindow.h>
 #include <Manro/Core/Logger.h>
-#include "../Backend/Vulkan/VulkanContext.h"
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
@@ -99,8 +100,8 @@ namespace Manro {
         ImGui::NewFrame();
     }
 
-    void Overlay::DrawDebugUI(u32 drawCalls, u32 triangles, u32 instances,
-                                 const std::string &gpuName, RenderSettings &settings, bool &settingsChanged) {
+    void Overlay::DrawDebugger(u32 drawCalls, u32 triangles, u32 instances,
+                               const std::string &gpuName, RenderSettings &settings, bool &settingsChanged) {
         if (!m_ShowDebugUI) return;
 
         float frameTime = ImGui::GetIO().DeltaTime * 1000.0f;

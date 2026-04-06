@@ -1,11 +1,10 @@
-#include <Manro/Render/Material/Material.h>
-#include "Backend/Vulkan/VulkanContext.h"
-#include "Backend/Vulkan/Pipeline.h"
+#include "Material.h"
+#include "Vulkan/VulkanContext.h"
+#include "Vulkan/Pipeline.h"
 
 namespace Manro {
-
     Material::Material(const VulkanContext &ctx, Scope<Pipeline> pipeline, VkDescriptorSetLayout layout)
-            : m_Context(ctx), m_Pipeline(std::move(pipeline)), m_DescriptorSetLayout(layout) {
+        : m_Context(ctx), m_Pipeline(std::move(pipeline)), m_DescriptorSetLayout(layout) {
     }
 
     Material::~Material() {
@@ -23,5 +22,4 @@ namespace Manro {
     VkPipelineLayout Material::GetLayout() const { return m_Pipeline->GetLayout(); }
 
     VkDescriptorSetLayout Material::GetDescriptorSetLayout() const { return m_DescriptorSetLayout; }
-
 } // namespace Manro

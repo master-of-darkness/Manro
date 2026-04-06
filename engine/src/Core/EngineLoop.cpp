@@ -17,7 +17,6 @@
 #endif
 
 namespace Manro {
-
     void EngineLoop::Run(IApplication &app) {
         Logger::Init();
 
@@ -85,5 +84,4 @@ namespace Manro {
         timeEndPeriod(1);
 #endif
     }
-
 } // namespace Manro

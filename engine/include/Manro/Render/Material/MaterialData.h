@@ -1,7 +1,11 @@
 #pragma once
 
 #include <Manro/Core/Types.h>
+
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
+#include <functional>
 
 #include "nvshaders/gltf_scene_io.h.slang"
 

@@ -1,7 +1,8 @@
 #include "MinecraftDemo.h"
 
 #include <Manro/Resource/Primitives.h>
-#include <Manro/Render/DebugDraw.h>
+#include <Manro/Core/VirtualFS.h>
+#include <Manro/Interfaces/IWindow.h>
 #include <Manro/Core/Logger.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <imgui.h>
@@ -21,7 +22,7 @@ namespace {
     constexpr float kPlayerHeight = 180.f;
     constexpr float kPlayerHalfWidth = kPlayerWidth * 0.5f;
     constexpr float kPlayerHalfHeight = kPlayerHeight * 0.5f;
-    constexpr float kPlayerEyeHeight  = 162.f;
+    constexpr float kPlayerEyeHeight = 162.f;
 
     constexpr float kTPSDistance = 360.f;
     constexpr float kTPSPivotOffset = 132.f;
@@ -61,7 +62,7 @@ void MinecraftDemo::OnStartup(const Manro::InitContext &ctx) {
     auto settings = m_Renderer->GetSettings();
     settings.enableVSync = false;
     settings.aaMode = Manro::AntiAliasingMode::None;
-    settings.msaaSamples = VK_SAMPLE_COUNT_1_BIT;
+    settings.msaaSamples = Manro::MSAASampleCount::MSAA_1X;
     settings.shadows.enabled = false;
     m_Renderer->SetSettings(settings);
 
@@ -77,7 +78,7 @@ void MinecraftDemo::OnStartup(const Manro::InitContext &ctx) {
     m_PlayerPosition = {0.f, spawnY, 0.f};
 
     Manro::PhysicsWorld::DynamicBodyDesc playerBodyDesc{};
-    playerBodyDesc.friction         = 0.f;
+    playerBodyDesc.friction = 0.f;
     playerBodyDesc.restitution = 0.f;
     playerBodyDesc.convexRadius = 0.f;
     playerBodyDesc.allowSleeping = false;
@@ -110,14 +111,14 @@ bool MinecraftDemo::OnUpdate(const Manro::FrameContext &ctx, const Manro::UserCm
     m_InteractionCooldown = std::max(0.f, m_InteractionCooldown - dt);
 
     const bool ctrlDown = m_InputManager.IsKeyDown(Manro::Key::LeftCtrl);
-    const bool f11Down  = m_InputManager.IsKeyDown(Manro::Key::F11);
+    const bool f11Down = m_InputManager.IsKeyDown(Manro::Key::F11);
     const bool f1Down = m_InputManager.IsKeyDown(Manro::Key::F1);
     const bool f2Down = m_InputManager.IsKeyDown(Manro::Key::F2);
     const bool f3Down = m_InputManager.IsKeyDown(Manro::Key::F3);
 
     if (ctrlDown && !m_CtrlWasDown) m_InputCaptured = !m_InputCaptured;
-    if (f11Down  && !m_F11WasDown)  m_Window->ToggleFullscreen();
-    if (f1Down   && !m_F1WasDown) {
+    if (f11Down && !m_F11WasDown) m_Window->ToggleFullscreen();
+    if (f1Down && !m_F1WasDown) {
         m_NoClip = !m_NoClip;
         m_PhysicsWorld->SetLinearVelocity(m_PlayerBody, {0.f, 0.f, 0.f});
         m_PhysicsWorld->SetBodyMotionType(m_PlayerBody, m_NoClip);
@@ -126,17 +127,17 @@ bool MinecraftDemo::OnUpdate(const Manro::FrameContext &ctx, const Manro::UserCm
     if (f3Down && !m_F3WasDown) m_ThirdPerson = !m_ThirdPerson;
 
     m_CtrlWasDown = ctrlDown;
-    m_F11WasDown  = f11Down;
+    m_F11WasDown = f11Down;
     m_F1WasDown = f1Down;
     m_F2WasDown = f2Down;
-    m_F3WasDown   = f3Down;
+    m_F3WasDown = f3Down;
 
     if (m_InputManager.IsKeyDown(Manro::Key::Escape)) return false;
 
     if (m_InputCaptured) {
         auto [dx, dy] = m_InputManager.ConsumeMouseDelta();
-        m_Yaw   += dx * m_MouseSensitivity;
-        m_Pitch  = std::clamp(m_Pitch - dy * m_MouseSensitivity, -89.f, 89.f);
+        m_Yaw += dx * m_MouseSensitivity;
+        m_Pitch = std::clamp(m_Pitch - dy * m_MouseSensitivity, -89.f, 89.f);
 
         const float yawRad = glm::radians(m_Yaw);
         const float pitchRad = glm::radians(m_Pitch);
@@ -151,7 +152,7 @@ bool MinecraftDemo::OnUpdate(const Manro::FrameContext &ctx, const Manro::UserCm
         float speed = m_MoveSpeed;
         if (m_InputManager.IsKeyDown(K::LeftShift)) speed *= m_SprintMultiplier;
 
-        const bool spaceDown  = m_InputManager.IsKeyDown(K::Space);
+        const bool spaceDown = m_InputManager.IsKeyDown(K::Space);
         const bool jumpPressed = spaceDown && !m_SpaceWasDown;
 
         if (m_NoClip) {
@@ -165,11 +166,10 @@ bool MinecraftDemo::OnUpdate(const Manro::FrameContext &ctx, const Manro::UserCm
             if (m_InputManager.IsKeyDown(K::S)) moveDir -= lookDir;
             if (m_InputManager.IsKeyDown(K::D)) moveDir += right;
             if (m_InputManager.IsKeyDown(K::A)) moveDir -= right;
-            if (spaceDown)                       moveDir += up;
+            if (spaceDown) moveDir += up;
             if (m_InputManager.IsKeyDown(K::LeftCtrl)) moveDir -= up;
             if (glm::length(moveDir) > 0.001f) moveDir = glm::normalize(moveDir);
             m_PhysicsWorld->SetKinematicVelocity(m_PlayerBody, moveDir * speed);
-
         } else {
             m_IsGrounded = m_PhysicsWorld->IsGrounded(m_PlayerBody);
 
@@ -272,18 +272,18 @@ void MinecraftDemo::OnRender(Manro::FrameContext &frame) {
 
     const float dayTau = (m_TimeOfDay / 24.f) * 2.f * 3.14159265f;
     const float sunAltitude = sinf(dayTau - 1.5707963f);
-    const float sunAzimuth  = cosf(dayTau - 1.5707963f);
+    const float sunAzimuth = cosf(dayTau - 1.5707963f);
 
     Manro::LightData sun{};
     sun.type = shaderio::eLightTypeDirectional;
     sun.direction = glm::normalize(Manro::Vec3{sunAzimuth, -sunAltitude, 0.25f});
     if (sunAltitude > 0.1f) {
-        sun.color     = {1.0f, 0.96f, 0.88f};
+        sun.color = {1.0f, 0.96f, 0.88f};
         sun.intensity = 2.8f * sunAltitude + 0.4f;
     } else if (sunAltitude > -0.2f) {
         const float t = (sunAltitude + 0.2f) / 0.3f;
-        sun.color     = glm::mix(Manro::Vec3{0.95f, 0.35f, 0.12f},
-                                 Manro::Vec3{1.0f, 0.96f, 0.88f}, t);
+        sun.color = glm::mix(Manro::Vec3{0.95f, 0.35f, 0.12f},
+                             Manro::Vec3{1.0f, 0.96f, 0.88f}, t);
         sun.intensity = 0.9f;
     } else {
         sun.color = {0.18f, 0.25f, 0.44f};
@@ -308,10 +308,10 @@ void MinecraftDemo::OnRender(Manro::FrameContext &frame) {
         const Manro::Vec3 center = BlockCenter(m_TargetBlock.coord);
         glm::mat4 model = glm::translate(glm::mat4(1.f), center);
         model = glm::scale(model, Manro::Vec3(kHalfBlock + 3.f));
-        m_Renderer->DebugBox({0.f, 0.f, 0.f}, {1.f, 1.f, 1.f}, model, 0xFFF7E27Du);
+        m_Renderer->DrawBox({0.f, 0.f, 0.f}, {1.f, 1.f, 1.f}, model, 0xFFF7E27Du);
     }
 
-    if (m_ShowPhysics) m_PhysicsWorld->DrawDebug(*m_Renderer);
+    if (m_ShowPhysics) m_PhysicsWorld->DrawPhysics(*m_Renderer);
 
     m_Renderer->BeginRendering();
     m_Renderer->RenderQueue();
@@ -425,7 +425,7 @@ bool MinecraftDemo::SetBlock(const BlockCoord &coord, BlockType type) {
     if (type != BlockType::Water) {
         const Manro::Vec3 center = BlockCenter(coord);
         Manro::PhysicsWorld::StaticBodyDesc desc{};
-        desc.friction    = 0.6f;
+        desc.friction = 0.6f;
         desc.restitution = 0.f;
         desc.convexRadius = 0.f;
         body = m_PhysicsWorld->AddStaticBox(center, {kHalfBlock, kHalfBlock, kHalfBlock}, desc);
@@ -480,7 +480,7 @@ void MinecraftDemo::UpdateInteraction(
     const bool rightDown = m_InputManager.IsMouseButtonDown(Manro::MouseButton::Right);
 
     if (!m_InputCaptured) {
-        m_LeftMouseWasDown  = leftDown;
+        m_LeftMouseWasDown = leftDown;
         m_RightMouseWasDown = rightDown;
         return;
     }
@@ -502,7 +502,7 @@ void MinecraftDemo::UpdateInteraction(
         }
     }
 
-    m_LeftMouseWasDown  = leftDown;
+    m_LeftMouseWasDown = leftDown;
     m_RightMouseWasDown = rightDown;
 }
 
@@ -516,10 +516,10 @@ void MinecraftDemo::RefreshTargetBlock(const Manro::Vec3 &eyePos, const Manro::V
     const auto it = m_BodyToCoord.find(hit.body.packed);
     if (it == m_BodyToCoord.end()) return;
 
-    m_TargetBlock.valid       = true;
-    m_TargetBlock.coord       = it->second;
+    m_TargetBlock.valid = true;
+    m_TargetBlock.coord = it->second;
     m_TargetBlock.hitPosition = hit.position;
-    m_TargetBlock.hitNormal   = hit.normal;
+    m_TargetBlock.hitNormal = hit.normal;
 }
 
 bool MinecraftDemo::TryGetPlacementCoord(BlockCoord &outCoord) const {
@@ -562,7 +562,7 @@ bool MinecraftDemo::CanPlaceBlock(const BlockCoord &coord) const {
 
 void MinecraftDemo::DrawGui(float dt) const {
     const ImVec2 display = ImGui::GetIO().DisplaySize;
-    ImDrawList  *draw    = ImGui::GetBackgroundDrawList();
+    ImDrawList *draw = ImGui::GetBackgroundDrawList();
     const ImVec2 center{display.x * 0.5f, display.y * 0.5f};
 
     draw->AddLine({center.x - 10.f, center.y}, {center.x + 10.f, center.y},
@@ -606,13 +606,13 @@ void MinecraftDemo::DrawGui(float dt) const {
     }
     ImGui::End();
 
-    const float slotW  = 116.f;
+    const float slotW = 116.f;
     const float slotH = 42.f;
     const float gap = 8.f;
     const int nSlots = 6;
     const float totalW = slotW * nSlots + gap * (nSlots - 1);
     const float startX = display.x * 0.5f - totalW * 0.5f;
-    const float y      = display.y - 72.f;
+    const float y = display.y - 72.f;
     ImFont *font = ImGui::GetFont();
     const float labelSize = ImGui::GetFontSize() * 0.84f;
 
@@ -620,8 +620,8 @@ void MinecraftDemo::DrawGui(float dt) const {
         const bool selected = (i == m_SelectedBlockIndex);
         const ImVec2 a{startX + i * (slotW + gap), y};
         const ImVec2 b{a.x + slotW, a.y + slotH};
-        const auto   color = BlockColor(static_cast<BlockType>(i));
-        const ImU32  fill  = IM_COL32(
+        const auto color = BlockColor(static_cast<BlockType>(i));
+        const ImU32 fill = IM_COL32(
             static_cast<int>(color.r * 255.f),
             static_cast<int>(color.g * 255.f),
             static_cast<int>(color.b * 255.f), 220);
@@ -645,7 +645,7 @@ void MinecraftDemo::DrawGui(float dt) const {
 
 Manro::Vec3 MinecraftDemo::GetForwardVector() const {
     const float pitchRad = glm::radians(m_Pitch);
-    const float yawRad   = glm::radians(m_Yaw);
+    const float yawRad = glm::radians(m_Yaw);
     return glm::normalize(Manro::Vec3{
         cosf(pitchRad) * cosf(yawRad),
         sinf(pitchRad),
@@ -671,9 +671,9 @@ MinecraftDemo::BlockType MinecraftDemo::GetSelectedBlockType() const {
 
 const char *MinecraftDemo::BlockName(BlockType type) {
     switch (type) {
-        case BlockType::Grass:  return "Grass";
-        case BlockType::Dirt:   return "Dirt";
-        case BlockType::Stone:  return "Stone";
+        case BlockType::Grass: return "Grass";
+        case BlockType::Dirt: return "Dirt";
+        case BlockType::Stone: return "Stone";
         case BlockType::Wood: return "Wood";
         case BlockType::Leaf: return "Leaf";
         case BlockType::Water: return "Water";
@@ -684,12 +684,12 @@ const char *MinecraftDemo::BlockName(BlockType type) {
 Manro::Vec4 MinecraftDemo::BlockColor(BlockType type) {
     switch (type) {
         case BlockType::Grass: return {0.42f, 0.69f, 0.28f, 1.f};
-        case BlockType::Dirt:  return {0.50f, 0.32f, 0.18f, 1.f};
+        case BlockType::Dirt: return {0.50f, 0.32f, 0.18f, 1.f};
         case BlockType::Stone: return {0.58f, 0.60f, 0.63f, 1.f};
-        case BlockType::Wood:  return {0.56f, 0.40f, 0.21f, 1.f};
+        case BlockType::Wood: return {0.56f, 0.40f, 0.21f, 1.f};
         case BlockType::Leaf: return {0.24f, 0.52f, 0.19f, 1.f};
         case BlockType::Water: return {0.18f, 0.42f, 0.78f, 0.6f};
-        default:               return {1.f, 1.f, 1.f, 1.f};
+        default: return {1.f, 1.f, 1.f, 1.f};
     }
 }
 
@@ -697,7 +697,7 @@ int MinecraftDemo::TerrainHeight(int x, int z) {
     const float fx = static_cast<float>(x);
     const float fz = static_cast<float>(z);
 
-    float n  =        sinf(fx * 0.031f) * cosf(fz * 0.027f);
+    float n = sinf(fx * 0.031f) * cosf(fz * 0.027f);
     n += 0.50f * sinf(fx * 0.071f + 1.3f) * cosf(fz * 0.063f + 0.9f);
     n += 0.25f * sinf(fx * 0.157f + 2.1f) * cosf(fz * 0.149f + 1.7f);
     n += 0.125f * sinf(fx * 0.311f + 0.5f) * cosf(fz * 0.293f + 2.3f);

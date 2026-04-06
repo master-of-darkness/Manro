@@ -1,25 +1,22 @@
 #pragma once
 
+#include <Manro/Core/Handles.h>
 #include <Manro/Core/Types.h>
-#include <Manro/Render/TextureManager.h>
-#include <Manro/Render/MeshManager.h>
-#include <Manro/Render/Overlay/Overlay.h>
-#include <Manro/Render/Material/Material.h>
 #include <Manro/Render/Material/MaterialInstance.h>
 #include <Manro/Render/RendererConfig.h>
-#include <Manro/Interfaces/IWindow.h>
-#include <Manro/Core/VirtualFS.h>
-#include <nvshaders/gltf_scene_io.h.slang>
-#include <Manro/Render/Tonemap/Tonemapper.h>
 #include <Manro/Render/RenderSettings.h>
+#include <Manro/Resource/ModelLoader.h>
+#include <Manro/Resource/TextureLoader.h>
+#include <nvshaders/gltf_scene_io.h.slang>
 
-#include <array>
-#include <unordered_map>
+#include <string>
 #include <vector>
 
 namespace Manro {
+    class IWindow;
+    class Material;
+    class MeshManager;
     class Model;
-
     class RendererImpl;
 
     struct FrameStats {
@@ -30,8 +27,6 @@ namespace Manro {
 
         void Reset() { drawCalls = triangleCount = instanceCount = lightCount = 0; }
     };
-
-    class IWindow;
 
     using LightData = shaderio::GltfLight;
 
@@ -96,8 +91,6 @@ namespace Manro {
 
         float GetAspectRatio() const;
 
-        TextureManager &GetTextures();
-
         MeshManager &GetMeshes();
 
         void SetSettings(const RenderSettings &settings);
@@ -119,21 +112,21 @@ namespace Manro {
 
         std::string GetAdapterName() const;
 
-        void DebugLine(const Vec3 &a, const Vec3 &b, u32 color, bool depthTest = true);
+        void DrawLine(const Vec3 &a, const Vec3 &b, u32 color, bool depthTest = true);
 
-        void DebugAABB(const Vec3 &min, const Vec3 &max, u32 color, bool depthTest = true);
+        void DrawAABB(const Vec3 &min, const Vec3 &max, u32 color, bool depthTest = true);
 
-        void DebugBox(const Vec3 &center, const Vec3 &half, const Mat4 &transform,
-                      u32 color, bool depthTest = true);
+        void DrawBox(const Vec3 &center, const Vec3 &half, const Mat4 &transform,
+                     u32 color, bool depthTest = true);
 
-        void DebugSphere(const Vec3 &center, float radius, u32 color,
-                         int segments = 16, bool depthTest = true);
+        void DrawSphere(const Vec3 &center, float radius, u32 color,
+                        int segments = 8, bool depthTest = true);
 
-        void DebugFrustum(const Mat4 &invViewProj, u32 color, bool depthTest = true);
+        void DrawFrustum(const Mat4 &invViewProj, u32 color, bool depthTest = true);
 
-        void DebugCross(const Vec3 &center, float size, u32 color, bool depthTest = true);
+        void DrawCross(const Vec3 &center, float size, u32 color, bool depthTest = true);
 
-        void DebugAxes(const Mat4 &transform, float size = 50.f);
+        void DrawAxes(const Mat4 &transform, float size = 50.f);
 
     private:
         Scope<RendererImpl> m_Impl;

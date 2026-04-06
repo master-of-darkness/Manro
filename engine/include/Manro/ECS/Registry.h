@@ -9,7 +9,6 @@
 #include <functional>
 
 namespace Manro {
-
     class Registry {
     public:
         Registry() {
@@ -48,7 +47,7 @@ namespace Manro {
             if (id >= m_Arrays.size())
                 m_Arrays.resize(id + 1);
             assert(!m_Arrays[id] && "Component registered twice.");
-            m_Arrays[id] = std::make_unique<ComponentArray<T>>();
+            m_Arrays[id] = std::make_unique<ComponentArray<T> >();
         }
 
         template<typename T>
@@ -114,7 +113,6 @@ namespace Manro {
         std::queue<Entity> m_Available;
         u32 m_LivingCount{0};
         std::array<Signature, MAX_ENTITIES> m_Signatures;
-        std::vector<std::unique_ptr<IComponentArray>> m_Arrays;
+        std::vector<std::unique_ptr<IComponentArray> > m_Arrays;
     };
-
 } // namespace Manro

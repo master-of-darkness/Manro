@@ -6,17 +6,21 @@ namespace Manro {
     Scope<RendererImpl> CreateRendererImpl(IWindow &window, u32 width, u32 height,
                                            const RenderSettings &settings, const RendererConfig &config);
 
-    bool RendererImplBeginFrame(RendererImpl & impl);
-    void RendererImplBeginRendering(RendererImpl & impl);
-    void RendererImplRenderQueue(RendererImpl & impl);
-    void RendererImplEndRendering(RendererImpl & impl);
-    void RendererImplEndFrameAndPresent(RendererImpl & impl);
+    bool RendererImplBeginFrame(RendererImpl &impl);
+
+    void RendererImplBeginRendering(RendererImpl &impl);
+
+    void RendererImplRenderQueue(RendererImpl &impl);
+
+    void RendererImplEndRendering(RendererImpl &impl);
+
+    void RendererImplEndFrameAndPresent(RendererImpl &impl);
 
     void RendererImplDrawMesh(RendererImpl &impl, MeshHandle mesh, MaterialInstance &mat, const Mat4 &model);
 
     void RendererImplDrawMeshStatic(RendererImpl &impl, MeshHandle mesh, MaterialInstance &mat, const Mat4 &model);
 
-    void RendererImplClearStaticDraws(RendererImpl & impl);
+    void RendererImplClearStaticDraws(RendererImpl &impl);
 
     void RendererImplDrawModel(RendererImpl &impl, const Model &model, const Mat4 &transform);
 
@@ -24,7 +28,7 @@ namespace Manro {
 
     void RendererImplAddLight(RendererImpl &impl, const LightData &light);
 
-    void RendererImplClearLights(RendererImpl & impl);
+    void RendererImplClearLights(RendererImpl &impl);
 
     void RendererImplSetViewProjection(RendererImpl &impl, const Mat4 &view, const Mat4 &proj);
 
@@ -40,26 +44,25 @@ namespace Manro {
 
     Ref<Material> RendererImplGetDefaultMaterial(const RendererImpl &impl);
 
-    Scope<MaterialInstance> RendererImplCreateMaterialInstance(RendererImpl &impl, Ref<Material> mat);
+    Scope<MaterialInstance> RendererImplCreateMaterialInstance(RendererImpl &impl, const Ref<Material> &mat);
 
     void RendererImplOnResize(RendererImpl &impl, u32 width, u32 height);
 
     float RendererImplGetAspectRatio(const RendererImpl &impl);
 
-    TextureManager &RendererImplGetTextures(RendererImpl & impl);
-    MeshManager &RendererImplGetMeshes(RendererImpl & impl);
+    MeshManager &RendererImplGetMeshes(RendererImpl &impl);
 
     void RendererImplSetSettings(RendererImpl &impl, const RenderSettings &settings);
 
     const RenderSettings &RendererImplGetSettingsConst(const RendererImpl &impl);
 
-    RenderSettings &RendererImplGetSettings(RendererImpl & impl);
+    RenderSettings &RendererImplGetSettings(RendererImpl &impl);
 
     const RendererConfig &RendererImplGetConfig(const RendererImpl &impl);
 
     const FrameStats &RendererImplGetLastFrameStats(const RendererImpl &impl);
 
-    void RendererImplSetDebugUIEnabled(RendererImpl &impl, bool enabled);
+    void RendererImplSetDebugUIEnabled(const RendererImpl &impl, bool enabled);
 
     bool RendererImplIsDebugUIEnabled(const RendererImpl &impl);
 
@@ -67,19 +70,19 @@ namespace Manro {
 
     std::string RendererImplGetAdapterName(const RendererImpl &impl);
 
-    void RendererImplDebugLine(RendererImpl &impl, const Vec3 &a, const Vec3 &b, u32 color, bool depthTest);
+    void RendererImplDrawLine(const RendererImpl &impl, const Vec3 &a, const Vec3 &b, u32 color, bool depthTest);
 
-    void RendererImplDebugAABB(RendererImpl &impl, const Vec3 &min, const Vec3 &max, u32 color, bool depthTest);
+    void RendererImplDrawAABB(const RendererImpl &impl, const Vec3 &min, const Vec3 &max, u32 color, bool depthTest);
 
-    void RendererImplDebugBox(RendererImpl &impl, const Vec3 &center, const Vec3 &half, const Mat4 &transform,
-                              u32 color, bool depthTest);
+    void RendererImplDrawBox(const RendererImpl &impl, const Vec3 &center, const Vec3 &half, const Mat4 &transform,
+                             u32 color, bool depthTest);
 
-    void RendererImplDebugSphere(RendererImpl &impl, const Vec3 &center, float radius, u32 color, int segments,
-                                 bool depthTest);
+    void RendererImplDrawSphere(const RendererImpl &impl, const Vec3 &center, float radius, u32 color, int segments,
+                                bool depthTest);
 
-    void RendererImplDebugFrustum(RendererImpl &impl, const Mat4 &invViewProj, u32 color, bool depthTest);
+    void RendererImplDrawFrustum(const RendererImpl &impl, const Mat4 &invViewProj, u32 color, bool depthTest);
 
-    void RendererImplDebugCross(RendererImpl &impl, const Vec3 &center, float size, u32 color, bool depthTest);
+    void RendererImplDrawCross(const RendererImpl &impl, const Vec3 &center, float size, u32 color, bool depthTest);
 
-    void RendererImplDebugAxes(RendererImpl &impl, const Mat4 &transform, float size);
+    void RendererImplDrawAxes(const RendererImpl &impl, const Mat4 &transform, float size);
 }

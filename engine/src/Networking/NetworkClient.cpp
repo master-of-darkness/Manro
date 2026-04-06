@@ -68,12 +68,12 @@ namespace Manro {
 
         flatbuffers::FlatBufferBuilder builder(256);
         auto clientInput = Networking::CreateClientInput(
-                builder,
-                cmd.MoveForward,
-                cmd.MoveRight,
-                cmd.ViewYaw,
-                cmd.ViewPitch,
-                cmd.Buttons);
+            builder,
+            cmd.MoveForward,
+            cmd.MoveRight,
+            cmd.ViewYaw,
+            cmd.ViewPitch,
+            cmd.Buttons);
         auto msg = Networking::CreateMessage(builder, Networking::Payload_ClientInput, clientInput.Union());
         builder.Finish(msg);
         ENetPacket *pkt = enet_packet_create(builder.GetBufferPointer(), builder.GetSize(), ENET_PACKET_FLAG_RELIABLE);
@@ -92,7 +92,7 @@ namespace Manro {
                             registry.HasComponent<RigidBodyComponent>(m_LocalPlayerEntityId)) {
                             auto &rb = registry.GetComponent<RigidBodyComponent>(m_LocalPlayerEntityId);
                             const Vec3 spawnPos{
-                                    assign->position()->x(), assign->position()->y(), assign->position()->z()
+                                assign->position()->x(), assign->position()->y(), assign->position()->z()
                             };
                             physics->SetBodyPosition(rb.BodyId, spawnPos);
                             if (registry.HasComponent<TransformComponent>(m_LocalPlayerEntityId))
@@ -132,14 +132,14 @@ namespace Manro {
 
             const Vec3 serverPos{entitySn->position()->x(), entitySn->position()->y(), entitySn->position()->z()};
             const Vec3 serverVel = entitySn->velocity()
-                                   ? Vec3{
-                            entitySn->velocity()->x(), entitySn->velocity()->y(),
-                            entitySn->velocity()->z()
-                    }
-                                   : Vec3{0.f, 0.f, 0.f};
+                                       ? Vec3{
+                                           entitySn->velocity()->x(), entitySn->velocity()->y(),
+                                           entitySn->velocity()->z()
+                                       }
+                                       : Vec3{0.f, 0.f, 0.f};
             const Vec3 serverColor = entitySn->color()
-                                     ? Vec3{entitySn->color()->x(), entitySn->color()->y(), entitySn->color()->z()}
-                                     : Vec3{1.f, 1.f, 1.f};
+                                         ? Vec3{entitySn->color()->x(), entitySn->color()->y(), entitySn->color()->z()}
+                                         : Vec3{1.f, 1.f, 1.f};
 
             if (m_ServerPlayerEntityId != NULL_ENTITY && eId == m_ServerPlayerEntityId) {
                 ReconcileLocalPlayer(serverPos, registry, physics);
@@ -162,8 +162,8 @@ namespace Manro {
                 interp.previousPosition = serverPos;
                 interp.previousTime = m_ClientTime;
                 registry.AddComponent<TransformComponent>(
-                        static_cast<Entity>(eId),
-                        TransformComponent{serverPos, {0.f, 0.f, 0.f}, {1.f, 1.f, 1.f}});
+                    static_cast<Entity>(eId),
+                    TransformComponent{serverPos, {0.f, 0.f, 0.f}, {1.f, 1.f, 1.f}});
             }
 
             RemoteEntitySnapshot snap{};

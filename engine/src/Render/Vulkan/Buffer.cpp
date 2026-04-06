@@ -1,14 +1,14 @@
-#include <volk.h>
+#include "Buffer.h"
+#include "VulkanContext.h"
 
-#include "../Backend/Vulkan/Buffer.h"
-#include "../Backend/Vulkan/VulkanContext.h"
+#include <volk.h>
 #include <stdexcept>
 #include <cstring>
 
 namespace Manro {
     Buffer::Buffer(const VulkanContext &context, VkDeviceSize size, VkBufferUsageFlags usage,
                    VmaMemoryUsage memoryUsage)
-            : m_Context(context), m_Size(size) {
+        : m_Context(context), m_Size(size) {
         VkBufferCreateInfo bufferInfo{};
         bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         bufferInfo.size = size;

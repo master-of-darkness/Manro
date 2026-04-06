@@ -1,5 +1,6 @@
-#include "../Backend/Vulkan/Pipeline.h"
-#include "../Backend/Vulkan/VulkanContext.h"
+#include "Pipeline.h"
+#include "VulkanContext.h"
+
 #include <stdexcept>
 
 namespace Manro {
@@ -33,8 +34,8 @@ namespace Manro {
         }
 
         std::vector<VkDynamicState> dynamicStates = {
-                VK_DYNAMIC_STATE_VIEWPORT,
-                VK_DYNAMIC_STATE_SCISSOR,
+            VK_DYNAMIC_STATE_VIEWPORT,
+            VK_DYNAMIC_STATE_SCISSOR,
         };
         VkPipelineDynamicStateCreateInfo dynamicState{};
         dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
@@ -92,8 +93,10 @@ namespace Manro {
         depthStencil.stencilTestEnable = VK_FALSE;
 
         VkPushConstantRange pushRange{};
-        pushRange.stageFlags = config.pushConstantStages ? config.pushConstantStages : (VK_SHADER_STAGE_VERTEX_BIT |
-                                                                                        VK_SHADER_STAGE_FRAGMENT_BIT);
+        pushRange.stageFlags = config.pushConstantStages
+                                   ? config.pushConstantStages
+                                   : (VK_SHADER_STAGE_VERTEX_BIT |
+                                      VK_SHADER_STAGE_FRAGMENT_BIT);
         pushRange.offset = 0;
         pushRange.size = config.pushConstantSize;
 
@@ -153,8 +156,9 @@ namespace Manro {
         VkShaderModule compModule = CreateShaderModule(computeSpv);
 
         VkPushConstantRange pushRange{};
-        pushRange.stageFlags = config.pushConstantStages ? config.pushConstantStages
-                                                         : static_cast<VkShaderStageFlags>(VK_SHADER_STAGE_COMPUTE_BIT);
+        pushRange.stageFlags = config.pushConstantStages
+                                   ? config.pushConstantStages
+                                   : static_cast<VkShaderStageFlags>(VK_SHADER_STAGE_COMPUTE_BIT);
         pushRange.offset = 0;
         pushRange.size = config.pushConstantSize;
 
@@ -198,9 +202,9 @@ namespace Manro {
         stage.pName = config.vertexEntryPoint.c_str();
 
         std::vector<VkDynamicState> dynamicStates = {
-                VK_DYNAMIC_STATE_VIEWPORT,
-                VK_DYNAMIC_STATE_SCISSOR,
-                VK_DYNAMIC_STATE_DEPTH_BIAS,
+            VK_DYNAMIC_STATE_VIEWPORT,
+            VK_DYNAMIC_STATE_SCISSOR,
+            VK_DYNAMIC_STATE_DEPTH_BIAS,
         };
         VkPipelineDynamicStateCreateInfo dynamicState{};
         dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;

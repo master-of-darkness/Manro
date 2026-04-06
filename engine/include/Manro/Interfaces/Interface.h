@@ -1,7 +1,6 @@
 #pragma once
 
 namespace Manro {
-
     class Interface {
     public:
         Interface() = default;
@@ -16,5 +15,4 @@ namespace Manro {
 
         virtual ~Interface() = default;
     };
-
 } // namespace Manro

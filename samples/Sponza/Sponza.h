@@ -34,8 +34,8 @@ struct FlyCamera {
 
 struct BenchWaypoint {
     Manro::Vec3 position;
-    float yaw;    // degrees
-    float pitch;  // degrees
+    float yaw; // degrees
+    float pitch; // degrees
 };
 
 enum class BenchmarkState {

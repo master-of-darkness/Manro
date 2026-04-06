@@ -13,5 +13,4 @@ namespace Manro {
         static const u32 id = detail::g_NextComponentTypeId.fetch_add(1, std::memory_order_relaxed);
         return id;
     }
-
 } // namespace Manro

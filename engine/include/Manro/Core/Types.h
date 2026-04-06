@@ -2,7 +2,6 @@
 
 #include <cstdint>
 #include <memory>
-#include <string>
 
 namespace Manro {
     using u8 = std::uint8_t;

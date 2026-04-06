@@ -8,7 +8,7 @@ union SDL_Event;
 namespace Manro {
     class IInputBackend : public Interface {
     public:
-        virtual ~IInputBackend() = default;
+        ~IInputBackend() override = default;
 
         virtual void ProcessEvent(const SDL_Event &event) = 0;
 

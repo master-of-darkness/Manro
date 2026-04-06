@@ -20,7 +20,7 @@ endif ()
 target_include_directories(slang INTERFACE "${slang_bin_SOURCE_DIR}/include")
 
 set(SHADER_SRC_DIR "${CMAKE_SOURCE_DIR}/shaders/source")
-set(SHADER_BIN_DIR "${CMAKE_BINARY_DIR}/assets/shaders/spv")
+set(SHADER_BIN_DIR "${CMAKE_BINARY_DIR}/shaders/spv")
 file(MAKE_DIRECTORY "${SHADER_BIN_DIR}")
 
 set(_EMBED_SCRIPT "${CMAKE_SOURCE_DIR}/cmake/embed_spv.cmake")
@@ -69,6 +69,7 @@ compile_shader("skybox.slang" "PSMain" "fragment" "${SHADER_BIN_DIR}/skybox.frag
 compile_shader("nvshaders/tonemapper.slang" "Tonemap"      "compute" "${SHADER_BIN_DIR}/tonemapper.comp.spv")
 compile_shader("nvshaders/tonemapper.slang" "Histogram"    "compute" "${SHADER_BIN_DIR}/tonemapper_histogram.comp.spv")
 compile_shader("nvshaders/tonemapper.slang" "AutoExposure" "compute" "${SHADER_BIN_DIR}/tonemapper_autoexposure.comp.spv")
+compile_shader("line_expand.slang" "main" "compute" "${SHADER_BIN_DIR}/line_expand.comp.spv")
 
 add_custom_target(PrecompileShaders DEPENDS ${PRECOMPILED_SHADERS})
 
@@ -88,5 +89,6 @@ embed_shader("${SHADER_BIN_DIR}/skybox.vert.spv" skybox_vert_spv)
 embed_shader("${SHADER_BIN_DIR}/skybox.frag.spv" skybox_frag_spv)
 embed_shader("${SHADER_BIN_DIR}/gizmo.vert.spv" gizmo_vert_spv)
 embed_shader("${SHADER_BIN_DIR}/gizmo.frag.spv" gizmo_frag_spv)
+embed_shader("${SHADER_BIN_DIR}/line_expand.comp.spv" line_expand_comp_spv)
 
 add_custom_target(EmbedShaders DEPENDS ${EMBEDDED_SHADER_HEADERS})

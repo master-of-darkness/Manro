@@ -1,23 +1,29 @@
 #include "Internal/RendererInternal.h"
-#include "Backend/Vulkan/VulkanHelpers.h"
+#include "Internal/SceneRenderer.h"
+#include "Internal/MeshManagerInternal.h"
+#include "Vulkan/VulkanHelpers.h"
+#include "Overlay/Overlay.h"
+#include "Vulkan/VulkanContext.h"
+#include "Vulkan/Buffer.h"
+#include "Vulkan/Pipeline.h"
+#include "Vulkan/DescriptorAllocator.h"
+#include "Vulkan/PipelineCache.h"
+#include "Material/Material.h"
+#include "Texture/TextureManager.h"
+#include "Internal/ScenePassState.h"
+#include "Internal/DrawSystem.h"
+
 #include <Manro/Core/Logger.h>
 #include <Manro/Core/VirtualFS.h>
+#include <Manro/Render/MeshManager.h>
+#include <Manro/Render/Material/MaterialInstance.h>
 #include <Manro/Render/Model.h>
-#include <Manro/Render/SceneRenderer.h>
+#include <Manro/Render/RendererConfig.h>
 #include <VkBootstrap.h>
 #include <stdexcept>
-#include <cstring>
 #include <algorithm>
 #include <glm/gtc/matrix_transform.hpp>
 
-
-#include "Backend/Vulkan/VulkanContext.h"
-#include "Backend/Vulkan/Buffer.h"
-#include "Backend/Vulkan/Pipeline.h"
-#include "Backend/Vulkan/DescriptorAllocator.h"
-#include "Backend/Vulkan/PipelineCache.h"
-#include "Internal/ScenePassState.h"
-#include "Manro/Render/DebugDraw.h"
 
 namespace Manro {
     struct FrameData {
@@ -43,8 +49,6 @@ namespace Manro {
         VkDescriptorSet skyboxSet = VK_NULL_HANDLE;
 
         bool staticUploaded = false;
-        Scope<Buffer> debugVertexBuffer;
-        Scope<Buffer> debugVertexBufferNoDepth;
     };
 
     struct UniformBufferObject {
@@ -215,7 +219,7 @@ namespace Manro {
         Ref<Material> GetDefaultMaterial() const { return m_DefaultMaterial; }
 
 
-        Scope<MaterialInstance> CreateMaterialInstance(Ref<Material> mat);
+        static Scope<MaterialInstance> CreateMaterialInstance(const Ref<Material> &mat);
 
         void OnResize(u32 width, u32 height);
 
@@ -240,12 +244,12 @@ namespace Manro {
 
         const FrameStats &GetLastFrameStats() const { return m_LastFrameStats; }
 
-        void SetDebugUIEnabled(bool enabled) {
-            if (m_ImGuiLayer) m_ImGuiLayer->SetDebugUIEnabled(enabled);
+        void SetDebugUIEnabled(bool enabled) const {
+            if (m_Overlay) m_Overlay->SetDebugUIEnabled(enabled);
         }
 
         bool IsDebugUIEnabled() const {
-            return m_ImGuiLayer && m_ImGuiLayer->IsDebugUIEnabled();
+            return m_Overlay && m_Overlay->IsDebugUIEnabled();
         }
 
         void GetVramStats(u64 &usage, u64 &budget) const {
@@ -258,19 +262,19 @@ namespace Manro {
             return props.deviceName;
         }
 
-        void DebugLine(const Vec3 &a, const Vec3 &b, u32 color, bool depthTest);
+        void DrawLine(const Vec3 &a, const Vec3 &b, u32 color, bool depthTest) const;
 
-        void DebugAABB(const Vec3 &min, const Vec3 &max, u32 color, bool depthTest);
+        void DrawAABB(const Vec3 &min, const Vec3 &max, u32 color, bool depthTest) const;
 
-        void DebugBox(const Vec3 &center, const Vec3 &half, const Mat4 &transform, u32 color, bool depthTest);
+        void DrawBox(const Vec3 &center, const Vec3 &half, const Mat4 &transform, u32 color, bool depthTest) const;
 
-        void DebugSphere(const Vec3 &center, float radius, u32 color, int segments, bool depthTest);
+        void DrawSphere(const Vec3 &center, float radius, u32 color, int segments, bool depthTest) const;
 
-        void DebugFrustum(const Mat4 &invViewProj, u32 color, bool depthTest);
+        void DrawFrustum(const Mat4 &invViewProj, u32 color, bool depthTest) const;
 
-        void DebugCross(const Vec3 &center, float size, u32 color, bool depthTest);
+        void DrawCross(const Vec3 &center, float size, u32 color, bool depthTest) const;
 
-        void DebugAxes(const Mat4 &transform, float size);
+        void DrawAxes(const Mat4 &transform, float size) const;
 
     private:
         void CreateOffscreenResources(u32 w, u32 h);
@@ -317,7 +321,7 @@ namespace Manro {
 
         void RenderShadowPass(VkCommandBuffer cb);
 
-        Mat4 ComputeLightViewProj(const Vec3 &lightDir) const;
+        static Mat4 ComputeLightViewProj(const Vec3 &lightDir);
 
         void FinalizeFrameAndPresent(VkCommandBuffer cb);
 
@@ -342,14 +346,14 @@ namespace Manro {
         BindlessAllocator m_BindlessAlloc;
         PipelineCache m_PipelineCache;
 
-        Scope<Overlay> m_ImGuiLayer;
+        Scope<Overlay> m_Overlay;
         Ref<Material> m_DefaultMaterial;
 
         std::vector<MeshInstance> m_StaticInstances;
         std::vector<CullData> m_StaticCullData;
         u32 m_StaticTriangleCount = 0;
-        std::vector<DebugVertex> m_DebugVertices;
-        std::vector<DebugVertex> m_DebugVerticesNoDepth;
+
+        Scope<DrawSystem> m_DrawSystem;
 
         VkDescriptorPool m_DescriptorPool = VK_NULL_HANDLE;
         VkDescriptorSetLayout m_PbrSetLayout = VK_NULL_HANDLE;
@@ -366,8 +370,6 @@ namespace Manro {
         Scope<Pipeline> m_MeshCullPipeline;
         Scope<Pipeline> m_ShadowPipeline;
         Scope<Pipeline> m_SkyboxPipeline;
-        Scope<Pipeline> m_DebugPipeline;
-        Scope<Pipeline> m_DebugPipelineNoDepth;
 
         Scope<Buffer> m_SkyboxVertexBuffer;
         Scope<Buffer> m_SkyboxIndexBuffer;
@@ -430,21 +432,41 @@ namespace Manro {
         void BuildSkyboxPipeline();
 
         void UpdateSkyboxDescriptorSet(u32 fi);
-
-        void BuildDebugPipeline();
-
-        void FlushDebugDraw(VkCommandBuffer cb);
     };
 
-    static constexpr u32 kMaxDebugVertices = 65536;
+    static VkSampleCountFlagBits ToVulkanSampleCount(MSAASampleCount samples) {
+        switch (samples) {
+            case MSAASampleCount::MSAA_1X: return VK_SAMPLE_COUNT_1_BIT;
+            case MSAASampleCount::MSAA_2X: return VK_SAMPLE_COUNT_2_BIT;
+            case MSAASampleCount::MSAA_4X: return VK_SAMPLE_COUNT_4_BIT;
+            case MSAASampleCount::MSAA_8X: return VK_SAMPLE_COUNT_8_BIT;
+            case MSAASampleCount::MSAA_16X: return VK_SAMPLE_COUNT_16_BIT;
+            case MSAASampleCount::MSAA_32X: return VK_SAMPLE_COUNT_32_BIT;
+            case MSAASampleCount::MSAA_64X: return VK_SAMPLE_COUNT_64_BIT;
+            default: return VK_SAMPLE_COUNT_1_BIT;
+        }
+    }
+
+    static MSAASampleCount FromVulkanSampleCount(VkSampleCountFlagBits samples) {
+        switch (samples) {
+            case VK_SAMPLE_COUNT_1_BIT: return MSAASampleCount::MSAA_1X;
+            case VK_SAMPLE_COUNT_2_BIT: return MSAASampleCount::MSAA_2X;
+            case VK_SAMPLE_COUNT_4_BIT: return MSAASampleCount::MSAA_4X;
+            case VK_SAMPLE_COUNT_8_BIT: return MSAASampleCount::MSAA_8X;
+            case VK_SAMPLE_COUNT_16_BIT: return MSAASampleCount::MSAA_16X;
+            case VK_SAMPLE_COUNT_32_BIT: return MSAASampleCount::MSAA_32X;
+            case VK_SAMPLE_COUNT_64_BIT: return MSAASampleCount::MSAA_64X;
+            default: return MSAASampleCount::MSAA_1X;
+        }
+    }
 
     static void NormalizeRenderSettings(RenderSettings &settings, VkSampleCountFlagBits maxSamples) {
         settings.resolutionScale = std::clamp(settings.resolutionScale, 0.1f, 2.0f);
 
         if (settings.aaMode != AntiAliasingMode::MSAA) {
-            settings.msaaSamples = VK_SAMPLE_COUNT_1_BIT;
-        } else if (static_cast<u32>(settings.msaaSamples) > static_cast<u32>(maxSamples)) {
-            settings.msaaSamples = maxSamples;
+            settings.msaaSamples = MSAASampleCount::MSAA_1X;
+        } else if (static_cast<u32>(ToVulkanSampleCount(settings.msaaSamples)) > static_cast<u32>(maxSamples)) {
+            settings.msaaSamples = FromVulkanSampleCount(maxSamples);
         }
 
         settings.nearZ = std::max(settings.nearZ, 0.001f);
@@ -475,15 +497,15 @@ namespace Manro {
                                const RenderSettings &settings,
                                const RendererConfig &config)
         : m_Context("GameEngine", window),
-          m_Textures(m_Context, m_BindlessAlloc), m_Meshes(m_Context), m_Settings(settings),
+          m_Textures(m_Context, m_BindlessAlloc), m_Meshes(new MeshManagerImpl(m_Context)), m_Settings(settings),
           m_Config(config) {
         NormalizeRenderSettings(m_Settings, m_Context.GetMaxUsableSampleCount());
         InitializeSwapchain(width, height, m_Settings.enableVSync);
 
         m_PendingWidth = width;
         m_PendingHeight = height;
-        m_RenderExtent.width = std::max(1u, (u32) (width * m_Settings.resolutionScale));
-        m_RenderExtent.height = std::max(1u, (u32) (height * m_Settings.resolutionScale));
+        m_RenderExtent.width = std::max(1u, static_cast<u32>(width * m_Settings.resolutionScale));
+        m_RenderExtent.height = std::max(1u, static_cast<u32>(height * m_Settings.resolutionScale));
 
         VkDevice device = m_Context.GetDevice();
 
@@ -509,7 +531,10 @@ namespace Manro {
         BuildCullPipeline();
         BuildShadowPipeline();
         BuildSkyboxPipeline();
-        BuildDebugPipeline();
+
+        m_DrawSystem = CreateScope<DrawSystem>(m_Context);
+        m_DrawSystem->Init(m_OffscreenFormat, m_DepthFormat, ToVulkanSampleCount(m_Settings.msaaSamples));
+
         CreateCommandBuffers();
         CreateSyncObjects();
 
@@ -525,7 +550,7 @@ namespace Manro {
         guiInfo.window = &window;
         guiInfo.colorFormat = m_SwapchainFormat;
         guiInfo.imageCount = static_cast<u32>(m_SwapchainImages.size());
-        m_ImGuiLayer = CreateScope<Overlay>(guiInfo);
+        m_Overlay = CreateScope<Overlay>(guiInfo);
     }
 
     RendererImpl::~RendererImpl() {
@@ -538,7 +563,7 @@ namespace Manro {
         for (auto &alloc: m_PerFrameAlloc)
             alloc.Shutdown();
 
-        m_ImGuiLayer.reset();
+        m_Overlay.reset();
         m_DefaultMaterial.reset();
         m_PbrPipeline.reset();
         m_ZPrepassPipeline.reset();
@@ -631,7 +656,7 @@ namespace Manro {
         }
     }
 
-    Scope<MaterialInstance> RendererImpl::CreateMaterialInstance(Ref<Material> material) {
+    Scope<MaterialInstance> RendererImpl::CreateMaterialInstance(const Ref<Material> &material) {
         return CreateScope<MaterialInstance>(material);
     }
 
@@ -714,8 +739,8 @@ namespace Manro {
         VkSemaphoreCreateInfo semaphoreInfo{};
         semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
         m_RenderFinishedSemaphores.resize(m_SwapchainImages.size());
-        for (size_t i = 0; i < m_RenderFinishedSemaphores.size(); ++i) {
-            if (vkCreateSemaphore(m_Context.GetDevice(), &semaphoreInfo, nullptr, &m_RenderFinishedSemaphores[i]) !=
+        for (auto &m_RenderFinishedSemaphore: m_RenderFinishedSemaphores) {
+            if (vkCreateSemaphore(m_Context.GetDevice(), &semaphoreInfo, nullptr, &m_RenderFinishedSemaphore) !=
                 VK_SUCCESS) {
                 throw std::runtime_error("Failed to recreate render-finished semaphores");
             }
@@ -729,8 +754,8 @@ namespace Manro {
         DestroyImage(m_Context, m_MsaaColorImage);
         DestroyImage(m_Context, m_DepthImage);
 
-        m_RenderExtent.width = std::max(1u, (u32) (w * m_Settings.resolutionScale));
-        m_RenderExtent.height = std::max(1u, (u32) (h * m_Settings.resolutionScale));
+        m_RenderExtent.width = std::max(1u, static_cast<u32>(w * m_Settings.resolutionScale));
+        m_RenderExtent.height = std::max(1u, static_cast<u32>(h * m_Settings.resolutionScale));
 
         CreateOffscreenResources(m_RenderExtent.width, m_RenderExtent.height);
         CreateColorResources(m_RenderExtent.width, m_RenderExtent.height);
@@ -739,7 +764,10 @@ namespace Manro {
         BuildPbrPipeline();
         BuildCompositePipeline();
         BuildSkyboxPipeline();
-        BuildDebugPipeline();
+        if (m_DrawSystem) {
+            m_DrawSystem->Shutdown();
+            m_DrawSystem->Init(m_OffscreenFormat, m_DepthFormat, ToVulkanSampleCount(m_Settings.msaaSamples));
+        }
 
         for (u32 i = 0; i < GetFrameCount(); ++i) {
             UpdateCompositeDescriptorSet(i);
@@ -793,18 +821,18 @@ namespace Manro {
         p.height = height;
         p.format = m_DepthFormat;
         p.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-        p.samples = m_Settings.msaaSamples;
+        p.samples = ToVulkanSampleCount(m_Settings.msaaSamples);
         m_DepthImage = CreateImage(m_Context, p, VK_IMAGE_ASPECT_DEPTH_BIT);
     }
 
     void RendererImpl::CreateColorResources(u32 width, u32 height) {
-        if (m_Settings.msaaSamples == VK_SAMPLE_COUNT_1_BIT) return;
+        if (m_Settings.msaaSamples == MSAASampleCount::MSAA_1X) return;
         ImageCreateParams p{};
         p.width = width;
         p.height = height;
         p.format = m_OffscreenFormat;
         p.usage = VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-        p.samples = m_Settings.msaaSamples;
+        p.samples = ToVulkanSampleCount(m_Settings.msaaSamples);
         m_MsaaColorImage = CreateImage(m_Context, p);
     }
 
@@ -884,9 +912,9 @@ namespace Manro {
         }
     }
 
-    Mat4 RendererImpl::ComputeLightViewProj(const Vec3 &lightDir) const {
-        const float worldRadius = 3500.f;
-        const float depth = 10000.f;
+    Mat4 RendererImpl::ComputeLightViewProj(const Vec3 &lightDir) {
+        constexpr float worldRadius = 3500.f;
+        constexpr float depth = 10000.f;
 
         Vec3 normDir = glm::normalize(lightDir);
         Vec3 target = Vec3(0.f, 200.f, 0.f);
@@ -960,7 +988,7 @@ namespace Manro {
         ri.pDepthAttachment = &depthAtt;
         vkCmdBeginRendering(cb, &ri);
 
-        VkViewport vp{0.f, 0.f, float(shadowMapSize), float(shadowMapSize), 0.f, 1.f};
+        VkViewport vp{0.f, 0.f, static_cast<float>(shadowMapSize), static_cast<float>(shadowMapSize), 0.f, 1.f};
         vkCmdSetViewport(cb, 0, 1, &vp);
         VkRect2D scissor{
             {0, 0},
@@ -1128,16 +1156,20 @@ namespace Manro {
         m_CurrentFrameCullData.clear();
 
         m_CurrentFrameStats.Reset();
-        m_CurrentFrameStats.drawCalls = (u32) m_StaticInstances.size();
-        m_CurrentFrameStats.instanceCount = (u32) m_StaticInstances.size();
+        m_CurrentFrameStats.drawCalls = static_cast<u32>(m_StaticInstances.size());
+        m_CurrentFrameStats.instanceCount = static_cast<u32>(m_StaticInstances.size());
         m_CurrentFrameStats.triangleCount = m_StaticTriangleCount;
 
-        if (m_ImGuiLayer) m_ImGuiLayer->NewFrame();
+        if (m_DrawSystem) {
+            m_DrawSystem->BeginFrame();
+        }
 
-        if (m_ImGuiLayer && m_ImGuiLayer->IsDebugUIEnabled()) {
+        if (m_Overlay) m_Overlay->NewFrame();
+
+        if (m_Overlay && m_Overlay->IsDebugUIEnabled()) {
             bool settingsChanged = false;
             RenderSettings editedSettings = m_Settings;
-            m_ImGuiLayer->DrawDebugUI(
+            m_Overlay->DrawDebugger(
                 m_LastFrameStats.drawCalls,
                 m_LastFrameStats.triangleCount,
                 m_LastFrameStats.instanceCount,
@@ -1175,8 +1207,8 @@ namespace Manro {
         VkCommandBuffer cb = frame.commandBuffer;
         VkExtent2D ext = m_RenderExtent;
 
-        u32 staticInstCount = (u32) m_StaticInstances.size();
-        u32 dynamicInstCount = (u32) m_CurrentFrameInstances.size();
+        u32 staticInstCount = static_cast<u32>(m_StaticInstances.size());
+        u32 dynamicInstCount = static_cast<u32>(m_CurrentFrameInstances.size());
         u32 totalInstCount = staticInstCount + dynamicInstCount;
 
         if (totalInstCount > 0) {
@@ -1227,9 +1259,9 @@ namespace Manro {
             mcpc.planes[3] = r3 - r1;
             mcpc.planes[4] = r3 + r2;
             mcpc.planes[5] = r3 - r2;
-            for (int i = 0; i < 6; ++i) {
-                float len = glm::length(Vec3(mcpc.planes[i]));
-                mcpc.planes[i] /= len;
+            for (auto &plane: mcpc.planes) {
+                float len = glm::length(Vec3(plane));
+                plane /= len;
             }
             mcpc.instanceCount = totalInstCount;
             mcpc.cameraPos = Vec4(m_CameraPosition, 1.0f);
@@ -1305,9 +1337,9 @@ namespace Manro {
                     shadowPc.planes[3] = r3 - r1;
                     shadowPc.planes[4] = r3 + r2;
                     shadowPc.planes[5] = r3 - r2;
-                    for (int i = 0; i < 6; ++i) {
-                        float len = glm::length(Vec3(shadowPc.planes[i]));
-                        shadowPc.planes[i] /= len;
+                    for (auto &plane: shadowPc.planes) {
+                        float len = glm::length(Vec3(plane));
+                        plane /= len;
                     }
                     shadowPc.instanceCount = totalInstCount;
                     shadowPc.cameraPos = Vec4(m_CameraPosition, 1.0f);
@@ -1352,15 +1384,15 @@ namespace Manro {
                 u32 tilesX;
                 u32 tilesY;
                 Vec4 zParams;
-            } cpc;
+            } cpc{};
 
             cpc.view = m_ViewMatrix;
             cpc.proj = m_ProjectionMatrix;
             cpc.proj[1][1] *= -1;
             const u32 tileSize = GetTileSize();
-            cpc.screenTile = Vec4((float) ext.width, (float) ext.height,
-                                  (float) tileSize, (float) tileSize);
-            cpc.lightCount = (u32) m_PendingLights.size();
+            cpc.screenTile = Vec4(static_cast<float>(ext.width), static_cast<float>(ext.height),
+                                  static_cast<float>(tileSize), static_cast<float>(tileSize));
+            cpc.lightCount = static_cast<u32>(m_PendingLights.size());
             cpc.maxPerTile = GetMaxLightsPerTile();
             cpc.tilesX = std::min((ext.width + tileSize - 1) / tileSize, GetMaxTilesX());
             cpc.tilesY = std::min((ext.height + tileSize - 1) / tileSize, GetMaxTilesY());
@@ -1421,11 +1453,11 @@ namespace Manro {
         ubo.gamma = m_Settings.lighting.gamma;
         ubo.prefilteredCubeMipLevels = 1.f;
         ubo.scaleIBLAmbient = m_Settings.lighting.iblIntensity;
-        ubo.lightCount = (int) m_PendingLights.size();
+        ubo.lightCount = static_cast<int>(m_PendingLights.size());
         ubo.shadowsEnabled = m_Settings.shadows.enabled ? 1 : 0;
         ubo.aoIntensity = m_Settings.lighting.enableAmbientOcclusion ? m_Settings.lighting.aoIntensity : 0.0f;
         ubo.aoRadius = m_Settings.lighting.aoRadius;
-        ubo.screenDimensions = Vec2((float) ext.width, (float) ext.height);
+        ubo.screenDimensions = Vec2(static_cast<float>(ext.width), static_cast<float>(ext.height));
         ubo.nearZ = m_Settings.nearZ;
         ubo.farZ = m_Settings.farZ;
         ubo.slicesZ = 1.f;
@@ -1433,7 +1465,7 @@ namespace Manro {
         ubo.enableRayQueryReflections = m_Settings.rayTracing.enableReflections ? 1 : 0;
         ubo.enableRayQueryTransparency = m_Settings.rayTracing.enableTransparency ? 1 : 0;
         ubo.rayMaxBounces = m_Settings.rayTracing.maxBounces;
-        ubo.materialCount = (int) m_Materials.size();
+        ubo.materialCount = static_cast<int>(m_Materials.size());
         frame.uboBuffer->LoadData(&ubo, sizeof(ubo));
 
         if (m_MaterialsDirty && !m_Materials.empty()) {
@@ -1472,7 +1504,7 @@ namespace Manro {
     void RendererImpl::RenderQueue() {
         FrameData &frame = m_Frames[m_CurrentFrame];
 
-        u32 instanceCount = (u32) (m_StaticInstances.size() + m_CurrentFrameInstances.size());
+        u32 instanceCount = static_cast<u32>(m_StaticInstances.size() + m_CurrentFrameInstances.size());
         auto *indexBuffer = m_Meshes.GetIndexBuffer();
         auto *vertexBuffer = m_Meshes.GetVertexBuffer();
 
@@ -1505,7 +1537,7 @@ namespace Manro {
         Internal::PbrPassState pbrState{};
         if (hasMeshes) {
             pbrState.extent = m_RenderExtent;
-            pbrState.msaaSamples = m_Settings.msaaSamples;
+            pbrState.msaaSamples = ToVulkanSampleCount(m_Settings.msaaSamples);
             pbrState.msaaColorView = m_MsaaColorImage.view;
             pbrState.offscreenColorView = m_OffscreenColor.view;
             pbrState.depthView = m_DepthImage.view;
@@ -1529,7 +1561,7 @@ namespace Manro {
             skyState.extent = m_RenderExtent;
             skyState.offscreenColorView = m_OffscreenColor.view;
             skyState.msaaColorView = m_MsaaColorImage.view;
-            skyState.msaaSamples = m_Settings.msaaSamples;
+            skyState.msaaSamples = ToVulkanSampleCount(m_Settings.msaaSamples);
             skyState.depthView = m_DepthImage.view;
             skyState.pipeline = m_SkyboxPipeline->GetHandle();
             skyState.pipelineLayout = m_SkyboxPipeline->GetLayout();
@@ -1547,7 +1579,26 @@ namespace Manro {
 
 
     void RendererImpl::EndRendering() {
-        FlushDebugDraw(m_Frames[m_CurrentFrame].commandBuffer);
+        FrameData &frame = m_Frames[m_CurrentFrame];
+        VkCommandBuffer cb = frame.commandBuffer;
+
+        if (m_DrawSystem) {
+            m_DrawSystem->DispatchExpand(cb);
+
+            Mat4 proj = m_ProjectionMatrix;
+            proj[1][1] *= -1.0f;
+            Mat4 viewProj = proj * m_ViewMatrix;
+
+            const bool useMsaaResolve = (m_MsaaColorImage.view != VK_NULL_HANDLE);
+            VkImageView colorTarget = useMsaaResolve ? m_MsaaColorImage.view : m_OffscreenColor.view;
+
+            m_DrawSystem->Draw(cb, viewProj,
+                               colorTarget,
+                               m_OffscreenColor.view,
+                               m_DepthImage.view,
+                               m_RenderExtent.width, m_RenderExtent.height,
+                               useMsaaResolve);
+        }
     }
 
     void RendererImpl::EndFrameAndPresent() {
@@ -1596,7 +1647,7 @@ namespace Manro {
             CompositePushConstants cpc{};
             cpc.tm = m_Settings.postProcess.tonemapping;
             cpc.tm.inputMatrix = SlangFloat3x3(glm::mat3(cpc.tm.exposure));
-            cpc.imageSize = Vec2((float) m_RenderExtent.width, (float) m_RenderExtent.height);
+            cpc.imageSize = Vec2(static_cast<float>(m_RenderExtent.width), static_cast<float>(m_RenderExtent.height));
             cpc.bloomIntensity = m_Settings.postProcess.bloomIntensity;
             cpc.bloomThreshold = m_Settings.postProcess.bloomThreshold;
             cpc.bloomEnabled = m_Settings.postProcess.enableBloom ? 1 : 0;
@@ -1615,7 +1666,7 @@ namespace Manro {
             m_SceneRenderer->Flush(cb);
         }
 
-        if (m_ImGuiLayer) {
+        if (m_Overlay) {
             VkRenderingAttachmentInfo guiColorAtt{};
             guiColorAtt.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
             guiColorAtt.imageView = m_SwapchainImageViews[m_CurrentImageIndex];
@@ -1630,7 +1681,7 @@ namespace Manro {
             guiRi.colorAttachmentCount = 1;
             guiRi.pColorAttachments = &guiColorAtt;
             vkCmdBeginRendering(cb, &guiRi);
-            m_ImGuiLayer->Render(cb);
+            m_Overlay->Render(cb);
             vkCmdEndRendering(cb);
         }
 
@@ -1648,7 +1699,7 @@ namespace Manro {
             if (it != m_MaterialCache.end()) {
                 matIndex = it->second;
             } else {
-                matIndex = (u32) m_Materials.size();
+                matIndex = static_cast<u32>(m_Materials.size());
                 m_Materials.push_back(md);
                 m_MaterialCache[md] = matIndex;
                 m_MaterialsDirty = true;
@@ -1708,7 +1759,7 @@ namespace Manro {
         cullData.center[1] = worldCenter.y;
         cullData.center[2] = worldCenter.z;
         cullData.radius = mesh->radius * std::sqrt(scaleSq);
-        cullData.instanceId = (u32) m_CurrentFrameInstances.size();
+        cullData.instanceId = static_cast<u32>(m_CurrentFrameInstances.size());
 
         m_CurrentFrameInstances.push_back(inst);
         m_CurrentFrameCullData.push_back(cullData);
@@ -1735,7 +1786,7 @@ namespace Manro {
             if (it != m_MaterialCache.end()) {
                 matIndex = it->second;
             } else {
-                matIndex = (u32) m_Materials.size();
+                matIndex = static_cast<u32>(m_Materials.size());
                 m_Materials.push_back(md);
                 m_MaterialCache[md] = matIndex;
                 m_MaterialsDirty = true;
@@ -1792,7 +1843,7 @@ namespace Manro {
         cullData.center[1] = worldCenter.y;
         cullData.center[2] = worldCenter.z;
         cullData.radius = mesh->radius * std::sqrt(scaleSq);
-        cullData.instanceId = (u32) (m_StaticInstances.size() + m_CurrentFrameInstances.size());
+        cullData.instanceId = static_cast<u32>(m_StaticInstances.size() + m_CurrentFrameInstances.size());
 
         m_StaticInstances.push_back(inst);
         m_StaticCullData.push_back(cullData);
@@ -1845,7 +1896,7 @@ namespace Manro {
             };
 
             VkDescriptorBindingFlags flags[14];
-            for (int i = 0; i < 14; ++i) flags[i] = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
+            for (unsigned int &flag: flags) flag = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
 
             VkDescriptorSetLayoutBindingFlagsCreateInfo bf{};
             bf.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
@@ -1932,18 +1983,18 @@ namespace Manro {
     void RendererImpl::CreateDescriptorPool() {
         const u32 frameCount = GetFrameCount();
         VkDescriptorPoolSize sizes[] = {
-            {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, u32(frameCount * 10)},
-            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, u32(frameCount * 20)},
-            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, u32(frameCount * 10)},
-            {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, u32(frameCount * 2)},
-            {VK_DESCRIPTOR_TYPE_SAMPLER, u32(frameCount * 10)},
-            {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, u32(frameCount * 10)},
+            {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, (frameCount * 10)},
+            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, (frameCount * 20)},
+            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, (frameCount * 10)},
+            {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, (frameCount * 2)},
+            {VK_DESCRIPTOR_TYPE_SAMPLER, (frameCount * 10)},
+            {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, (frameCount * 10)},
         };
         VkDescriptorPoolCreateInfo ci{};
         ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         ci.poolSizeCount = 6;
         ci.pPoolSizes = sizes;
-        ci.maxSets = u32(frameCount * 24);
+        ci.maxSets = frameCount * 24;
         if (vkCreateDescriptorPool(m_Context.GetDevice(), &ci, nullptr, &m_DescriptorPool) != VK_SUCCESS)
             throw std::runtime_error("Failed to create descriptor pool");
     }
@@ -1989,7 +2040,6 @@ namespace Manro {
         m_SkyboxIndexBuffer = CreateScope<Buffer>(m_Context, sizeof(skyboxIndices),
                                                   VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
         m_SkyboxIndexBuffer->LoadData(skyboxIndices, sizeof(skyboxIndices));
-
     }
 
     void RendererImpl::UpdatePbrDescriptorSet(u32 fi) {
@@ -2012,7 +2062,7 @@ namespace Manro {
 
         VkWriteDescriptorSet writes[9]{};
         auto w = [&](int i, VkDescriptorSet set, u32 binding, VkDescriptorType type,
-                     VkDescriptorBufferInfo *bi = nullptr, VkDescriptorImageInfo *ii = nullptr) {
+                     const VkDescriptorBufferInfo *bi = nullptr, const VkDescriptorImageInfo *ii = nullptr) {
             writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             writes[i].dstSet = set;
             writes[i].dstBinding = binding;
@@ -2034,7 +2084,7 @@ namespace Manro {
 
         // Cull set
         VkWriteDescriptorSet cw[4]{};
-        auto cull = [&](int i, u32 binding, VkDescriptorType type, VkDescriptorBufferInfo *bi) {
+        auto cull = [&](int i, u32 binding, VkDescriptorType type, const VkDescriptorBufferInfo *bi) {
             cw[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             cw[i].dstSet = frame.cullSet;
             cw[i].dstBinding = binding;
@@ -2054,7 +2104,7 @@ namespace Manro {
         VkDescriptorBufferInfo countI{frame.countBuffer->GetHandle(), 0, VK_WHOLE_SIZE};
 
         VkWriteDescriptorSet mw[4]{};
-        auto mc = [&](int i, u32 binding, VkDescriptorBufferInfo *bi) {
+        auto mc = [&](int i, u32 binding, const VkDescriptorBufferInfo *bi) {
             mw[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             mw[i].dstSet = frame.meshCullSet;
             mw[i].dstBinding = binding;
@@ -2072,7 +2122,7 @@ namespace Manro {
         VkDescriptorBufferInfo shadowCountI{frame.shadowCountBuffer->GetHandle(), 0, VK_WHOLE_SIZE};
 
         VkWriteDescriptorSet sw[4]{};
-        auto sc = [&](int i, u32 binding, VkDescriptorBufferInfo *bi) {
+        auto sc = [&](int i, u32 binding, const VkDescriptorBufferInfo *bi) {
             sw[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             sw[i].dstSet = frame.shadowMeshCullSet;
             sw[i].dstBinding = binding;
@@ -2252,18 +2302,6 @@ namespace Manro {
                 VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                 VMA_MEMORY_USAGE_GPU_ONLY);
 
-            f.debugVertexBuffer = CreateScope<Buffer>(
-                m_Context,
-                sizeof(DebugVertex) * kMaxDebugVertices,
-                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                VMA_MEMORY_USAGE_CPU_TO_GPU);
-
-            f.debugVertexBufferNoDepth = CreateScope<Buffer>(
-                m_Context,
-                sizeof(DebugVertex) * kMaxDebugVertices,
-                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                VMA_MEMORY_USAGE_CPU_TO_GPU);
-
             VkDescriptorSetLayout layouts[5] = {
                 m_PbrSetLayout, m_CompositeSetLayout,
                 m_CullSetLayout, m_MeshCullSetLayout,
@@ -2319,8 +2357,8 @@ namespace Manro {
             }
         }
 
-        for (size_t i = 0; i < m_RenderFinishedSemaphores.size(); ++i) {
-            if (vkCreateSemaphore(m_Context.GetDevice(), &semaphoreInfo, nullptr, &m_RenderFinishedSemaphores[i]) !=
+        for (auto &m_RenderFinishedSemaphore: m_RenderFinishedSemaphores) {
+            if (vkCreateSemaphore(m_Context.GetDevice(), &semaphoreInfo, nullptr, &m_RenderFinishedSemaphore) !=
                 VK_SUCCESS) {
                 throw std::runtime_error("Failed to create render-finished semaphore");
             }
@@ -2340,7 +2378,7 @@ namespace Manro {
         cfg.fragmentEntryPoint = "main";
         cfg.colorAttachmentFormat = m_OffscreenFormat;
         cfg.depthAttachmentFormat = m_DepthFormat;
-        cfg.msaaSamples = m_Settings.msaaSamples;
+        cfg.msaaSamples = ToVulkanSampleCount(m_Settings.msaaSamples);
         cfg.pushConstantSize = sizeof(PBRPushConstants);
         cfg.descriptorSetLayouts = {m_PbrSetLayout, m_Textures.GetBindlessLayout()};
 
@@ -2349,35 +2387,39 @@ namespace Manro {
         cfg.vertexInputBindings[1] = {1, sizeof(MeshInstance), VK_VERTEX_INPUT_RATE_INSTANCE};
 
         cfg.vertexInputAttributes.resize(12);
-        cfg.vertexInputAttributes[0] = {0, 0, VK_FORMAT_R32G32B32_SFLOAT, (u32) offsetof(Vertex, position)};
-        cfg.vertexInputAttributes[1] = {1, 0, VK_FORMAT_R32G32B32_SFLOAT, (u32) offsetof(Vertex, normal)};
-        cfg.vertexInputAttributes[2] = {2, 0, VK_FORMAT_R32G32_SFLOAT, (u32) offsetof(Vertex, uv)};
-        cfg.vertexInputAttributes[3] = {3, 0, VK_FORMAT_R32G32B32A32_SFLOAT, (u32) offsetof(Vertex, tangent)};
+        cfg.vertexInputAttributes[0] = {0, 0, VK_FORMAT_R32G32B32_SFLOAT, static_cast<u32>(offsetof(Vertex, position))};
+        cfg.vertexInputAttributes[1] = {1, 0, VK_FORMAT_R32G32B32_SFLOAT, static_cast<u32>(offsetof(Vertex, normal))};
+        cfg.vertexInputAttributes[2] = {2, 0, VK_FORMAT_R32G32_SFLOAT, static_cast<u32>(offsetof(Vertex, uv))};
+        cfg.vertexInputAttributes[3] = {
+            3, 0, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(Vertex, tangent))
+        };
         cfg.vertexInputAttributes[4] = {
             4, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
-            (u32) offsetof(MeshInstance, modelMatrix)
+            static_cast<u32>(offsetof(MeshInstance, modelMatrix))
         };
         cfg.vertexInputAttributes[5] = {
             5, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
-            (u32) offsetof(MeshInstance, modelMatrix) + 16
+            static_cast<u32>(offsetof(MeshInstance, modelMatrix)) + 16
         };
         cfg.vertexInputAttributes[6] = {
-            6, 1, VK_FORMAT_R32G32B32A32_SFLOAT, (u32) offsetof(MeshInstance, modelMatrix) + 32
+            6, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(MeshInstance, modelMatrix)) + 32
         };
         cfg.vertexInputAttributes[7] = {
-            7, 1, VK_FORMAT_R32G32B32A32_SFLOAT, (u32) offsetof(MeshInstance, modelMatrix) + 48
+            7, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(MeshInstance, modelMatrix)) + 48
         };
         cfg.vertexInputAttributes[8] = {
             8, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
-            (u32) offsetof(MeshInstance, normalMatrix)
+            static_cast<u32>(offsetof(MeshInstance, normalMatrix))
         };
         cfg.vertexInputAttributes[9] = {
-            9, 1, VK_FORMAT_R32G32B32A32_SFLOAT, (u32) offsetof(MeshInstance, normalMatrix) + 16
+            9, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(MeshInstance, normalMatrix)) + 16
         };
         cfg.vertexInputAttributes[10] = {
-            10, 1, VK_FORMAT_R32G32B32A32_SFLOAT, (u32) offsetof(MeshInstance, normalMatrix) + 32
+            10, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(MeshInstance, normalMatrix)) + 32
         };
-        cfg.vertexInputAttributes[11] = {11, 1, VK_FORMAT_R32_UINT, (u32) offsetof(MeshInstance, materialIndex)};
+        cfg.vertexInputAttributes[11] = {
+            11, 1, VK_FORMAT_R32_UINT, static_cast<u32>(offsetof(MeshInstance, materialIndex))
+        };
 
         cfg.depthWriteEnable = VK_FALSE;
         cfg.depthCompareOp = VK_COMPARE_OP_EQUAL;
@@ -2492,7 +2534,7 @@ namespace Manro {
         PipelineConfigParams cfg{};
         cfg.vertexEntryPoint = "main";
         cfg.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
-        cfg.msaaSamples = m_Settings.msaaSamples;
+        cfg.msaaSamples = ToVulkanSampleCount(m_Settings.msaaSamples);
         cfg.pushConstantSize = sizeof(ShadowPushConstants);
         cfg.pushConstantStages = VK_SHADER_STAGE_VERTEX_BIT;
         cfg.descriptorSetLayouts = {m_PbrSetLayout};
@@ -2502,31 +2544,31 @@ namespace Manro {
         cfg.vertexInputBindings[1] = {1, sizeof(MeshInstance), VK_VERTEX_INPUT_RATE_INSTANCE};
 
         cfg.vertexInputAttributes.resize(9);
-        cfg.vertexInputAttributes[0] = {0, 0, VK_FORMAT_R32G32B32_SFLOAT, (u32) offsetof(Vertex, position)};
-        cfg.vertexInputAttributes[1] = {1, 0, VK_FORMAT_R32G32B32_SFLOAT, (u32) offsetof(Vertex, normal)};
+        cfg.vertexInputAttributes[0] = {0, 0, VK_FORMAT_R32G32B32_SFLOAT, static_cast<u32>(offsetof(Vertex, position))};
+        cfg.vertexInputAttributes[1] = {1, 0, VK_FORMAT_R32G32B32_SFLOAT, static_cast<u32>(offsetof(Vertex, normal))};
         cfg.vertexInputAttributes[2] = {
             4, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
-            (u32) offsetof(MeshInstance, modelMatrix)
+            static_cast<u32>(offsetof(MeshInstance, modelMatrix))
         };
         cfg.vertexInputAttributes[3] = {
-            5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, (u32) offsetof(MeshInstance, modelMatrix) + 16
+            5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(MeshInstance, modelMatrix)) + 16
         };
         cfg.vertexInputAttributes[4] = {
             6, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
-            (u32) offsetof(MeshInstance, modelMatrix) + 32
+            static_cast<u32>(offsetof(MeshInstance, modelMatrix)) + 32
         };
         cfg.vertexInputAttributes[5] = {
-            7, 1, VK_FORMAT_R32G32B32A32_SFLOAT, (u32) offsetof(MeshInstance, modelMatrix) + 48
+            7, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(MeshInstance, modelMatrix)) + 48
         };
         cfg.vertexInputAttributes[6] = {
             8, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
-            (u32) offsetof(MeshInstance, normalMatrix)
+            static_cast<u32>(offsetof(MeshInstance, normalMatrix))
         };
         cfg.vertexInputAttributes[7] = {
-            9, 1, VK_FORMAT_R32G32B32A32_SFLOAT, (u32) offsetof(MeshInstance, normalMatrix) + 16
+            9, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(MeshInstance, normalMatrix)) + 16
         };
         cfg.vertexInputAttributes[8] = {
-            10, 1, VK_FORMAT_R32G32B32A32_SFLOAT, (u32) offsetof(MeshInstance, normalMatrix) + 32
+            10, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(MeshInstance, normalMatrix)) + 32
         };
 
         m_ShadowPipeline = CreateScope<Pipeline>(m_Context);
@@ -2546,7 +2588,7 @@ namespace Manro {
         cfg.fragmentEntryPoint = "main";
         cfg.colorAttachmentFormat = m_OffscreenFormat;
         cfg.depthAttachmentFormat = m_DepthFormat;
-        cfg.msaaSamples = m_Settings.msaaSamples;
+        cfg.msaaSamples = ToVulkanSampleCount(m_Settings.msaaSamples);
         cfg.descriptorSetLayouts = {m_SkyboxSetLayout};
         cfg.depthWriteEnable = VK_FALSE;
         cfg.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
@@ -2560,153 +2602,53 @@ namespace Manro {
         m_SkyboxPipeline->BuildGraphics(vertSpv, fragSpv, cfg);
     }
 
-    void RendererImpl::BuildDebugPipeline() {
-        auto vertSpv = VirtualFS::Get().ReadFile("shaders://gizmo.vert.spv");
-        auto fragSpv = VirtualFS::Get().ReadFile("shaders://gizmo.frag.spv");
-        if (vertSpv.empty() || fragSpv.empty()) {
-            LOG_ERROR("[Renderer] Debug draw shaders not found");
-            return;
+    void RendererImpl::DrawLine(const Vec3 &a, const Vec3 &b, u32 color, bool depthTest) const {
+        if (m_DrawSystem) {
+            m_DrawSystem->SubmitLine(a, b, color, depthTest);
         }
-
-        PipelineConfigParams cfg{};
-        cfg.vertexEntryPoint = "main";
-        cfg.fragmentEntryPoint = "main";
-        cfg.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
-        cfg.colorAttachmentFormat = m_OffscreenFormat;
-        cfg.depthAttachmentFormat = m_DepthFormat;
-        cfg.msaaSamples = m_Settings.msaaSamples;
-        cfg.vertexInputBindings = {
-            {0, sizeof(DebugVertex), VK_VERTEX_INPUT_RATE_VERTEX}
-        };
-        cfg.vertexInputAttributes = {
-            {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(DebugVertex, position)},
-            {1, 0, VK_FORMAT_R32_UINT, offsetof(DebugVertex, color)},
-        };
-        cfg.pushConstantSize = sizeof(Mat4);
-        cfg.pushConstantStages = VK_SHADER_STAGE_VERTEX_BIT;
-        cfg.depthWriteEnable = VK_FALSE;
-        cfg.depthCompareOp = VK_COMPARE_OP_LESS;
-        cfg.depthTestEnable = VK_TRUE;
-
-        m_DebugPipeline = CreateScope<Pipeline>(m_Context);
-        m_DebugPipeline->BuildGraphics(vertSpv, fragSpv, cfg);
-
-        cfg.depthTestEnable = VK_FALSE;
-        m_DebugPipelineNoDepth = CreateScope<Pipeline>(m_Context);
-        m_DebugPipelineNoDepth->BuildGraphics(vertSpv, fragSpv, cfg);
     }
 
-    void RendererImpl::FlushDebugDraw(VkCommandBuffer cb) {
-        if (m_DebugVertices.empty() && m_DebugVerticesNoDepth.empty()) return;
-        if (!m_DebugPipeline) return;
-
-        FrameData &frame = m_Frames[m_CurrentFrame];
-
-        auto recordLines = [&](std::vector<DebugVertex> &verts, Buffer *buf, Pipeline *pipeline) {
-            if (verts.empty()) return;
-
-            u32 count = static_cast<u32>(std::min(verts.size(), static_cast<size_t>(kMaxDebugVertices)));
-            buf->LoadData(verts.data(), sizeof(DebugVertex) * count);
-
-            VkRenderingAttachmentInfo color{};
-            color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-            color.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-            color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-            if (m_Settings.msaaSamples != VK_SAMPLE_COUNT_1_BIT) {
-                color.imageView = m_MsaaColorImage.view;
-                color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-                color.resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
-                color.resolveImageView = m_OffscreenColor.view;
-                color.resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            } else {
-                color.imageView = m_OffscreenColor.view;
-                color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            }
-
-            VkRenderingAttachmentInfo depth{};
-            depth.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-            depth.imageView = m_DepthImage.view;
-            depth.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-            depth.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-            depth.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-
-            VkRenderingInfo ri{};
-            ri.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-            ri.renderArea.extent = m_RenderExtent;
-            ri.layerCount = 1;
-            ri.colorAttachmentCount = 1;
-            ri.pColorAttachments = &color;
-            ri.pDepthAttachment = &depth;
-
-            vkCmdBeginRendering(cb, &ri);
-
-            VkViewport vp{
-                0, 0,
-                static_cast<float>(m_RenderExtent.width),
-                static_cast<float>(m_RenderExtent.height), 0, 1
-            };
-            vkCmdSetViewport(cb, 0, 1, &vp);
-            VkRect2D sc{{0, 0}, m_RenderExtent};
-            vkCmdSetScissor(cb, 0, 1, &sc);
-
-            vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                              pipeline->GetHandle());
-
-            Mat4 proj = m_ProjectionMatrix;
-            proj[1][1] *= -1;
-            Mat4 viewProj = proj * m_ViewMatrix;
-            vkCmdPushConstants(cb, pipeline->GetLayout(),
-                               VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Mat4), &viewProj);
-
-            VkBuffer vb = buf->GetHandle();
-            VkDeviceSize off = 0;
-            vkCmdBindVertexBuffers(cb, 0, 1, &vb, &off);
-            vkCmdDraw(cb, count, 1, 0, 0);
-
-            vkCmdEndRendering(cb);
-        };
-
-        recordLines(m_DebugVertices, frame.debugVertexBuffer.get(), m_DebugPipeline.get());
-        recordLines(m_DebugVerticesNoDepth, frame.debugVertexBufferNoDepth.get(), m_DebugPipelineNoDepth.get());
-
-        m_DebugVertices.clear();
-        m_DebugVerticesNoDepth.clear();
+    void RendererImpl::DrawAABB(const Vec3 &min, const Vec3 &max, u32 color, bool depthTest) const {
+        if (m_DrawSystem) {
+            m_DrawSystem->SubmitBox((min + max) * 0.5f, (max - min) * 0.5f, Mat4(1.0f), color, depthTest);
+        }
     }
 
-    void RendererImpl::DebugLine(const Vec3 &a, const Vec3 &b, u32 color, bool depthTest) {
-        auto &target = depthTest ? m_DebugVertices : m_DebugVerticesNoDepth;
-        DebugDraw::Line(target, a, b, color, depthTest);
+    void RendererImpl::DrawBox(const Vec3 &center, const Vec3 &half,
+                               const Mat4 &transform, u32 color, bool depthTest) const {
+        if (m_DrawSystem) {
+            m_DrawSystem->SubmitBox(center, half, transform, color, depthTest);
+        }
     }
 
-    void RendererImpl::DebugAABB(const Vec3 &min, const Vec3 &max, u32 color, bool depthTest) {
-        auto &target = depthTest ? m_DebugVertices : m_DebugVerticesNoDepth;
-        DebugDraw::AABB(target, min, max, color, depthTest);
+    void RendererImpl::DrawSphere(const Vec3 &center, float radius,
+                                  u32 color, int segments, bool depthTest) const {
+        if (m_DrawSystem) {
+            m_DrawSystem->SubmitSphere(center, radius, color, segments, depthTest);
+        }
     }
 
-    void RendererImpl::DebugBox(const Vec3 &center, const Vec3 &half,
-                                const Mat4 &transform, u32 color, bool depthTest) {
-        auto &target = depthTest ? m_DebugVertices : m_DebugVerticesNoDepth;
-        DebugDraw::Box(target, center, half, transform, color, depthTest);
+    void RendererImpl::DrawFrustum(const Mat4 &invViewProj, u32 color, bool depthTest) const {
+        if (m_DrawSystem) {
+            m_DrawSystem->SubmitFrustum(invViewProj, color, depthTest);
+        }
     }
 
-    void RendererImpl::DebugSphere(const Vec3 &center, float radius,
-                                   u32 color, int segments, bool depthTest) {
-        auto &target = depthTest ? m_DebugVertices : m_DebugVerticesNoDepth;
-        DebugDraw::Sphere(target, center, radius, color, segments, depthTest);
+    void RendererImpl::DrawCross(const Vec3 &center, float size, u32 color, bool depthTest) const {
+        if (m_DrawSystem) {
+            m_DrawSystem->SubmitCross(center, size, color, depthTest);
+        }
     }
 
-    void RendererImpl::DebugFrustum(const Mat4 &invViewProj, u32 color, bool depthTest) {
-        auto &target = depthTest ? m_DebugVertices : m_DebugVerticesNoDepth;
-        DebugDraw::Frustum(target, invViewProj, color, depthTest);
-    }
+    void RendererImpl::DrawAxes(const Mat4 &transform, float size) const {
+        Vec3 origin = Vec3(transform[3]);
+        Vec3 axisX = Vec3(transform[0]) * size;
+        Vec3 axisY = Vec3(transform[1]) * size;
+        Vec3 axisZ = Vec3(transform[2]) * size;
 
-    void RendererImpl::DebugCross(const Vec3 &center, float size, u32 color, bool depthTest) {
-        auto &target = depthTest ? m_DebugVertices : m_DebugVerticesNoDepth;
-        DebugDraw::Cross(target, center, size, color, depthTest);
-    }
-
-    void RendererImpl::DebugAxes(const Mat4 &transform, float size) {
-        DebugDraw::Axes(m_DebugVertices, transform, size);
+        DrawLine(origin, origin + axisX, 0xFF0000FFu, true);
+        DrawLine(origin, origin + axisY, 0xFF00FF00u, true);
+        DrawLine(origin, origin + axisZ, 0xFFFF0000u, true);
     }
 
     Scope<RendererImpl> CreateRendererImpl(IWindow &window, u32 width, u32 height,
@@ -2770,13 +2712,12 @@ namespace Manro {
 
     Ref<Material> RendererImplGetDefaultMaterial(const RendererImpl &impl) { return impl.GetDefaultMaterial(); }
 
-    Scope<MaterialInstance> RendererImplCreateMaterialInstance(RendererImpl &impl, Ref<Material> mat) {
-        return impl.CreateMaterialInstance(mat);
+    Scope<MaterialInstance> RendererImplCreateMaterialInstance(RendererImpl &impl, const Ref<Material> &mat) {
+        return RendererImpl::CreateMaterialInstance(mat);
     }
 
     void RendererImplOnResize(RendererImpl &impl, u32 width, u32 height) { impl.OnResize(width, height); }
     float RendererImplGetAspectRatio(const RendererImpl &impl) { return impl.GetAspectRatio(); }
-    TextureManager &RendererImplGetTextures(RendererImpl &impl) { return impl.GetTextures(); }
     MeshManager &RendererImplGetMeshes(RendererImpl &impl) { return impl.GetMeshes(); }
     void RendererImplSetSettings(RendererImpl &impl, const RenderSettings &settings) { impl.SetSettings(settings); }
     const RenderSettings &RendererImplGetSettingsConst(const RendererImpl &impl) { return impl.GetSettings(); }
@@ -2784,7 +2725,7 @@ namespace Manro {
     const RendererConfig &RendererImplGetConfig(const RendererImpl &impl) { return impl.GetConfig(); }
 
     const FrameStats &RendererImplGetLastFrameStats(const RendererImpl &impl) { return impl.GetLastFrameStats(); }
-    void RendererImplSetDebugUIEnabled(RendererImpl &impl, bool enabled) { impl.SetDebugUIEnabled(enabled); }
+    void RendererImplSetDebugUIEnabled(const RendererImpl &impl, bool enabled) { impl.SetDebugUIEnabled(enabled); }
     bool RendererImplIsDebugUIEnabled(const RendererImpl &impl) { return impl.IsDebugUIEnabled(); }
 
     void RendererImplGetVramStats(const RendererImpl &impl, u64 &usage, u64 &budget) {
@@ -2793,33 +2734,33 @@ namespace Manro {
 
     std::string RendererImplGetAdapterName(const RendererImpl &impl) { return impl.GetAdapterName(); }
 
-    void RendererImplDebugLine(RendererImpl &impl, const Vec3 &a, const Vec3 &b, u32 color, bool depthTest) {
-        impl.DebugLine(a, b, color, depthTest);
+    void RendererImplDrawLine(const RendererImpl &impl, const Vec3 &a, const Vec3 &b, u32 color, bool depthTest) {
+        impl.DrawLine(a, b, color, depthTest);
     }
 
-    void RendererImplDebugAABB(RendererImpl &impl, const Vec3 &min, const Vec3 &max, u32 color, bool depthTest) {
-        impl.DebugAABB(min, max, color, depthTest);
+    void RendererImplDrawAABB(const RendererImpl &impl, const Vec3 &min, const Vec3 &max, u32 color, bool depthTest) {
+        impl.DrawAABB(min, max, color, depthTest);
     }
 
-    void RendererImplDebugBox(RendererImpl &impl, const Vec3 &center, const Vec3 &half, const Mat4 &transform,
-                              u32 color, bool depthTest) {
-        impl.DebugBox(center, half, transform, color, depthTest);
+    void RendererImplDrawBox(const RendererImpl &impl, const Vec3 &center, const Vec3 &half, const Mat4 &transform,
+                             u32 color, bool depthTest) {
+        impl.DrawBox(center, half, transform, color, depthTest);
     }
 
-    void RendererImplDebugSphere(RendererImpl &impl, const Vec3 &center, float radius, u32 color, int segments,
-                                 bool depthTest) {
-        impl.DebugSphere(center, radius, color, segments, depthTest);
+    void RendererImplDrawSphere(const RendererImpl &impl, const Vec3 &center, float radius, u32 color, int segments,
+                                bool depthTest) {
+        impl.DrawSphere(center, radius, color, segments, depthTest);
     }
 
-    void RendererImplDebugFrustum(RendererImpl &impl, const Mat4 &invViewProj, u32 color, bool depthTest) {
-        impl.DebugFrustum(invViewProj, color, depthTest);
+    void RendererImplDrawFrustum(const RendererImpl &impl, const Mat4 &invViewProj, u32 color, bool depthTest) {
+        impl.DrawFrustum(invViewProj, color, depthTest);
     }
 
-    void RendererImplDebugCross(RendererImpl &impl, const Vec3 &center, float size, u32 color, bool depthTest) {
-        impl.DebugCross(center, size, color, depthTest);
+    void RendererImplDrawCross(const RendererImpl &impl, const Vec3 &center, float size, u32 color, bool depthTest) {
+        impl.DrawCross(center, size, color, depthTest);
     }
 
-    void RendererImplDebugAxes(RendererImpl &impl, const Mat4 &transform, float size) {
-        impl.DebugAxes(transform, size);
+    void RendererImplDrawAxes(const RendererImpl &impl, const Mat4 &transform, float size) {
+        impl.DrawAxes(transform, size);
     }
 } // namespace Manro

@@ -21,7 +21,6 @@
 #include <thread>
 #include <unordered_map>
 #include <cmath>
-#include "Manro/Render/DebugDraw.h"
 
 #ifdef JPH_ENABLE_ASSERTS
 static bool JoltAssertFailed(const char *expr, const char *msg,
@@ -32,6 +31,17 @@ static bool JoltAssertFailed(const char *expr, const char *msg,
 #endif
 
 namespace {
+    constexpr Manro::u32 PackColor(Manro::u8 r, Manro::u8 g, Manro::u8 b, Manro::u8 a = 255) {
+        return (Manro::u32(r)) | (Manro::u32(g) << 8) | (Manro::u32(b) << 16) | (Manro::u32(a) << 24);
+    }
+
+    namespace DrawColors {
+        inline constexpr Manro::u32 Green = PackColor(0, 255, 0);
+        inline constexpr Manro::u32 Yellow = PackColor(255, 255, 0);
+        inline constexpr Manro::u32 Orange = PackColor(255, 128, 0);
+        inline constexpr Manro::u32 Cyan = PackColor(0, 255, 255);
+    }
+
     namespace Layers {
         static constexpr JPH::ObjectLayer NON_MOVING = 0;
         static constexpr JPH::ObjectLayer MOVING = 1;
@@ -69,6 +79,7 @@ namespace {
         }
 
 #endif
+
     private:
         JPH::BroadPhaseLayer m_Map[Layers::NUM_LAYERS];
     };
@@ -163,11 +174,10 @@ namespace Manro {
                           worldTransform.GetTranslation().GetZ());
 
         switch (shape->GetSubType()) {
-
             case JPH::EShapeSubType::Box: {
                 const auto *s = static_cast<const JPH::BoxShape *>(shape);
                 Vec3 he(s->GetHalfExtent().GetX(), s->GetHalfExtent().GetY(), s->GetHalfExtent().GetZ());
-                renderer.DebugBox(Vec3(0.f), he, model, color);
+                renderer.DrawBox(Vec3(0.f), he, model, color);
                 break;
             }
 
@@ -175,12 +185,12 @@ namespace Manro {
                 const auto *s = static_cast<const JPH::CapsuleShape *>(shape);
                 const float r = s->GetRadius();
                 const float hh = s->GetHalfHeightOfCylinder();
-                renderer.DebugSphere(origin + Vec3(0, hh, 0), r, color);
-                renderer.DebugSphere(origin + Vec3(0, -hh, 0), r, color);
-                renderer.DebugLine(origin + Vec3(r, hh, 0), origin + Vec3(r, -hh, 0), color);
-                renderer.DebugLine(origin + Vec3(-r, hh, 0), origin + Vec3(-r, -hh, 0), color);
-                renderer.DebugLine(origin + Vec3(0, hh, r), origin + Vec3(0, -hh, r), color);
-                renderer.DebugLine(origin + Vec3(0, hh, -r), origin + Vec3(0, -hh, -r), color);
+                renderer.DrawSphere(origin + Vec3(0, hh, 0), r, color);
+                renderer.DrawSphere(origin + Vec3(0, -hh, 0), r, color);
+                renderer.DrawLine(origin + Vec3(r, hh, 0), origin + Vec3(r, -hh, 0), color);
+                renderer.DrawLine(origin + Vec3(-r, hh, 0), origin + Vec3(-r, -hh, 0), color);
+                renderer.DrawLine(origin + Vec3(0, hh, r), origin + Vec3(0, -hh, r), color);
+                renderer.DrawLine(origin + Vec3(0, hh, -r), origin + Vec3(0, -hh, -r), color);
                 break;
             }
 
@@ -196,14 +206,14 @@ namespace Manro {
                 JPH::AABox worldAABB = shape->GetWorldSpaceBounds(worldTransform, JPH::Vec3::sReplicate(1.0f));
                 Vec3 mn(worldAABB.mMin.GetX(), worldAABB.mMin.GetY(), worldAABB.mMin.GetZ());
                 Vec3 mx(worldAABB.mMax.GetX(), worldAABB.mMax.GetY(), worldAABB.mMax.GetZ());
-                renderer.DebugAABB(mn, mx, color);
+                renderer.DrawAABB(mn, mx, color);
                 break;
             }
 
             default: {
                 JPH::AABox localAABB = shape->GetLocalBounds();
                 Vec3 he(localAABB.GetExtent().GetX(), localAABB.GetExtent().GetY(), localAABB.GetExtent().GetZ());
-                renderer.DebugBox(Vec3(0.f), he, model, color);
+                renderer.DrawBox(Vec3(0.f), he, model, color);
                 break;
             }
         }
@@ -220,13 +230,13 @@ namespace Manro {
         m_Impl = std::make_unique<Impl>();
         m_Impl->tempAllocator = std::make_unique<JPH::TempAllocatorImpl>(64 * 1024 * 1024);
         m_Impl->jobSystem = std::make_unique<JPH::JobSystemThreadPool>(
-                JPH::cMaxPhysicsJobs, JPH::cMaxPhysicsBarriers,
-                static_cast<int>(std::thread::hardware_concurrency()) - 1);
+            JPH::cMaxPhysicsJobs, JPH::cMaxPhysicsBarriers,
+            static_cast<int>(std::thread::hardware_concurrency()) - 1);
 
         m_Impl->physicsSystem = std::make_unique<JPH::PhysicsSystem>();
         m_Impl->physicsSystem->Init(
-                MAX_BODIES, NUM_BODY_MUTEXES, MAX_BODY_PAIRS, MAX_CONTACT_CONSTRAINTS,
-                m_Impl->bpLayerInterface, m_Impl->objVsBroadPhase, m_Impl->objLayerFilter);
+            MAX_BODIES, NUM_BODY_MUTEXES, MAX_BODY_PAIRS, MAX_CONTACT_CONSTRAINTS,
+            m_Impl->bpLayerInterface, m_Impl->objVsBroadPhase, m_Impl->objLayerFilter);
 
         m_Impl->physicsSystem->SetGravity(JPH::Vec3(0.f, -981.f, 0.f));
     }
@@ -248,9 +258,9 @@ namespace Manro {
                 if (bid.IsInvalid()) continue;
                 JPH::RVec3 cur = bi.GetPosition(bid);
                 JPH::RVec3 target(
-                        cur.GetX() + km.velocity.x * FIXED_STEP,
-                        cur.GetY() + km.velocity.y * FIXED_STEP,
-                        cur.GetZ() + km.velocity.z * FIXED_STEP);
+                    cur.GetX() + km.velocity.x * FIXED_STEP,
+                    cur.GetY() + km.velocity.y * FIXED_STEP,
+                    cur.GetZ() + km.velocity.z * FIXED_STEP);
                 bi.MoveKinematic(bid, target, JPH::Quat::sIdentity(), FIXED_STEP);
             }
             m_Impl->physicsSystem->Update(FIXED_STEP, 1,
@@ -345,7 +355,7 @@ namespace Manro {
 
         const float centerOffset = halfHeight + radius;
         JPH::RotatedTranslatedShapeSettings rts(
-                JPH::Vec3(0.f, centerOffset, 0.f), JPH::Quat::sIdentity(), sr.Get());
+            JPH::Vec3(0.f, centerOffset, 0.f), JPH::Quat::sIdentity(), sr.Get());
         auto rsr = rts.Create();
         if (rsr.HasError()) {
             LOG_ERROR("[PhysicsWorld] {}", rsr.GetError());
@@ -502,63 +512,63 @@ namespace Manro {
         return false;
     }
 
-bool PhysicsWorld::RaycastClosest(const Vec3 &origin, const Vec3 &direction, float distance,
-                                  RaycastHit &outHit, PhysicsBodyHandle ignore) const {
-    if (distance <= 0.f) return false;
+    bool PhysicsWorld::RaycastClosest(const Vec3 &origin, const Vec3 &direction, float distance,
+                                      RaycastHit &outHit, PhysicsBodyHandle ignore) const {
+        if (distance <= 0.f) return false;
 
-    const float dirLen = glm::length(direction);
-    if (dirLen <= 0.0001f) return false;
+        const float dirLen = glm::length(direction);
+        if (dirLen <= 0.0001f) return false;
 
-    const Vec3 dir = direction / dirLen;
-    JPH::RRayCast ray{
-        JPH::RVec3(origin.x, origin.y, origin.z),
-        JPH::Vec3(dir.x * distance, dir.y * distance, dir.z * distance)
-    };
-    JPH::RayCastResult hit;
+        const Vec3 dir = direction / dirLen;
+        JPH::RRayCast ray{
+            JPH::RVec3(origin.x, origin.y, origin.z),
+            JPH::Vec3(dir.x * distance, dir.y * distance, dir.z * distance)
+        };
+        JPH::RayCastResult hit;
 
-    if (ignore != kInvalidBodyHandle) {
-        JPH::IgnoreSingleBodyFilter bodyFilter(fromHandle(ignore));
-        if (!m_Impl->physicsSystem->GetNarrowPhaseQuery().CastRay(
-            ray, hit,
-            JPH::SpecifiedBroadPhaseLayerFilter(BroadPhaseLayers::NON_MOVING),
-            JPH::SpecifiedObjectLayerFilter(Layers::NON_MOVING),
-            bodyFilter))
-            return false;
-    } else {
-        if (!m_Impl->physicsSystem->GetNarrowPhaseQuery().CastRay(
-            ray, hit,
-            JPH::SpecifiedBroadPhaseLayerFilter(BroadPhaseLayers::NON_MOVING),
-            JPH::SpecifiedObjectLayerFilter(Layers::NON_MOVING)))
-            return false;
-    }
-
-    outHit.body = toHandle(hit.mBodyID);
-    outHit.fraction = hit.mFraction;
-    outHit.position = origin + dir * (distance * hit.mFraction);
-
-    // Compute surface normal
-    {
-        JPH::BodyLockRead lock(m_Impl->physicsSystem->GetBodyLockInterface(), hit.mBodyID);
-        if (lock.Succeeded()) {
-            const JPH::Body &body = lock.GetBody();
-            JPH::Vec3 jDir(dir.x, dir.y, dir.z);
-            JPH::SubShapeID subShapeID = hit.mSubShapeID2;
-            JPH::RVec3 hitPos(outHit.position.x, outHit.position.y, outHit.position.z);
-            JPH::Vec3 normal = body.GetWorldSpaceSurfaceNormal(subShapeID, hitPos);
-            outHit.normal = Vec3(normal.GetX(), normal.GetY(), normal.GetZ());
+        if (ignore != kInvalidBodyHandle) {
+            JPH::IgnoreSingleBodyFilter bodyFilter(fromHandle(ignore));
+            if (!m_Impl->physicsSystem->GetNarrowPhaseQuery().CastRay(
+                ray, hit,
+                JPH::SpecifiedBroadPhaseLayerFilter(BroadPhaseLayers::NON_MOVING),
+                JPH::SpecifiedObjectLayerFilter(Layers::NON_MOVING),
+                bodyFilter))
+                return false;
         } else {
-            outHit.normal = Vec3(0.f, 1.f, 0.f);
+            if (!m_Impl->physicsSystem->GetNarrowPhaseQuery().CastRay(
+                ray, hit,
+                JPH::SpecifiedBroadPhaseLayerFilter(BroadPhaseLayers::NON_MOVING),
+                JPH::SpecifiedObjectLayerFilter(Layers::NON_MOVING)))
+                return false;
         }
+
+        outHit.body = toHandle(hit.mBodyID);
+        outHit.fraction = hit.mFraction;
+        outHit.position = origin + dir * (distance * hit.mFraction);
+
+        // Compute surface normal
+        {
+            JPH::BodyLockRead lock(m_Impl->physicsSystem->GetBodyLockInterface(), hit.mBodyID);
+            if (lock.Succeeded()) {
+                const JPH::Body &body = lock.GetBody();
+                JPH::Vec3 jDir(dir.x, dir.y, dir.z);
+                JPH::SubShapeID subShapeID = hit.mSubShapeID2;
+                JPH::RVec3 hitPos(outHit.position.x, outHit.position.y, outHit.position.z);
+                JPH::Vec3 normal = body.GetWorldSpaceSurfaceNormal(subShapeID, hitPos);
+                outHit.normal = Vec3(normal.GetX(), normal.GetY(), normal.GetZ());
+            } else {
+                outHit.normal = Vec3(0.f, 1.f, 0.f);
+            }
+        }
+
+        return true;
     }
 
-    return true;
-}
-
-void PhysicsWorld::ApplyLinearImpulse(PhysicsBodyHandle handle, const Vec3 &impulse) {
+    void PhysicsWorld::ApplyLinearImpulse(PhysicsBodyHandle handle, const Vec3 &impulse) {
         JPH::BodyID id = fromHandle(handle);
         if (id.IsInvalid()) return;
         m_Impl->physicsSystem->GetBodyInterface().AddImpulse(
-                id, JPH::Vec3(impulse.x, impulse.y, impulse.z));
+            id, JPH::Vec3(impulse.x, impulse.y, impulse.z));
     }
 
     Vec3 PhysicsWorld::GetBodyPosition(PhysicsBodyHandle handle) const {
@@ -574,7 +584,7 @@ void PhysicsWorld::ApplyLinearImpulse(PhysicsBodyHandle handle, const Vec3 &impu
         JPH::BodyID id = fromHandle(handle);
         if (id.IsInvalid()) return;
         m_Impl->physicsSystem->GetBodyInterface().SetPosition(
-                id, JPH::RVec3(position.x, position.y, position.z), JPH::EActivation::Activate);
+            id, JPH::RVec3(position.x, position.y, position.z), JPH::EActivation::Activate);
     }
 
     Vec3 PhysicsWorld::GetBodyLinearVelocity(PhysicsBodyHandle handle) const {
@@ -588,7 +598,7 @@ void PhysicsWorld::ApplyLinearImpulse(PhysicsBodyHandle handle, const Vec3 &impu
         JPH::BodyID id = fromHandle(handle);
         if (id.IsInvalid()) return;
         m_Impl->physicsSystem->GetBodyInterface().SetLinearVelocity(
-                id, JPH::Vec3(velocity.x, velocity.y, velocity.z));
+            id, JPH::Vec3(velocity.x, velocity.y, velocity.z));
     }
 
     void PhysicsWorld::SetBodyMotionType(PhysicsBodyHandle handle, bool kinematic) {
@@ -596,9 +606,9 @@ void PhysicsWorld::ApplyLinearImpulse(PhysicsBodyHandle handle, const Vec3 &impu
         if (id.IsInvalid()) return;
         auto &bi = m_Impl->physicsSystem->GetBodyInterface();
         bi.SetMotionType(
-                id,
-                kinematic ? JPH::EMotionType::Kinematic : JPH::EMotionType::Dynamic,
-                JPH::EActivation::Activate);
+            id,
+            kinematic ? JPH::EMotionType::Kinematic : JPH::EMotionType::Dynamic,
+            JPH::EActivation::Activate);
     }
 
     void PhysicsWorld::SetKinematicVelocity(PhysicsBodyHandle handle, const Vec3 &velocity) {
@@ -631,7 +641,7 @@ void PhysicsWorld::ApplyLinearImpulse(PhysicsBodyHandle handle, const Vec3 &impu
         }
     }
 
-    void PhysicsWorld::DrawDebug(Renderer &renderer) const {
+    void PhysicsWorld::DrawPhysics(Renderer &renderer) const {
         JPH::BodyIDVector allBodies;
         m_Impl->physicsSystem->GetBodies(allBodies);
         auto &bi = m_Impl->physicsSystem->GetBodyInterface();
@@ -641,13 +651,12 @@ void PhysicsWorld::ApplyLinearImpulse(PhysicsBodyHandle handle, const Vec3 &impu
 
             JPH::RMat44 joltTransform = bi.GetWorldTransform(id);
 
-            u32 color = DebugDraw::Colors::Green;
-            if (bi.GetMotionType(id) == JPH::EMotionType::Dynamic) color = DebugDraw::Colors::Yellow;
-            else if (bi.GetMotionType(id) == JPH::EMotionType::Kinematic) color = DebugDraw::Colors::Orange;
-            if (bi.IsSensor(id)) color = DebugDraw::Colors::Cyan;
+            u32 color = DrawColors::Green;
+            if (bi.GetMotionType(id) == JPH::EMotionType::Dynamic) color = DrawColors::Yellow;
+            else if (bi.GetMotionType(id) == JPH::EMotionType::Kinematic) color = DrawColors::Orange;
+            if (bi.IsSensor(id)) color = DrawColors::Cyan;
 
             DrawShapeDebug(renderer, bi.GetShape(id), joltTransform, color);
         }
     }
-
 } // namespace Manro

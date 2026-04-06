@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Manro/Core/Types.h>
 #include <vk_mem_alloc.h>
 
 namespace Manro {

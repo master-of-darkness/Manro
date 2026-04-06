@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Manro/Platform/Audio/IAudioBackend.h>
+#include <Manro/Interfaces/IAudioBackend.h>
 #include <SDL3/SDL.h>
 #include <SDL3_mixer/SDL_mixer.h>
 #include <unordered_map>

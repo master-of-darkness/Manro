@@ -1,9 +1,9 @@
-#include <Manro/Platform/Window/SDL3Window.h>
+#include <Manro/Platform/Window/Window.h>
 #include <Manro/Core/Logger.h>
 #include <SDL3/SDL.h>
 
 namespace Manro {
-    bool SDL3Window::Initialize(const WindowDesc &desc) {
+    bool Window::Initialize(const WindowDesc &desc) {
         m_Title = desc.Title;
         m_Width = desc.Width;
         m_Height = desc.Height;
@@ -26,7 +26,7 @@ namespace Manro {
         return true;
     }
 
-    void SDL3Window::Shutdown() {
+    void Window::Shutdown() {
         if (m_Handle) {
             SDL_DestroyWindow(m_Handle);
             m_Handle = nullptr;
@@ -34,12 +34,12 @@ namespace Manro {
         }
     }
 
-    void SDL3Window::SetTitle(const std::string &title) {
+    void Window::SetTitle(const std::string &title) {
         m_Title = title;
         if (m_Handle) SDL_SetWindowTitle(m_Handle, title.c_str());
     }
 
-    void SDL3Window::Resize(u32 width, u32 height) {
+    void Window::Resize(u32 width, u32 height) {
         m_Width = width;
         m_Height = height;
         if (m_Handle)
@@ -48,32 +48,32 @@ namespace Manro {
                               static_cast<int>(height));
     }
 
-    void SDL3Window::SetFullscreen(bool fullscreen) {
+    void Window::SetFullscreen(bool fullscreen) {
         if (m_Handle) {
             SDL_SetWindowFullscreen(m_Handle, fullscreen);
             m_Fullscreen = fullscreen;
         }
     }
 
-    void *SDL3Window::GetNativeHandle() const {
+    void *Window::GetNativeHandle() const {
         return static_cast<void *>(m_Handle);
     }
 
-    void SDL3Window::ShowCursor(bool show) {
+    void Window::ShowCursor(bool show) {
         if (show) SDL_ShowCursor();
         else SDL_HideCursor();
     }
 
-    void SDL3Window::CaptureMouse(bool capture) {
+    void Window::CaptureMouse(bool capture) {
         if (m_Handle)
             SDL_SetWindowRelativeMouseMode(m_Handle, capture);
     }
 
-    u32 SDL3Window::GetSDLWindowID() const {
+    u32 Window::GetSDLWindowID() const {
         return m_Handle ? SDL_GetWindowID(m_Handle) : 0;
     }
 
-    void SDL3Window::OnSDLEvent(u32 eventType, u32 data1, u32 data2) {
+    void Window::OnSDLEvent(u32 eventType, u32 data1, u32 data2) {
         if (!m_Callback) return;
 
         switch (eventType) {

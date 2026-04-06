@@ -2,7 +2,6 @@
 
 #include <Manro/Core/Types.h>
 #include <volk.h>
-
 #include <functional>
 #include <string>
 #include <unordered_map>

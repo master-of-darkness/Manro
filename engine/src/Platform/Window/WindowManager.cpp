@@ -1,10 +1,10 @@
 #include <Manro/Platform/Window/WindowManager.h>
-#include <Manro/Platform/Window/SDL3Window.h>
+#include <Manro/Platform/Window/Window.h>
 #include <Manro/Core/Logger.h>
 
 namespace Manro {
     WindowHandle WindowManager::AddWindow(const WindowDesc &desc) {
-        auto window = CreateScope<SDL3Window>();
+        auto window = CreateScope<Window>();
         if (!window->Initialize(desc)) {
             LOG_ERROR("[WindowManager] Failed to create window '{}'", desc.Title);
             return kInvalidWindow;
@@ -12,7 +12,7 @@ namespace Manro {
 
         WindowHandle handle = m_NextHandle++;
 
-        u32 sdlId = static_cast<SDL3Window *>(window.get())->GetSDLWindowID();
+        u32 sdlId = static_cast<Window *>(window.get())->GetSDLWindowID();
         m_SDLIdToHandle[sdlId] = handle;
 
         m_Windows.emplace(handle, std::move(window));
@@ -28,7 +28,7 @@ namespace Manro {
         auto it = m_Windows.find(handle);
         if (it == m_Windows.end()) return;
 
-        u32 sdlId = static_cast<SDL3Window *>(it->second.get())->GetSDLWindowID();
+        u32 sdlId = static_cast<Window *>(it->second.get())->GetSDLWindowID();
         m_SDLIdToHandle.erase(sdlId);
 
         it->second->Shutdown();
@@ -36,8 +36,8 @@ namespace Manro {
 
         if (m_PrimaryHandle == handle) {
             m_PrimaryHandle = m_Windows.empty()
-                              ? kInvalidWindow
-                              : m_Windows.begin()->first;
+                                  ? kInvalidWindow
+                                  : m_Windows.begin()->first;
         }
 
         LOG_INFO("[WindowManager] Window {} destroyed", handle);
@@ -77,6 +77,6 @@ namespace Manro {
         IWindow *window = Get(it->second);
         if (!window) return;
 
-        static_cast<SDL3Window *>(window)->OnSDLEvent(eventType, data1, data2);
+        static_cast<Window *>(window)->OnSDLEvent(eventType, data1, data2);
     }
 } // namespace Manro

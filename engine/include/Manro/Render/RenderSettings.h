@@ -1,8 +1,6 @@
 #pragma once
 
-#include <Manro/Core/Types.h>
 #include <Manro/Render/Tonemap/Tonemapper.h>
-#include <vulkan/vulkan.h>
 
 namespace Manro {
     enum class AntiAliasingMode : int {
@@ -11,6 +9,16 @@ namespace Manro {
         FXAA,
         TAA,
         Count
+    };
+
+    enum class MSAASampleCount : int {
+        MSAA_1X = 1,
+        MSAA_2X = 2,
+        MSAA_4X = 4,
+        MSAA_8X = 8,
+        MSAA_16X = 16,
+        MSAA_32X = 32,
+        MSAA_64X = 64
     };
 
     struct ShadowSettings {
@@ -45,7 +53,7 @@ namespace Manro {
     struct RenderSettings {
         float resolutionScale = 1.0f;
         AntiAliasingMode aaMode = AntiAliasingMode::MSAA;
-        VkSampleCountFlagBits msaaSamples = VK_SAMPLE_COUNT_4_BIT;
+        MSAASampleCount msaaSamples = MSAASampleCount::MSAA_4X;
 
         bool enableVSync = true;
         bool enableFrustumCulling = true;

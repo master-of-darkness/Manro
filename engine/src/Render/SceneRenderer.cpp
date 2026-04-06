@@ -1,4 +1,4 @@
-#include <Manro/Render/SceneRenderer.h>
+#include "Internal/SceneRenderer.h"
 #include "Internal/ScenePassState.h"
 
 namespace Manro {
@@ -25,11 +25,10 @@ namespace Manro {
             return;
         }
 
-        if (m_ZPrepassState &&m_ZPrepassState
-        ->
-        depthView
-        )
-        {
+        if (m_ZPrepassState && m_ZPrepassState
+            ->
+            depthView
+        ) {
             const auto &state = *m_ZPrepassState;
             VkRenderingAttachmentInfo depthAtt{};
             depthAtt.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;

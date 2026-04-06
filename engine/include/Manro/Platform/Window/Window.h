@@ -5,11 +5,11 @@
 struct SDL_Window;
 
 namespace Manro {
-    class SDL3Window final : public IWindow {
+    class Window final : public IWindow {
     public:
-        SDL3Window() = default;
+        Window() = default;
 
-        ~SDL3Window() override { Shutdown(); }
+        ~Window() override { Shutdown(); }
 
         bool Initialize(const WindowDesc &desc) override;
 

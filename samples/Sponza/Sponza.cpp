@@ -1,8 +1,10 @@
 #include "Sponza.h"
+
+#include <Manro/Interfaces/IWindow.h>
+#include <Manro/Core/VirtualFS.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <Manro/Core/Logger.h>
 #include <imgui.h>
-
 #include <algorithm>
 #include <numeric>
 #include <cmath>
@@ -184,7 +186,6 @@ void Sponza::DrawGui(const float dt) {
     ImGui::SetNextWindowBgAlpha(0.88f);
 
     if (ImGui::Begin("Manro Profiler")) {
-
         if (ImGui::CollapsingHeader("Performance", ImGuiTreeNodeFlags_DefaultOpen)) {
             ImGui::Text("FPS        %.1f", fps);
             ImGui::Text("Frame      %.3f ms", msdt);
@@ -214,7 +215,8 @@ void Sponza::DrawGui(const float dt) {
             if (ImGui::TreeNode("Camera")) {
                 if (ImGui::DragFloat("Near Z", &settings.nearZ, 0.01f, 0.001f, 10.f)) changed = true;
                 if (ImGui::DragFloat("Far Z", &settings.farZ, 10.f, 100.f, 100000.f)) changed = true;
-                if (ImGui::SliderFloat("FoV", &kFov, 50.f, 120.f)) {}
+                if (ImGui::SliderFloat("FoV", &kFov, 50.f, 120.f)) {
+                }
                 ImGui::TreePop();
             }
 
@@ -353,7 +355,7 @@ void Sponza::DrawGui(const float dt) {
         }
         if (m_BenchFrameTimes.size() > 2) {
             const int dispN = static_cast<int>(
-                    std::min(m_BenchFrameTimes.size(), static_cast<size_t>(300)));
+                std::min(m_BenchFrameTimes.size(), static_cast<size_t>(300)));
             const int start = static_cast<int>(m_BenchFrameTimes.size()) - dispN;
             ImGui::PlotLines("##live",
                              m_BenchFrameTimes.data() + start, dispN,
@@ -492,12 +494,12 @@ void Sponza::FinishBenchmark() {
     r.totalFrames = static_cast<Manro::u32>(m_BenchFrameTimes.size());
     r.totalSeconds = m_BenchElapsed;
     r.avgDrawCalls = static_cast<Manro::u32>(
-            m_BenchDrawCallsAcc / std::max(r.totalFrames, 1u));
+        m_BenchDrawCallsAcc / std::max(r.totalFrames, 1u));
     r.avgTriangles = static_cast<Manro::u32>(
-            m_BenchTrianglesAcc / std::max(r.totalFrames, 1u));
+        m_BenchTrianglesAcc / std::max(r.totalFrames, 1u));
 
     const float sum = std::accumulate(
-            m_BenchFrameTimes.begin(), m_BenchFrameTimes.end(), 0.f);
+        m_BenchFrameTimes.begin(), m_BenchFrameTimes.end(), 0.f);
     r.avgFrameMs = sum / static_cast<float>(r.totalFrames);
     r.avgFps = 1000.f / r.avgFrameMs;
 
@@ -609,23 +611,22 @@ Manro::Mat4 FlyCamera::Projection(float fovDeg, float aspect, float nearZ, float
 }
 
 const BenchWaypoint Sponza::kWaypoints[] = {
-        {{-1200.f, 150.f, 0.f},    -90.f,  -8.f},
-        {{-700.f,  150.f, 0.f},    -90.f,  -5.f},
-        {{-200.f,  200.f, 40.f},   -60.f,  -15.f},
-        {{0.f,     350.f, 0.f},    -90.f,  -35.f},
-        {{200.f,   200.f, -40.f},  -120.f, -15.f},
-        {{700.f,   150.f, 0.f},    -90.f,  -5.f},
-        {{1200.f,  150.f, 0.f},    -90.f,  -8.f},
-        {{900.f,   120.f, 300.f},  -160.f, -5.f},
-        {{0.f,     120.f, 500.f},  180.f,  -8.f},
-        {{-900.f,  120.f, 300.f},  160.f,  -5.f},
-        {{-1000.f, 400.f, 0.f},    -70.f,  -20.f},
-        {{0.f,     500.f, 0.f},    -90.f,  -50.f},
-        {{1000.f,  400.f, 0.f},    -110.f, -20.f},
-        {{600.f,   80.f,  -400.f}, 10.f,   -3.f},
-        {{0.f,     80.f,  -600.f}, 0.f,    -3.f},
-        {{-600.f,  80.f,  -400.f}, -10.f,  -3.f},
-        {{-1200.f, 150.f, 0.f},    -90.f,  -8.f},
+    {{-1200.f, 150.f, 0.f}, -90.f, -8.f},
+    {{-700.f, 150.f, 0.f}, -90.f, -5.f},
+    {{-200.f, 200.f, 40.f}, -60.f, -15.f},
+    {{0.f, 350.f, 0.f}, -90.f, -35.f},
+    {{200.f, 200.f, -40.f}, -120.f, -15.f},
+    {{700.f, 150.f, 0.f}, -90.f, -5.f},
+    {{1200.f, 150.f, 0.f}, -90.f, -8.f},
+    {{900.f, 120.f, 300.f}, -160.f, -5.f},
+    {{0.f, 120.f, 500.f}, 180.f, -8.f},
+    {{-900.f, 120.f, 300.f}, 160.f, -5.f},
+    {{-1000.f, 400.f, 0.f}, -70.f, -20.f},
+    {{0.f, 500.f, 0.f}, -90.f, -50.f},
+    {{1000.f, 400.f, 0.f}, -110.f, -20.f},
+    {{600.f, 80.f, -400.f}, 10.f, -3.f},
+    {{0.f, 80.f, -600.f}, 0.f, -3.f},
+    {{-600.f, 80.f, -400.f}, -10.f, -3.f},
+    {{-1200.f, 150.f, 0.f}, -90.f, -8.f},
 };
 const int Sponza::kWaypointCount = 17;
-

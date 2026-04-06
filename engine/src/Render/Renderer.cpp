@@ -1,5 +1,12 @@
-#include <Manro/Render/Renderer.h>
 #include "Internal/RendererInternal.h"
+
+#include <Manro/Render/Renderer.h>
+#include <Manro/Render/Material/Material.h>
+#include <Manro/Render/Material/MaterialInstance.h>
+#include <Manro/Render/MeshManager.h>
+#include <Manro/Render/RendererConfig.h>
+#include <Manro/Resource/ModelLoader.h>
+#include <Manro/Resource/TextureLoader.h>
 
 namespace Manro {
     bool Renderer::BeginFrame() { return RendererImplBeginFrame(*m_Impl); }
@@ -60,8 +67,6 @@ namespace Manro {
 
     float Renderer::GetAspectRatio() const { return RendererImplGetAspectRatio(*m_Impl); }
 
-    TextureManager &Renderer::GetTextures() { return RendererImplGetTextures(*m_Impl); }
-
     MeshManager &Renderer::GetMeshes() { return RendererImplGetMeshes(*m_Impl); }
 
     void Renderer::SetSettings(const RenderSettings &settings) { RendererImplSetSettings(*m_Impl, settings); }
@@ -82,33 +87,33 @@ namespace Manro {
 
     std::string Renderer::GetAdapterName() const { return RendererImplGetAdapterName(*m_Impl); }
 
-    void Renderer::DebugLine(const Vec3 &a, const Vec3 &b, u32 color, bool depthTest) {
-        RendererImplDebugLine(*m_Impl, a, b, color, depthTest);
+    void Renderer::DrawLine(const Vec3 &a, const Vec3 &b, u32 color, bool depthTest) {
+        RendererImplDrawLine(*m_Impl, a, b, color, depthTest);
     }
 
-    void Renderer::DebugAABB(const Vec3 &min, const Vec3 &max, u32 color, bool depthTest) {
-        RendererImplDebugAABB(*m_Impl, min, max, color, depthTest);
+    void Renderer::DrawAABB(const Vec3 &min, const Vec3 &max, u32 color, bool depthTest) {
+        RendererImplDrawAABB(*m_Impl, min, max, color, depthTest);
     }
 
-    void Renderer::DebugBox(const Vec3 &center, const Vec3 &half,
-                            const Mat4 &transform, u32 color, bool depthTest) {
-        RendererImplDebugBox(*m_Impl, center, half, transform, color, depthTest);
+    void Renderer::DrawBox(const Vec3 &center, const Vec3 &half,
+                           const Mat4 &transform, u32 color, bool depthTest) {
+        RendererImplDrawBox(*m_Impl, center, half, transform, color, depthTest);
     }
 
-    void Renderer::DebugSphere(const Vec3 &center, float radius,
-                               u32 color, int segments, bool depthTest) {
-        RendererImplDebugSphere(*m_Impl, center, radius, color, segments, depthTest);
+    void Renderer::DrawSphere(const Vec3 &center, float radius,
+                              u32 color, int segments, bool depthTest) {
+        RendererImplDrawSphere(*m_Impl, center, radius, color, segments, depthTest);
     }
 
-    void Renderer::DebugFrustum(const Mat4 &invViewProj, u32 color, bool depthTest) {
-        RendererImplDebugFrustum(*m_Impl, invViewProj, color, depthTest);
+    void Renderer::DrawFrustum(const Mat4 &invViewProj, u32 color, bool depthTest) {
+        RendererImplDrawFrustum(*m_Impl, invViewProj, color, depthTest);
     }
 
-    void Renderer::DebugCross(const Vec3 &center, float size, u32 color, bool depthTest) {
-        RendererImplDebugCross(*m_Impl, center, size, color, depthTest);
+    void Renderer::DrawCross(const Vec3 &center, float size, u32 color, bool depthTest) {
+        RendererImplDrawCross(*m_Impl, center, size, color, depthTest);
     }
 
-    void Renderer::DebugAxes(const Mat4 &transform, float size) {
-        RendererImplDebugAxes(*m_Impl, transform, size);
+    void Renderer::DrawAxes(const Mat4 &transform, float size) {
+        RendererImplDrawAxes(*m_Impl, transform, size);
     }
 } // namespace Manro

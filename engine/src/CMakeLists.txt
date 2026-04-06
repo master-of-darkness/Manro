@@ -12,19 +12,26 @@ add_custom_target(GenerateNetworkSchema DEPENDS "${GEN_DIR}/NetworkMessage_gener
 
 set(MANRO_MIKKTSPACE_C "${MANRO_THIRD_PARTY_DIR}/mikktspace/mikktspace.c")
 
-add_library(Engine STATIC
-        # Core systems
+set(ENGINE_CORE_SOURCES
         Core/EngineLoop.cpp
         Core/Logger.cpp
         Core/JobSystem.cpp
         Core/VirtualFS.cpp
         Core/EmbeddedShaders.cpp
+)
+
+set(ENGINE_INPUT_SOURCES
         Input/InputManager.cpp
+)
+
+set(ENGINE_NETWORKING_SOURCES
         Networking/NetworkClient.cpp
         Networking/NetworkServer.cpp
-        # Main rendering code
-        Render/DebugDraw.cpp
-        Render/Material.cpp
+)
+
+set(ENGINE_RENDER_SOURCES
+        Render/DrawSystem.cpp
+        Render/Material/Material.cpp
         Render/Vulkan/VulkanContext.cpp
         Render/Vulkan/VulkanHelpers.cpp
         Render/Vulkan/Buffer.cpp
@@ -34,21 +41,32 @@ add_library(Engine STATIC
         Render/Renderer.cpp
         Render/RendererImpl.cpp
         Render/SceneRenderer.cpp
-        Render/TextureManager.cpp
+        Render/Texture/TextureManager.cpp
         Render/MeshManager.cpp
         Render/Model.cpp
         Render/Overlay/Overlay.cpp
+)
+
+set(ENGINE_RESOURCE_SOURCES
         Resource/ModelLoader.cpp
         Resource/TextureLoader.cpp
         Resource/Primitives.cpp
+)
+
+set(ENGINE_PHYSICS_SOURCES
         Physics/PhysicsWorld.cpp
-        # Windows, audio and input
+)
+
+set(ENGINE_PLATFORM_SOURCES
         Platform/Audio/AudioManager.cpp
         Platform/Audio/SDL3AudioBackend.cpp
         Platform/Input/SDL3InputBackend.cpp
-        Platform/Window/SDL3Window.cpp
+        Platform/Window/Window.cpp
         Platform/Window/WindowManager.cpp
         Platform/PlatformContext.cpp
+)
+
+set(ENGINE_THIRD_PARTY_SOURCES
         ${MANRO_MIKKTSPACE_C}
         ${MANRO_THIRD_PARTY_DIR}/imgui/imgui.cpp
         ${MANRO_THIRD_PARTY_DIR}/imgui/imgui_draw.cpp
@@ -57,6 +75,17 @@ add_library(Engine STATIC
         ${MANRO_THIRD_PARTY_DIR}/imgui/imgui_demo.cpp
         ${MANRO_THIRD_PARTY_DIR}/imgui/backends/imgui_impl_sdl3.cpp
         ${MANRO_THIRD_PARTY_DIR}/imgui/backends/imgui_impl_vulkan.cpp
+)
+
+add_library(Engine STATIC
+        ${ENGINE_CORE_SOURCES}
+        ${ENGINE_INPUT_SOURCES}
+        ${ENGINE_NETWORKING_SOURCES}
+        ${ENGINE_RENDER_SOURCES}
+        ${ENGINE_RESOURCE_SOURCES}
+        ${ENGINE_PHYSICS_SOURCES}
+        ${ENGINE_PLATFORM_SOURCES}
+        ${ENGINE_THIRD_PARTY_SOURCES}
 )
 
 set_source_files_properties(${MANRO_MIKKTSPACE_C} PROPERTIES COMPILE_FLAGS "-Wno-unused-but-set-variable")

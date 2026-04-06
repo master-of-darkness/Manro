@@ -28,8 +28,9 @@ namespace Manro {
         VkBool32 depthWriteEnable{VK_TRUE};
         VkCompareOp depthCompareOp{VK_COMPARE_OP_LESS};
         VkColorComponentFlags colorWriteMask{
-                VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
-                VK_COLOR_COMPONENT_A_BIT};
+            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
+            VK_COLOR_COMPONENT_A_BIT
+        };
     };
 
     class Pipeline {

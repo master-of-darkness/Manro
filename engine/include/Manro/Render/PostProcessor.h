@@ -4,7 +4,6 @@
 #include <Manro/Render/Tonemap/Tonemapper.h>
 
 namespace Manro {
-
     class PostProcessor {
     public:
         PostProcessor() = default;
@@ -20,5 +19,4 @@ namespace Manro {
     private:
         PipelineHandle m_CompositePipeline{};
     };
-
 } // namespace Manro

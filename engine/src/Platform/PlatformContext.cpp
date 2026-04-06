@@ -33,7 +33,6 @@ namespace Manro {
                 event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
                 event.type == SDL_EVENT_MOUSE_BUTTON_UP ||
                 event.type == SDL_EVENT_MOUSE_WHEEL) {
-
                 SDL_WindowID windowID = 0;
                 if (event.type == SDL_EVENT_MOUSE_MOTION) windowID = event.motion.windowID;
                 else if (event.type == SDL_EVENT_MOUSE_WHEEL) windowID = event.wheel.windowID;
@@ -60,10 +59,10 @@ namespace Manro {
                 case SDL_EVENT_WINDOW_MINIMIZED:
                 case SDL_EVENT_WINDOW_RESTORED:
                     m_WindowManager.DispatchWindowEvent(
-                            event.window.windowID,
-                            event.type,
-                            static_cast<u32>(event.window.data1),
-                            static_cast<u32>(event.window.data2));
+                        event.window.windowID,
+                        event.type,
+                        static_cast<u32>(event.window.data1),
+                        static_cast<u32>(event.window.data2));
                     break;
 
                 default:

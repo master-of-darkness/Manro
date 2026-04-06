@@ -1,9 +1,6 @@
 #pragma once
 
 #include <Manro/Core/Types.h>
-#include <string>
-#include <unordered_map>
-#include <functional>
 
 namespace Manro {
     enum class Key : u16 {

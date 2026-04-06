@@ -2,7 +2,6 @@
 
 #include <Manro/Core/Types.h>
 #include <functional>
-#include <limits>
 
 namespace Manro {
     template<typename Tag, typename Storage = u32>
@@ -122,7 +121,6 @@ namespace Manro {
 
     template<typename Tag, typename Storage>
     inline Storage format_as(const Handle<Tag, Storage> &h) { return h.packed; }
-
 } // namespace Manro
 
 namespace std {

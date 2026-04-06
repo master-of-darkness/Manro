@@ -4,7 +4,6 @@
 #include <Manro/Interfaces/Interface.h>
 
 namespace Manro {
-
     class Renderer;
 
     class JobSystem;
@@ -34,7 +33,7 @@ namespace Manro {
 
     class IApplication : public Interface {
     public:
-        virtual ~IApplication() = default;
+        ~IApplication() override = default;
 
         virtual void OnStartup(const InitContext &ctx) = 0;
 
@@ -48,5 +47,4 @@ namespace Manro {
 
         virtual struct WindowDesc GetWindowDesc() const = 0;
     };
-
 } // namespace Manro

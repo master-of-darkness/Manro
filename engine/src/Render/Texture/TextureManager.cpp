@@ -1,12 +1,12 @@
-#include <Manro/Render/TextureManager.h>
-#include "Backend/Vulkan/VulkanContext.h"
-#include "Backend/Vulkan/DescriptorAllocator.h"
+#include "Texture/TextureManager.h"
+#include "Vulkan/VulkanContext.h"
+#include "Vulkan/DescriptorAllocator.h"
+
 #include <Manro/Core/Logger.h>
 #include <cstring>
 #include <stdexcept>
 #include <unordered_map>
-
-#include "volk.h"
+#include <volk.h>
 
 namespace Manro {
     struct TextureManager::Impl {

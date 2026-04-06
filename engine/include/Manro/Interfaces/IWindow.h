@@ -25,7 +25,7 @@ namespace Manro {
 
     class IWindow : public Interface {
     public:
-        virtual ~IWindow() = default;
+        ~IWindow() override = default;
 
         virtual bool Initialize(const WindowDesc &desc) = 0;
 

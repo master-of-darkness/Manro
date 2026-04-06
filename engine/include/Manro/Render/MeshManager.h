@@ -6,9 +6,8 @@
 #include <unordered_map>
 
 namespace Manro {
-    class VulkanContext;
-
     class Buffer;
+    struct MeshManagerImpl;
 
     struct LoadedMesh {
         u32 firstVertex;
@@ -20,7 +19,7 @@ namespace Manro {
 
     class MeshManager {
     public:
-        explicit MeshManager(const VulkanContext &ctx);
+        explicit MeshManager(MeshManagerImpl *impl);
 
         ~MeshManager();
 
@@ -32,22 +31,11 @@ namespace Manro {
 
         const LoadedMesh *Get(MeshHandle handle) const;
 
-        Buffer *GetVertexBuffer() const { return m_VertexBuffer.get(); }
+        Buffer *GetVertexBuffer() const;
 
-        Buffer *GetIndexBuffer() const { return m_IndexBuffer.get(); }
+        Buffer *GetIndexBuffer() const;
 
     private:
-        const VulkanContext &m_Context;
-        std::unordered_map<MeshHandle, LoadedMesh> m_Meshes;
-        MeshHandle m_NextId{MeshHandle::Make(1, 0)};
-
-        Scope<Buffer> m_VertexBuffer;
-        Scope<Buffer> m_IndexBuffer;
-
-        u32 m_CurrentVertexOffset{0};
-        u32 m_CurrentIndexOffset{0};
-
-        static constexpr u32 kMaxVertices = 10'000'000;
-        static constexpr u32 kMaxIndices = 20'000'000;
+        Scope<MeshManagerImpl> m_Impl;
     };
 } // namespace Manro

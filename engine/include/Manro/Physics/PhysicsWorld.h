@@ -114,7 +114,7 @@ namespace Manro {
 
         void ForEachDynamicBody(const BodySyncCallback &cb) const;
 
-        void DrawDebug(class Renderer &renderer) const;
+        void DrawPhysics(class Renderer &renderer) const;
 
     private:
         struct Impl;
