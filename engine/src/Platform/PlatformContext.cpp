@@ -67,7 +67,7 @@ namespace Manro {
 
                 default:
                     if (inputManager) {
-                        inputManager->ProcessSDLEvent(event);
+                        inputManager->ProcessEvent(PlatformEvent{&event});
                     }
                     break;
             }

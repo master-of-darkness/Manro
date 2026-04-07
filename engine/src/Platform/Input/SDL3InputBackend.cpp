@@ -70,7 +70,8 @@ namespace Manro {
         }
     }
 
-    void SDL3InputBackend::ProcessEvent(const SDL_Event &event) {
+    void SDL3InputBackend::ProcessEvent(const PlatformEvent &platformEvent) {
+        const auto &event = *static_cast<const SDL_Event *>(platformEvent.data);
         switch (event.type) {
             case SDL_EVENT_KEY_DOWN:
             case SDL_EVENT_KEY_UP: {

@@ -2,15 +2,14 @@
 
 #include <Manro/Input/InputAction.h>
 #include <Manro/Interfaces/Interface.h>
-
-union SDL_Event;
+#include <Manro/Platform/PlatformEvent.h>
 
 namespace Manro {
     class IInputBackend : public Interface {
     public:
         ~IInputBackend() override = default;
 
-        virtual void ProcessEvent(const SDL_Event &event) = 0;
+        virtual void ProcessEvent(const PlatformEvent &event) = 0;
 
         virtual bool IsKeyDown(Key k) const = 0;
 

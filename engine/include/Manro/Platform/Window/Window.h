@@ -2,8 +2,6 @@
 
 #include <Manro/Interfaces/IWindow.h>
 
-struct SDL_Window;
-
 namespace Manro {
     class Window final : public IWindow {
     public:
@@ -39,12 +37,12 @@ namespace Manro {
 
         void CaptureMouse(bool capture) override;
 
-        void OnSDLEvent(u32 sdlWindowEventId, u32 data1, u32 data2);
+        void OnPlatformWindowEvent(u32 platformEventType, u32 data1, u32 data2);
 
-        u32 GetSDLWindowID() const;
+        u32 GetPlatformWindowID() const;
 
     private:
-        SDL_Window *m_Handle{nullptr};
+        void *m_Handle{nullptr};
         EventCallback m_Callback;
         std::string m_Title;
         u32 m_Width{0};

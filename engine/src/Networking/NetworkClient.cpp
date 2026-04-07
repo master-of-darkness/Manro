@@ -3,6 +3,7 @@
 #include <Manro/Core/Components.h>
 #include <Manro/Core/Logger.h>
 #include <Manro/Physics/PhysicsWorld.h>
+#include <enet/enet.h>
 #include "NetworkMessage_generated.h"
 #include <algorithm>
 

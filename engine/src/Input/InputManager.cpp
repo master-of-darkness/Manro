@@ -25,7 +25,7 @@ namespace Manro {
         return m_Backend->ConsumeMouseDelta();
     }
 
-    void InputManager::ProcessSDLEvent(const SDL_Event &event) {
+    void InputManager::ProcessEvent(const PlatformEvent &event) {
         if (m_Backend)
             m_Backend->ProcessEvent(event);
     }

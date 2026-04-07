@@ -4,12 +4,10 @@
 #include <Manro/Input/InputAction.h>
 #include <array>
 
-union SDL_Event;
-
 namespace Manro {
     class SDL3InputBackend final : public IInputBackend {
     public:
-        void ProcessEvent(const SDL_Event &event) override;
+        void ProcessEvent(const PlatformEvent &event) override;
 
         bool IsKeyDown(Key k) const override;
 

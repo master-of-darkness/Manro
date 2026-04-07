@@ -4,10 +4,19 @@
 #include <Manro/ECS/Entity.h>
 #include <Manro/Physics/IMovementController.h>
 #include <Manro/Input/InputAction.h>
-#include <enet/enet.h>
 #include <unordered_map>
 #include <functional>
-#include "NetworkMessage_generated.h"
+
+struct _ENetHost;
+struct _ENetPeer;
+typedef struct _ENetHost ENetHost;
+typedef struct _ENetPeer ENetPeer;
+
+namespace Manro {
+namespace Networking {
+    struct ClientInput;
+} // namespace Networking
+} // namespace Manro
 
 namespace Manro {
     class Registry;

@@ -1,8 +1,7 @@
 #pragma once
 
 #include <Manro/Input/InputAction.h>
-
-union SDL_Event;
+#include <Manro/Platform/PlatformEvent.h>
 
 namespace Manro {
     class IInputBackend;
@@ -27,7 +26,7 @@ namespace Manro {
 
         RawMouseDelta ConsumeMouseDelta();
 
-        void ProcessSDLEvent(const SDL_Event &event);
+        void ProcessEvent(const PlatformEvent &event);
 
     private:
         IInputBackend *m_Backend{nullptr};

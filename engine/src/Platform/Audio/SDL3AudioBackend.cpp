@@ -1,5 +1,7 @@
 #include <Manro/Platform/Audio/SDL3AudioBackend.h>
 #include <Manro/Core/Logger.h>
+#include <SDL3/SDL.h>
+#include <SDL3_mixer/SDL_mixer.h>
 #include <algorithm>
 
 namespace Manro {

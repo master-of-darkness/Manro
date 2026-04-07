@@ -3,10 +3,14 @@
 #include <Manro/Core/Types.h>
 #include <Manro/ECS/Entity.h>
 #include <Manro/Input/InputAction.h>
-#include <enet/enet.h>
 #include <deque>
 #include <unordered_map>
 #include <functional>
+
+struct _ENetHost;
+struct _ENetPeer;
+typedef struct _ENetHost ENetHost;
+typedef struct _ENetPeer ENetPeer;
 
 namespace Manro {
     class Registry;
