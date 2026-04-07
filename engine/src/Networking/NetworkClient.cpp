@@ -1,10 +1,12 @@
+#include "NetworkMessage_generated.h"
+
 #include <Manro/Networking/NetworkClient.h>
 #include <Manro/ECS/Registry.h>
 #include <Manro/Core/Components.h>
 #include <Manro/Core/Logger.h>
 #include <Manro/Physics/PhysicsWorld.h>
-#include "NetworkMessage_generated.h"
 #include <algorithm>
+#include <enet/enet.h>
 
 namespace Manro {
     NetworkClient::NetworkClient() = default;

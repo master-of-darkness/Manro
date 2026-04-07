@@ -1,10 +1,12 @@
 #pragma once
 
 #include <Manro/Interfaces/IAudioBackend.h>
-#include <SDL3/SDL.h>
-#include <SDL3_mixer/SDL_mixer.h>
 #include <unordered_map>
 #include <string>
+
+struct MIX_Audio;
+struct MIX_Track;
+struct MIX_Mixer;
 
 namespace Manro {
     class SDL3AudioBackend final : public IAudioBackend {

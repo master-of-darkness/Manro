@@ -12,15 +12,15 @@ namespace Manro {
 
         WindowHandle handle = m_NextHandle++;
 
-        u32 sdlId = static_cast<Window *>(window.get())->GetSDLWindowID();
-        m_SDLIdToHandle[sdlId] = handle;
+        u32 platformId = static_cast<Window *>(window.get())->GetPlatformWindowID();
+        m_PlatformIdToHandle[platformId] = handle;
 
         m_Windows.emplace(handle, std::move(window));
 
         if (m_PrimaryHandle == kInvalidWindow)
             m_PrimaryHandle = handle;
 
-        LOG_INFO("[WindowManager] Window {} registered (SDL id {})", handle, sdlId);
+        LOG_INFO("[WindowManager] Window {} registered (platform id {})", handle, platformId);
         return handle;
     }
 
@@ -28,8 +28,8 @@ namespace Manro {
         auto it = m_Windows.find(handle);
         if (it == m_Windows.end()) return;
 
-        u32 sdlId = static_cast<Window *>(it->second.get())->GetSDLWindowID();
-        m_SDLIdToHandle.erase(sdlId);
+        u32 platformId = static_cast<Window *>(it->second.get())->GetPlatformWindowID();
+        m_PlatformIdToHandle.erase(platformId);
 
         it->second->Shutdown();
         m_Windows.erase(it);
@@ -47,7 +47,7 @@ namespace Manro {
         for (auto &[handle, window]: m_Windows)
             window->Shutdown();
         m_Windows.clear();
-        m_SDLIdToHandle.clear();
+        m_PlatformIdToHandle.clear();
         m_PrimaryHandle = kInvalidWindow;
     }
 
@@ -69,14 +69,14 @@ namespace Manro {
         return Get(m_PrimaryHandle);
     }
 
-    void WindowManager::DispatchWindowEvent(u32 sdlWindowId, u32 eventType,
+    void WindowManager::DispatchWindowEvent(u32 platformWindowId, u32 eventType,
                                             u32 data1, u32 data2) {
-        auto it = m_SDLIdToHandle.find(sdlWindowId);
-        if (it == m_SDLIdToHandle.end()) return;
+        auto it = m_PlatformIdToHandle.find(platformWindowId);
+        if (it == m_PlatformIdToHandle.end()) return;
 
         IWindow *window = Get(it->second);
         if (!window) return;
 
-        static_cast<Window *>(window)->OnSDLEvent(eventType, data1, data2);
+        static_cast<Window *>(window)->OnPlatformWindowEvent(eventType, data1, data2);
     }
 } // namespace Manro

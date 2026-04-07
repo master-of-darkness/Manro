@@ -3,10 +3,12 @@
 #include <Manro/Core/Types.h>
 #include <Manro/ECS/Entity.h>
 #include <Manro/Input/InputAction.h>
-#include <enet/enet.h>
 #include <deque>
 #include <unordered_map>
 #include <functional>
+
+struct _ENetHost;
+struct _ENetPeer;
 
 namespace Manro {
     class Registry;
@@ -73,8 +75,8 @@ namespace Manro {
                                   Registry &registry, PhysicsWorld *physics);
 
         bool m_IsConnected{false};
-        ENetHost *m_ClientHost{nullptr};
-        ENetPeer *m_ServerPeer{nullptr};
+        _ENetHost *m_ClientHost{nullptr};
+        _ENetPeer *m_ServerPeer{nullptr};
 
         f32 m_ServerTime{0.f};
         f32 m_RoundTripTime{0.1f};

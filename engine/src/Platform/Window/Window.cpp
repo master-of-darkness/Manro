@@ -28,7 +28,7 @@ namespace Manro {
 
     void Window::Shutdown() {
         if (m_Handle) {
-            SDL_DestroyWindow(m_Handle);
+            SDL_DestroyWindow(static_cast<SDL_Window *>(m_Handle));
             m_Handle = nullptr;
             m_Open = false;
         }
@@ -36,27 +36,27 @@ namespace Manro {
 
     void Window::SetTitle(const std::string &title) {
         m_Title = title;
-        if (m_Handle) SDL_SetWindowTitle(m_Handle, title.c_str());
+        if (m_Handle) SDL_SetWindowTitle(static_cast<SDL_Window *>(m_Handle), title.c_str());
     }
 
     void Window::Resize(u32 width, u32 height) {
         m_Width = width;
         m_Height = height;
         if (m_Handle)
-            SDL_SetWindowSize(m_Handle,
+            SDL_SetWindowSize(static_cast<SDL_Window *>(m_Handle),
                               static_cast<int>(width),
                               static_cast<int>(height));
     }
 
     void Window::SetFullscreen(bool fullscreen) {
         if (m_Handle) {
-            SDL_SetWindowFullscreen(m_Handle, fullscreen);
+            SDL_SetWindowFullscreen(static_cast<SDL_Window *>(m_Handle), fullscreen);
             m_Fullscreen = fullscreen;
         }
     }
 
     void *Window::GetNativeHandle() const {
-        return static_cast<void *>(m_Handle);
+        return m_Handle;
     }
 
     void Window::ShowCursor(bool show) {
@@ -66,14 +66,14 @@ namespace Manro {
 
     void Window::CaptureMouse(bool capture) {
         if (m_Handle)
-            SDL_SetWindowRelativeMouseMode(m_Handle, capture);
+            SDL_SetWindowRelativeMouseMode(static_cast<SDL_Window *>(m_Handle), capture);
     }
 
-    u32 Window::GetSDLWindowID() const {
-        return m_Handle ? SDL_GetWindowID(m_Handle) : 0;
+    u32 Window::GetPlatformWindowID() const {
+        return m_Handle ? SDL_GetWindowID(static_cast<SDL_Window *>(m_Handle)) : 0;
     }
 
-    void Window::OnSDLEvent(u32 eventType, u32 data1, u32 data2) {
+    void Window::OnPlatformWindowEvent(u32 eventType, u32 data1, u32 data2) {
         if (!m_Callback) return;
 
         switch (eventType) {

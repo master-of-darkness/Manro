@@ -20,12 +20,12 @@ namespace Manro {
         return m_Backend->IsMouseButtonDown(button);
     }
 
-    RawMouseDelta InputManager::ConsumeMouseDelta() {
+    RawMouseDelta InputManager::ConsumeMouseDelta() const {
         if (!m_Backend) return {};
         return m_Backend->ConsumeMouseDelta();
     }
 
-    void InputManager::ProcessSDLEvent(const SDL_Event &event) {
+    void InputManager::ProcessEvent(const PlatformEvent &event) const {
         if (m_Backend)
             m_Backend->ProcessEvent(event);
     }

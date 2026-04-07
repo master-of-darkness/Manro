@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Manro/Core/Types.h>
+#include <format>
 #include <functional>
 
 namespace Manro {
@@ -118,10 +119,14 @@ namespace Manro {
         std::vector<Slot> m_Slots;
         std::vector<u32> m_FreeList;
     };
-
-    template<typename Tag, typename Storage>
-    inline Storage format_as(const Handle<Tag, Storage> &h) { return h.packed; }
 } // namespace Manro
+
+template<typename Tag, typename Storage>
+struct std::formatter<Manro::Handle<Tag, Storage> > : std::formatter<Storage> {
+    auto format(const Manro::Handle<Tag, Storage> &h, std::format_context &ctx) const {
+        return std::formatter<Storage>::format(h.packed, ctx);
+    }
+};
 
 namespace std {
     template<typename Tag, typename Storage>

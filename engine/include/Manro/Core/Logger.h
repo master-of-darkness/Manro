@@ -1,22 +1,21 @@
 #pragma once
 
-#include <spdlog/spdlog.h>
-#include <memory>
+#include <format>
+#include <string_view>
 
 namespace Manro {
+    enum class LogLevel { Trace, Info, Warn, Error, Critical };
+
     class Logger {
     public:
         static void Init();
 
-        inline static std::shared_ptr<spdlog::logger> &GetCoreLogger() { return s_CoreLogger; }
-
-    private:
-        static std::shared_ptr<spdlog::logger> s_CoreLogger;
+        static void Log(LogLevel level, std::string_view msg);
     };
 } // namespace Manro
 
-#define LOG_TRACE(...)    ::Manro::Logger::GetCoreLogger()->trace(__VA_ARGS__)
-#define LOG_INFO(...)     ::Manro::Logger::GetCoreLogger()->info(__VA_ARGS__)
-#define LOG_WARN(...)     ::Manro::Logger::GetCoreLogger()->warn(__VA_ARGS__)
-#define LOG_ERROR(...)    ::Manro::Logger::GetCoreLogger()->error(__VA_ARGS__)
-#define LOG_CRITICAL(...) ::Manro::Logger::GetCoreLogger()->critical(__VA_ARGS__)
+#define LOG_TRACE(...)    ::Manro::Logger::Log(::Manro::LogLevel::Trace,    std::format(__VA_ARGS__))
+#define LOG_INFO(...)     ::Manro::Logger::Log(::Manro::LogLevel::Info,     std::format(__VA_ARGS__))
+#define LOG_WARN(...)     ::Manro::Logger::Log(::Manro::LogLevel::Warn,     std::format(__VA_ARGS__))
+#define LOG_ERROR(...)    ::Manro::Logger::Log(::Manro::LogLevel::Error,    std::format(__VA_ARGS__))
+#define LOG_CRITICAL(...) ::Manro::Logger::Log(::Manro::LogLevel::Critical, std::format(__VA_ARGS__))

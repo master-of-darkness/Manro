@@ -2,6 +2,7 @@
 #include <Manro/Platform/Audio/SDL3AudioBackend.h>
 #include <Manro/Platform/Input/SDL3InputBackend.h>
 #include <Manro/Input/InputManager.h>
+#include <Manro/Platform/PlatformEvent.h>
 #include <Manro/Core/Logger.h>
 #include <SDL3/SDL.h>
 #include <imgui_impl_sdl3.h>
@@ -67,7 +68,7 @@ namespace Manro {
 
                 default:
                     if (inputManager) {
-                        inputManager->ProcessSDLEvent(event);
+                        inputManager->ProcessEvent(PlatformEvent{&event});
                     }
                     break;
             }

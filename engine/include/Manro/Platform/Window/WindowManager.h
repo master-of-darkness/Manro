@@ -31,11 +31,11 @@ namespace Manro {
 
         IWindow *GetPrimary();
 
-        void DispatchWindowEvent(u32 sdlWindowId, u32 eventType, u32 data1, u32 data2);
+        void DispatchWindowEvent(u32 platformWindowId, u32 eventType, u32 data1, u32 data2);
 
     private:
         std::unordered_map<WindowHandle, Scope<IWindow> > m_Windows;
-        std::unordered_map<u32, WindowHandle> m_SDLIdToHandle;
+        std::unordered_map<u32, WindowHandle> m_PlatformIdToHandle;
 
         WindowHandle m_NextHandle{WindowHandle::Make(1, 0)};
         WindowHandle m_PrimaryHandle{kInvalidWindow};
