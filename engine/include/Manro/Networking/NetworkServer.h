@@ -14,6 +14,8 @@ typedef struct _ENetPeer ENetPeer;
 
 namespace Manro {
 namespace Networking {
+    // Forward declaration of the FlatBuffers-generated table type
+    // (schema: namespace Manro.Networking; table ClientInput { ... }).
     struct ClientInput;
 } // namespace Networking
 } // namespace Manro
