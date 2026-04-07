@@ -142,6 +142,26 @@ float SampleShadowPCF(float4 shadowPos) {
     return shadow / 9.0;
 }
 
+    float EvaluateMaterialOpacity(GltfShadeMaterial material, float2 uv) {
+    float opacity = material.pbrBaseColorFactor.a;
+    if (material.pbrBaseColorTexture > 0) {
+        GltfTextureInfo tinfo = texInfos[NonUniformResourceIndex(uint(material.pbrBaseColorTexture))];
+        if (tinfo.index >= 0) {
+            float2 tt = mul(float3(uv, 1.0), tinfo.uvTransform).xy;
+            float4 baseSample = bindlessTextures[NonUniformResourceIndex(uint(tinfo.index))].Sample(defaultSampler, tt);
+            opacity *= baseSample.a;
+        }
+    }
+    return opacity;
+}
+
+bool ShouldDiscardAlpha(GltfShadeMaterial material, float opacity) {
+    if (material.alphaMode == int(AlphaMode::eAlphaModeMask)) {
+        return opacity < material.alphaCutoff;
+    }
+    return false;
+}
+
 PbrMaterial localEvaluateMaterial(GltfShadeMaterial material, float3 N, float3 T, float3 B, float2 uv) {
     PbrMaterial pbrMat = defaultPbrMaterial();
     pbrMat.baseColor = material.pbrBaseColorFactor.rgb;
@@ -217,6 +237,7 @@ float4 PSMain(VSOutput input) : SV_Target {
 
     float2 uv = float2(input.uv.x, 1.0 - input.uv.y);
     PbrMaterial pbrMat = localEvaluateMaterial(mat, pbrN, pbrT, pbrB, uv);
+    if (ShouldDiscardAlpha(mat, pbrMat.opacity)) discard;
 
     float3 V      = normalize(ubo.camPos.xyz - input.worldPos);
     float3 result = float3(0.0);
@@ -267,4 +288,15 @@ float4 PSMain(VSOutput input) : SV_Target {
 
     float opacity = (ubo.enableRayQueryTransparency != 0) ? pbrMat.opacity : 1.0;
     return float4(result, opacity);
+}
+
+[shader("fragment")]
+void ZPrepassAlphaPS(VSOutput input) {
+    GltfShadeMaterial mat = materials[input.materialIndex];
+    if (mat.alphaMode != int(AlphaMode::eAlphaModeMask)) {
+        return;
+    }
+    float2 uv = float2(input.uv.x, 1.0 - input.uv.y);
+    float opacity = EvaluateMaterialOpacity(mat, uv);
+    if (opacity < mat.alphaCutoff) discard;
 }

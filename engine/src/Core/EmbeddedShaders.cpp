@@ -2,6 +2,7 @@
 
 #include "pbr_vert_spv.h"
 #include "pbr_frag_spv.h"
+#include "pbr_zprepass_frag_spv.h"
 #include "forward_plus_cull_comp_spv.h"
 #include "composite_vert_spv.h"
 #include "composite_frag_spv.h"
@@ -22,6 +23,7 @@ namespace Manro {
 
         vfs.Mount("shaders://pbr.vert.spv", pbr_vert_spv, pbr_vert_spv_len);
         vfs.Mount("shaders://pbr.frag.spv", pbr_frag_spv, pbr_frag_spv_len);
+        vfs.Mount("shaders://pbr_zprepass.frag.spv", pbr_zprepass_frag_spv, pbr_zprepass_frag_spv_len);
         vfs.Mount("shaders://forward_plus_cull.comp.spv", forward_plus_cull_comp_spv, forward_plus_cull_comp_spv_len);
         vfs.Mount("shaders://composite.vert.spv", composite_vert_spv, composite_vert_spv_len);
         vfs.Mount("shaders://composite.frag.spv", composite_frag_spv, composite_frag_spv_len);

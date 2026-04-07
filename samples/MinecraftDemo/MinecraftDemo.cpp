@@ -8,8 +8,11 @@
 #include <imgui.h>
 
 #include <algorithm>
-#include <cfloat>
+#include <array>
+#include <chrono>
 #include <cmath>
+#include <string>
+#include <string_view>
 
 namespace {
     constexpr float kFov = 95.f;
@@ -34,9 +37,137 @@ namespace {
     constexpr float kAirDrag = 0.91f;
 
     constexpr float kMaxFallSpeed = 4000.f;
+
+    constexpr Manro::u8 kFacePosZ = 1u << 0;
+    constexpr Manro::u8 kFaceNegZ = 1u << 1;
+    constexpr Manro::u8 kFaceNegX = 1u << 2;
+    constexpr Manro::u8 kFacePosX = 1u << 3;
+    constexpr Manro::u8 kFacePosY = 1u << 4;
+    constexpr Manro::u8 kFaceNegY = 1u << 5;
+
+    struct BlockMaterialSpec {
+        std::string_view baseColorTexture;
+        std::string_view normalTexture;
+        std::string_view metallicRoughnessTexture;
+        Manro::Vec4 texturedBaseColorFactor;
+        float metallicFactor;
+        float roughnessFactor;
+        int alphaMode;
+        float alphaCutoff;
+        bool doubleSided;
+    };
+
+    constexpr std::array<BlockMaterialSpec, 6> kBlockMaterialSpecs{
+        {
+            {
+                "minecraft/textures/block/grass_block_top.png", "", "", {1.f, 1.f, 1.f, 1.f},
+                0.f, 0.92f, shaderio::eAlphaModeOpaque, 0.5f, false
+            },
+            {
+                "minecraft/textures/block/dirt.png", "", "", {1.f, 1.f, 1.f, 1.f},
+                0.f, 0.98f, shaderio::eAlphaModeOpaque, 0.5f, false
+            },
+            {
+                "minecraft/textures/block/stone.png", "", "", {1.f, 1.f, 1.f, 1.f},
+                0.f, 0.84f, shaderio::eAlphaModeOpaque, 0.5f, false
+            },
+            {
+                "minecraft/textures/block/oak_log.png", "", "", {1.f, 1.f, 1.f, 1.f},
+                0.f, 0.76f, shaderio::eAlphaModeOpaque, 0.5f, false
+            },
+            {
+                "minecraft/textures/block/leaves_oak.png", "", "", {0.56f, 0.86f, 0.49f, 1.f},
+                0.f, 0.93f, shaderio::eAlphaModeMask, 0.5f, true
+            },
+            {
+                "minecraft/textures/block/water_still.png", "", "", {0.78f, 0.90f, 1.f, 0.6f},
+                0.f, 0.04f, shaderio::eAlphaModeBlend, 0.5f, true
+            },
+        }
+    };
+
+    std::string TexturePathWithSuffix(std::string_view path, std::string_view suffix) {
+        const size_t dotPos = path.find_last_of('.');
+        if (dotPos == std::string_view::npos) return std::string(path) + std::string(suffix);
+
+        std::string result;
+        result.reserve(path.size() + suffix.size());
+        result.append(path.substr(0, dotPos));
+        result.append(suffix);
+        result.append(path.substr(dotPos));
+        return result;
+    }
+
+    template<size_t N>
+    std::string ResolveTextureVariant(std::string_view basePath,
+                                      const std::array<std::string_view, N> &suffixes) {
+        auto &vfs = Manro::VirtualFS::Get();
+        for (const std::string_view suffix: suffixes) {
+            const std::string candidate = TexturePathWithSuffix(basePath, suffix);
+            if (vfs.FileExists(candidate)) return candidate;
+        }
+        return {};
+    }
+
+    uint16_t ToMaterialTextureSlot(Manro::TextureHandle texture) {
+        return texture.IsValid() ? static_cast<uint16_t>(texture.Index() + 1) : 0;
+    }
+
+    Manro::ModelData CreateMaskedCubeModel(const Manro::ModelData &baseCube, Manro::u8 visibleMask) {
+        constexpr size_t kFaceCount = 6;
+        Manro::ModelData masked = baseCube;
+        masked.indices.clear();
+        masked.indices.reserve(baseCube.indices.size());
+
+        for (size_t face = 0; face < kFaceCount; ++face) {
+            constexpr size_t kIndicesPerFace = 6;
+            if ((visibleMask & (1u << face)) == 0) continue;
+            const size_t offset = face * kIndicesPerFace;
+            masked.indices.insert(masked.indices.end(),
+                                  baseCube.indices.begin() + offset,
+                                  baseCube.indices.begin() + offset + kIndicesPerFace);
+        }
+        return masked;
+    }
+
+    class ScopedTimer {
+    public:
+        explicit ScopedTimer(float &outMs)
+            : m_OutMs(outMs), m_Start(std::chrono::steady_clock::now()) {
+        }
+
+        ~ScopedTimer() {
+            const auto end = std::chrono::steady_clock::now();
+            m_OutMs = std::chrono::duration<float, std::milli>(end - m_Start).count();
+        }
+
+    private:
+        float &m_OutMs;
+        std::chrono::steady_clock::time_point m_Start;
+    };
+
+    int FloorDiv(int a, int b) {
+        int q = a / b;
+        int r = a % b;
+        if ((r != 0) && ((r < 0) != (b < 0))) --q;
+        return q;
+    }
+
+    int PositiveMod(int a, int b) {
+        int r = a % b;
+        if (r < 0) r += b;
+        return r;
+    }
 }
 
 size_t MinecraftDemo::BlockCoordHash::operator()(const BlockCoord &coord) const {
+    size_t h = std::hash<int>{}(coord.x);
+    h ^= std::hash<int>{}(coord.y) + 0x9e3779b9 + (h << 6) + (h >> 2);
+    h ^= std::hash<int>{}(coord.z) + 0x9e3779b9 + (h << 6) + (h >> 2);
+    return h;
+}
+
+size_t MinecraftDemo::ChunkCoordHash::operator()(const ChunkCoord &coord) const {
     size_t h = std::hash<int>{}(coord.x);
     h ^= std::hash<int>{}(coord.y) + 0x9e3779b9 + (h << 6) + (h >> 2);
     h ^= std::hash<int>{}(coord.z) + 0x9e3779b9 + (h << 6) + (h >> 2);
@@ -70,8 +201,10 @@ void MinecraftDemo::OnStartup(const Manro::InitContext &ctx) {
     m_InputManager.SetBackend(&m_InputBackend);
 
     m_PhysicsWorld = Manro::CreateScope<Manro::PhysicsWorld>();
+
     LoadAssets();
     GenerateWorld();
+    RebuildDirtyChunks();
 
     const float spawnY = static_cast<float>(TerrainHeight(0, 0)) * kBlockSize
                          + kPlayerHalfHeight + 20.f;
@@ -96,9 +229,17 @@ void MinecraftDemo::OnStartup(const Manro::InitContext &ctx) {
 }
 
 void MinecraftDemo::OnShutdown() {
+    for (auto &[cc, chunk]: m_Chunks) {
+        for (auto body: chunk.collisionBodies) {
+            if (body != Manro::kInvalidBodyHandle)
+                m_PhysicsWorld->RemoveBody(body);
+        }
+        chunk.collisionBodies.clear();
+    }
+
     m_BlockMaterials = {};
-    m_WorldBlocks.clear();
-    m_BodyToCoord.clear();
+    m_CubeMeshesByMask.fill(Manro::kInvalidMesh);
+    m_Chunks.clear();
     m_PhysicsWorld.reset();
 }
 
@@ -146,7 +287,7 @@ bool MinecraftDemo::OnUpdate(const Manro::FrameContext &ctx, const Manro::UserCm
             Manro::Vec3{cosf(yawRad), 0.f, sinf(yawRad)});
         const Manro::Vec3 right = glm::normalize(
             Manro::Vec3{-sinf(yawRad), 0.f, cosf(yawRad)});
-        const Manro::Vec3 up = {0.f, 1.f, 0.f};
+        constexpr Manro::Vec3 up = {0.f, 1.f, 0.f};
 
         using K = Manro::Key;
         float speed = m_MoveSpeed;
@@ -161,6 +302,7 @@ bool MinecraftDemo::OnUpdate(const Manro::FrameContext &ctx, const Manro::UserCm
                 sinf(pitchRad),
                 cosf(pitchRad) * sinf(yawRad)
             });
+
             Manro::Vec3 moveDir{0.f};
             if (m_InputManager.IsKeyDown(K::W)) moveDir += lookDir;
             if (m_InputManager.IsKeyDown(K::S)) moveDir -= lookDir;
@@ -168,13 +310,14 @@ bool MinecraftDemo::OnUpdate(const Manro::FrameContext &ctx, const Manro::UserCm
             if (m_InputManager.IsKeyDown(K::A)) moveDir -= right;
             if (spaceDown) moveDir += up;
             if (m_InputManager.IsKeyDown(K::LeftCtrl)) moveDir -= up;
+
             if (glm::length(moveDir) > 0.001f) moveDir = glm::normalize(moveDir);
             m_PhysicsWorld->SetKinematicVelocity(m_PlayerBody, moveDir * speed);
         } else {
-            m_IsGrounded = m_PhysicsWorld->IsGrounded(m_PlayerBody);
+            const bool grounded = m_PhysicsWorld->IsGrounded(m_PlayerBody);
+            m_IsGrounded = grounded;
 
             Manro::Vec3 vel = m_PhysicsWorld->GetBodyLinearVelocity(m_PlayerBody);
-
             vel.y = std::max(vel.y, -kMaxFallSpeed);
 
             Manro::Vec3 moveDir{0.f};
@@ -187,7 +330,7 @@ bool MinecraftDemo::OnUpdate(const Manro::FrameContext &ctx, const Manro::UserCm
             if (hasInput) moveDir = glm::normalize(moveDir);
 
             float targetVx, targetVz;
-            if (m_IsGrounded) {
+            if (grounded) {
                 if (hasInput) {
                     targetVx = moveDir.x * speed;
                     targetVz = moveDir.z * speed;
@@ -207,9 +350,8 @@ bool MinecraftDemo::OnUpdate(const Manro::FrameContext &ctx, const Manro::UserCm
             }
 
             float targetVy = vel.y;
-            if (m_IsGrounded) {
-                if (vel.y < 0.f)
-                    targetVy = 0.f;
+            if (grounded) {
+                if (vel.y < 0.f) targetVy = 0.f;
                 if (jumpPressed) {
                     targetVy = m_JumpVelocity;
                     m_IsGrounded = false;
@@ -225,29 +367,22 @@ bool MinecraftDemo::OnUpdate(const Manro::FrameContext &ctx, const Manro::UserCm
         m_SpaceWasDown = false;
     }
 
-    m_PhysicsWorld->Step(dt);
-
-    if (!m_NoClip && m_PlayerBody != Manro::kInvalidBodyHandle) {
-        Manro::Vec3 v = m_PhysicsWorld->GetBodyLinearVelocity(m_PlayerBody);
-        bool changed = false;
-        if (m_PhysicsWorld->IsGrounded(m_PlayerBody) && v.y < 0.f) {
-            v.y = 0.f;
-            changed = true;
-        }
-        if (v.y < -kMaxFallSpeed) {
-            v.y = -kMaxFallSpeed;
-            changed = true;
-        }
-        if (changed)
-            m_PhysicsWorld->SetLinearVelocity(m_PlayerBody, v);
+    {
+        ScopedTimer t(m_DebugStats.physicsStepMs);
+        m_PhysicsWorld->Step(dt);
     }
 
-    if (m_PlayerBody != Manro::kInvalidBodyHandle)
+    if (!m_NoClip && m_PlayerBody != Manro::kInvalidBodyHandle)
+        m_PlayerPosition = m_PhysicsWorld->GetBodyPosition(m_PlayerBody);
+    else if (m_PlayerBody != Manro::kInvalidBodyHandle)
         m_PlayerPosition = m_PhysicsWorld->GetBodyPosition(m_PlayerBody);
 
     UpdateSelectionInput();
     RefreshTargetBlock(GetEyePosition(), GetForwardVector());
     UpdateInteraction(GetEyePosition(), GetForwardVector(), dt);
+
+    RebuildDirtyChunks();
+
     return true;
 }
 
@@ -291,24 +426,11 @@ void MinecraftDemo::OnRender(Manro::FrameContext &frame) {
     }
     m_Renderer->AddLight(sun);
 
-    if (!m_WorldMeshUploaded) {
-        m_Renderer->ClearStaticDraws();
-        for (const auto &[coord, block]: m_WorldBlocks) {
-            glm::mat4 model = glm::translate(glm::mat4(1.f), BlockCenter(coord));
-            model = glm::scale(model, Manro::Vec3(kHalfBlock));
-            m_Renderer->DrawMeshStatic(
-                m_CubeMesh,
-                *m_BlockMaterials[static_cast<size_t>(block.type)],
-                model);
-        }
-        m_WorldMeshUploaded = true;
-    }
-
     if (m_TargetBlock.valid) {
         const Manro::Vec3 center = BlockCenter(m_TargetBlock.coord);
         glm::mat4 model = glm::translate(glm::mat4(1.f), center);
-        model = glm::scale(model, Manro::Vec3(kHalfBlock + 3.f));
-        m_Renderer->DrawBox({0.f, 0.f, 0.f}, {1.f, 1.f, 1.f}, model, 0xFFF7E27Du);
+        model = glm::scale(model, Manro::Vec3(kHalfBlock));
+        m_Renderer->DrawBox({0.f, 0.f, 0.f}, {1.f, 1.f, 1.f}, model, 0);
     }
 
     if (m_ShowPhysics) m_PhysicsWorld->DrawPhysics(*m_Renderer);
@@ -333,18 +455,90 @@ void MinecraftDemo::LoadAssets() {
         }
     }
 
-    m_CubeMesh = m_Renderer->UploadMesh(Manro::Primitives::CreateCube(2.0f));
+    const Manro::ModelData baseCube = Manro::Primitives::CreateCube(2.0f);
+    m_CubeMeshesByMask.fill(Manro::kInvalidMesh);
+    for (int mask = 1; mask < 64; ++mask) {
+        Manro::ModelData maskedCube = CreateMaskedCubeModel(baseCube, static_cast<Manro::u8>(mask));
+        if (maskedCube.indices.empty()) continue;
+        m_CubeMeshesByMask[mask] = m_Renderer->UploadMesh(maskedCube);
+    }
+
+    std::unordered_map<std::string, Manro::TextureHandle> textureCache;
+    textureCache.reserve(m_BlockMaterials.size() * 3);
+
+    auto uploadTexture = [&](const std::string &path) -> Manro::TextureHandle {
+        if (path.empty()) return Manro::kInvalidTexture;
+        if (const auto it = textureCache.find(path); it != textureCache.end()) {
+            return it->second;
+        }
+        if (!Manro::VirtualFS::Get().FileExists(path)) {
+            textureCache.emplace(path, Manro::kInvalidTexture);
+            return Manro::kInvalidTexture;
+        }
+
+        auto textureData = Manro::TextureLoader::LoadOne(path);
+        if (textureData.pixels.empty()) {
+            LOG_WARN("[MinecraftDemo] Failed to load texture '{}'.", path);
+            textureCache.emplace(path, Manro::kInvalidTexture);
+            return Manro::kInvalidTexture;
+        }
+
+        const Manro::TextureHandle handle = m_Renderer->UploadTexture(textureData);
+        textureCache.emplace(path, handle);
+        return handle;
+    };
+
     for (size_t i = 0; i < m_BlockMaterials.size(); ++i) {
+        constexpr std::array<std::string_view, 3> kNormalSuffixes{"_n", "_normal", "_nor"};
+        constexpr std::array<std::string_view, 5> kMetallicRoughnessSuffixes{
+            "_orm", "_mr", "_mra", "_metalrough", "_s"
+        };
+
+        const BlockType type = static_cast<BlockType>(i);
+        const BlockMaterialSpec &spec = kBlockMaterialSpecs[i];
         auto material = m_Renderer->CreateMaterialInstance(m_Renderer->GetDefaultMaterial());
-        material->ModifyData().pbrBaseColorFactor = BlockColor(static_cast<BlockType>(i));
+        auto &matData = material->ModifyData();
+
+        matData.pbrBaseColorFactor = spec.texturedBaseColorFactor;
+        matData.pbrMetallicFactor = spec.metallicFactor;
+        matData.pbrRoughnessFactor = spec.roughnessFactor;
+        matData.alphaMode = spec.alphaMode;
+        matData.alphaCutoff = spec.alphaCutoff;
+        matData.doubleSided = spec.doubleSided ? 1 : 0;
+
+        const std::string baseColorPath(spec.baseColorTexture);
+        const Manro::TextureHandle baseColorTexture = uploadTexture(baseColorPath);
+        if (baseColorTexture.IsValid()) {
+            material->SetTexture(baseColorTexture);
+            matData.pbrBaseColorFactor = spec.texturedBaseColorFactor;
+        } else {
+            LOG_WARN("[MinecraftDemo] Missing block texture '{}' for {}.", baseColorPath, BlockName(type));
+        }
+
+        const std::string normalPath = !spec.normalTexture.empty()
+                                           ? std::string(spec.normalTexture)
+                                           : ResolveTextureVariant(baseColorPath, kNormalSuffixes);
+        if (const Manro::TextureHandle normalTexture = uploadTexture(normalPath); normalTexture.IsValid()) {
+            matData.normalTexture = ToMaterialTextureSlot(normalTexture);
+        }
+
+        const std::string metallicRoughnessPath = !spec.metallicRoughnessTexture.empty()
+                                                      ? std::string(spec.metallicRoughnessTexture)
+                                                      : ResolveTextureVariant(
+                                                          baseColorPath, kMetallicRoughnessSuffixes);
+        if (const Manro::TextureHandle metallicRoughnessTexture = uploadTexture(metallicRoughnessPath);
+            metallicRoughnessTexture.IsValid()) {
+            matData.pbrMetallicRoughnessTexture = ToMaterialTextureSlot(metallicRoughnessTexture);
+        }
+
         m_BlockMaterials[i] = std::move(material);
     }
 }
 
 void MinecraftDemo::GenerateWorld() {
-    const int worldWidth = kWorldMax - kWorldMin + 1;
-    const int worldDepth = kWorldMax - kWorldMin + 1;
-    const Manro::u32 columnCount = static_cast<Manro::u32>(worldWidth * worldDepth);
+    constexpr int worldWidth = kWorldMax - kWorldMin + 1;
+    constexpr int worldDepth = kWorldMax - kWorldMin + 1;
+    constexpr Manro::u32 columnCount = static_cast<Manro::u32>(worldWidth * worldDepth);
 
     std::vector<GeneratedColumn> generatedColumns(columnCount);
     const auto handle = m_Jobs->CreateHandle();
@@ -363,10 +557,10 @@ void MinecraftDemo::GenerateWorld() {
         }
     }
 
-    LOG_INFO("[MinecraftDemo] Generated {} voxel blocks.", m_WorldBlocks.size());
+    LOG_INFO("[MinecraftDemo] Generated voxel world using chunked storage.");
 }
 
-MinecraftDemo::GeneratedColumn MinecraftDemo::BuildTerrainColumn(int x, int z) const {
+MinecraftDemo::GeneratedColumn MinecraftDemo::BuildTerrainColumn(int x, int z) {
     GeneratedColumn column;
     const int height = TerrainHeight(x, z);
 
@@ -379,7 +573,7 @@ MinecraftDemo::GeneratedColumn MinecraftDemo::BuildTerrainColumn(int x, int z) c
         AppendBlock(column, {x, y, z}, type);
     }
 
-    const int waterLevel = 3;
+    constexpr int waterLevel = 3;
     if (height <= waterLevel) {
         for (int y = height; y <= waterLevel; ++y)
             AppendBlock(column, {x, y, z}, BlockType::Water);
@@ -389,7 +583,7 @@ MinecraftDemo::GeneratedColumn MinecraftDemo::BuildTerrainColumn(int x, int z) c
     return column;
 }
 
-void MinecraftDemo::TrySpawnTree(int x, int z, int groundHeight, GeneratedColumn &column) const {
+void MinecraftDemo::TrySpawnTree(int x, int z, int groundHeight, GeneratedColumn &column) {
     const int hash = std::abs(x * 7349 + z * 9151 + x * z * 193);
     if (groundHeight <= 4) return;
     if ((hash % 13) != 0) return;
@@ -412,60 +606,346 @@ void MinecraftDemo::TrySpawnTree(int x, int z, int groundHeight, GeneratedColumn
     }
 }
 
-void MinecraftDemo::AppendBlock(GeneratedColumn &column, const BlockCoord &coord, BlockType type) const {
+void MinecraftDemo::AppendBlock(GeneratedColumn &column, const BlockCoord &coord, BlockType type) {
     if (coord.y < 0 || coord.y >= kMaxBuildHeight) return;
     column.blocks.push_back(PendingBlock{coord, type});
+}
+
+MinecraftDemo::ChunkCoord MinecraftDemo::WorldToChunkCoord(const BlockCoord &coord) const {
+    return {
+        FloorDiv(coord.x, kChunkSize),
+        FloorDiv(coord.y, kChunkSize),
+        FloorDiv(coord.z, kChunkSize)
+    };
+}
+
+MinecraftDemo::LocalBlockCoord MinecraftDemo::WorldToLocalBlockCoord(const BlockCoord &coord) const {
+    return {
+        PositiveMod(coord.x, kChunkSize),
+        PositiveMod(coord.y, kChunkSize),
+        PositiveMod(coord.z, kChunkSize)
+    };
+}
+
+MinecraftDemo::BlockCoord MinecraftDemo::WorldToBlockCoord(const Manro::Vec3 &pos) const {
+    return {
+        static_cast<int>(std::floor(pos.x / kBlockSize)),
+        static_cast<int>(std::floor(pos.y / kBlockSize)),
+        static_cast<int>(std::floor(pos.z / kBlockSize))
+    };
+}
+
+size_t MinecraftDemo::ChunkIndex(int lx, int ly, int lz) const {
+    return static_cast<size_t>(lx + ly * kChunkSize + lz * kChunkSize * kChunkSize);
+}
+
+MinecraftDemo::BlockCoord MinecraftDemo::ChunkLocalToWorld(const ChunkCoord &cc, const LocalBlockCoord &lc) const {
+    return {
+        cc.x * kChunkSize + lc.x,
+        cc.y * kChunkSize + lc.y,
+        cc.z * kChunkSize + lc.z
+    };
+}
+
+MinecraftDemo::Chunk *MinecraftDemo::GetChunk(const ChunkCoord &coord) {
+    const auto it = m_Chunks.find(coord);
+    return (it != m_Chunks.end()) ? &it->second : nullptr;
+}
+
+const MinecraftDemo::Chunk *MinecraftDemo::GetChunk(const ChunkCoord &coord) const {
+    const auto it = m_Chunks.find(coord);
+    return (it != m_Chunks.end()) ? &it->second : nullptr;
+}
+
+MinecraftDemo::Chunk &MinecraftDemo::GetOrCreateChunk(const ChunkCoord &coord) {
+    auto [it, inserted] = m_Chunks.try_emplace(coord);
+    Chunk &chunk = it->second;
+    if (inserted) {
+        chunk.coord = coord;
+        chunk.blocks.resize(kChunkVolume, 255);
+        chunk.renderDirty = true;
+        chunk.collisionDirty = true;
+    }
+    return chunk;
+}
+
+std::optional<MinecraftDemo::BlockType> MinecraftDemo::GetBlock(const BlockCoord &coord) const {
+    if (coord.y < 0 || coord.y >= kMaxBuildHeight) return std::nullopt;
+
+    const ChunkCoord cc = WorldToChunkCoord(coord);
+    const Chunk *chunk = GetChunk(cc);
+    if (!chunk) return std::nullopt;
+
+    const LocalBlockCoord lc = WorldToLocalBlockCoord(coord);
+    const size_t idx = ChunkIndex(lc.x, lc.y, lc.z);
+    const Manro::u8 raw = chunk->blocks[idx];
+    if (raw == 255) return std::nullopt;
+    return static_cast<BlockType>(raw);
 }
 
 bool MinecraftDemo::SetBlock(const BlockCoord &coord, BlockType type) {
     if (coord.y < 0 || coord.y >= kMaxBuildHeight) return false;
     if (IsOccupied(coord)) return false;
 
-    Manro::PhysicsBodyHandle body = Manro::kInvalidBodyHandle;
-    if (type != BlockType::Water) {
-        const Manro::Vec3 center = BlockCenter(coord);
-        Manro::PhysicsWorld::StaticBodyDesc desc{};
-        desc.friction = 0.6f;
-        desc.restitution = 0.f;
-        desc.convexRadius = 0.f;
-        body = m_PhysicsWorld->AddStaticBox(center, {kHalfBlock, kHalfBlock, kHalfBlock}, desc);
-        if (body == Manro::kInvalidBodyHandle) {
-            LOG_WARN("[MinecraftDemo] Failed to create collider for block ({}, {}, {}).",
-                     coord.x, coord.y, coord.z);
-        } else {
-            m_BodyToCoord[body.packed] = coord;
-        }
-    }
+    const ChunkCoord cc = WorldToChunkCoord(coord);
+    Chunk &chunk = GetOrCreateChunk(cc);
+    const LocalBlockCoord lc = WorldToLocalBlockCoord(coord);
+    const size_t idx = ChunkIndex(lc.x, lc.y, lc.z);
+    chunk.blocks[idx] = static_cast<Manro::u8>(type);
 
-    m_WorldBlocks.emplace(coord, BlockData{type, body});
-    m_WorldMeshUploaded = false;
+    MarkChunkDirtyForBlock(coord);
     return true;
 }
 
 bool MinecraftDemo::RemoveBlock(const BlockCoord &coord) {
-    const auto it = m_WorldBlocks.find(coord);
-    if (it == m_WorldBlocks.end()) return false;
+    const ChunkCoord cc = WorldToChunkCoord(coord);
+    Chunk *chunk = GetChunk(cc);
+    if (!chunk) return false;
 
-    if (it->second.body != Manro::kInvalidBodyHandle) {
-        m_PhysicsWorld->RemoveBody(it->second.body);
-        m_BodyToCoord.erase(it->second.body.packed);
-    }
-    m_WorldBlocks.erase(it);
+    const LocalBlockCoord lc = WorldToLocalBlockCoord(coord);
+    const size_t idx = ChunkIndex(lc.x, lc.y, lc.z);
+    if (chunk->blocks[idx] == 255) return false;
 
-    // Mark world as dirty so mesh will be reuploaded
-    m_WorldMeshUploaded = false;
+    chunk->blocks[idx] = 255;
+    MarkChunkDirtyForBlock(coord);
     return true;
 }
 
 bool MinecraftDemo::IsOccupied(const BlockCoord &coord) const {
-    return m_WorldBlocks.contains(coord);
+    return GetBlock(coord).has_value();
+}
+
+const MinecraftDemo::BlockProperties &MinecraftDemo::GetBlockProperties(BlockType type) const {
+    static const std::array<BlockProperties, static_cast<size_t>(BlockType::Count)> props{
+        {
+            {true, true, true, false}, // Grass
+            {true, true, true, false}, // Dirt
+            {true, true, true, false}, // Stone
+            {true, true, true, false}, // Wood
+            {false, false, false, true}, // Leaf
+            {false, false, false, true}, // Water
+        }
+    };
+    return props[static_cast<size_t>(type)];
+}
+
+bool MinecraftDemo::IsSolidBlock(BlockType type) const {
+    return GetBlockProperties(type).solid;
+}
+
+bool MinecraftDemo::IsOpaqueBlock(BlockType type) const {
+    return GetBlockProperties(type).opaque;
+}
+
+bool MinecraftDemo::IsCollidableBlock(BlockType type) const {
+    return GetBlockProperties(type).collidable;
+}
+
+void MinecraftDemo::MarkChunkDirtyForBlock(const BlockCoord &coord) {
+    const ChunkCoord cc = WorldToChunkCoord(coord);
+
+    auto mark = [&](const ChunkCoord &c) {
+        Chunk &chunk = GetOrCreateChunk(c);
+        chunk.renderDirty = true;
+        chunk.collisionDirty = true;
+    };
+
+    mark(cc);
+
+    const LocalBlockCoord lc = WorldToLocalBlockCoord(coord);
+
+    if (lc.x == 0) mark({cc.x - 1, cc.y, cc.z});
+    if (lc.x == kChunkSize - 1) mark({cc.x + 1, cc.y, cc.z});
+    if (lc.y == 0) mark({cc.x, cc.y - 1, cc.z});
+    if (lc.y == kChunkSize - 1) mark({cc.x, cc.y + 1, cc.z});
+    if (lc.z == 0) mark({cc.x, cc.y, cc.z - 1});
+    if (lc.z == kChunkSize - 1) mark({cc.x, cc.y, cc.z + 1});
+}
+
+std::vector<MinecraftDemo::MergedBox> MinecraftDemo::BuildMergedBoxesForChunk(const Chunk &chunk) const {
+    std::vector<MergedBox> boxes;
+    std::array<bool, kChunkVolume> visited{};
+    visited.fill(false);
+
+    for (int z = 0; z < kChunkSize; ++z) {
+        for (int y = 0; y < kChunkSize; ++y) {
+            for (int x = 0; x < kChunkSize; ++x) {
+                const size_t idx = ChunkIndex(x, y, z);
+                if (visited[idx]) continue;
+
+                const Manro::u8 raw = chunk.blocks[idx];
+                if (raw == 255) continue;
+
+                const BlockType type = static_cast<BlockType>(raw);
+                if (!IsCollidableBlock(type)) continue;
+
+                int runEnd = x;
+                while (runEnd + 1 < kChunkSize) {
+                    const size_t nextIdx = ChunkIndex(runEnd + 1, y, z);
+                    if (visited[nextIdx]) break;
+                    const Manro::u8 nextRaw = chunk.blocks[nextIdx];
+                    if (nextRaw != raw) break;
+                    if (!IsCollidableBlock(static_cast<BlockType>(nextRaw))) break;
+                    ++runEnd;
+                }
+
+                for (int rx = x; rx <= runEnd; ++rx)
+                    visited[ChunkIndex(rx, y, z)] = true;
+
+                const BlockCoord minW = ChunkLocalToWorld(chunk.coord, {x, y, z});
+                const BlockCoord maxW = ChunkLocalToWorld(chunk.coord, {runEnd, y, z});
+                boxes.push_back({minW, maxW});
+            }
+        }
+    }
+
+    return boxes;
+}
+
+void MinecraftDemo::RebuildChunkCollision(Chunk &chunk) {
+    ScopedTimer timer(m_DebugStats.collisionBuildMs);
+
+    for (auto body: chunk.collisionBodies) {
+        if (body != Manro::kInvalidBodyHandle)
+            m_PhysicsWorld->RemoveBody(body);
+    }
+    chunk.collisionBodies.clear();
+
+    const std::vector<MergedBox> boxes = BuildMergedBoxesForChunk(chunk);
+
+    for (const MergedBox &box: boxes) {
+        const float sizeX = static_cast<float>(box.max.x - box.min.x + 1) * kBlockSize;
+        const float sizeY = static_cast<float>(box.max.y - box.min.y + 1) * kBlockSize;
+        const float sizeZ = static_cast<float>(box.max.z - box.min.z + 1) * kBlockSize;
+
+        const Manro::Vec3 center{
+            (static_cast<float>(box.min.x) + static_cast<float>(box.max.x) + 1.f) * 0.5f * kBlockSize,
+            (static_cast<float>(box.min.y) + static_cast<float>(box.max.y) + 1.f) * 0.5f * kBlockSize,
+            (static_cast<float>(box.min.z) + static_cast<float>(box.max.z) + 1.f) * 0.5f * kBlockSize
+        };
+
+        Manro::PhysicsWorld::StaticBodyDesc desc{};
+        desc.friction = 0.6f;
+        desc.restitution = 0.f;
+        desc.convexRadius = 0.f;
+
+        const auto body = m_PhysicsWorld->AddStaticBox(
+            center,
+            {sizeX * 0.5f, sizeY * 0.5f, sizeZ * 0.5f},
+            desc);
+
+        if (body != Manro::kInvalidBodyHandle)
+            chunk.collisionBodies.push_back(body);
+    }
+
+    chunk.collisionDirty = false;
+}
+
+void MinecraftDemo::RebuildChunkRender(Chunk &chunk) {
+    ScopedTimer timer(m_DebugStats.chunkMeshBuildMs);
+
+    m_Renderer->ClearStaticDraws();
+
+    const auto shouldRenderFace = [&](BlockType selfType, int x, int y, int z) {
+        const auto neighbor = GetBlock({x, y, z});
+        if (!neighbor.has_value()) return true;
+
+        const bool selfOpaque = IsOpaqueBlock(selfType);
+        const bool neighborOpaque = IsOpaqueBlock(*neighbor);
+
+        if (selfOpaque && neighborOpaque) return false;
+        if (!selfOpaque && neighborOpaque) return false;
+        if (selfOpaque && !neighborOpaque) return true;
+        return false;
+    };
+
+    for (const auto &[cc, ch]: m_Chunks) {
+        for (int z = 0; z < kChunkSize; ++z) {
+            for (int y = 0; y < kChunkSize; ++y) {
+                for (int x = 0; x < kChunkSize; ++x) {
+                    const size_t idx = ChunkIndex(x, y, z);
+                    const Manro::u8 raw = ch.blocks[idx];
+                    if (raw == 255) continue;
+
+                    const BlockType type = static_cast<BlockType>(raw);
+                    const BlockCoord world = ChunkLocalToWorld(cc, {x, y, z});
+
+                    Manro::u8 visibleMask = 0;
+                    if (shouldRenderFace(type, world.x, world.y, world.z + 1)) visibleMask |= kFacePosZ;
+                    if (shouldRenderFace(type, world.x, world.y, world.z - 1)) visibleMask |= kFaceNegZ;
+                    if (shouldRenderFace(type, world.x - 1, world.y, world.z)) visibleMask |= kFaceNegX;
+                    if (shouldRenderFace(type, world.x + 1, world.y, world.z)) visibleMask |= kFacePosX;
+                    if (shouldRenderFace(type, world.x, world.y + 1, world.z)) visibleMask |= kFacePosY;
+                    if (shouldRenderFace(type, world.x, world.y - 1, world.z)) visibleMask |= kFaceNegY;
+                    if (visibleMask == 0) continue;
+
+                    const Manro::MeshHandle mesh = m_CubeMeshesByMask[visibleMask];
+                    if (!mesh.IsValid()) continue;
+
+                    glm::mat4 model = glm::translate(glm::mat4(1.f), BlockCenter(world));
+                    model = glm::scale(model, Manro::Vec3(kHalfBlock));
+                    m_Renderer->DrawMeshStatic(
+                        mesh,
+                        *m_BlockMaterials[static_cast<size_t>(type)],
+                        model);
+                }
+            }
+        }
+    }
+
+    for (auto &[cc2, c2]: m_Chunks) {
+        c2.renderDirty = false;
+        c2.uploaded = true;
+    }
+}
+
+void MinecraftDemo::RebuildDirtyChunks() {
+    m_DebugStats.chunkCount = m_Chunks.size();
+    m_DebugStats.physicsBodyCount = 0;
+    m_DebugStats.dirtyRenderChunks = 0;
+    m_DebugStats.dirtyCollisionChunks = 0;
+    m_DebugStats.solidBlockCount = 0;
+    m_DebugStats.waterBlockCount = 0;
+    m_DebugStats.leafBlockCount = 0;
+
+    bool anyRenderDirty = false;
+
+    for (auto &[cc, chunk]: m_Chunks) {
+        if (chunk.renderDirty) {
+            anyRenderDirty = true;
+            ++m_DebugStats.dirtyRenderChunks;
+        }
+        if (chunk.collisionDirty) ++m_DebugStats.dirtyCollisionChunks;
+
+        for (auto body: chunk.collisionBodies) {
+            if (body != Manro::kInvalidBodyHandle)
+                ++m_DebugStats.physicsBodyCount;
+        }
+
+        for (Manro::u8 raw: chunk.blocks) {
+            if (raw == 255) continue;
+            const BlockType t = static_cast<BlockType>(raw);
+            if (t == BlockType::Water) ++m_DebugStats.waterBlockCount;
+            else if (t == BlockType::Leaf) ++m_DebugStats.leafBlockCount;
+            else ++m_DebugStats.solidBlockCount;
+        }
+    }
+
+    for (auto &[cc, chunk]: m_Chunks) {
+        if (chunk.collisionDirty)
+            RebuildChunkCollision(chunk);
+    }
+
+    if (anyRenderDirty)
+        RebuildChunkRender(m_Chunks.begin()->second);
 }
 
 void MinecraftDemo::UpdateSelectionInput() {
-    const std::array<Manro::Key, 6> keys{
+    constexpr std::array<Manro::Key, 6> keys{
         Manro::Key::Num1, Manro::Key::Num2, Manro::Key::Num3,
         Manro::Key::Num4, Manro::Key::Num5, Manro::Key::Num6
     };
+
     for (size_t i = 0; i < keys.size(); ++i) {
         const bool down = m_InputManager.IsKeyDown(keys[i]);
         if (down && !m_NumberWasDown[i])
@@ -507,26 +987,86 @@ void MinecraftDemo::UpdateInteraction(
 }
 
 void MinecraftDemo::RefreshTargetBlock(const Manro::Vec3 &eyePos, const Manro::Vec3 &forward) {
+    ScopedTimer timer(m_DebugStats.raycastMs);
     m_TargetBlock = {};
+    RaycastVoxel(eyePos, forward, kReachDistance, m_TargetBlock);
+}
 
-    Manro::PhysicsWorld::RaycastHit hit{};
-    if (!m_PhysicsWorld->RaycastClosest(eyePos, forward, kReachDistance, hit, m_PlayerBody))
-        return;
+bool MinecraftDemo::RaycastVoxel(const Manro::Vec3 &origin,
+                                 const Manro::Vec3 &dir,
+                                 float maxDistance,
+                                 TargetBlock &outHit) const {
+    if (glm::length(dir) < 0.0001f) return false;
+    const Manro::Vec3 rayDir = glm::normalize(dir);
 
-    const auto it = m_BodyToCoord.find(hit.body.packed);
-    if (it == m_BodyToCoord.end()) return;
+    BlockCoord cell = WorldToBlockCoord(origin);
 
-    m_TargetBlock.valid = true;
-    m_TargetBlock.coord = it->second;
-    m_TargetBlock.hitPosition = hit.position;
-    m_TargetBlock.hitNormal = hit.normal;
+    const int stepX = (rayDir.x > 0.f) ? 1 : (rayDir.x < 0.f ? -1 : 0);
+    const int stepY = (rayDir.y > 0.f) ? 1 : (rayDir.y < 0.f ? -1 : 0);
+    const int stepZ = (rayDir.z > 0.f) ? 1 : (rayDir.z < 0.f ? -1 : 0);
+
+    auto nextBoundary = [&](float p, int c, int step) -> float {
+        if (step > 0) return (static_cast<float>(c + 1) * kBlockSize - p);
+        if (step < 0) return (p - static_cast<float>(c) * kBlockSize);
+        return std::numeric_limits<float>::infinity();
+    };
+
+    const float invX = (std::abs(rayDir.x) > 1e-6f)
+                           ? (1.f / std::abs(rayDir.x))
+                           : std::numeric_limits<float>::infinity();
+    const float invY = (std::abs(rayDir.y) > 1e-6f)
+                           ? (1.f / std::abs(rayDir.y))
+                           : std::numeric_limits<float>::infinity();
+    const float invZ = (std::abs(rayDir.z) > 1e-6f)
+                           ? (1.f / std::abs(rayDir.z))
+                           : std::numeric_limits<float>::infinity();
+
+    float tMaxX = nextBoundary(origin.x, cell.x, stepX) * invX;
+    float tMaxY = nextBoundary(origin.y, cell.y, stepY) * invY;
+    float tMaxZ = nextBoundary(origin.z, cell.z, stepZ) * invZ;
+
+    const float tDeltaX = kBlockSize * invX;
+    const float tDeltaY = kBlockSize * invY;
+    const float tDeltaZ = kBlockSize * invZ;
+
+    Manro::Vec3 lastNormal{0.f};
+
+    float t = 0.f;
+    while (t <= maxDistance) {
+        const auto block = GetBlock(cell);
+        if (block.has_value() && IsSolidBlock(*block)) {
+            outHit.valid = true;
+            outHit.coord = cell;
+            outHit.hitPosition = origin + rayDir * t;
+            outHit.hitNormal = lastNormal;
+            return true;
+        }
+
+        if (tMaxX < tMaxY && tMaxX < tMaxZ) {
+            cell.x += stepX;
+            t = tMaxX;
+            tMaxX += tDeltaX;
+            lastNormal = {-static_cast<float>(stepX), 0.f, 0.f};
+        } else if (tMaxY < tMaxZ) {
+            cell.y += stepY;
+            t = tMaxY;
+            tMaxY += tDeltaY;
+            lastNormal = {0.f, -static_cast<float>(stepY), 0.f};
+        } else {
+            cell.z += stepZ;
+            t = tMaxZ;
+            tMaxZ += tDeltaZ;
+            lastNormal = {0.f, 0.f, -static_cast<float>(stepZ)};
+        }
+    }
+
+    return false;
 }
 
 bool MinecraftDemo::TryGetPlacementCoord(BlockCoord &outCoord) const {
     if (!m_TargetBlock.valid) return false;
 
     const Manro::Vec3 &n = m_TargetBlock.hitNormal;
-
     const float ax = std::abs(n.x);
     const float ay = std::abs(n.y);
     const float az = std::abs(n.z);
@@ -587,8 +1127,8 @@ void MinecraftDemo::DrawGui(float dt) const {
         if (samples > 0)
             avgMs = sumMs / static_cast<float>(samples);
         const float fps = avgMs > 0.f ? 1000.f / avgMs : 0.f;
-        ImGui::Text("FPS %.1f | Blocks %zu | Draws %u",
-                    fps, m_WorldBlocks.size(), m_LastStats.drawCalls);
+
+        ImGui::Text("FPS %.1f | Draws %u", fps, m_LastStats.drawCalls);
         ImGui::Text("Mode: %s", m_NoClip ? "noclip" : "survival");
         ImGui::Text("Grounded: %s", m_IsGrounded ? "yes" : "no");
         ImGui::Text("Selected: %s", BlockName(GetSelectedBlockType()));
@@ -602,45 +1142,21 @@ void MinecraftDemo::DrawGui(float dt) const {
         else
             ImGui::TextDisabled("Target: none");
 
+        ImGui::Separator();
+        ImGui::Text("Chunks: %zu", m_DebugStats.chunkCount);
+        ImGui::Text("Physics bodies: %zu", m_DebugStats.physicsBodyCount);
+        ImGui::Text("Solid blocks: %zu", m_DebugStats.solidBlockCount);
+        ImGui::Text("Leaves: %zu | Water: %zu", m_DebugStats.leafBlockCount, m_DebugStats.waterBlockCount);
+        ImGui::Text("Dirty render chunks: %zu", m_DebugStats.dirtyRenderChunks);
+        ImGui::Text("Dirty collision chunks: %zu", m_DebugStats.dirtyCollisionChunks);
+        ImGui::Text("Physics step: %.3f ms", m_DebugStats.physicsStepMs);
+        ImGui::Text("Mesh rebuild: %.3f ms", m_DebugStats.chunkMeshBuildMs);
+        ImGui::Text("Collision rebuild: %.3f ms", m_DebugStats.collisionBuildMs);
+        ImGui::Text("Voxel raycast: %.3f ms", m_DebugStats.raycastMs);
+
         ImGui::TextDisabled("LMB break  RMB place  1-6 blocks  F1 noclip  F3 cam  Ctrl cursor");
     }
     ImGui::End();
-
-    const float slotW = 116.f;
-    const float slotH = 42.f;
-    const float gap = 8.f;
-    const int nSlots = 6;
-    const float totalW = slotW * nSlots + gap * (nSlots - 1);
-    const float startX = display.x * 0.5f - totalW * 0.5f;
-    const float y = display.y - 72.f;
-    ImFont *font = ImGui::GetFont();
-    const float labelSize = ImGui::GetFontSize() * 0.84f;
-
-    for (int i = 0; i < nSlots; ++i) {
-        const bool selected = (i == m_SelectedBlockIndex);
-        const ImVec2 a{startX + i * (slotW + gap), y};
-        const ImVec2 b{a.x + slotW, a.y + slotH};
-        const auto color = BlockColor(static_cast<BlockType>(i));
-        const ImU32 fill = IM_COL32(
-            static_cast<int>(color.r * 255.f),
-            static_cast<int>(color.g * 255.f),
-            static_cast<int>(color.b * 255.f), 220);
-
-        draw->AddRectFilled(a, b, IM_COL32(26, 27, 30, 210), 6.f);
-        draw->AddRect(a, b,
-                      selected ? IM_COL32(255, 241, 166, 255) : IM_COL32(110, 110, 110, 255),
-                      6.f, 0, selected ? 3.f : 1.5f);
-        draw->AddRectFilled({a.x + 8.f, a.y + 8.f}, {a.x + 28.f, a.y + 28.f}, fill, 4.f);
-
-        const char *label = BlockName(static_cast<BlockType>(i));
-        const ImVec2 labelDim = font->CalcTextSizeA(labelSize, FLT_MAX, 0.f, label);
-        draw->AddText(font, labelSize,
-                      {a.x + 36.f, a.y + 7.f + (20.f - labelDim.y) * 0.5f},
-                      IM_COL32(245, 245, 245, 255), label);
-
-        char digit[2] = {static_cast<char>('1' + i), '\0'};
-        draw->AddText({a.x + 8.f, a.y + 30.f}, IM_COL32(210, 210, 210, 255), digit);
-    }
 }
 
 Manro::Vec3 MinecraftDemo::GetForwardVector() const {
@@ -657,7 +1173,7 @@ Manro::Vec3 MinecraftDemo::GetEyePosition() const {
     return m_PlayerPosition + Manro::Vec3(0.f, kPlayerEyeHeight - kPlayerHalfHeight, 0.f);
 }
 
-Manro::Vec3 MinecraftDemo::BlockCenter(const BlockCoord &coord) const {
+Manro::Vec3 MinecraftDemo::BlockCenter(const BlockCoord &coord) {
     return {
         (static_cast<float>(coord.x) + 0.5f) * kBlockSize,
         (static_cast<float>(coord.y) + 0.5f) * kBlockSize,
@@ -678,18 +1194,6 @@ const char *MinecraftDemo::BlockName(BlockType type) {
         case BlockType::Leaf: return "Leaf";
         case BlockType::Water: return "Water";
         default: return "Block";
-    }
-}
-
-Manro::Vec4 MinecraftDemo::BlockColor(BlockType type) {
-    switch (type) {
-        case BlockType::Grass: return {0.42f, 0.69f, 0.28f, 1.f};
-        case BlockType::Dirt: return {0.50f, 0.32f, 0.18f, 1.f};
-        case BlockType::Stone: return {0.58f, 0.60f, 0.63f, 1.f};
-        case BlockType::Wood: return {0.56f, 0.40f, 0.21f, 1.f};
-        case BlockType::Leaf: return {0.24f, 0.52f, 0.19f, 1.f};
-        case BlockType::Water: return {0.18f, 0.42f, 0.78f, 0.6f};
-        default: return {1.f, 1.f, 1.f, 1.f};
     }
 }
 

@@ -8,6 +8,7 @@
 #include <Manro/Physics/PhysicsWorld.h>
 
 #include <array>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 
@@ -20,18 +21,13 @@ class MinecraftDemo final : public Manro::IApplication {
 public:
     MinecraftDemo() = default;
 
-    ~MinecraftDemo() = default;
+    ~MinecraftDemo() override = default;
 
     Manro::WindowDesc GetWindowDesc() const override;
-
     void OnStartup(const Manro::InitContext &ctx) override;
-
     void OnShutdown() override;
-
     bool OnUpdate(const Manro::FrameContext &ctx, const Manro::UserCmd &cmd) override;
-
     void OnRender(Manro::FrameContext &frame) override;
-
     Manro::InputManager *GetInputManager() override { return &m_InputManager; }
 
 private:
@@ -46,9 +42,9 @@ private:
     };
 
     struct BlockCoord {
-        int x;
-        int y;
-        int z;
+        int x{};
+        int y{};
+        int z{};
 
         bool operator==(const BlockCoord &other) const = default;
     };
@@ -57,9 +53,29 @@ private:
         size_t operator()(const BlockCoord &coord) const;
     };
 
-    struct BlockData {
-        BlockType type;
-        Manro::PhysicsBodyHandle body{Manro::kInvalidBodyHandle};
+    struct ChunkCoord {
+        int x{};
+        int y{};
+        int z{};
+
+        bool operator==(const ChunkCoord &other) const = default;
+    };
+
+    struct ChunkCoordHash {
+        size_t operator()(const ChunkCoord &coord) const;
+    };
+
+    struct LocalBlockCoord {
+        int x{};
+        int y{};
+        int z{};
+    };
+
+    struct BlockProperties {
+        bool solid{false};
+        bool opaque{false};
+        bool collidable{false};
+        bool transparentPass{false};
     };
 
     struct PendingBlock {
@@ -78,50 +94,109 @@ private:
         Manro::Vec3 hitNormal{0.f};
     };
 
-    void LoadAssets();
+    struct MergedBox {
+        BlockCoord min{};
+        BlockCoord max{};
+    };
 
+    struct Chunk {
+        ChunkCoord coord{};
+        std::vector<Manro::u8> blocks; // BlockType storage
+        bool renderDirty{true};
+        bool collisionDirty{true};
+
+        std::vector<Manro::PhysicsBodyHandle> collisionBodies;
+        bool uploaded{false};
+    };
+
+    struct WorldDebugStats {
+        size_t solidBlockCount{0};
+        size_t waterBlockCount{0};
+        size_t leafBlockCount{0};
+        size_t physicsBodyCount{0};
+        size_t chunkCount{0};
+        size_t dirtyRenderChunks{0};
+        size_t dirtyCollisionChunks{0};
+        float physicsStepMs{0.f};
+        float chunkMeshBuildMs{0.f};
+        float collisionBuildMs{0.f};
+        float raycastMs{0.f};
+    };
+
+    static constexpr float kBlockSize = 100.f;
+    static constexpr float kHalfBlock = kBlockSize * 0.5f;
+    static constexpr int kWorldMin = -9;
+    static constexpr int kWorldMax = 8;
+    static constexpr int kMaxBuildHeight = 12;
+    static constexpr int kChunkSize = 16;
+    static constexpr int kChunkVolume = kChunkSize * kChunkSize * kChunkSize;
+
+    void LoadAssets();
     void GenerateWorld();
 
-    GeneratedColumn BuildTerrainColumn(int x, int z) const;
+    static GeneratedColumn BuildTerrainColumn(int x, int z);
 
-    void TrySpawnTree(int x, int z, int groundHeight, GeneratedColumn &column) const;
+    static void TrySpawnTree(int x, int z, int groundHeight, GeneratedColumn &column);
 
-    void AppendBlock(GeneratedColumn &column, const BlockCoord &coord, BlockType type) const;
+    static void AppendBlock(GeneratedColumn &column, const BlockCoord &coord, BlockType type);
 
+    ChunkCoord WorldToChunkCoord(const BlockCoord &coord) const;
+
+    LocalBlockCoord WorldToLocalBlockCoord(const BlockCoord &coord) const;
+
+    BlockCoord WorldToBlockCoord(const Manro::Vec3 &pos) const;
+
+    size_t ChunkIndex(int lx, int ly, int lz) const;
+
+    BlockCoord ChunkLocalToWorld(const ChunkCoord &cc, const LocalBlockCoord &lc) const;
+
+    Chunk *GetChunk(const ChunkCoord &coord);
+
+    const Chunk *GetChunk(const ChunkCoord &coord) const;
+
+    Chunk &GetOrCreateChunk(const ChunkCoord &coord);
+
+    std::optional<BlockType> GetBlock(const BlockCoord &coord) const;
     bool SetBlock(const BlockCoord &coord, BlockType type);
-
     bool RemoveBlock(const BlockCoord &coord);
-
     bool IsOccupied(const BlockCoord &coord) const;
 
+    const BlockProperties &GetBlockProperties(BlockType type) const;
+
+    bool IsSolidBlock(BlockType type) const;
+
+    bool IsOpaqueBlock(BlockType type) const;
+
+    bool IsCollidableBlock(BlockType type) const;
+
+    void MarkChunkDirtyForBlock(const BlockCoord &coord);
+
+    void RebuildDirtyChunks();
+
+    void RebuildChunkCollision(Chunk &chunk);
+
+    void RebuildChunkRender(Chunk &chunk);
+
     void UpdateSelectionInput();
-
     void UpdateInteraction(const Manro::Vec3 &eyePos, const Manro::Vec3 &forward, float dt);
-
     void RefreshTargetBlock(const Manro::Vec3 &eyePos, const Manro::Vec3 &forward);
 
+    bool RaycastVoxel(const Manro::Vec3 &origin, const Manro::Vec3 &dir, float maxDistance, TargetBlock &outHit) const;
     bool TryGetPlacementCoord(BlockCoord &outCoord) const;
-
     bool CanPlaceBlock(const BlockCoord &coord) const;
 
-    void ApplyGroundClearance();
-
     void DrawGui(float dt) const;
-
     Manro::Vec3 GetForwardVector() const;
-
     Manro::Vec3 GetEyePosition() const;
 
-    Manro::Vec3 BlockCenter(const BlockCoord &coord) const;
-
+    static Manro::Vec3 BlockCenter(const BlockCoord &coord);
     BlockType GetSelectedBlockType() const;
-
     static const char *BlockName(BlockType type);
-
-    static Manro::Vec4 BlockColor(BlockType type);
-
     static int TerrainHeight(int x, int z);
 
+    std::vector<MergedBox> BuildMergedBoxesForChunk(const Chunk &chunk) const;
+
+private:
     Manro::IWindow *m_Window{nullptr};
     Manro::JobSystem *m_Jobs{nullptr};
     Manro::Renderer *m_Renderer{nullptr};
@@ -165,17 +240,11 @@ private:
     float m_FrameTimeHistory[kHistoryLen]{};
     int m_FrameTimeOffset{0};
 
-    static constexpr float kBlockSize = 100.f;
-    static constexpr float kHalfBlock = kBlockSize * 0.5f;
-    static constexpr int kWorldMin = -9;
-    static constexpr int kWorldMax = 8;
-    static constexpr int kMaxBuildHeight = 12;
-
-    bool m_WorldMeshUploaded = false; // Track if static blocks are uploaded
     TargetBlock m_TargetBlock;
-    std::unordered_map<BlockCoord, BlockData, BlockCoordHash> m_WorldBlocks;
-    std::unordered_map<Manro::u32, BlockCoord> m_BodyToCoord;
+    std::unordered_map<ChunkCoord, Chunk, ChunkCoordHash> m_Chunks;
 
-    Manro::MeshHandle m_CubeMesh;
+    std::array<Manro::MeshHandle, 64> m_CubeMeshesByMask{};
     std::array<Manro::Scope<Manro::MaterialInstance>, static_cast<size_t>(BlockType::Count)> m_BlockMaterials;
+
+    mutable WorldDebugStats m_DebugStats{};
 };

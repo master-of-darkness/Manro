@@ -2368,9 +2368,13 @@ namespace Manro {
     void RendererImpl::BuildPbrPipeline() {
         auto vertSpv = VirtualFS::Get().ReadFile("shaders://pbr.vert.spv");
         auto fragSpv = VirtualFS::Get().ReadFile("shaders://pbr.frag.spv");
+        auto zPrepassFragSpv = VirtualFS::Get().ReadFile("shaders://pbr_zprepass.frag.spv");
         if (vertSpv.empty() || fragSpv.empty()) {
             LOG_ERROR("[Renderer] PBR shaders not found");
             return;
+        }
+        if (zPrepassFragSpv.empty()) {
+            LOG_WARN("[Renderer] Alpha-cutout z-prepass shader not found, masked materials may render opaque.");
         }
 
         PipelineConfigParams cfg{};
@@ -2428,13 +2432,13 @@ namespace Manro {
         m_PbrPipeline->BuildGraphics(vertSpv, fragSpv, cfg);
 
         PipelineConfigParams zCfg = cfg;
-        zCfg.fragmentEntryPoint = "";
+        zCfg.fragmentEntryPoint = zPrepassFragSpv.empty() ? "" : "main";
         zCfg.colorAttachmentFormat = VK_FORMAT_UNDEFINED;
         zCfg.depthWriteEnable = VK_TRUE;
         zCfg.depthCompareOp = VK_COMPARE_OP_LESS;
 
         m_ZPrepassPipeline = CreateScope<Pipeline>(m_Context);
-        m_ZPrepassPipeline->BuildGraphics(vertSpv, {}, zCfg);
+        m_ZPrepassPipeline->BuildGraphics(vertSpv, zPrepassFragSpv, zCfg);
 
         VkDescriptorSetLayoutBinding stub{
             0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr
