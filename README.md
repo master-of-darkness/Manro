@@ -8,14 +8,13 @@
 
 Manro is a game engine developed as a **research project**.
 
-The engine is designed with a focus on embedded network support and rendering through the Vulkan API.
+The engine is designed with a focus on rendering through the Vulkan API.
 
 ## Features
 
 - Renderer: Vulkan API, Slang shaders, and GPU-driven system
 - Virtual File System with URI scheme support (e.g., shaders://)
 - Entity-Component System (ECS)
-- Basic UDP game network layer
 - Jolt physics
 - Linux and Windows support with SDL3
 
