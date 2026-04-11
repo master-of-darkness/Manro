@@ -40,10 +40,6 @@ namespace Manro {
         u32 firstInstance;
     };
 
-    struct ShadowPushConstants {
-        Mat4 lightViewProj;
-    };
-
     struct ShadowMeshCullPush {
         Vec4 planes[6];
         Vec4 cameraPos;

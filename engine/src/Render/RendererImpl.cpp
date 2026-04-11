@@ -89,10 +89,6 @@ namespace Manro {
         int _padMat[3]{};
     };
 
-    struct ShadowPushConstants {
-        Mat4 lightViewProj;
-    };
-
     struct PBRPushConstants {
         Vec4 baseColorFactor{1.f, 1.f, 1.f, 1.f};
         float metallicFactor{1.f};

@@ -27,6 +27,10 @@ namespace Manro {
         VkBuffer instanceBuffer{VK_NULL_HANDLE};
     };
 
+    struct ShadowPushConstants {
+        Mat4 lightViewProj;
+    };
+
     class ShadowSystem {
     public:
         explicit ShadowSystem(VulkanContext &ctx);
