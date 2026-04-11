@@ -1,6 +1,10 @@
 #include "Internal/RendererInternal.h"
 #include "Internal/SceneRenderer.h"
 #include "Internal/MeshManagerInternal.h"
+#include "Internal/SwapchainManager.h"
+#include "Internal/RenderTargetManager.h"
+#include "Internal/ShadowSystem.h"
+#include "Internal/SkyboxRenderer.h"
 #include "Vulkan/VulkanHelpers.h"
 #include "Overlay/Overlay.h"
 #include "Vulkan/VulkanContext.h"
@@ -83,16 +87,6 @@ namespace Manro {
         Vec4 _rqReservedWorldPos;
         int materialCount{0};
         int _padMat[3]{};
-    };
-
-    struct ShadowUniformData {
-        Mat4 lightViewProj;
-        Vec4 lightDir;
-        Vec2 shadowMapSize;
-        float normalBias;
-        float softShadows;
-        int shadowsEnabled;
-        float _pad[3];
     };
 
     struct ShadowPushConstants {
@@ -204,10 +198,15 @@ namespace Manro {
             } else {
                 LOG_INFO("[Renderer] Skybox texture set: {}", cubemap);
             }
-            m_SkyboxTexture = cubemap;
-            for (u32 i = 0; i < GetFrameCount(); ++i) {
-                UpdateSkyboxDescriptorSet(i);
+            std::vector<VkBuffer> uboBuffers;
+            std::vector<VkDescriptorSet> skyboxSets;
+            uboBuffers.reserve(m_Frames.size());
+            skyboxSets.reserve(m_Frames.size());
+            for (auto &f: m_Frames) {
+                uboBuffers.push_back(f.uboBuffer->GetHandle());
+                skyboxSets.push_back(f.skyboxSet);
             }
+            m_Skybox.SetTexture(cubemap, m_Textures, uboBuffers, skyboxSets);
         }
 
         MeshHandle UploadMesh(const ModelData &data) { return m_Meshes.Upload(data); }
@@ -277,21 +276,11 @@ namespace Manro {
         void DrawAxes(const Mat4 &transform, float size) const;
 
     private:
-        void CreateOffscreenResources(u32 w, u32 h);
-
-        void CreateDepthResources(u32 w, u32 h);
-
-        void CreateColorResources(u32 w, u32 h);
-
-        void CreateShadowResources();
-
-        void RecreateShadowResources();
-
         void CreateDescriptorLayouts();
 
         void CreateDescriptorPool();
 
-        void CreateGpuBuffers();
+        void CreateToGpuBuffers();
 
         void CreateCommandBuffers();
 
@@ -303,25 +292,15 @@ namespace Manro {
 
         void BuildCullPipeline();
 
-        void BuildShadowPipeline();
-
         void UpdatePbrDescriptorSet(u32 fi);
-
-        void UpdatePbrDescriptorSetShadow(u32 fi);
 
         void UpdateCompositeDescriptorSet(u32 fi);
 
         void InitializeSwapchain(u32 width, u32 height, bool vsync);
 
-        void CleanupSwapchain();
-
         void RecreateSwapchain();
 
         void UploadLights(u32 frameIndex);
-
-        void RenderShadowPass(VkCommandBuffer cb);
-
-        static Mat4 ComputeLightViewProj(const Vec3 &lightDir);
 
         void FinalizeFrameAndPresent(VkCommandBuffer cb);
 
@@ -355,59 +334,32 @@ namespace Manro {
 
         Scope<DrawSystem> m_DrawSystem;
 
+        SwapchainManager m_Swapchain;
+        RenderTargetManager m_RenderTargets;
+        ShadowSystem m_Shadow;
+        SkyboxRenderer m_Skybox;
+
         VkDescriptorPool m_DescriptorPool = VK_NULL_HANDLE;
         VkDescriptorSetLayout m_PbrSetLayout = VK_NULL_HANDLE;
         VkDescriptorSetLayout m_CompositeSetLayout = VK_NULL_HANDLE;
         VkDescriptorSetLayout m_CullSetLayout = VK_NULL_HANDLE;
         VkDescriptorSetLayout m_MeshCullSetLayout = VK_NULL_HANDLE;
-        VkDescriptorSetLayout m_ShadowMeshCullSetLayout = VK_NULL_HANDLE;
-        VkDescriptorSetLayout m_SkyboxSetLayout = VK_NULL_HANDLE;
 
         Scope<Pipeline> m_PbrPipeline;
         Scope<Pipeline> m_ZPrepassPipeline;
         Scope<Pipeline> m_CompositePipeline;
         Scope<Pipeline> m_CullPipeline;
         Scope<Pipeline> m_MeshCullPipeline;
-        Scope<Pipeline> m_ShadowPipeline;
-        Scope<Pipeline> m_SkyboxPipeline;
-
-        Scope<Buffer> m_SkyboxVertexBuffer;
-        Scope<Buffer> m_SkyboxIndexBuffer;
-        TextureHandle m_SkyboxTexture = kInvalidTexture;
-
-        AllocatedImage m_OffscreenColor{};
-        AllocatedImage m_MsaaColorImage{};
-        AllocatedImage m_DepthImage{};
-        AllocatedImage m_ShadowMap{};
-
-        VkSampler m_OffscreenSampler = VK_NULL_HANDLE;
-        VkSampler m_ShadowSampler = VK_NULL_HANDLE;
-
-        VkFormat m_OffscreenFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
-        VkFormat m_DepthFormat = VK_FORMAT_D32_SFLOAT;
 
         std::vector<FrameData> m_Frames;
         u32 m_CurrentFrame = 0;
         u32 m_CurrentImageIndex = 0;
-        VkSwapchainKHR m_Swapchain{VK_NULL_HANDLE};
-        VkFormat m_SwapchainFormat{VK_FORMAT_UNDEFINED};
-        VkExtent2D m_SwapchainExtent{};
-        std::vector<VkImage> m_SwapchainImages;
-        std::vector<VkImageView> m_SwapchainImageViews;
-        std::vector<VkImageLayout> m_SwapchainImageLayouts;
-        std::vector<VkSemaphore> m_ImageAvailableSemaphores;
-        std::vector<VkSemaphore> m_RenderFinishedSemaphores;
-        std::vector<VkFence> m_InFlightFences;
-        bool m_SwapchainNeedsRecreate{false};
 
         std::vector<MaterialData> m_Materials;
         std::unordered_map<MaterialData, u32, MaterialDataHash> m_MaterialCache;
         Scope<Buffer> m_MaterialBuffer;
         Scope<Buffer> m_TextureInfoBuffer;
         bool m_MaterialsDirty = true;
-
-        Scope<Buffer> m_ShadowUniformBuffer;
-        ShadowUniformData m_ShadowUniform{};
 
         std::vector<MeshInstance> m_CurrentFrameInstances;
         std::vector<CullData> m_CurrentFrameCullData;
@@ -429,9 +381,15 @@ namespace Manro {
         RendererConfig m_Config{};
         VkExtent2D m_RenderExtent{};
 
-        void BuildSkyboxPipeline();
-
         void UpdateSkyboxDescriptorSet(u32 fi);
+
+        static void ComputeNormalMatrix(MeshInstance &inst, const Mat4 &model);
+
+        static void BuildCullData(CullData &out, const LoadedMesh *mesh, const Mat4 &model, u32 instanceId);
+
+        static void ExtractFrustumPlanes(const Mat4 &viewProj, Vec4 planes[6]);
+
+        u32 ResolveMaterialIndex(MaterialInstance &material);
     };
 
     static VkSampleCountFlagBits ToVulkanSampleCount(MSAASampleCount samples) {
@@ -497,10 +455,11 @@ namespace Manro {
                                const RenderSettings &settings,
                                const RendererConfig &config)
         : m_Context("GameEngine", window),
-          m_Textures(m_Context, m_BindlessAlloc), m_Meshes(new MeshManagerImpl(m_Context)), m_Settings(settings),
-          m_Config(config) {
+          m_Textures(m_Context, m_BindlessAlloc), m_Meshes(new MeshManagerImpl(m_Context)),
+          m_Swapchain(m_Context), m_RenderTargets(m_Context), m_Shadow(m_Context), m_Skybox(m_Context),
+          m_Settings(settings), m_Config(config) {
         NormalizeRenderSettings(m_Settings, m_Context.GetMaxUsableSampleCount());
-        InitializeSwapchain(width, height, m_Settings.enableVSync);
+        m_Swapchain.Init(width, height, m_Settings.enableVSync);
 
         m_PendingWidth = width;
         m_PendingHeight = height;
@@ -519,24 +478,31 @@ namespace Manro {
         m_PipelineCache.Init(device, "manro_pipeline_cache.bin");
         m_SceneRenderer = CreateScope<SceneRenderer>();
 
-        CreateOffscreenResources(m_RenderExtent.width, m_RenderExtent.height);
-        CreateColorResources(m_RenderExtent.width, m_RenderExtent.height);
-        CreateDepthResources(m_RenderExtent.width, m_RenderExtent.height);
-        CreateShadowResources();
+        m_RenderTargets.Create(m_RenderExtent.width, m_RenderExtent.height,
+                               ToVulkanSampleCount(m_Settings.msaaSamples));
         CreateDescriptorLayouts();
         CreateDescriptorPool();
-        CreateGpuBuffers();
+
+        m_Shadow.Init(m_DescriptorPool, m_Settings.shadows, m_PbrSetLayout);
+
+        m_Skybox.Init(m_DescriptorPool, GetFrameCount(),
+                      m_RenderTargets.GetOffscreenFormat(),
+                      m_RenderTargets.GetDepthFormat(),
+                      ToVulkanSampleCount(m_Settings.msaaSamples));
+
+        CreateToGpuBuffers();
         BuildPbrPipeline();
         BuildCompositePipeline();
         BuildCullPipeline();
-        BuildShadowPipeline();
-        BuildSkyboxPipeline();
 
         m_DrawSystem = CreateScope<DrawSystem>(m_Context);
-        m_DrawSystem->Init(m_OffscreenFormat, m_DepthFormat, ToVulkanSampleCount(m_Settings.msaaSamples));
+        m_DrawSystem->Init(m_RenderTargets.GetOffscreenFormat(),
+                           m_RenderTargets.GetDepthFormat(),
+                           ToVulkanSampleCount(m_Settings.msaaSamples));
 
         CreateCommandBuffers();
-        CreateSyncObjects();
+        m_Swapchain.CreateFrameSyncObjects(GetFrameCount());
+        m_Swapchain.CreateRenderFinishedSemaphores();
 
         m_CurrentFrameInstances.reserve(GetMaxInstances());
         m_CurrentFrameCullData.reserve(GetMaxInstances());
@@ -548,8 +514,8 @@ namespace Manro {
         OverlayInfo guiInfo{};
         guiInfo.context = &m_Context;
         guiInfo.window = &window;
-        guiInfo.colorFormat = m_SwapchainFormat;
-        guiInfo.imageCount = static_cast<u32>(m_SwapchainImages.size());
+        guiInfo.colorFormat = m_Swapchain.GetFormat();
+        guiInfo.imageCount = m_Swapchain.GetImageCount();
         m_Overlay = CreateScope<Overlay>(guiInfo);
     }
 
@@ -570,36 +536,18 @@ namespace Manro {
         m_CompositePipeline.reset();
         m_CullPipeline.reset();
         m_MeshCullPipeline.reset();
-        m_ShadowPipeline.reset();
 
-        if (m_OffscreenSampler)
-            vkDestroySampler(m_Context.GetDevice(), m_OffscreenSampler, nullptr);
-        if (m_ShadowSampler)
-            vkDestroySampler(m_Context.GetDevice(), m_ShadowSampler, nullptr);
+        m_Shadow.Shutdown();
+        m_Skybox.Shutdown();
+        m_RenderTargets.Destroy();
 
-        DestroyImage(m_Context, m_OffscreenColor);
-        DestroyImage(m_Context, m_MsaaColorImage);
-        DestroyImage(m_Context, m_DepthImage);
-        DestroyImage(m_Context, m_ShadowMap);
-
-        for (auto fence: m_InFlightFences) {
-            if (fence != VK_NULL_HANDLE)
-                vkDestroyFence(m_Context.GetDevice(), fence, nullptr);
-        }
-        for (auto sem: m_ImageAvailableSemaphores) {
-            if (sem != VK_NULL_HANDLE)
-                vkDestroySemaphore(m_Context.GetDevice(), sem, nullptr);
-        }
-        for (auto sem: m_RenderFinishedSemaphores) {
-            if (sem != VK_NULL_HANDLE)
-                vkDestroySemaphore(m_Context.GetDevice(), sem, nullptr);
-        }
+        m_Swapchain.DestroyFrameSyncObjects();
 
         for (auto &f: m_Frames)
             if (f.commandPool)
                 vkDestroyCommandPool(m_Context.GetDevice(), f.commandPool, nullptr);
 
-        CleanupSwapchain();
+        m_Swapchain.Shutdown();
 
         if (m_DescriptorPool)
             vkDestroyDescriptorPool(m_Context.GetDevice(), m_DescriptorPool, nullptr);
@@ -611,10 +559,6 @@ namespace Manro {
             vkDestroyDescriptorSetLayout(m_Context.GetDevice(), m_CullSetLayout, nullptr);
         if (m_MeshCullSetLayout)
             vkDestroyDescriptorSetLayout(m_Context.GetDevice(), m_MeshCullSetLayout, nullptr);
-        if (m_ShadowMeshCullSetLayout)
-            vkDestroyDescriptorSetLayout(m_Context.GetDevice(), m_ShadowMeshCullSetLayout, nullptr);
-        if (m_SkyboxSetLayout)
-            vkDestroyDescriptorSetLayout(m_Context.GetDevice(), m_SkyboxSetLayout, nullptr);
     }
 
     void RendererImpl::AddLight(const LightData &light) {
@@ -628,7 +572,7 @@ namespace Manro {
 
     void RendererImpl::OnResize(u32 width, u32 height) {
         if (m_PendingWidth == width && m_PendingHeight == height &&
-            m_SwapchainExtent.width == width && m_SwapchainExtent.height == height) {
+            m_Swapchain.GetExtent().width == width && m_Swapchain.GetExtent().height == height) {
             return;
         }
         m_PendingWidth = width;
@@ -661,62 +605,7 @@ namespace Manro {
     }
 
     void RendererImpl::InitializeSwapchain(u32 width, u32 height, bool vsync) {
-        vkb::SwapchainBuilder swapchainBuilder{
-            m_Context.GetPhysicalDevice(),
-            m_Context.GetDevice(),
-            m_Context.GetSurface()
-        };
-
-        if (vsync) {
-            swapchainBuilder
-                    .set_desired_present_mode(VK_PRESENT_MODE_FIFO_KHR);
-        } else {
-            swapchainBuilder
-                    .set_desired_present_mode(VK_PRESENT_MODE_IMMEDIATE_KHR)
-                    .add_fallback_present_mode(VK_PRESENT_MODE_MAILBOX_KHR)
-                    .add_fallback_present_mode(VK_PRESENT_MODE_FIFO_KHR);
-        }
-
-        auto vkbSwapchainRet = swapchainBuilder
-                .use_default_format_selection()
-                .set_desired_extent(width, height)
-                .add_image_usage_flags(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)
-                .build();
-
-        if (!vkbSwapchainRet) {
-            throw std::runtime_error("Failed to create Vulkan swapchain");
-        }
-
-        vkb::Swapchain vkbSwapchain = vkbSwapchainRet.value();
-        m_Swapchain = vkbSwapchain.swapchain;
-        m_SwapchainExtent = vkbSwapchain.extent;
-        m_SwapchainFormat = vkbSwapchain.image_format;
-
-        auto imagesRet = vkbSwapchain.get_images();
-        auto imageViewsRet = vkbSwapchain.get_image_views();
-        if (!imagesRet || !imageViewsRet) {
-            throw std::runtime_error("Failed to get swapchain images/views");
-        }
-
-        m_SwapchainImages = imagesRet.value();
-        m_SwapchainImageViews = imageViewsRet.value();
-        m_SwapchainImageLayouts.assign(m_SwapchainImages.size(), VK_IMAGE_LAYOUT_UNDEFINED);
-        m_SwapchainNeedsRecreate = false;
-    }
-
-    void RendererImpl::CleanupSwapchain() {
-        VkDevice device = m_Context.GetDevice();
-        for (auto view: m_SwapchainImageViews) {
-            if (view != VK_NULL_HANDLE)
-                vkDestroyImageView(device, view, nullptr);
-        }
-        m_SwapchainImageViews.clear();
-        m_SwapchainImages.clear();
-        m_SwapchainImageLayouts.clear();
-        if (m_Swapchain != VK_NULL_HANDLE) {
-            vkDestroySwapchainKHR(device, m_Swapchain, nullptr);
-            m_Swapchain = VK_NULL_HANDLE;
-        }
+        m_Swapchain.Init(width, height, vsync);
     }
 
     void RendererImpl::RecreateSwapchain() {
@@ -725,323 +614,31 @@ namespace Manro {
         m_PendingResize = false;
         if (w == 0 || h == 0) return;
 
-        vkDeviceWaitIdle(m_Context.GetDevice());
+        m_Swapchain.Recreate(w, h, m_Settings.enableVSync);
 
-        for (auto sem: m_RenderFinishedSemaphores) {
-            if (sem != VK_NULL_HANDLE)
-                vkDestroySemaphore(m_Context.GetDevice(), sem, nullptr);
-        }
-        m_RenderFinishedSemaphores.clear();
-
-        CleanupSwapchain();
-        InitializeSwapchain(w, h, m_Settings.enableVSync);
-
-        VkSemaphoreCreateInfo semaphoreInfo{};
-        semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-        m_RenderFinishedSemaphores.resize(m_SwapchainImages.size());
-        for (auto &m_RenderFinishedSemaphore: m_RenderFinishedSemaphores) {
-            if (vkCreateSemaphore(m_Context.GetDevice(), &semaphoreInfo, nullptr, &m_RenderFinishedSemaphore) !=
-                VK_SUCCESS) {
-                throw std::runtime_error("Failed to recreate render-finished semaphores");
-            }
-        }
-
-        if (m_OffscreenSampler) {
-            vkDestroySampler(m_Context.GetDevice(), m_OffscreenSampler, nullptr);
-            m_OffscreenSampler = VK_NULL_HANDLE;
-        }
-        DestroyImage(m_Context, m_OffscreenColor);
-        DestroyImage(m_Context, m_MsaaColorImage);
-        DestroyImage(m_Context, m_DepthImage);
-
+        m_RenderTargets.Destroy();
         m_RenderExtent.width = std::max(1u, static_cast<u32>(w * m_Settings.resolutionScale));
         m_RenderExtent.height = std::max(1u, static_cast<u32>(h * m_Settings.resolutionScale));
-
-        CreateOffscreenResources(m_RenderExtent.width, m_RenderExtent.height);
-        CreateColorResources(m_RenderExtent.width, m_RenderExtent.height);
-        CreateDepthResources(m_RenderExtent.width, m_RenderExtent.height);
+        m_RenderTargets.Create(m_RenderExtent.width, m_RenderExtent.height,
+                               ToVulkanSampleCount(m_Settings.msaaSamples));
 
         BuildPbrPipeline();
         BuildCompositePipeline();
-        BuildSkyboxPipeline();
+        m_Skybox.RebuildPipeline(m_RenderTargets.GetOffscreenFormat(),
+                                 m_RenderTargets.GetDepthFormat(),
+                                 ToVulkanSampleCount(m_Settings.msaaSamples));
         if (m_DrawSystem) {
             m_DrawSystem->Shutdown();
-            m_DrawSystem->Init(m_OffscreenFormat, m_DepthFormat, ToVulkanSampleCount(m_Settings.msaaSamples));
+            m_DrawSystem->Init(m_RenderTargets.GetOffscreenFormat(),
+                               m_RenderTargets.GetDepthFormat(),
+                               ToVulkanSampleCount(m_Settings.msaaSamples));
         }
 
         for (u32 i = 0; i < GetFrameCount(); ++i) {
             UpdateCompositeDescriptorSet(i);
-            UpdatePbrDescriptorSetShadow(i);
+            m_Shadow.UpdatePbrDescriptorSetShadow(m_Frames[i].pbrSet);
         }
-        m_SwapchainNeedsRecreate = false;
-    }
-
-    void RendererImpl::CreateOffscreenResources(u32 width, u32 height) {
-        ImageCreateParams p{};
-        p.width = width;
-        p.height = height;
-        p.format = m_OffscreenFormat;
-        p.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-        p.samples = VK_SAMPLE_COUNT_1_BIT;
-        m_OffscreenColor = CreateImage(m_Context, p);
-
-        VkSamplerCreateInfo si{};
-        si.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-        si.magFilter = VK_FILTER_LINEAR;
-        si.minFilter = VK_FILTER_LINEAR;
-        si.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-        si.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        si.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        si.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        si.maxLod = VK_LOD_CLAMP_NONE;
-        if (vkCreateSampler(m_Context.GetDevice(), &si, nullptr, &m_OffscreenSampler) != VK_SUCCESS)
-            throw std::runtime_error("Failed to create offscreen sampler");
-
-        ExecuteOneShot(m_Context, [&](VkCommandBuffer cmd) {
-            VkImageMemoryBarrier b{};
-            b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-            b.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-            b.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            b.image = m_OffscreenColor.image;
-            b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-            b.srcAccessMask = 0;
-            b.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-            vkCmdPipelineBarrier(cmd,
-                                 VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                                 0, 0, nullptr, 0, nullptr, 1, &b);
-        });
-    }
-
-    void RendererImpl::CreateDepthResources(u32 width, u32 height) {
-        ImageCreateParams p{};
-        p.width = width;
-        p.height = height;
-        p.format = m_DepthFormat;
-        p.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-        p.samples = ToVulkanSampleCount(m_Settings.msaaSamples);
-        m_DepthImage = CreateImage(m_Context, p, VK_IMAGE_ASPECT_DEPTH_BIT);
-    }
-
-    void RendererImpl::CreateColorResources(u32 width, u32 height) {
-        if (m_Settings.msaaSamples == MSAASampleCount::MSAA_1X) return;
-        ImageCreateParams p{};
-        p.width = width;
-        p.height = height;
-        p.format = m_OffscreenFormat;
-        p.usage = VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-        p.samples = ToVulkanSampleCount(m_Settings.msaaSamples);
-        m_MsaaColorImage = CreateImage(m_Context, p);
-    }
-
-    void RendererImpl::CreateShadowResources() {
-        const u32 shadowMapSize = static_cast<u32>(std::max(128, m_Settings.shadows.resolution));
-        {
-            ImageCreateParams p{};
-            p.width = shadowMapSize;
-            p.height = shadowMapSize;
-            p.format = VK_FORMAT_D32_SFLOAT;
-            p.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-            p.samples = VK_SAMPLE_COUNT_1_BIT;
-            m_ShadowMap = CreateImage(m_Context, p, VK_IMAGE_ASPECT_DEPTH_BIT);
-        }
-
-        ExecuteOneShot(m_Context, [&](VkCommandBuffer cmd) {
-            VkImageMemoryBarrier b{};
-            b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-            b.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-            b.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-            b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            b.image = m_ShadowMap.image;
-            b.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
-            b.srcAccessMask = 0;
-            b.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-            vkCmdPipelineBarrier(cmd,
-                                 VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                                 0, 0, nullptr, 0, nullptr, 1, &b);
-        });
-
-        {
-            VkSamplerCreateInfo si{};
-            si.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-            si.magFilter = VK_FILTER_LINEAR;
-            si.minFilter = VK_FILTER_LINEAR;
-            si.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-            si.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
-            si.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
-            si.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
-            si.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
-            si.compareEnable = VK_TRUE;
-            si.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
-            si.maxLod = 0.f;
-            if (vkCreateSampler(m_Context.GetDevice(), &si, nullptr, &m_ShadowSampler) != VK_SUCCESS)
-                throw std::runtime_error("Failed to create shadow sampler");
-        }
-
-        m_ShadowUniformBuffer = CreateScope<Buffer>(
-            m_Context,
-            sizeof(ShadowUniformData),
-            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-            VMA_MEMORY_USAGE_CPU_TO_GPU);
-
-        m_ShadowUniform.lightDir = Vec4(0.5f, -0.7f, 0.5f, 0.005f);
-        m_ShadowUniform.shadowMapSize = Vec2(shadowMapSize, shadowMapSize);
-        m_ShadowUniform.normalBias = m_Settings.shadows.bias;
-        m_ShadowUniform.softShadows = m_Settings.shadows.softShadows;
-        m_ShadowUniform.shadowsEnabled = m_Settings.shadows.enabled ? 1 : 0;
-    }
-
-    void RendererImpl::RecreateShadowResources() {
-        vkDeviceWaitIdle(m_Context.GetDevice());
-
-        if (m_ShadowSampler != VK_NULL_HANDLE) {
-            vkDestroySampler(m_Context.GetDevice(), m_ShadowSampler, nullptr);
-            m_ShadowSampler = VK_NULL_HANDLE;
-        }
-        DestroyImage(m_Context, m_ShadowMap);
-        m_ShadowUniformBuffer.reset();
-
-        CreateShadowResources();
-
-        for (u32 i = 0; i < GetFrameCount(); ++i) {
-            UpdatePbrDescriptorSetShadow(i);
-        }
-    }
-
-    Mat4 RendererImpl::ComputeLightViewProj(const Vec3 &lightDir) {
-        constexpr float worldRadius = 3500.f;
-        constexpr float depth = 10000.f;
-
-        Vec3 normDir = glm::normalize(lightDir);
-        Vec3 target = Vec3(0.f, 200.f, 0.f);
-        Vec3 lightPos = target - normDir * (depth * 0.5f);
-        Vec3 up = (std::abs(normDir.y) > 0.99f)
-                      ? Vec3(0.f, 0.f, 1.f)
-                      : Vec3(0.f, 1.f, 0.f);
-
-        Mat4 view = glm::lookAt(lightPos, target, up);
-        Mat4 proj = glm::ortho(-worldRadius, worldRadius,
-                               -worldRadius, worldRadius,
-                               0.f, depth);
-        proj[1][1] *= -1.f;
-        return proj * view;
-    }
-
-    void RendererImpl::RenderShadowPass(VkCommandBuffer cb) {
-        if (!m_Settings.shadows.enabled) return;
-
-        const u32 shadowMapSize = static_cast<u32>(std::max(128, m_Settings.shadows.resolution));
-        u32 totalInstCount = static_cast<u32>(m_StaticInstances.size() + m_CurrentFrameInstances.size());
-        if (!m_ShadowPipeline || totalInstCount == 0) return;
-
-        FrameData &frame = m_Frames[m_CurrentFrame];
-
-        Vec3 lightDir = Vec3(m_ShadowUniform.lightDir);
-        for (const auto &l: m_PendingLights)
-            if (l.type == shaderio::eLightTypeDirectional) {
-                lightDir = Vec3(l.direction.x, l.direction.y, l.direction.z);
-                break;
-            }
-        m_ShadowUniform.lightViewProj = ComputeLightViewProj(lightDir);
-        m_ShadowUniform.lightDir = Vec4(lightDir, m_Settings.shadows.bias);
-        m_ShadowUniform.normalBias = m_Settings.shadows.bias;
-        m_ShadowUniform.softShadows = m_Settings.shadows.softShadows;
-        m_ShadowUniform.shadowsEnabled = m_Settings.shadows.enabled ? 1 : 0;
-        m_ShadowUniformBuffer->LoadData(&m_ShadowUniform, sizeof(ShadowUniformData));
-
-        {
-            VkImageMemoryBarrier2 b{};
-            b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-            b.srcStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-            b.srcAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
-            b.dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT
-                             | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
-            b.dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-            b.oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-            b.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-            b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            b.image = m_ShadowMap.image;
-            b.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
-            VkDependencyInfo dep{};
-            dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-            dep.imageMemoryBarrierCount = 1;
-            dep.pImageMemoryBarriers = &b;
-            vkCmdPipelineBarrier2(cb, &dep);
-        }
-        VkRenderingAttachmentInfo depthAtt{};
-        depthAtt.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        depthAtt.imageView = m_ShadowMap.view;
-        depthAtt.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-        depthAtt.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        depthAtt.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        depthAtt.clearValue.depthStencil = {1.f, 0};
-
-        VkRenderingInfo ri{};
-        ri.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-        ri.renderArea.extent = {shadowMapSize, shadowMapSize};
-        ri.layerCount = 1;
-        ri.pDepthAttachment = &depthAtt;
-        vkCmdBeginRendering(cb, &ri);
-
-        VkViewport vp{0.f, 0.f, static_cast<float>(shadowMapSize), static_cast<float>(shadowMapSize), 0.f, 1.f};
-        vkCmdSetViewport(cb, 0, 1, &vp);
-        VkRect2D scissor{
-            {0, 0},
-            {shadowMapSize, shadowMapSize}
-        };
-        vkCmdSetScissor(cb, 0, 1, &scissor);
-        vkCmdSetDepthBias(cb, m_Settings.shadows.bias, 0.0f, m_Settings.shadows.slopeBias);
-
-        vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_ShadowPipeline->GetHandle());
-        vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                m_ShadowPipeline->GetLayout(), 0, 1,
-                                &frame.pbrSet, 0, nullptr);
-
-        ShadowPushConstants pc{};
-        pc.lightViewProj = m_ShadowUniform.lightViewProj;
-        vkCmdPushConstants(cb, m_ShadowPipeline->GetLayout(),
-                           VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc), &pc);
-
-        VkBuffer vbufs[2] = {
-            m_Meshes.GetVertexBuffer()->GetHandle(),
-            frame.instanceBuffer->GetHandle()
-        };
-        VkDeviceSize offsets[2] = {0, 0};
-        vkCmdBindVertexBuffers(cb, 0, 2, vbufs, offsets);
-        vkCmdBindIndexBuffer(cb, m_Meshes.GetIndexBuffer()->GetHandle(), 0, VK_INDEX_TYPE_UINT32);
-
-        vkCmdDrawIndexedIndirectCount(cb,
-                                      frame.shadowIndirectBuffer->GetHandle(), 0,
-                                      frame.shadowCountBuffer->GetHandle(), 0,
-                                      totalInstCount, sizeof(DrawCommand));
-
-        vkCmdEndRendering(cb);
-
-        {
-            VkImageMemoryBarrier2 b{};
-            b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-            b.srcStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT
-                             | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
-            b.srcAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-            b.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-            b.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
-            b.oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-            b.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-            b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            b.image = m_ShadowMap.image;
-            b.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
-            VkDependencyInfo dep{};
-            dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-            dep.imageMemoryBarrierCount = 1;
-            dep.pImageMemoryBarriers = &b;
-            vkCmdPipelineBarrier2(cb, &dep);
-        }
+        m_Swapchain.SetNeedsRecreate(false);
     }
 
     void RendererImpl::FinalizeFrameAndPresent(VkCommandBuffer cb) {
@@ -1054,7 +651,7 @@ namespace Manro {
             b.dstAccessMask = 0;
             b.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             b.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-            b.image = m_SwapchainImages[m_CurrentImageIndex];
+            b.image = m_Swapchain.GetImage(m_CurrentImageIndex);
             b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
             VkDependencyInfo dep{};
             dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
@@ -1062,7 +659,7 @@ namespace Manro {
             dep.pImageMemoryBarriers = &b;
             vkCmdPipelineBarrier2(cb, &dep);
         }
-        m_SwapchainImageLayouts[m_CurrentImageIndex] = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        m_Swapchain.SetImageLayout(m_CurrentImageIndex, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
         if (vkEndCommandBuffer(cb) != VK_SUCCESS) {
             throw std::runtime_error("Failed to end frame command buffer");
@@ -1070,19 +667,19 @@ namespace Manro {
 
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        VkSemaphore waitSemaphores[] = {m_ImageAvailableSemaphores[m_CurrentFrame]};
+        VkSemaphore waitSemaphores[] = {m_Swapchain.GetImageAvailableSemaphore(m_CurrentFrame)};
         VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
         submitInfo.waitSemaphoreCount = 1;
         submitInfo.pWaitSemaphores = waitSemaphores;
         submitInfo.pWaitDstStageMask = waitStages;
         submitInfo.commandBufferCount = 1;
         submitInfo.pCommandBuffers = &cb;
-        VkSemaphore signalSemaphores[] = {m_RenderFinishedSemaphores[m_CurrentImageIndex]};
+        VkSemaphore signalSemaphores[] = {m_Swapchain.GetRenderFinishedSemaphore(m_CurrentImageIndex)};
         submitInfo.signalSemaphoreCount = 1;
         submitInfo.pSignalSemaphores = signalSemaphores;
 
-        if (vkQueueSubmit(m_Context.GetGraphicsQueue(), 1, &submitInfo, m_InFlightFences[m_CurrentFrame]) !=
-            VK_SUCCESS) {
+        VkFence submitFence = m_Swapchain.GetInFlightFence(m_CurrentFrame);
+        if (vkQueueSubmit(m_Context.GetGraphicsQueue(), 1, &submitInfo, submitFence) != VK_SUCCESS) {
             throw std::runtime_error("Failed to submit frame command buffer");
         }
 
@@ -1090,14 +687,14 @@ namespace Manro {
         presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
         presentInfo.waitSemaphoreCount = 1;
         presentInfo.pWaitSemaphores = signalSemaphores;
-        VkSwapchainKHR swapchains[] = {m_Swapchain};
+        VkSwapchainKHR swapchains[] = {m_Swapchain.GetHandle()};
         presentInfo.swapchainCount = 1;
         presentInfo.pSwapchains = swapchains;
         presentInfo.pImageIndices = &m_CurrentImageIndex;
 
         VkResult presentResult = vkQueuePresentKHR(m_Context.GetGraphicsQueue(), &presentInfo);
         if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR) {
-            m_SwapchainNeedsRecreate = true;
+            m_Swapchain.SetNeedsRecreate(true);
         } else if (presentResult != VK_SUCCESS) {
             throw std::runtime_error("Failed to present swapchain image");
         }
@@ -1109,12 +706,15 @@ namespace Manro {
         // Handle recreate before acquiring a new swapchain image.
         // Acquiring first and then bailing out can leave frame fences unsignaled.
         if (m_PendingWidth == 0 || m_PendingHeight == 0) return false;
-        if (m_PendingResize || m_SwapchainNeedsRecreate) {
+        if (m_PendingResize || m_Swapchain.NeedsRecreate()) {
             RecreateSwapchain();
             return false;
         }
         if (m_PendingShadowRecreate) {
-            RecreateShadowResources();
+            std::vector<VkDescriptorSet> pbrSets;
+            pbrSets.reserve(m_Frames.size());
+            for (auto &f: m_Frames) pbrSets.push_back(f.pbrSet);
+            m_Shadow.Recreate(m_DescriptorPool, m_Settings.shadows, m_PbrSetLayout, pbrSets);
             m_PendingShadowRecreate = false;
             return false;
         }
@@ -1124,22 +724,23 @@ namespace Manro {
         VkDevice device = m_Context.GetDevice();
         FrameData &frame = m_Frames[m_CurrentFrame];
 
-        vkWaitForFences(device, 1, &m_InFlightFences[m_CurrentFrame], VK_TRUE, UINT64_MAX);
+        VkFence inFlightFence = m_Swapchain.GetInFlightFence(m_CurrentFrame);
+        vkWaitForFences(device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
 
-        VkResult acquireResult = vkAcquireNextImageKHR(device, m_Swapchain, UINT64_MAX,
-                                                       m_ImageAvailableSemaphores[m_CurrentFrame],
+        VkResult acquireResult = vkAcquireNextImageKHR(device, m_Swapchain.GetHandle(), UINT64_MAX,
+                                                       m_Swapchain.GetImageAvailableSemaphore(m_CurrentFrame),
                                                        VK_NULL_HANDLE, &m_CurrentImageIndex);
         if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR) {
-            m_SwapchainNeedsRecreate = true;
+            m_Swapchain.SetNeedsRecreate(true);
             return false;
         }
         if (acquireResult == VK_SUBOPTIMAL_KHR) {
-            m_SwapchainNeedsRecreate = true;
+            m_Swapchain.SetNeedsRecreate(true);
         } else if (acquireResult != VK_SUCCESS) {
             return false;
         }
 
-        vkResetFences(device, 1, &m_InFlightFences[m_CurrentFrame]);
+        vkResetFences(device, 1, &inFlightFence);
         vkResetCommandPool(device, frame.commandPool, 0);
 
         VkCommandBufferBeginInfo beginInfo{};
@@ -1251,18 +852,7 @@ namespace Manro {
             Mat4 proj = m_ProjectionMatrix;
             proj[1][1] *= -1;
             Mat4 viewProj = proj * m_ViewMatrix;
-            Mat4 m = glm::transpose(viewProj);
-            Vec4 r0 = m[0], r1 = m[1], r2 = m[2], r3 = m[3];
-            mcpc.planes[0] = r3 + r0;
-            mcpc.planes[1] = r3 - r0;
-            mcpc.planes[2] = r3 + r1;
-            mcpc.planes[3] = r3 - r1;
-            mcpc.planes[4] = r3 + r2;
-            mcpc.planes[5] = r3 - r2;
-            for (auto &plane: mcpc.planes) {
-                float len = glm::length(Vec3(plane));
-                plane /= len;
-            }
+            ExtractFrustumPlanes(viewProj, mcpc.planes);
             mcpc.instanceCount = totalInstCount;
             mcpc.cameraPos = Vec4(m_CameraPosition, 1.0f);
             mcpc.maxDrawDistance = m_Settings.maxDrawDistance;
@@ -1315,32 +905,16 @@ namespace Manro {
                                         &frame.shadowMeshCullSet, 0, nullptr);
 
                 {
-                    Vec3 lightDir = Vec3(m_ShadowUniform.lightDir);
+                    Vec3 lightDir = Vec3(m_Shadow.GetUniform().lightDir);
                     for (const auto &l: m_PendingLights)
                         if (l.type == shaderio::eLightTypeDirectional) {
                             lightDir = Vec3(l.direction.x, l.direction.y, l.direction.z);
                             break;
                         }
-                    Mat4 shadowVP = ComputeLightViewProj(lightDir);
+                    Mat4 shadowVP = ShadowSystem::ComputeLightViewProj(lightDir);
 
                     MeshCullPushConstants shadowPc{};
-                    m = glm::transpose(shadowVP);
-
-                    r0 = m[0];
-                    r1 = m[1];
-                    r2 = m[2];
-                    r3 = m[3];
-
-                    shadowPc.planes[0] = r3 + r0;
-                    shadowPc.planes[1] = r3 - r0;
-                    shadowPc.planes[2] = r3 + r1;
-                    shadowPc.planes[3] = r3 - r1;
-                    shadowPc.planes[4] = r3 + r2;
-                    shadowPc.planes[5] = r3 - r2;
-                    for (auto &plane: shadowPc.planes) {
-                        float len = glm::length(Vec3(plane));
-                        plane /= len;
-                    }
+                    ExtractFrustumPlanes(shadowVP, shadowPc.planes);
                     shadowPc.instanceCount = totalInstCount;
                     shadowPc.cameraPos = Vec4(m_CameraPosition, 1.0f);
                     shadowPc.maxDrawDistance = m_Settings.maxDrawDistance;
@@ -1368,7 +942,16 @@ namespace Manro {
                 shadowCullDep.pBufferMemoryBarriers = shadowCullBarriers;
                 vkCmdPipelineBarrier2(cb, &shadowCullDep);
 
-                RenderShadowPass(cb);
+                m_Shadow.RenderPass(cb,
+                                    frame.pbrSet,
+                                    frame.instanceBuffer->GetHandle(),
+                                    totalInstCount,
+                                    m_Meshes.GetIndexBuffer()->GetHandle(),
+                                    m_Meshes.GetVertexBuffer()->GetHandle(),
+                                    frame.shadowIndirectBuffer->GetHandle(),
+                                    frame.shadowCountBuffer->GetHandle(),
+                                    m_PendingLights,
+                                    m_Settings.shadows);
             }
 
             vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, m_CullPipeline->GetHandle());
@@ -1425,13 +1008,13 @@ namespace Manro {
             b[0].dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
             b[0].oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             b[0].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            b[0].image = m_OffscreenColor.image;
+            b[0].image = m_RenderTargets.GetOffscreenImage();
             b[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
             u32 barrierCount = 1;
-            if (m_MsaaColorImage.image != VK_NULL_HANDLE) {
+            if (m_RenderTargets.GetMsaaImage() != VK_NULL_HANDLE) {
                 b[1] = b[0];
-                b[1].image = m_MsaaColorImage.image;
+                b[1].image = m_RenderTargets.GetMsaaImage();
                 b[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
                 barrierCount = 2;
             }
@@ -1510,13 +1093,13 @@ namespace Manro {
 
         const bool hasMeshes = (instanceCount > 0 && m_ZPrepassPipeline && m_PbrPipeline && indexBuffer &&
                                 vertexBuffer &&
-                                m_DepthImage.image != VK_NULL_HANDLE);
-        const bool hasSkybox = (m_SkyboxTexture != kInvalidTexture && m_SkyboxPipeline);
+                                m_RenderTargets.GetDepthView() != VK_NULL_HANDLE);
+        const bool hasSkybox = m_Skybox.IsValid();
 
         Internal::ZPrepassPassState zState{};
-        if (hasMeshes || m_DepthImage.image != VK_NULL_HANDLE) {
+        if (hasMeshes || m_RenderTargets.GetDepthView() != VK_NULL_HANDLE) {
             zState.extent = m_RenderExtent;
-            zState.depthView = m_DepthImage.view;
+            zState.depthView = m_RenderTargets.GetDepthView();
             if (hasMeshes) {
                 zState.pipeline = m_ZPrepassPipeline->GetHandle();
                 zState.pipelineLayout = m_ZPrepassPipeline->GetLayout();
@@ -1538,9 +1121,9 @@ namespace Manro {
         if (hasMeshes) {
             pbrState.extent = m_RenderExtent;
             pbrState.msaaSamples = ToVulkanSampleCount(m_Settings.msaaSamples);
-            pbrState.msaaColorView = m_MsaaColorImage.view;
-            pbrState.offscreenColorView = m_OffscreenColor.view;
-            pbrState.depthView = m_DepthImage.view;
+            pbrState.msaaColorView = m_RenderTargets.GetMsaaView();
+            pbrState.offscreenColorView = m_RenderTargets.GetOffscreenView();
+            pbrState.depthView = m_RenderTargets.GetDepthView();
             pbrState.pipeline = m_PbrPipeline->GetHandle();
             pbrState.pipelineLayout = m_PbrPipeline->GetLayout();
             pbrState.descriptorSets[0] = frame.pbrSet;
@@ -1559,15 +1142,15 @@ namespace Manro {
         Internal::SkyboxPassState skyState{};
         if (hasSkybox) {
             skyState.extent = m_RenderExtent;
-            skyState.offscreenColorView = m_OffscreenColor.view;
-            skyState.msaaColorView = m_MsaaColorImage.view;
+            skyState.offscreenColorView = m_RenderTargets.GetOffscreenView();
+            skyState.msaaColorView = m_RenderTargets.GetMsaaView();
             skyState.msaaSamples = ToVulkanSampleCount(m_Settings.msaaSamples);
-            skyState.depthView = m_DepthImage.view;
-            skyState.pipeline = m_SkyboxPipeline->GetHandle();
-            skyState.pipelineLayout = m_SkyboxPipeline->GetLayout();
+            skyState.depthView = m_RenderTargets.GetDepthView();
+            skyState.pipeline = m_Skybox.GetPipeline();
+            skyState.pipelineLayout = m_Skybox.GetPipelineLayout();
             skyState.descriptorSet = frame.skyboxSet;
-            skyState.vertexBuffer = m_SkyboxVertexBuffer->GetHandle();
-            skyState.indexBuffer = m_SkyboxIndexBuffer->GetHandle();
+            skyState.vertexBuffer = m_Skybox.GetVertexBuffer();
+            skyState.indexBuffer = m_Skybox.GetIndexBuffer();
             skyState.indexCount = 36;
             m_SceneRenderer->SetSkyboxPassState(&skyState);
         }
@@ -1589,13 +1172,15 @@ namespace Manro {
             proj[1][1] *= -1.0f;
             Mat4 viewProj = proj * m_ViewMatrix;
 
-            const bool useMsaaResolve = (m_MsaaColorImage.view != VK_NULL_HANDLE);
-            VkImageView colorTarget = useMsaaResolve ? m_MsaaColorImage.view : m_OffscreenColor.view;
+            const bool useMsaaResolve = (m_RenderTargets.GetMsaaView() != VK_NULL_HANDLE);
+            VkImageView colorTarget = useMsaaResolve
+                                          ? m_RenderTargets.GetMsaaView()
+                                          : m_RenderTargets.GetOffscreenView();
 
             m_DrawSystem->Draw(cb, viewProj,
                                colorTarget,
-                               m_OffscreenColor.view,
-                               m_DepthImage.view,
+                               m_RenderTargets.GetOffscreenView(),
+                               m_RenderTargets.GetDepthView(),
                                m_RenderExtent.width, m_RenderExtent.height,
                                useMsaaResolve);
         }
@@ -1604,7 +1189,7 @@ namespace Manro {
     void RendererImpl::EndFrameAndPresent() {
         FrameData &frame = m_Frames[m_CurrentFrame];
         VkCommandBuffer cb = frame.commandBuffer;
-        VkExtent2D ext{m_SwapchainExtent.width, m_SwapchainExtent.height};
+        VkExtent2D ext{m_Swapchain.GetExtent().width, m_Swapchain.GetExtent().height};
 
         {
             VkImageMemoryBarrier2 b{};
@@ -1615,7 +1200,7 @@ namespace Manro {
             b.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
             b.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             b.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            b.image = m_OffscreenColor.image;
+            b.image = m_RenderTargets.GetOffscreenImage();
             b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
             VkDependencyInfo dep{};
             dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
@@ -1631,9 +1216,9 @@ namespace Manro {
             b.srcAccessMask = 0;
             b.dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
             b.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-            b.oldLayout = m_SwapchainImageLayouts[m_CurrentImageIndex];
+            b.oldLayout = m_Swapchain.GetImageLayout(m_CurrentImageIndex);
             b.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            b.image = m_SwapchainImages[m_CurrentImageIndex];
+            b.image = m_Swapchain.GetImage(m_CurrentImageIndex);
             b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
             VkDependencyInfo dep{};
             dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
@@ -1641,7 +1226,7 @@ namespace Manro {
             dep.pImageMemoryBarriers = &b;
             vkCmdPipelineBarrier2(cb, &dep);
         }
-        m_SwapchainImageLayouts[m_CurrentImageIndex] = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        m_Swapchain.SetImageLayout(m_CurrentImageIndex, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
         if (m_SceneRenderer) {
             CompositePushConstants cpc{};
@@ -1654,7 +1239,7 @@ namespace Manro {
 
             Internal::CompositePassState compositeState{};
             compositeState.extent = ext;
-            compositeState.colorView = m_SwapchainImageViews[m_CurrentImageIndex];
+            compositeState.colorView = m_Swapchain.GetImageView(m_CurrentImageIndex);
             compositeState.pipeline = m_CompositePipeline->GetHandle();
             compositeState.pipelineLayout = m_CompositePipeline->GetLayout();
             compositeState.descriptorSet = frame.compositeSet;
@@ -1669,7 +1254,7 @@ namespace Manro {
         if (m_Overlay) {
             VkRenderingAttachmentInfo guiColorAtt{};
             guiColorAtt.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-            guiColorAtt.imageView = m_SwapchainImageViews[m_CurrentImageIndex];
+            guiColorAtt.imageView = m_Swapchain.GetImageView(m_CurrentImageIndex);
             guiColorAtt.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             guiColorAtt.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
             guiColorAtt.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -1688,32 +1273,7 @@ namespace Manro {
         FinalizeFrameAndPresent(cb);
     }
 
-    void RendererImpl::DrawMesh(MeshHandle meshId, MaterialInstance &material, const Mat4 &model) {
-        const auto *mesh = m_Meshes.Get(meshId);
-        if (!mesh) return;
-
-        u32 matIndex = material.GetRendererIndex();
-        if (material.IsDirty() || matIndex == 0xFFFFFFFF) {
-            const MaterialData &md = material.GetData();
-            auto it = m_MaterialCache.find(md);
-            if (it != m_MaterialCache.end()) {
-                matIndex = it->second;
-            } else {
-                matIndex = static_cast<u32>(m_Materials.size());
-                m_Materials.push_back(md);
-                m_MaterialCache[md] = matIndex;
-                m_MaterialsDirty = true;
-            }
-            material.SetRendererIndex(matIndex);
-        }
-
-        m_CurrentFrameStats.drawCalls++;
-        m_CurrentFrameStats.instanceCount++;
-        m_CurrentFrameStats.triangleCount += mesh->indexCount / 3;
-
-        MeshInstance inst{};
-        inst.modelMatrix = model;
-
+    void RendererImpl::ComputeNormalMatrix(MeshInstance &inst, const Mat4 &model) {
         Vec3 s0 = Vec3(model[0]), s1 = Vec3(model[1]), s2 = Vec3(model[2]);
         float l0 = glm::dot(s0, s0), l1 = glm::dot(s1, s1), l2 = glm::dot(s2, s2);
 
@@ -1741,7 +1301,66 @@ namespace Manro {
                 inst.normalMatrix[i][3] = 0.f;
             }
         }
+    }
 
+    void RendererImpl::BuildCullData(CullData &out, const LoadedMesh *mesh, const Mat4 &model, u32 instanceId) {
+        Vec3 s0 = Vec3(model[0]), s1 = Vec3(model[1]), s2 = Vec3(model[2]);
+        float l0 = glm::dot(s0, s0), l1 = glm::dot(s1, s1), l2 = glm::dot(s2, s2);
+        Vec3 worldCenter = Vec3(model * Vec4(mesh->center, 1.f));
+        float scaleSq = std::max(l0, std::max(l1, l2));
+        out.center[0] = worldCenter.x;
+        out.center[1] = worldCenter.y;
+        out.center[2] = worldCenter.z;
+        out.radius = mesh->radius * std::sqrt(scaleSq);
+        out.instanceId = instanceId;
+    }
+
+    void RendererImpl::ExtractFrustumPlanes(const Mat4 &viewProj, Vec4 planes[6]) {
+        Mat4 m = glm::transpose(viewProj);
+        Vec4 r0 = m[0], r1 = m[1], r2 = m[2], r3 = m[3];
+        planes[0] = r3 + r0;
+        planes[1] = r3 - r0;
+        planes[2] = r3 + r1;
+        planes[3] = r3 - r1;
+        planes[4] = r3 + r2;
+        planes[5] = r3 - r2;
+        for (int i = 0; i < 6; ++i) {
+            float len = glm::length(Vec3(planes[i]));
+            planes[i] /= len;
+        }
+    }
+
+    u32 RendererImpl::ResolveMaterialIndex(MaterialInstance &material) {
+        u32 matIndex = material.GetRendererIndex();
+        if (material.IsDirty() || matIndex == 0xFFFFFFFF) {
+            const MaterialData &md = material.GetData();
+            auto it = m_MaterialCache.find(md);
+            if (it != m_MaterialCache.end()) {
+                matIndex = it->second;
+            } else {
+                matIndex = static_cast<u32>(m_Materials.size());
+                m_Materials.push_back(md);
+                m_MaterialCache[md] = matIndex;
+                m_MaterialsDirty = true;
+            }
+            material.SetRendererIndex(matIndex);
+        }
+        return matIndex;
+    }
+
+    void RendererImpl::DrawMesh(MeshHandle meshId, MaterialInstance &material, const Mat4 &model) {
+        const auto *mesh = m_Meshes.Get(meshId);
+        if (!mesh) return;
+
+        u32 matIndex = ResolveMaterialIndex(material);
+
+        m_CurrentFrameStats.drawCalls++;
+        m_CurrentFrameStats.instanceCount++;
+        m_CurrentFrameStats.triangleCount += mesh->indexCount / 3;
+
+        MeshInstance inst{};
+        inst.modelMatrix = model;
+        ComputeNormalMatrix(inst, model);
         inst.firstVertex = mesh->firstVertex;
         inst.firstIndex = mesh->firstIndex;
         inst.indexCount = mesh->indexCount;
@@ -1753,13 +1372,7 @@ namespace Manro {
         inst.flags = 0;
 
         CullData cullData{};
-        Vec3 worldCenter = Vec3(model * Vec4(mesh->center, 1.f));
-        float scaleSq = std::max(l0, std::max(l1, l2));
-        cullData.center[0] = worldCenter.x;
-        cullData.center[1] = worldCenter.y;
-        cullData.center[2] = worldCenter.z;
-        cullData.radius = mesh->radius * std::sqrt(scaleSq);
-        cullData.instanceId = static_cast<u32>(m_CurrentFrameInstances.size());
+        BuildCullData(cullData, mesh, model, static_cast<u32>(m_CurrentFrameInstances.size()));
 
         m_CurrentFrameInstances.push_back(inst);
         m_CurrentFrameCullData.push_back(cullData);
@@ -1779,53 +1392,11 @@ namespace Manro {
         const auto *mesh = m_Meshes.Get(meshId);
         if (!mesh) return;
 
-        u32 matIndex = material.GetRendererIndex();
-        if (material.IsDirty() || matIndex == 0xFFFFFFFF) {
-            const MaterialData &md = material.GetData();
-            auto it = m_MaterialCache.find(md);
-            if (it != m_MaterialCache.end()) {
-                matIndex = it->second;
-            } else {
-                matIndex = static_cast<u32>(m_Materials.size());
-                m_Materials.push_back(md);
-                m_MaterialCache[md] = matIndex;
-                m_MaterialsDirty = true;
-            }
-            material.SetRendererIndex(matIndex);
-        }
-
+        u32 matIndex = ResolveMaterialIndex(material);
 
         MeshInstance inst{};
         inst.modelMatrix = model;
-
-        Vec3 s0 = Vec3(model[0]), s1 = Vec3(model[1]), s2 = Vec3(model[2]);
-        float l0 = glm::dot(s0, s0), l1 = glm::dot(s1, s1), l2 = glm::dot(s2, s2);
-
-        if (std::abs(l0 - 1.f) < 1e-4f && std::abs(l1 - 1.f) < 1e-4f && std::abs(l2 - 1.f) < 1e-4f) {
-            for (int i = 0; i < 3; ++i) {
-                inst.normalMatrix[i][0] = model[i][0];
-                inst.normalMatrix[i][1] = model[i][1];
-                inst.normalMatrix[i][2] = model[i][2];
-                inst.normalMatrix[i][3] = 0.f;
-            }
-        } else if (std::abs(l0 - l1) < 1e-4f && std::abs(l0 - l2) < 1e-4f) {
-            float invS2 = 1.f / l0;
-            for (int i = 0; i < 3; ++i) {
-                inst.normalMatrix[i][0] = model[i][0] * invS2;
-                inst.normalMatrix[i][1] = model[i][1] * invS2;
-                inst.normalMatrix[i][2] = model[i][2] * invS2;
-                inst.normalMatrix[i][3] = 0.f;
-            }
-        } else {
-            glm::mat3 n3 = glm::transpose(glm::inverse(glm::mat3(model)));
-            for (int i = 0; i < 3; ++i) {
-                inst.normalMatrix[i][0] = n3[i][0];
-                inst.normalMatrix[i][1] = n3[i][1];
-                inst.normalMatrix[i][2] = n3[i][2];
-                inst.normalMatrix[i][3] = 0.f;
-            }
-        }
-
+        ComputeNormalMatrix(inst, model);
         inst.firstVertex = mesh->firstVertex;
         inst.firstIndex = mesh->firstIndex;
         inst.indexCount = mesh->indexCount;
@@ -1837,13 +1408,8 @@ namespace Manro {
         inst.flags = 0;
 
         CullData cullData{};
-        Vec3 worldCenter = Vec3(model * Vec4(mesh->center, 1.f));
-        float scaleSq = std::max(l0, std::max(l1, l2));
-        cullData.center[0] = worldCenter.x;
-        cullData.center[1] = worldCenter.y;
-        cullData.center[2] = worldCenter.z;
-        cullData.radius = mesh->radius * std::sqrt(scaleSq);
-        cullData.instanceId = static_cast<u32>(m_StaticInstances.size() + m_CurrentFrameInstances.size());
+        BuildCullData(cullData, mesh, model,
+                      static_cast<u32>(m_StaticInstances.size() + m_CurrentFrameInstances.size()));
 
         m_StaticInstances.push_back(inst);
         m_StaticCullData.push_back(cullData);
@@ -1951,33 +1517,6 @@ namespace Manro {
             if (vkCreateDescriptorSetLayout(m_Context.GetDevice(), &ci, nullptr, &m_MeshCullSetLayout) != VK_SUCCESS)
                 throw std::runtime_error("Failed to create mesh cull descriptor set layout");
         }
-
-        {
-            VkDescriptorSetLayoutBinding b[4];
-            b[0] = {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr};
-            b[1] = {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr};
-            b[2] = {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr};
-            b[3] = {3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr};
-            VkDescriptorSetLayoutCreateInfo ci{};
-            ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-            ci.bindingCount = 4;
-            ci.pBindings = b;
-            if (vkCreateDescriptorSetLayout(m_Context.GetDevice(), &ci, nullptr, &m_ShadowMeshCullSetLayout) !=
-                VK_SUCCESS)
-                throw std::runtime_error("Failed to create shadow mesh cull descriptor set layout");
-        }
-
-        {
-            VkDescriptorSetLayoutBinding b[2];
-            b[0] = {0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr};
-            b[1] = {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
-            VkDescriptorSetLayoutCreateInfo ci{};
-            ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-            ci.bindingCount = 2;
-            ci.pBindings = b;
-            if (vkCreateDescriptorSetLayout(m_Context.GetDevice(), &ci, nullptr, &m_SkyboxSetLayout) != VK_SUCCESS)
-                throw std::runtime_error("Failed to create skybox descriptor set layout");
-        }
     }
 
     void RendererImpl::CreateDescriptorPool() {
@@ -1999,7 +1538,7 @@ namespace Manro {
             throw std::runtime_error("Failed to create descriptor pool");
     }
 
-    void RendererImpl::CreateGpuBuffers() {
+    void RendererImpl::CreateToGpuBuffers() {
         m_MaterialBuffer = CreateScope<Buffer>(
             m_Context, sizeof(MaterialData) * 1024,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
@@ -2015,31 +1554,6 @@ namespace Manro {
             tis[i].texCoord = 0;
         }
         m_TextureInfoBuffer->LoadData(tis.data(), sizeof(shaderio::GltfTextureInfo) * 1024);
-
-        float skyboxVertices[] = {
-            -5000.0f, 5000.0f, -5000.0f, -5000.0f, -5000.0f, -5000.0f, 5000.0f, -5000.0f, -5000.0f,
-            5000.0f, -5000.0f, -5000.0f, 5000.0f, 5000.0f, -5000.0f, -5000.0f, 5000.0f, -5000.0f,
-            -5000.0f, -5000.0f, 5000.0f, -5000.0f, -5000.0f, -5000.0f, -5000.0f, 5000.0f, -5000.0f,
-            -5000.0f, 5000.0f, -5000.0f, -5000.0f, 5000.0f, 5000.0f, -5000.0f, -5000.0f, 5000.0f,
-            5000.0f, -5000.0f, -5000.0f, 5000.0f, -5000.0f, 5000.0f, 5000.0f, 5000.0f, 5000.0f,
-            5000.0f, 5000.0f, 5000.0f, 5000.0f, 5000.0f, -5000.0f, 5000.0f, -5000.0f, -5000.0f,
-            -5000.0f, -5000.0f, 5000.0f, -5000.0f, 5000.0f, 5000.0f, 5000.0f, 5000.0f, 5000.0f,
-            5000.0f, 5000.0f, 5000.0f, 5000.0f, -5000.0f, 5000.0f, -5000.0f, -5000.0f, 5000.0f,
-            -5000.0f, 5000.0f, -5000.0f, 5000.0f, 5000.0f, -5000.0f, 5000.0f, 5000.0f, 5000.0f,
-            5000.0f, 5000.0f, 5000.0f, -5000.0f, 5000.0f, 5000.0f, -5000.0f, 5000.0f, -5000.0f,
-            -5000.0f, -5000.0f, -5000.0f, -5000.0f, -5000.0f, 5000.0f, 5000.0f, -5000.0f, -5000.0f,
-            5000.0f, -5000.0f, -5000.0f, -5000.0f, -5000.0f, 5000.0f, 5000.0f, -5000.0f, 5000.0f
-        };
-        u32 skyboxIndices[36];
-        for (u32 i = 0; i < 36; ++i) skyboxIndices[i] = i;
-
-        m_SkyboxVertexBuffer = CreateScope<Buffer>(m_Context, sizeof(skyboxVertices),
-                                                   VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-        m_SkyboxVertexBuffer->LoadData(skyboxVertices, sizeof(skyboxVertices));
-
-        m_SkyboxIndexBuffer = CreateScope<Buffer>(m_Context, sizeof(skyboxIndices),
-                                                  VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-        m_SkyboxIndexBuffer->LoadData(skyboxIndices, sizeof(skyboxIndices));
     }
 
     void RendererImpl::UpdatePbrDescriptorSet(u32 fi) {
@@ -2136,45 +1650,8 @@ namespace Manro {
         sc(3, 3, &instI);
         vkUpdateDescriptorSets(m_Context.GetDevice(), 4, sw, 0, nullptr);
 
-        UpdatePbrDescriptorSetShadow(fi);
+        m_Shadow.UpdatePbrDescriptorSetShadow(frame.pbrSet);
         UpdateSkyboxDescriptorSet(fi);
-    }
-
-    void RendererImpl::UpdatePbrDescriptorSetShadow(u32 fi) {
-        FrameData &frame = m_Frames[fi];
-
-        VkDescriptorImageInfo shadowImgI{};
-        shadowImgI.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-        shadowImgI.imageView = m_ShadowMap.view;
-
-        VkDescriptorImageInfo shadowSamplerI{};
-        shadowSamplerI.sampler = m_ShadowSampler;
-
-        VkDescriptorBufferInfo shadowUboI{m_ShadowUniformBuffer->GetHandle(), 0, sizeof(ShadowUniformData)};
-
-        VkWriteDescriptorSet writes[3]{};
-        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[0].dstSet = frame.pbrSet;
-        writes[0].dstBinding = 15;
-        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-        writes[0].descriptorCount = 1;
-        writes[0].pImageInfo = &shadowImgI;
-
-        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[1].dstSet = frame.pbrSet;
-        writes[1].dstBinding = 16;
-        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
-        writes[1].descriptorCount = 1;
-        writes[1].pImageInfo = &shadowSamplerI;
-
-        writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[2].dstSet = frame.pbrSet;
-        writes[2].dstBinding = 17;
-        writes[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        writes[2].descriptorCount = 1;
-        writes[2].pBufferInfo = &shadowUboI;
-
-        vkUpdateDescriptorSets(m_Context.GetDevice(), 3, writes, 0, nullptr);
     }
 
     void RendererImpl::UpdateCompositeDescriptorSet(u32 fi) {
@@ -2182,8 +1659,8 @@ namespace Manro {
 
         VkDescriptorImageInfo imgI{};
         imgI.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imgI.imageView = m_OffscreenColor.view;
-        imgI.sampler = m_OffscreenSampler;
+        imgI.imageView = m_RenderTargets.GetOffscreenView();
+        imgI.sampler = m_RenderTargets.GetOffscreenSampler();
 
         VkWriteDescriptorSet w{};
         w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -2196,31 +1673,9 @@ namespace Manro {
     }
 
     void RendererImpl::UpdateSkyboxDescriptorSet(u32 fi) {
-        if (m_SkyboxTexture == kInvalidTexture) return;
-        FrameData &frame = m_Frames[fi];
-
-        VkDescriptorBufferInfo uboI{frame.uboBuffer->GetHandle(), 0, sizeof(UniformBufferObject)};
-        VkDescriptorImageInfo skyI{};
-        skyI.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        skyI.imageView = m_Textures.GetView(m_SkyboxTexture);
-        skyI.sampler = m_Textures.GetSampler();
-
-        VkWriteDescriptorSet writes[2]{};
-        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[0].dstSet = frame.skyboxSet;
-        writes[0].dstBinding = 0;
-        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        writes[0].descriptorCount = 1;
-        writes[0].pBufferInfo = &uboI;
-
-        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[1].dstSet = frame.skyboxSet;
-        writes[1].dstBinding = 1;
-        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[1].descriptorCount = 1;
-        writes[1].pImageInfo = &skyI;
-
-        vkUpdateDescriptorSets(m_Context.GetDevice(), 2, writes, 0, nullptr);
+        if (m_Skybox.GetTexture() == kInvalidTexture) return;
+        m_Skybox.UpdateDescriptorSet(fi, m_Frames[fi].skyboxSet,
+                                     m_Frames[fi].uboBuffer->GetHandle(), m_Textures);
     }
 
     void RendererImpl::CreateCommandBuffers() {
@@ -2305,7 +1760,7 @@ namespace Manro {
             VkDescriptorSetLayout layouts[5] = {
                 m_PbrSetLayout, m_CompositeSetLayout,
                 m_CullSetLayout, m_MeshCullSetLayout,
-                m_ShadowMeshCullSetLayout
+                m_Shadow.GetMeshCullSetLayout()
             };
             VkDescriptorSet sets[5];
             VkDescriptorSetAllocateInfo dsAI{};
@@ -2321,47 +1776,17 @@ namespace Manro {
             f.meshCullSet = sets[3];
             f.shadowMeshCullSet = sets[4];
 
+            VkDescriptorSetLayout skyLayout = m_Skybox.GetSetLayout();
             VkDescriptorSetAllocateInfo skyAI{};
             skyAI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
             skyAI.descriptorPool = m_DescriptorPool;
             skyAI.descriptorSetCount = 1;
-            skyAI.pSetLayouts = &m_SkyboxSetLayout;
+            skyAI.pSetLayouts = &skyLayout;
             vkAllocateDescriptorSets(m_Context.GetDevice(), &skyAI, &f.skyboxSet);
 
 
             UpdateCompositeDescriptorSet(i);
             UpdatePbrDescriptorSet(i);
-        }
-    }
-
-    void RendererImpl::CreateSyncObjects() {
-        const u32 frameCount = GetFrameCount();
-        m_ImageAvailableSemaphores.resize(frameCount);
-        m_InFlightFences.resize(frameCount);
-        m_RenderFinishedSemaphores.resize(m_SwapchainImages.size());
-
-        VkSemaphoreCreateInfo semaphoreInfo{};
-        semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-
-        VkFenceCreateInfo fenceInfo{};
-        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-        fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-
-        for (u32 i = 0; i < frameCount; ++i) {
-            if (vkCreateSemaphore(m_Context.GetDevice(), &semaphoreInfo, nullptr, &m_ImageAvailableSemaphores[i]) !=
-                VK_SUCCESS) {
-                throw std::runtime_error("Failed to create image-available semaphore");
-            }
-            if (vkCreateFence(m_Context.GetDevice(), &fenceInfo, nullptr, &m_InFlightFences[i]) != VK_SUCCESS) {
-                throw std::runtime_error("Failed to create in-flight fence");
-            }
-        }
-
-        for (auto &m_RenderFinishedSemaphore: m_RenderFinishedSemaphores) {
-            if (vkCreateSemaphore(m_Context.GetDevice(), &semaphoreInfo, nullptr, &m_RenderFinishedSemaphore) !=
-                VK_SUCCESS) {
-                throw std::runtime_error("Failed to create render-finished semaphore");
-            }
         }
     }
 
@@ -2380,8 +1805,8 @@ namespace Manro {
         PipelineConfigParams cfg{};
         cfg.vertexEntryPoint = "main";
         cfg.fragmentEntryPoint = "main";
-        cfg.colorAttachmentFormat = m_OffscreenFormat;
-        cfg.depthAttachmentFormat = m_DepthFormat;
+        cfg.colorAttachmentFormat = m_RenderTargets.GetOffscreenFormat();
+        cfg.depthAttachmentFormat = m_RenderTargets.GetDepthFormat();
         cfg.msaaSamples = ToVulkanSampleCount(m_Settings.msaaSamples);
         cfg.pushConstantSize = sizeof(PBRPushConstants);
         cfg.descriptorSetLayouts = {m_PbrSetLayout, m_Textures.GetBindlessLayout()};
@@ -2463,7 +1888,7 @@ namespace Manro {
         PipelineConfigParams cfg{};
         cfg.vertexEntryPoint = "main";
         cfg.fragmentEntryPoint = "main";
-        cfg.colorAttachmentFormat = m_SwapchainFormat;
+        cfg.colorAttachmentFormat = m_Swapchain.GetFormat();
         cfg.depthAttachmentFormat = VK_FORMAT_UNDEFINED;
         cfg.msaaSamples = VK_SAMPLE_COUNT_1_BIT;
         cfg.pushConstantSize = sizeof(CompositePushConstants);
@@ -2526,84 +1951,6 @@ namespace Manro {
                 return m_MeshCullPipeline->GetHandle();
             });
         }
-    }
-
-    void RendererImpl::BuildShadowPipeline() {
-        auto vertSpv = VirtualFS::Get().ReadFile("shaders://shadow_depth.vert.spv");
-        if (vertSpv.empty()) {
-            LOG_ERROR("[Renderer] Shadow depth shader not found");
-            return;
-        }
-
-        PipelineConfigParams cfg{};
-        cfg.vertexEntryPoint = "main";
-        cfg.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
-        cfg.msaaSamples = ToVulkanSampleCount(m_Settings.msaaSamples);
-        cfg.pushConstantSize = sizeof(ShadowPushConstants);
-        cfg.pushConstantStages = VK_SHADER_STAGE_VERTEX_BIT;
-        cfg.descriptorSetLayouts = {m_PbrSetLayout};
-
-        cfg.vertexInputBindings.resize(2);
-        cfg.vertexInputBindings[0] = {0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX};
-        cfg.vertexInputBindings[1] = {1, sizeof(MeshInstance), VK_VERTEX_INPUT_RATE_INSTANCE};
-
-        cfg.vertexInputAttributes.resize(9);
-        cfg.vertexInputAttributes[0] = {0, 0, VK_FORMAT_R32G32B32_SFLOAT, static_cast<u32>(offsetof(Vertex, position))};
-        cfg.vertexInputAttributes[1] = {1, 0, VK_FORMAT_R32G32B32_SFLOAT, static_cast<u32>(offsetof(Vertex, normal))};
-        cfg.vertexInputAttributes[2] = {
-            4, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
-            static_cast<u32>(offsetof(MeshInstance, modelMatrix))
-        };
-        cfg.vertexInputAttributes[3] = {
-            5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(MeshInstance, modelMatrix)) + 16
-        };
-        cfg.vertexInputAttributes[4] = {
-            6, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
-            static_cast<u32>(offsetof(MeshInstance, modelMatrix)) + 32
-        };
-        cfg.vertexInputAttributes[5] = {
-            7, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(MeshInstance, modelMatrix)) + 48
-        };
-        cfg.vertexInputAttributes[6] = {
-            8, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
-            static_cast<u32>(offsetof(MeshInstance, normalMatrix))
-        };
-        cfg.vertexInputAttributes[7] = {
-            9, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(MeshInstance, normalMatrix)) + 16
-        };
-        cfg.vertexInputAttributes[8] = {
-            10, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(MeshInstance, normalMatrix)) + 32
-        };
-
-        m_ShadowPipeline = CreateScope<Pipeline>(m_Context);
-        m_ShadowPipeline->BuildShadowDepth(vertSpv, cfg);
-    }
-
-    void RendererImpl::BuildSkyboxPipeline() {
-        auto vertSpv = VirtualFS::Get().ReadFile("shaders://skybox.vert.spv");
-        auto fragSpv = VirtualFS::Get().ReadFile("shaders://skybox.frag.spv");
-        if (vertSpv.empty() || fragSpv.empty()) {
-            LOG_ERROR("[Renderer] Skybox shaders not found");
-            return;
-        }
-
-        PipelineConfigParams cfg{};
-        cfg.vertexEntryPoint = "main";
-        cfg.fragmentEntryPoint = "main";
-        cfg.colorAttachmentFormat = m_OffscreenFormat;
-        cfg.depthAttachmentFormat = m_DepthFormat;
-        cfg.msaaSamples = ToVulkanSampleCount(m_Settings.msaaSamples);
-        cfg.descriptorSetLayouts = {m_SkyboxSetLayout};
-        cfg.depthWriteEnable = VK_FALSE;
-        cfg.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
-
-        cfg.vertexInputBindings.resize(1);
-        cfg.vertexInputBindings[0] = {0, sizeof(float) * 3, VK_VERTEX_INPUT_RATE_VERTEX};
-        cfg.vertexInputAttributes.resize(1);
-        cfg.vertexInputAttributes[0] = {0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0};
-
-        m_SkyboxPipeline = CreateScope<Pipeline>(m_Context);
-        m_SkyboxPipeline->BuildGraphics(vertSpv, fragSpv, cfg);
     }
 
     void RendererImpl::DrawLine(const Vec3 &a, const Vec3 &b, u32 color, bool depthTest) const {

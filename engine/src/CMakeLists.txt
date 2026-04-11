@@ -28,6 +28,10 @@ set(ENGINE_RENDER_SOURCES
         Render/MeshManager.cpp
         Render/Model.cpp
         Render/Overlay/Overlay.cpp
+        Render/Internal/SwapchainManager.cpp
+        Render/Internal/RenderTargetManager.cpp
+        Render/Internal/ShadowSystem.cpp
+        Render/Internal/SkyboxRenderer.cpp
 )
 
 set(ENGINE_RESOURCE_SOURCES
