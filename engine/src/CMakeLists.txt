@@ -1,15 +1,3 @@
-set(SCHEMA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Networking/Schema")
-set(SCHEMA_FILE "${SCHEMA_DIR}/NetworkMessage.fbs")
-set(GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
-
-add_custom_command(
-        OUTPUT "${GEN_DIR}/NetworkMessage_generated.h"
-        COMMAND flatc --cpp -o "${GEN_DIR}" "${SCHEMA_FILE}"
-        DEPENDS "${SCHEMA_FILE}" flatc
-        COMMENT "Building C++ header for ${SCHEMA_FILE}"
-)
-add_custom_target(GenerateNetworkSchema DEPENDS "${GEN_DIR}/NetworkMessage_generated.h")
-
 set(MANRO_MIKKTSPACE_C "${MANRO_THIRD_PARTY_DIR}/mikktspace/mikktspace.c")
 
 set(ENGINE_CORE_SOURCES
@@ -22,11 +10,6 @@ set(ENGINE_CORE_SOURCES
 
 set(ENGINE_INPUT_SOURCES
         Input/InputManager.cpp
-)
-
-set(ENGINE_NETWORKING_SOURCES
-        Networking/NetworkClient.cpp
-        Networking/NetworkServer.cpp
 )
 
 set(ENGINE_RENDER_SOURCES
@@ -80,7 +63,6 @@ set(ENGINE_THIRD_PARTY_SOURCES
 add_library(Engine STATIC
         ${ENGINE_CORE_SOURCES}
         ${ENGINE_INPUT_SOURCES}
-        ${ENGINE_NETWORKING_SOURCES}
         ${ENGINE_RENDER_SOURCES}
         ${ENGINE_RESOURCE_SOURCES}
         ${ENGINE_PHYSICS_SOURCES}
@@ -90,7 +72,7 @@ add_library(Engine STATIC
 
 set_source_files_properties(${MANRO_MIKKTSPACE_C} PROPERTIES COMPILE_FLAGS "-Wno-unused-but-set-variable")
 
-add_dependencies(Engine GenerateNetworkSchema PrecompileShaders EmbedShaders)
+add_dependencies(Engine PrecompileShaders EmbedShaders)
 
 target_include_directories(Engine SYSTEM PUBLIC
         ${MANRO_THIRD_PARTY_DIR}/vk-bootstrap/src
@@ -115,7 +97,7 @@ target_compile_definitions(Engine PUBLIC VK_NO_PROTOTYPES)
 
 target_link_libraries(Engine PUBLIC
         vk-bootstrap::vk-bootstrap volk::volk GPUOpen::VulkanMemoryAllocator
-        flatbuffers glm::glm enet tinyobjloader Jolt spdlog::spdlog
+        glm::glm enet tinyobjloader Jolt spdlog::spdlog
         SDL3::SDL3-static SDL3_mixer::SDL3_mixer-static tinygltf
 )
 
