@@ -9,36 +9,6 @@
 #include <cmath>
 
 namespace Manro {
-    inline void ComputeNormalMatrix(MeshInstance &inst, const Mat4 &model) {
-        Vec3 s0 = Vec3(model[0]), s1 = Vec3(model[1]), s2 = Vec3(model[2]);
-        float l0 = glm::dot(s0, s0), l1 = glm::dot(s1, s1), l2 = glm::dot(s2, s2);
-
-        if (std::abs(l0 - 1.f) < 1e-4f && std::abs(l1 - 1.f) < 1e-4f && std::abs(l2 - 1.f) < 1e-4f) {
-            for (int i = 0; i < 3; ++i) {
-                inst.normalMatrix[i][0] = model[i][0];
-                inst.normalMatrix[i][1] = model[i][1];
-                inst.normalMatrix[i][2] = model[i][2];
-                inst.normalMatrix[i][3] = 0.f;
-            }
-        } else if (std::abs(l0 - l1) < 1e-4f && std::abs(l0 - l2) < 1e-4f) {
-            float invS2 = 1.f / l0;
-            for (int i = 0; i < 3; ++i) {
-                inst.normalMatrix[i][0] = model[i][0] * invS2;
-                inst.normalMatrix[i][1] = model[i][1] * invS2;
-                inst.normalMatrix[i][2] = model[i][2] * invS2;
-                inst.normalMatrix[i][3] = 0.f;
-            }
-        } else {
-            glm::mat3 n3 = glm::transpose(glm::inverse(glm::mat3(model)));
-            for (int i = 0; i < 3; ++i) {
-                inst.normalMatrix[i][0] = n3[i][0];
-                inst.normalMatrix[i][1] = n3[i][1];
-                inst.normalMatrix[i][2] = n3[i][2];
-                inst.normalMatrix[i][3] = 0.f;
-            }
-        }
-    }
-
     inline void BuildCullData(CullData &out, const LoadedMesh *mesh, const Mat4 &model, u32 instanceId) {
         Vec3 s0 = Vec3(model[0]), s1 = Vec3(model[1]), s2 = Vec3(model[2]);
         float l0 = glm::dot(s0, s0), l1 = glm::dot(s1, s1), l2 = glm::dot(s2, s2);

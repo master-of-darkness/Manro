@@ -26,7 +26,6 @@ namespace Manro {
 
         MeshInstance inst{};
         inst.modelMatrix = model;
-        ComputeNormalMatrix(inst, model);
         inst.firstVertex = mesh->firstVertex;
         inst.firstIndex = mesh->firstIndex;
         inst.indexCount = mesh->indexCount;
@@ -53,7 +52,6 @@ namespace Manro {
 
         MeshInstance inst{};
         inst.modelMatrix = model;
-        ComputeNormalMatrix(inst, model);
         inst.firstVertex = mesh->firstVertex;
         inst.firstIndex = mesh->firstIndex;
         inst.indexCount = mesh->indexCount;

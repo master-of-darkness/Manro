@@ -45,7 +45,7 @@ RWStructuredBuffer<GpuDrawCommand> drawCommands;
 RWStructuredBuffer<uint> drawCount;
 
 [[vk::binding(3, 0)]]
-StructuredBuffer<GpuMeshInstance> meshInstances;
+RWStructuredBuffer<GpuMeshInstance> meshInstances;
 
 [[vk::push_constant]]
 CullPushConstants pc;
@@ -57,7 +57,30 @@ void main(uint3 dtid : SV_DispatchThreadID) {
 
     GpuCullData cull = cullData[dtid.x];
     GpuMeshInstance inst = meshInstances[cull.instanceId];
-    
+
+    // Compute normal matrix transpose(inverse(mat3(modelMatrix)))
+    float3x3 M = float3x3(inst.modelMatrix[0].xyz, inst.modelMatrix[1].xyz, inst.modelMatrix[2].xyz);
+    // determinant
+    float det = M[0][0] * (M[1][1] * M[2][2] - M[2][1] * M[1][2])
+              - M[0][1] * (M[1][0] * M[2][2] - M[1][2] * M[2][0])
+              + M[0][2] * (M[1][0] * M[2][1] - M[1][1] * M[2][0]);
+    float invDet = (abs(det) > 1e-8f) ? (1.0f / det) : 0.0f;
+    // cofactor matrix
+    float3x3 N;
+    N[0][0] =  (M[1][1] * M[2][2] - M[2][1] * M[1][2]) * invDet;
+    N[0][1] = -(M[0][1] * M[2][2] - M[0][2] * M[2][1]) * invDet;
+    N[0][2] =  (M[0][1] * M[1][2] - M[0][2] * M[1][1]) * invDet;
+    N[1][0] = -(M[1][0] * M[2][2] - M[1][2] * M[2][0]) * invDet;
+    N[1][1] =  (M[0][0] * M[2][2] - M[0][2] * M[2][0]) * invDet;
+    N[1][2] = -(M[0][0] * M[1][2] - M[1][0] * M[0][2]) * invDet;
+    N[2][0] =  (M[1][0] * M[2][1] - M[2][0] * M[1][1]) * invDet;
+    N[2][1] = -(M[0][0] * M[2][1] - M[2][0] * M[0][1]) * invDet;
+    N[2][2] =  (M[0][0] * M[1][1] - M[1][0] * M[0][1]) * invDet;
+    // transpose(inverse(M)) = transpose of cofactor/det, which is N transposed
+    meshInstances[cull.instanceId].normalMatrix[0] = float4(N[0][0], N[1][0], N[2][0], 0);
+    meshInstances[cull.instanceId].normalMatrix[1] = float4(N[0][1], N[1][1], N[2][1], 0);
+    meshInstances[cull.instanceId].normalMatrix[2] = float4(N[0][2], N[1][2], N[2][2], 0);
+
     float3 worldCenter = cull.center;
     float worldRadius = cull.radius;
 

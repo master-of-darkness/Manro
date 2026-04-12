@@ -178,7 +178,7 @@ namespace Manro {
         u32 groupCount = (mcpc.instanceCount + 63) / 64;
         vkCmdDispatch(cb, groupCount, 1, 1);
 
-        VkBufferMemoryBarrier2 meshCullBarriers[2]{};
+        VkBufferMemoryBarrier2 meshCullBarriers[3]{};
         meshCullBarriers[0].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
         meshCullBarriers[0].srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
         meshCullBarriers[0].srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
@@ -189,9 +189,17 @@ namespace Manro {
         meshCullBarriers[0].size = VK_WHOLE_SIZE;
         meshCullBarriers[1] = meshCullBarriers[0];
         meshCullBarriers[1].buffer = frame.countBuffer->GetHandle();
+        meshCullBarriers[2].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+        meshCullBarriers[2].srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        meshCullBarriers[2].srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+        meshCullBarriers[2].dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT;
+        meshCullBarriers[2].dstAccessMask = VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT;
+        meshCullBarriers[2].buffer = frame.instanceBuffer->GetHandle();
+        meshCullBarriers[2].offset = 0;
+        meshCullBarriers[2].size = VK_WHOLE_SIZE;
         VkDependencyInfo meshDep{};
         meshDep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        meshDep.bufferMemoryBarrierCount = 2;
+        meshDep.bufferMemoryBarrierCount = 3;
         meshDep.pBufferMemoryBarriers = meshCullBarriers;
         vkCmdPipelineBarrier2(cb, &meshDep);
     }
