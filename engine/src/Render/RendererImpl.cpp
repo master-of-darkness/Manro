@@ -570,8 +570,6 @@ namespace Manro {
     }
 
     void RendererImpl::BeginRendering() {
-        m_Textures.FlushPendingUploads();
-
         FrameData &frame = m_Frames[m_CurrentFrame];
         VkCommandBuffer cb = frame.commandBuffer;
         VkExtent2D ext = m_RenderExtent;
