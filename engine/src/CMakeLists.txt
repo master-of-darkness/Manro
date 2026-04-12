@@ -32,6 +32,10 @@ set(ENGINE_RENDER_SOURCES
         Render/Internal/RenderTargetManager.cpp
         Render/Internal/ShadowSystem.cpp
         Render/Internal/SkyboxRenderer.cpp
+        Render/Internal/MaterialSystem.cpp
+        Render/Internal/InstanceBatcher.cpp
+        Render/Internal/GpuCullDispatcher.cpp
+        Render/Internal/PipelineManager.cpp
 )
 
 set(ENGINE_RESOURCE_SOURCES

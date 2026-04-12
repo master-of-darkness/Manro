@@ -3,4 +3,8 @@
 build
 cmake-build-debug
 cmake-build-release
+cmake-build-debug-clang
+cmake-build-release-clang
 *.a
+*.so
+*.dll
