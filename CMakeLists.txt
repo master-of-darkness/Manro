@@ -113,7 +113,7 @@ FetchContent_Declare(slang_bin URL ${SLANG_BINARY_URL})
 FetchContent_MakeAvailable(slang_bin)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
-include(Shaders)
+include(shaders)
 
 add_subdirectory(engine/src)
 
