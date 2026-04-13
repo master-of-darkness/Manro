@@ -3,6 +3,7 @@
 #include <Manro/Core/Logger.h>
 #include <Manro/Core/JobSystem.h>
 #include <Manro/Core/VirtualFS.h>
+#include <Manro/Core/Profiling.h>
 #include <Manro/Platform/PlatformContext.h>
 #include <Manro/Render/Renderer.h>
 #include <Manro/Input/InputManager.h>
@@ -65,17 +66,30 @@ namespace Manro {
             lastTime = now;
             totalTime += dt;
 
-            if (!platform.PollEvents(inputManager)) break;
+            MNR_PROFILE_VALUE("Frame Time (ms)", static_cast<f64>(dt * 1000.f));
+
+            {
+                MNR_PROFILE_SCOPE("PollEvents");
+                if (!platform.PollEvents(inputManager)) break;
+            }
 
             UserCmd cmd = inputManager->Poll();
             FrameContext fctx{dt, totalTime, frameIndex++};
 
-            if (!app.OnUpdate(fctx, cmd)) break;
+            {
+                MNR_PROFILE_SCOPE("Update");
+                if (!app.OnUpdate(fctx, cmd)) break;
+            }
+
             if (!renderer.BeginFrame()) continue;
 
-            app.OnRender(fctx);
+            {
+                MNR_PROFILE_SCOPE("Render");
+                app.OnRender(fctx);
+                renderer.EndFrameAndPresent();
+            }
 
-            renderer.EndFrameAndPresent();
+            MNR_PROFILE_FRAME();
         }
 
         app.OnShutdown();

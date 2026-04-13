@@ -2,6 +2,7 @@
 #include <Manro/Core/JobSystem.h>
 #include <Manro/Core/Logger.h>
 #include <Manro/Core/VirtualFS.h>
+#include <Manro/Core/Profiling.h>
 
 #define TINYOBJLOADER_IMPLEMENTATION
 
@@ -573,6 +574,7 @@ namespace Manro {
     }
 
     std::vector<SubMeshData> ModelLoader::LoadSubMeshes(const std::string &filepath) {
+        MNR_PROFILE_SCOPE("LoadModel");
         std::vector<SubMeshData> result;
         if (HasExtension(filepath, ".obj")) {
             LoadObj(filepath, result);

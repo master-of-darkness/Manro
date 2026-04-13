@@ -1,6 +1,7 @@
 #include <Manro/Physics/PhysicsWorld.h>
 #include <Manro/Core/Logger.h>
 #include <Manro/Core/Handles.h>
+#include <Manro/Core/Profiling.h>
 #include <Manro/Render/Renderer.h>
 
 #include <Jolt/Jolt.h>
@@ -249,6 +250,7 @@ namespace Manro {
     }
 
     void PhysicsWorld::Step(float deltaTime) {
+        MNR_PROFILE_FUNCTION();
         m_Accumulator += (deltaTime > 0.25f) ? 0.25f : deltaTime;
 
         while (m_Accumulator >= FIXED_STEP) {
@@ -263,9 +265,12 @@ namespace Manro {
                     cur.GetZ() + km.velocity.z * FIXED_STEP);
                 bi.MoveKinematic(bid, target, JPH::Quat::sIdentity(), FIXED_STEP);
             }
-            m_Impl->physicsSystem->Update(FIXED_STEP, 1,
-                                          m_Impl->tempAllocator.get(),
-                                          m_Impl->jobSystem.get());
+            {
+                MNR_PROFILE_SCOPE("JoltUpdate");
+                m_Impl->physicsSystem->Update(FIXED_STEP, 1,
+                                              m_Impl->tempAllocator.get(),
+                                              m_Impl->jobSystem.get());
+            }
             m_Accumulator -= FIXED_STEP;
         }
         m_PendingKinematicMoves.clear();

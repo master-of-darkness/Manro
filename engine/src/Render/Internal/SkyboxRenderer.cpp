@@ -94,11 +94,9 @@ namespace Manro {
     void SkyboxRenderer::SetTexture(TextureHandle h, TextureManager &textures,
                                     const std::vector<VkBuffer> &uboBuffers,
                                     const std::vector<VkDescriptorSet> &skyboxSets) {
-        if (h == kInvalidTexture) {
-            LOG_ERROR("[SkyboxRenderer] SetTexture called with invalid texture!");
-        } else {
-            LOG_INFO("[SkyboxRenderer] Skybox texture set: {}", h);
-        }
+        if (h == kInvalidTexture)
+        LOG_ERROR("[SkyboxRenderer] SetTexture called with invalid texture!");
+
         m_SkyboxTexture = h;
 
         for (u32 i = 0; i < static_cast<u32>(skyboxSets.size()); ++i) {

@@ -109,6 +109,11 @@ target_link_libraries(Engine PUBLIC
         SDL3::SDL3-static SDL3_mixer::SDL3_mixer-static tinygltf
 )
 
+if (MANRO_ENABLE_PROFILING)
+    target_link_libraries(Engine PUBLIC TracyClient)
+    target_compile_definitions(Engine PUBLIC MANRO_PROFILING TRACY_VK_USE_SYMBOL_TABLE)
+endif ()
+
 if (WIN32)
     target_link_libraries(Engine PRIVATE ws2_32 winmm)
 else ()

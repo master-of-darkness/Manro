@@ -1,6 +1,7 @@
 #include <Manro/Resource/TextureLoader.h>
 #include <Manro/Core/VirtualFS.h>
 #include <Manro/Core/JobSystem.h>
+#include <Manro/Core/Profiling.h>
 
 #define STB_IMAGE_IMPLEMENTATION
 
@@ -275,6 +276,7 @@ namespace Manro {
     }
 
     TextureData TextureLoader::LoadOne(const std::string &filepath) {
+        MNR_PROFILE_SCOPE("LoadTexture");
         TextureData result;
         LoadIndividual(filepath, result);
         return result;

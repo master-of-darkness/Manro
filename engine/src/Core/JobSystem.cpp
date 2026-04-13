@@ -1,4 +1,5 @@
 #include <Manro/Core/JobSystem.h>
+#include <Manro/Core/Profiling.h>
 #include <algorithm>
 
 namespace Manro {
@@ -78,6 +79,7 @@ namespace Manro {
     }
 
     void JobSystem::WorkerThread() {
+        MNR_PROFILE_THREAD("Worker");
         while (m_Running) {
             JobEntry job;
 
@@ -96,6 +98,7 @@ namespace Manro {
             }
 
             if (job.work) {
+                MNR_PROFILE_SCOPE("Job");
                 job.work();
                 job.pendingJobs->fetch_sub(1, std::memory_order_release);
                 m_JobsInFlight--;

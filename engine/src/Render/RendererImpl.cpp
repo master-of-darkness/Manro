@@ -25,6 +25,8 @@
 
 #include <Manro/Core/Logger.h>
 #include <Manro/Core/VirtualFS.h>
+#include <Manro/Core/Profiling.h>
+#include <Manro/Core/ProfilingGPU.h>
 #include <Manro/Render/MeshManager.h>
 #include <Manro/Render/Material/MaterialInstance.h>
 #include <Manro/Render/Model.h>
@@ -76,11 +78,8 @@ namespace Manro {
         void SetCameraPosition(const Vec3 &pos) { m_CameraPosition = pos; }
 
         void SetSkybox(TextureHandle cubemap) {
-            if (cubemap == kInvalidTexture) {
-                LOG_ERROR("[Renderer] SetSkybox called with invalid texture!");
-            } else {
-                LOG_INFO("[Renderer] Skybox texture set: {}", cubemap);
-            }
+            if (cubemap == kInvalidTexture)
+            LOG_ERROR("[Renderer] SetSkybox called with invalid texture!");
             std::vector<VkBuffer> uboBuffers;
             std::vector<VkDescriptorSet> skyboxSets;
             uboBuffers.reserve(m_Frames.size());
@@ -230,6 +229,9 @@ namespace Manro {
         RendererConfig m_Config{};
         VkExtent2D m_RenderExtent{};
 
+#ifdef MANRO_PROFILING
+        TracyVkCtx m_TracyGpuCtx = nullptr;
+#endif
     };
 
     RendererImpl::RendererImpl(IWindow &window, u32 width, u32 height,
@@ -289,6 +291,18 @@ namespace Manro {
         m_Swapchain.CreateFrameSyncObjects(GetFrameCount());
         m_Swapchain.CreateRenderFinishedSemaphores();
 
+#ifdef MANRO_PROFILING
+        {
+            VkCommandBuffer cb = m_Context.GetOneShotCommandBuffer();
+            m_TracyGpuCtx = MNR_GPU_CONTEXT(
+                m_Context.GetInstance(),
+                m_Context.GetPhysicalDevice(),
+                m_Context.GetDevice(),
+                m_Context.GetGraphicsQueue(),
+                cb);
+        }
+#endif
+
         m_InstanceBatcher.Init(GetMaxInstances());
         m_PendingLights.reserve(GetMaxLights());
 
@@ -303,6 +317,12 @@ namespace Manro {
     RendererImpl::~RendererImpl() {
         if (!m_Context.GetDevice()) return;
         vkDeviceWaitIdle(m_Context.GetDevice());
+
+#ifdef MANRO_PROFILING
+        if (m_TracyGpuCtx) {
+            MNR_GPU_DESTROY(m_TracyGpuCtx);
+        }
+#endif
 
         m_PipelineCache.Shutdown();
         m_BindlessAlloc.Shutdown();
@@ -410,6 +430,7 @@ namespace Manro {
     }
 
     void RendererImpl::FinalizeFrameAndPresent(VkCommandBuffer cb) {
+        MNR_PROFILE_FUNCTION();
         {
             VkImageMemoryBarrier2 b{};
             b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
@@ -428,6 +449,12 @@ namespace Manro {
             vkCmdPipelineBarrier2(cb, &dep);
         }
         m_Swapchain.SetImageLayout(m_CurrentImageIndex, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+
+#ifdef MANRO_PROFILING
+        if (m_TracyGpuCtx) {
+            MNR_GPU_COLLECT(m_TracyGpuCtx, cb);
+        }
+#endif
 
         if (vkEndCommandBuffer(cb) != VK_SUCCESS) {
             throw std::runtime_error("Failed to end frame command buffer");
@@ -471,83 +498,111 @@ namespace Manro {
     }
 
     bool RendererImpl::BeginFrame() {
+        MNR_PROFILE_FUNCTION();
+
         // Handle recreate before acquiring a new swapchain image.
         // Acquiring first and then bailing out can leave frame fences unsignaled.
         if (m_PendingWidth == 0 || m_PendingHeight == 0) return false;
-        if (m_PendingResize || m_Swapchain.NeedsRecreate()) {
-            RecreateSwapchain();
-            return false;
-        }
-        if (m_PendingShadowRecreate) {
-            std::vector<VkDescriptorSet> pbrSets;
-            pbrSets.reserve(m_Frames.size());
-            for (auto &f: m_Frames) pbrSets.push_back(f.pbrSet);
-            m_Shadow.Recreate(m_PipelineMgr.GetDescriptorPool(), m_Settings.shadows, m_PipelineMgr.GetPbrSetLayout(),
-                              pbrSets);
-            m_PendingShadowRecreate = false;
-            return false;
+        {
+            MNR_PROFILE_SCOPE("SwapchainRecreate");
+            if (m_PendingResize || m_Swapchain.NeedsRecreate()) {
+                RecreateSwapchain();
+                return false;
+            }
+            if (m_PendingShadowRecreate) {
+                std::vector<VkDescriptorSet> pbrSets;
+                pbrSets.reserve(m_Frames.size());
+                for (auto &f: m_Frames) pbrSets.push_back(f.pbrSet);
+                m_Shadow.Recreate(m_PipelineMgr.GetDescriptorPool(), m_Settings.shadows,
+                                  m_PipelineMgr.GetPbrSetLayout(),
+                                  pbrSets);
+                m_PendingShadowRecreate = false;
+                return false;
+            }
         }
 
-        m_Textures.FlushPendingUploads();
+        {
+            MNR_PROFILE_SCOPE("TextureUploads");
+            m_Textures.FlushPendingUploads();
+        }
 
         VkDevice device = m_Context.GetDevice();
         FrameData &frame = m_Frames[m_CurrentFrame];
 
-        VkFence inFlightFence = m_Swapchain.GetInFlightFence(m_CurrentFrame);
-        vkWaitForFences(device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
-
-        VkResult acquireResult = vkAcquireNextImageKHR(device, m_Swapchain.GetHandle(), UINT64_MAX,
-                                                       m_Swapchain.GetImageAvailableSemaphore(m_CurrentFrame),
-                                                       VK_NULL_HANDLE, &m_CurrentImageIndex);
-        if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR) {
-            m_Swapchain.SetNeedsRecreate(true);
-            return false;
-        }
-        if (acquireResult == VK_SUBOPTIMAL_KHR) {
-            m_Swapchain.SetNeedsRecreate(true);
-        } else if (acquireResult != VK_SUCCESS) {
-            return false;
+        {
+            MNR_PROFILE_SCOPE("WaitForFence");
+            VkFence inFlightFence = m_Swapchain.GetInFlightFence(m_CurrentFrame);
+            vkWaitForFences(device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
         }
 
-        vkResetFences(device, 1, &inFlightFence);
-        vkResetCommandPool(device, frame.commandPool, 0);
-
-        VkCommandBufferBeginInfo beginInfo{};
-        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        if (vkBeginCommandBuffer(frame.commandBuffer, &beginInfo) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to begin frame command buffer");
+        {
+            MNR_PROFILE_SCOPE("AcquireSwapchainImage");
+            VkResult acquireResult = vkAcquireNextImageKHR(device, m_Swapchain.GetHandle(), UINT64_MAX,
+                                                           m_Swapchain.GetImageAvailableSemaphore(m_CurrentFrame),
+                                                           VK_NULL_HANDLE, &m_CurrentImageIndex);
+            if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR) {
+                m_Swapchain.SetNeedsRecreate(true);
+                return false;
+            }
+            if (acquireResult == VK_SUBOPTIMAL_KHR) {
+                m_Swapchain.SetNeedsRecreate(true);
+            } else if (acquireResult != VK_SUCCESS) {
+                return false;
+            }
         }
 
-        m_PerFrameAlloc[m_CurrentFrame].Reset();
+        {
+            MNR_PROFILE_SCOPE("ResetCommandPool");
+            VkFence inFlightFence = m_Swapchain.GetInFlightFence(m_CurrentFrame);
+            vkResetFences(device, 1, &inFlightFence);
+            vkResetCommandPool(device, frame.commandPool, 0);
 
-        m_LastFrameStats = m_CurrentFrameStats;
-        m_InstanceBatcher.ClearFrameInstances();
-
-        m_CurrentFrameStats.Reset();
-        m_CurrentFrameStats.drawCalls = m_InstanceBatcher.GetStaticInstanceCount();
-        m_CurrentFrameStats.instanceCount = m_InstanceBatcher.GetStaticInstanceCount();
-        m_CurrentFrameStats.triangleCount = m_InstanceBatcher.GetStaticTriangleCount();
-
-        if (m_DrawSystem) {
-            m_DrawSystem->BeginFrame();
+            VkCommandBufferBeginInfo beginInfo{};
+            beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+            if (vkBeginCommandBuffer(frame.commandBuffer, &beginInfo) != VK_SUCCESS) {
+                throw std::runtime_error("Failed to begin frame command buffer");
+            }
         }
 
-        if (m_Overlay) m_Overlay->NewFrame();
+        {
+            MNR_PROFILE_SCOPE("FrameStateReset");
+            m_PerFrameAlloc[m_CurrentFrame].Reset();
 
-        if (m_Overlay && m_Overlay->IsDebugUIEnabled()) {
-            bool settingsChanged = false;
-            RenderSettings editedSettings = m_Settings;
-            m_Overlay->DrawDebugger(
-                m_LastFrameStats.drawCalls,
-                m_LastFrameStats.triangleCount,
-                m_LastFrameStats.instanceCount,
-                GetAdapterName(),
-                editedSettings,
-                settingsChanged
-            );
-            if (settingsChanged) {
-                SetSettings(editedSettings);
+            m_LastFrameStats = m_CurrentFrameStats;
+            m_InstanceBatcher.ClearFrameInstances();
+
+            m_CurrentFrameStats.Reset();
+            m_CurrentFrameStats.drawCalls = m_InstanceBatcher.GetStaticInstanceCount();
+            m_CurrentFrameStats.instanceCount = m_InstanceBatcher.GetStaticInstanceCount();
+            m_CurrentFrameStats.triangleCount = m_InstanceBatcher.GetStaticTriangleCount();
+        }
+
+        {
+            MNR_PROFILE_SCOPE("DrawSystemBeginFrame");
+            if (m_DrawSystem) {
+                m_DrawSystem->BeginFrame();
+            }
+        }
+
+        {
+            MNR_PROFILE_SCOPE("OverlayUpdate");
+            if (m_Overlay) m_Overlay->NewFrame();
+
+            if (m_Overlay && m_Overlay->IsDebugUIEnabled()) {
+                bool settingsChanged = false;
+                RenderSettings editedSettings = m_Settings;
+                m_Overlay->DrawDebugger(
+                    m_LastFrameStats.drawCalls,
+                    m_LastFrameStats.triangleCount,
+                    m_LastFrameStats.instanceCount,
+                    GetAdapterName(),
+                    editedSettings,
+                    settingsChanged
+                );
+                if (settingsChanged) {
+                    SetSettings(editedSettings);
+                }
             }
         }
 
@@ -555,7 +610,10 @@ namespace Manro {
             throw std::runtime_error("Command buffer is not available");
         }
 
-        UploadLights(m_CurrentFrame);
+        {
+            MNR_PROFILE_SCOPE("UploadLights");
+            UploadLights(m_CurrentFrame);
+        }
 
         return true;
     }
@@ -570,6 +628,7 @@ namespace Manro {
     }
 
     void RendererImpl::BeginRendering() {
+        MNR_PROFILE_FUNCTION();
         FrameData &frame = m_Frames[m_CurrentFrame];
         VkCommandBuffer cb = frame.commandBuffer;
         VkExtent2D ext = m_RenderExtent;
@@ -682,6 +741,7 @@ namespace Manro {
     }
 
     void RendererImpl::RenderQueue() {
+        MNR_PROFILE_FUNCTION();
         FrameData &frame = m_Frames[m_CurrentFrame];
 
         u32 instanceCount = m_InstanceBatcher.GetTotalInstanceCount();
@@ -760,6 +820,7 @@ namespace Manro {
 
 
     void RendererImpl::EndRendering() {
+        MNR_PROFILE_FUNCTION();
         FrameData &frame = m_Frames[m_CurrentFrame];
         VkCommandBuffer cb = frame.commandBuffer;
 
@@ -785,6 +846,7 @@ namespace Manro {
     }
 
     void RendererImpl::EndFrameAndPresent() {
+        MNR_PROFILE_FUNCTION();
         FrameData &frame = m_Frames[m_CurrentFrame];
         VkCommandBuffer cb = frame.commandBuffer;
         VkExtent2D ext{m_Swapchain.GetExtent().width, m_Swapchain.GetExtent().height};

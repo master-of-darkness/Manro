@@ -29,6 +29,13 @@ endif()
 
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
+option(MANRO_ENABLE_PROFILING "Enable Tracy profiler instrumentation" ON)
+if(MANRO_ENABLE_PROFILING)
+    set(TRACY_ENABLE ON CACHE BOOL "" FORCE)
+    set(TRACY_ON_DEMAND ON CACHE BOOL "" FORCE)
+    add_subdirectory(third_party/tracy)
+endif()
+
 set(SDL_SHARED OFF CACHE BOOL "" FORCE)
 set(SDL_TESTS OFF CACHE BOOL "" FORCE)
 set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
