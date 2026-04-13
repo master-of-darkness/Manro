@@ -86,7 +86,6 @@ target_include_directories(Engine SYSTEM PUBLIC
         ${MANRO_THIRD_PARTY_DIR}/vk-bootstrap/src
         ${MANRO_THIRD_PARTY_DIR}/imgui
         ${MANRO_THIRD_PARTY_DIR}/imgui/backends
-        ${MANRO_THIRD_PARTY_DIR}/enet/include
         ${MANRO_THIRD_PARTY_DIR}/tinyobjloader
         ${MANRO_THIRD_PARTY_DIR}/stb
         ${MANRO_THIRD_PARTY_DIR}/mikktspace
@@ -105,7 +104,7 @@ target_compile_definitions(Engine PUBLIC VK_NO_PROTOTYPES)
 
 target_link_libraries(Engine PUBLIC
         vk-bootstrap::vk-bootstrap volk::volk GPUOpen::VulkanMemoryAllocator
-        glm::glm enet tinyobjloader Jolt spdlog::spdlog
+        glm::glm tinyobjloader Jolt spdlog::spdlog
         SDL3::SDL3-static SDL3_mixer::SDL3_mixer-static tinygltf
 )
 
