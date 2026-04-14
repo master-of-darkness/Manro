@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Manro/Core/Types.h>
+#include <Manro/Core/Profiling.h>
 #include <Manro/Render/RenderSettings.h>
 #include <Manro/Render/Renderer.h>
 #include "../Vulkan/VulkanHelpers.h"
@@ -40,6 +41,8 @@ namespace Manro {
         ShadowSystem(const ShadowSystem &) = delete;
 
         ShadowSystem &operator=(const ShadowSystem &) = delete;
+
+        void SetGpuProfileCtx(MnrGpuProfileCtx ctx) { m_GpuProfileCtx = ctx; }
 
         void Init(VkDescriptorPool pool, const ShadowSettings &s,
                   VkDescriptorSetLayout pbrSetLayout);
@@ -95,5 +98,7 @@ namespace Manro {
 
         Scope<Pipeline> m_ShadowPipeline;
         VkDescriptorSetLayout m_ShadowMeshCullSetLayout{VK_NULL_HANDLE};
+
+        MnrGpuProfileCtx m_GpuProfileCtx{};
     };
 } // namespace Manro

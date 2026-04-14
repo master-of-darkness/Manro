@@ -20,6 +20,9 @@
 namespace Manro {
     void EngineLoop::Run(IApplication &app) {
         Logger::Init();
+#ifdef MANRO_PROFILING
+        LOG_WARN("Profiling is enabled. This may impact performance.");
+#endif
 
 #ifdef _WIN32
         timeBeginPeriod(1);

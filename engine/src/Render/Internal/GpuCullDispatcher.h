@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Manro/Core/Types.h>
+#include <Manro/Core/Profiling.h>
 #include <Manro/Render/RenderSettings.h>
 #include <Manro/Render/Renderer.h>
 #include "RendererTypes.h"
@@ -29,6 +30,8 @@ namespace Manro {
         [[nodiscard]] VkDescriptorSetLayout GetCullSetLayout() const { return m_CullSetLayout; }
 
         [[nodiscard]] VkDescriptorSetLayout GetMeshCullSetLayout() const { return m_MeshCullSetLayout; }
+
+        void SetGpuProfileCtx(MnrGpuProfileCtx ctx) { m_GpuProfileCtx = ctx; }
 
         struct DispatchParams {
             VkCommandBuffer cb;
@@ -74,5 +77,7 @@ namespace Manro {
         Scope<Pipeline> m_MeshCullPipeline;
         VkDescriptorSetLayout m_CullSetLayout = VK_NULL_HANDLE;
         VkDescriptorSetLayout m_MeshCullSetLayout = VK_NULL_HANDLE;
+
+        MnrGpuProfileCtx m_GpuProfileCtx{};
     };
 } // namespace Manro

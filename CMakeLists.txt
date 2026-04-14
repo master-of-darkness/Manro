@@ -29,7 +29,7 @@ endif()
 
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
-option(MANRO_ENABLE_PROFILING "Enable Tracy profiler instrumentation" ON)
+option(MANRO_ENABLE_PROFILING "Enable Tracy profiler instrumentation" OFF)
 if(MANRO_ENABLE_PROFILING)
     set(TRACY_ENABLE ON CACHE BOOL "" FORCE)
     set(TRACY_ON_DEMAND ON CACHE BOOL "" FORCE)

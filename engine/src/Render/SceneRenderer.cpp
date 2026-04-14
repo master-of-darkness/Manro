@@ -1,5 +1,6 @@
 #include "Internal/SceneRenderer.h"
 #include "Internal/ScenePassState.h"
+#include <Manro/Core/Profiling.h>
 
 namespace Manro {
     SceneRenderer::SceneRenderer() = default;
@@ -29,6 +30,7 @@ namespace Manro {
             ->
             depthView
         ) {
+            MNR_GPU_ZONE(m_GpuProfileCtx, cmd, "Z-Prepass");
             const auto &state = *m_ZPrepassState;
             VkRenderingAttachmentInfo depthAtt{};
             depthAtt.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -72,6 +74,7 @@ namespace Manro {
         m_ZPrepassState = nullptr;
 
         if (m_PbrPassState) {
+            MNR_GPU_ZONE(m_GpuProfileCtx, cmd, "PBR Pass");
             const auto &state = *m_PbrPassState;
             VkRenderingAttachmentInfo colorAtt{};
             colorAtt.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -132,6 +135,7 @@ namespace Manro {
         if (m_SkyboxPassState) {
             const auto &state = *m_SkyboxPassState;
             if (state.pipeline && state.vertexBuffer && state.indexBuffer && state.offscreenColorView) {
+                MNR_GPU_ZONE(m_GpuProfileCtx, cmd, "Skybox Pass");
                 VkRenderingAttachmentInfo colorAtt{};
                 colorAtt.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
                 if (state.msaaSamples != VK_SAMPLE_COUNT_1_BIT) {
@@ -187,6 +191,7 @@ namespace Manro {
         if (m_CompositePassState) {
             const auto &state = *m_CompositePassState;
             if (state.colorView && state.pipeline) {
+                MNR_GPU_ZONE(m_GpuProfileCtx, cmd, "Composite Pass");
                 VkRenderingAttachmentInfo colorAtt{};
                 colorAtt.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
                 colorAtt.imageView = state.colorView;

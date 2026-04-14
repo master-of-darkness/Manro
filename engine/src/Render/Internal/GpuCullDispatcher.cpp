@@ -7,6 +7,7 @@
 
 #include <Manro/Core/VirtualFS.h>
 #include <Manro/Core/Logger.h>
+#include <Manro/Core/Profiling.h>
 #include <Manro/Render/MeshManager.h>
 
 namespace Manro {
@@ -137,12 +138,16 @@ namespace Manro {
         vkCmdPipelineBarrier2(cb, &fillDep);
 
         // Mesh frustum culling
-        DispatchMeshCull(cb, frame, params.totalInstCount,
-                         params.projectionMatrix * params.viewMatrix,
-                         params.cameraPosition, params.settings);
+        {
+            MNR_GPU_ZONE(m_GpuProfileCtx, cb, "Mesh Frustum Cull");
+            DispatchMeshCull(cb, frame, params.totalInstCount,
+                             params.projectionMatrix * params.viewMatrix,
+                             params.cameraPosition, params.settings);
+        }
 
         // Shadow culling + shadow render pass
         if (params.settings.shadows.enabled) {
+            MNR_GPU_ZONE(m_GpuProfileCtx, cb, "Shadow Cull + Render");
             DispatchShadowCull(cb, frame, params.totalInstCount,
                                params.shadow, params.lights,
                                params.cameraPosition, params.settings,
@@ -150,11 +155,14 @@ namespace Manro {
         }
 
         // Light tile culling
-        DispatchLightTileCull(cb, frame,
-                              params.viewMatrix, params.projectionMatrix,
-                              params.lights, params.renderExtent,
-                              params.maxLightsPerTile, params.maxTilesX, params.maxTilesY,
-                              params.tileSize, params.settings);
+        {
+            MNR_GPU_ZONE(m_GpuProfileCtx, cb, "Light Tile Cull");
+            DispatchLightTileCull(cb, frame,
+                                  params.viewMatrix, params.projectionMatrix,
+                                  params.lights, params.renderExtent,
+                                  params.maxLightsPerTile, params.maxTilesX, params.maxTilesY,
+                                  params.tileSize, params.settings);
+        }
     }
 
     void GpuCullDispatcher::DispatchMeshCull(VkCommandBuffer cb, FrameData &frame,

@@ -6,6 +6,7 @@
 
 #include <Manro/Core/VirtualFS.h>
 #include <Manro/Core/Logger.h>
+#include <Manro/Core/Profiling.h>
 #include <Manro/Render/MeshManager.h>
 
 #include <nvshaders/gltf_scene_io.h.slang>
@@ -239,6 +240,8 @@ namespace Manro {
                                   const std::vector<LightData> &pendingLights,
                                   const ShadowSettings &s) {
         if (!s.enabled || !m_ShadowPipeline || totalInstCount == 0) return;
+
+        MNR_GPU_ZONE(m_GpuProfileCtx, cb, "Shadow Map");
 
         const u32 shadowMapSize = static_cast<u32>(std::max(128, s.resolution));
 

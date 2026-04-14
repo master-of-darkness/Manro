@@ -26,7 +26,7 @@
 #include <Manro/Core/Logger.h>
 #include <Manro/Core/VirtualFS.h>
 #include <Manro/Core/Profiling.h>
-#include <Manro/Core/ProfilingGPU.h>
+#include <Manro/Core/Profiling.h>
 #include <Manro/Render/MeshManager.h>
 #include <Manro/Render/Material/MaterialInstance.h>
 #include <Manro/Render/Model.h>
@@ -229,9 +229,7 @@ namespace Manro {
         RendererConfig m_Config{};
         VkExtent2D m_RenderExtent{};
 
-#ifdef MANRO_PROFILING
-        TracyVkCtx m_TracyGpuCtx = nullptr;
-#endif
+        MnrGpuProfileCtx m_TracyGpuCtx{};
     };
 
     RendererImpl::RendererImpl(IWindow &window, u32 width, u32 height,
@@ -300,6 +298,9 @@ namespace Manro {
                 m_Context.GetDevice(),
                 m_Context.GetGraphicsQueue(),
                 cb);
+            m_CullDispatcher.SetGpuProfileCtx(m_TracyGpuCtx);
+            m_SceneRenderer->SetGpuProfileCtx(m_TracyGpuCtx);
+            m_Shadow.SetGpuProfileCtx(m_TracyGpuCtx);
         }
 #endif
 
@@ -319,9 +320,7 @@ namespace Manro {
         vkDeviceWaitIdle(m_Context.GetDevice());
 
 #ifdef MANRO_PROFILING
-        if (m_TracyGpuCtx) {
-            MNR_GPU_DESTROY(m_TracyGpuCtx);
-        }
+        if (m_TracyGpuCtx) MNR_GPU_DESTROY(m_TracyGpuCtx);
 #endif
 
         m_PipelineCache.Shutdown();
@@ -432,6 +431,7 @@ namespace Manro {
     void RendererImpl::FinalizeFrameAndPresent(VkCommandBuffer cb) {
         MNR_PROFILE_FUNCTION();
         {
+            MNR_GPU_ZONE(m_TracyGpuCtx, cb, "Present Transition");
             VkImageMemoryBarrier2 b{};
             b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
             b.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -450,11 +450,7 @@ namespace Manro {
         }
         m_Swapchain.SetImageLayout(m_CurrentImageIndex, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
-#ifdef MANRO_PROFILING
-        if (m_TracyGpuCtx) {
-            MNR_GPU_COLLECT(m_TracyGpuCtx, cb);
-        }
-#endif
+        MNR_GPU_COLLECT(m_TracyGpuCtx, cb);
 
         if (vkEndCommandBuffer(cb) != VK_SUCCESS) {
             throw std::runtime_error("Failed to end frame command buffer");
@@ -610,11 +606,6 @@ namespace Manro {
             throw std::runtime_error("Command buffer is not available");
         }
 
-        {
-            MNR_PROFILE_SCOPE("UploadLights");
-            UploadLights(m_CurrentFrame);
-        }
-
         return true;
     }
 
@@ -633,9 +624,15 @@ namespace Manro {
         VkCommandBuffer cb = frame.commandBuffer;
         VkExtent2D ext = m_RenderExtent;
 
+        {
+            MNR_PROFILE_SCOPE("UploadLights");
+            UploadLights(m_CurrentFrame);
+        }
+
         u32 totalInstCount = m_InstanceBatcher.GetTotalInstanceCount();
 
         if (totalInstCount > 0) {
+            MNR_GPU_ZONE(m_TracyGpuCtx, cb, "GPU Culling");
             m_InstanceBatcher.UploadToGpu(frame);
 
             m_CullDispatcher.Dispatch({
@@ -814,6 +811,7 @@ namespace Manro {
         }
 
         if (m_SceneRenderer) {
+            MNR_GPU_ZONE(m_TracyGpuCtx, frame.commandBuffer, "Scene Passes");
             m_SceneRenderer->Flush(frame.commandBuffer);
         }
     }
@@ -825,6 +823,7 @@ namespace Manro {
         VkCommandBuffer cb = frame.commandBuffer;
 
         if (m_DrawSystem) {
+            MNR_GPU_ZONE(m_TracyGpuCtx, cb, "Debug Draw");
             m_DrawSystem->DispatchExpand(cb);
 
             Mat4 proj = m_ProjectionMatrix;
@@ -912,6 +911,7 @@ namespace Manro {
         }
 
         if (m_Overlay) {
+            MNR_GPU_ZONE(m_TracyGpuCtx, cb, "GUI Overlay");
             VkRenderingAttachmentInfo guiColorAtt{};
             guiColorAtt.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
             guiColorAtt.imageView = m_Swapchain.GetImageView(m_CurrentImageIndex);
