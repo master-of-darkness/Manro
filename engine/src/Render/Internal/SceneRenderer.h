@@ -1,8 +1,9 @@
 #pragma once
 
 #include <Manro/Core/Types.h>
-#include <Manro/Core/Profiling.h>
 #include <volk.h>
+
+#include "../Core/Profiling.h"
 
 namespace Manro::Internal {
     struct ZPrepassPassState;

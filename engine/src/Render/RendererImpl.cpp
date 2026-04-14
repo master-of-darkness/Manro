@@ -25,8 +25,8 @@
 
 #include <Manro/Core/Logger.h>
 #include <Manro/Core/VirtualFS.h>
-#include <Manro/Core/Profiling.h>
-#include <Manro/Core/Profiling.h>
+#include <../Core/Profiling.h>
+#include <../Core/Profiling.h>
 #include <Manro/Render/MeshManager.h>
 #include <Manro/Render/Material/MaterialInstance.h>
 #include <Manro/Render/Model.h>

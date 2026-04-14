@@ -1,6 +1,6 @@
 #include "Internal/SceneRenderer.h"
 #include "Internal/ScenePassState.h"
-#include <Manro/Core/Profiling.h>
+#include <../Core/Profiling.h>
 
 namespace Manro {
     SceneRenderer::SceneRenderer() = default;

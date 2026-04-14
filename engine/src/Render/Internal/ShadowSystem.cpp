@@ -3,10 +3,10 @@
 #include "../Vulkan/Pipeline.h"
 #include "../Vulkan/Buffer.h"
 #include "../Internal/MeshManagerInternal.h"
+#include "../Core/Profiling.h"
 
 #include <Manro/Core/VirtualFS.h>
 #include <Manro/Core/Logger.h>
-#include <Manro/Core/Profiling.h>
 #include <Manro/Render/MeshManager.h>
 
 #include <nvshaders/gltf_scene_io.h.slang>

@@ -1,10 +1,10 @@
 #pragma once
 
 #include <Manro/Core/Types.h>
-#include <Manro/Core/Profiling.h>
 #include <Manro/Render/RenderSettings.h>
 #include <Manro/Render/Renderer.h>
 #include "../Vulkan/VulkanHelpers.h"
+#include "../Core/Profiling.h"
 #include <volk.h>
 
 namespace Manro {

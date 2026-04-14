@@ -1,6 +1,7 @@
 #include <Manro/Core/JobSystem.h>
-#include <Manro/Core/Profiling.h>
 #include <algorithm>
+
+#include "Profiling.h"
 
 namespace Manro {
     JobSystem::JobSystem(u32 numThreads) {

@@ -3,12 +3,13 @@
 #include <Manro/Core/Logger.h>
 #include <Manro/Core/JobSystem.h>
 #include <Manro/Core/VirtualFS.h>
-#include <Manro/Core/Profiling.h>
 #include <Manro/Platform/PlatformContext.h>
 #include <Manro/Render/Renderer.h>
 #include <Manro/Input/InputManager.h>
 #include <Manro/Platform/Input/SDL3InputBackend.h>
 #include <chrono>
+
+#include "Profiling.h"
 
 #ifdef _WIN32
 

@@ -1,11 +1,12 @@
 #pragma once
 
 #include <Manro/Core/Types.h>
-#include <Manro/Core/Profiling.h>
 #include <Manro/Render/RenderSettings.h>
 #include <Manro/Render/Renderer.h>
+
 #include "RendererTypes.h"
 #include "RenderMathUtils.h"
+#include "../Core/Profiling.h"
 
 #include <volk.h>
 #include <vector>

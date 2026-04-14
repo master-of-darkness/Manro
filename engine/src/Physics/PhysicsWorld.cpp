@@ -1,7 +1,7 @@
 #include <Manro/Physics/PhysicsWorld.h>
 #include <Manro/Core/Logger.h>
 #include <Manro/Core/Handles.h>
-#include <Manro/Core/Profiling.h>
+#include <../Core/Profiling.h>
 #include <Manro/Render/Renderer.h>
 
 #include <Jolt/Jolt.h>
