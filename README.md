@@ -3,8 +3,6 @@
 ![Vulkan](https://img.shields.io/badge/Vulkan-1.4+-AC162C?logo=vulkan&logoColor=white)
 ![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows-0078D4?logo=windows&logoColor=white)
 
-Manro is a game engine developed as a **research project**.
-
 The engine is designed with a focus on rendering through the Vulkan API.
 
 ## Features
@@ -28,10 +26,10 @@ To build the project, use `CMakeLists.txt` in root.
 Make sure you fetched submodules before.
 ### CMake Options
 
-| Option | Default | Description |
-|---|---|---|
-| `MANRO_ENABLE_PROFILING` | `OFF` | Enable Tracy |
-| `MANRO_BUILD_SAMPLES` | `ON` | Build sample applications under `samples/` |
+| Option                   | Default | Description                                |
+|--------------------------|---------|--------------------------------------------|
+| `MANRO_ENABLE_PROFILING` | `OFF`   | Enable Tracy                               |
+| `MANRO_BUILD_SAMPLES`    | `ON`    | Build sample applications under `samples/` |
 
 ## Examples
 

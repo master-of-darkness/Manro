@@ -3,6 +3,7 @@
 #include <volk.h>
 #include <Manro/Core/Types.h>
 #include <vector>
+#include <string>
 
 namespace Manro {
     class VulkanContext;

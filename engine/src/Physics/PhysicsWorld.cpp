@@ -22,6 +22,7 @@
 #include <thread>
 #include <unordered_map>
 #include <cmath>
+#include <array>
 
 #ifdef JPH_ENABLE_ASSERTS
 static bool JoltAssertFailed(const char *expr, const char *msg,

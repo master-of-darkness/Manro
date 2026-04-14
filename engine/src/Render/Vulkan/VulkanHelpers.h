@@ -3,6 +3,7 @@
 #include <Manro/Core/Types.h>
 #include <vk_mem_alloc.h>
 #include <functional>
+#include <string>
 
 namespace Manro {
     class VulkanContext;
