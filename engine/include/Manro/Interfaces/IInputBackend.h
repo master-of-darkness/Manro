@@ -11,9 +11,9 @@ namespace Manro {
 
         virtual void ProcessEvent(const PlatformEvent_t &event) = 0;
 
-        virtual bool IsKeyDown(Key k) const = 0;
+        [[nodiscard]] virtual bool IsKeyDown(Key k) const = 0;
 
-        virtual bool IsMouseButtonDown(MouseButton button) const = 0;
+        [[nodiscard]] virtual bool IsMouseButtonDown(MouseButton button) const = 0;
 
         virtual RawMouseDelta_t ConsumeMouseDelta() = 0;
     };

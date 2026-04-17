@@ -134,6 +134,22 @@ namespace Manro {
                 if (ImGui::SliderFloat("Shadow Bias", &settings.shadows.bias, 0.0f, 0.1f, "%.4f"))
                     settingsChanged = true; // TODO: fix me
 
+                ImGui::SeparatorText("Textures");
+                {
+                    static const char *kAnisoLabels[] = {"Off", "2x", "4x", "8x", "16x"};
+                    static const float kAnisoValues[] = {1.0f, 2.0f, 4.0f, 8.0f, 16.0f};
+                    constexpr int kAnisoCount = IM_ARRAYSIZE(kAnisoValues);
+
+                    int current = 0;
+                    for (int i = 0; i < kAnisoCount; ++i) {
+                        if (kAnisoValues[i] <= settings.textures.anisotropy + 0.001f) current = i;
+                    }
+                    if (ImGui::Combo("Anisotropic Filtering", &current, kAnisoLabels, kAnisoCount)) {
+                        settings.textures.anisotropy = kAnisoValues[current];
+                        settingsChanged = true;
+                    }
+                }
+
                 ImGui::SeparatorText("Post Processing");
                 if (ImGui::SliderFloat("Exposure", &settings.postProcess.tonemapping.exposure, 0.1f,
                                        10.0f))

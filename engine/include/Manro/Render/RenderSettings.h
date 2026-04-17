@@ -44,6 +44,10 @@ namespace Manro {
         TonemapperData_t tonemapping{};
     };
 
+    struct TextureSettings_t {
+        float anisotropy = 16.0f;
+    };
+
     struct RayTracingSettings_t {
         bool enableReflections = false;
         bool enableTransparency = false;
@@ -66,5 +70,6 @@ namespace Manro {
         LightingSettings_t lighting;
         PostProcessSettings_t postProcess;
         RayTracingSettings_t rayTracing;
+        TextureSettings_t textures;
     };
 } // namespace Manro

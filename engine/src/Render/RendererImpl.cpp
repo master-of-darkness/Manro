@@ -11,7 +11,6 @@
 #include "Internal/RenderTargetManager.h"
 #include "Internal/ShadowSystem.h"
 #include "Internal/SkyboxRenderer.h"
-#include "Vulkan/VulkanHelpers.h"
 #include "Overlay/Overlay.h"
 #include "Vulkan/VulkanContext.h"
 #include "Vulkan/Buffer.h"
@@ -24,8 +23,6 @@
 #include "Internal/DrawSystem.h"
 
 #include <Manro/Core/Logger.h>
-#include <Manro/Core/VirtualFS.h>
-#include <../Core/Profiling.h>
 #include <../Core/Profiling.h>
 #include <Manro/Render/MeshManager.h>
 #include <Manro/Render/Material/MaterialInstance.h>
@@ -34,7 +31,6 @@
 #include <VkBootstrap.h>
 #include <stdexcept>
 #include <algorithm>
-#include <glm/gtc/matrix_transform.hpp>
 
 
 namespace Manro {
@@ -108,10 +104,6 @@ namespace Manro {
             return static_cast<float>(m_unPendingWidth) / static_cast<float>(m_unPendingHeight);
         }
 
-        CVulkanContext &GetContext() { return m_Context; }
-
-        CTextureManager &GetTextures() { return m_Textures; }
-
         CMeshManager &GetMeshes() { return m_Meshes; }
 
         void SetSettings(const RenderSettings_t &settings);
@@ -158,10 +150,6 @@ namespace Manro {
 
     private:
         void CreateCommandBuffers();
-
-        void CreateSyncObjects();
-
-        void InitializeSwapchain(u32 width, u32 height, bool vsync);
 
         void RecreateSwapchain();
 
@@ -228,7 +216,7 @@ namespace Manro {
         RendererConfig_t m_Config{};
         VkExtent2D m_RenderExtent{};
 
-        MnrGpuProfileCtx m_TracyGpuCtx{};
+        [[maybe_unused]] MnrGpuProfileCtx m_TracyGpuCtx{};
     };
 
     CRendererImpl::CRendererImpl(IWindow &window, u32 width, u32 height,
@@ -319,7 +307,8 @@ namespace Manro {
         vkDeviceWaitIdle(m_Context.GetDevice());
 
 #ifdef MANRO_PROFILING
-        if (m_TracyGpuCtx) MNR_GPU_DESTROY(m_TracyGpuCtx);
+        if (m_TracyGpuCtx)
+            MNR_GPU_DESTROY(m_TracyGpuCtx);
 #endif
 
         m_PipelineCache.Shutdown();
@@ -388,10 +377,6 @@ namespace Manro {
 
     Scope<CMaterialInstance> CRendererImpl::CreateMaterialInstance(const Ref<CMaterial> &material) {
         return CreateScope<CMaterialInstance>(material);
-    }
-
-    void CRendererImpl::InitializeSwapchain(u32 width, u32 height, bool vsync) {
-        m_Swapchain.Init(width, height, vsync);
     }
 
     void CRendererImpl::RecreateSwapchain() {

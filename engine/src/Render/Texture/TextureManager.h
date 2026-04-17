@@ -34,6 +34,8 @@ namespace Manro {
 
         VkSampler GetSampler() const;
 
+        void SetAnisotropy(float maxAnisotropy);
+
         TextureHandle GetWhiteTextureId() const;
 
         VkDescriptorSet GetBindlessSet() const;

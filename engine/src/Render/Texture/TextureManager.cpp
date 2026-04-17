@@ -3,6 +3,8 @@
 #include "Vulkan/DescriptorAllocator.h"
 
 #include <Manro/Core/Logger.h>
+#include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <stdexcept>
 #include <unordered_map>
@@ -28,6 +30,7 @@ namespace Manro {
         TextureHandle nextId{0};
 
         VkSampler sampler{VK_NULL_HANDLE};
+        float currentAnisotropy{1.0f};
         TextureHandle whiteTextureId{kInvalidTexture};
 
         VkCommandPool transferCommandPool{VK_NULL_HANDLE};
@@ -143,6 +146,25 @@ namespace Manro {
 
     CTextureManager::CTextureManager(const CVulkanContext &ctx, CBindlessAllocator &bindlessAlloc)
         : m_Impl(new Impl_t(ctx, bindlessAlloc)) {
+        SetAnisotropy(16.0f);
+    }
+
+    void CTextureManager::SetAnisotropy(float maxAnisotropy) {
+        VkPhysicalDeviceProperties props{};
+        vkGetPhysicalDeviceProperties(m_Impl->context.GetPhysicalDevice(), &props);
+
+        VkPhysicalDeviceFeatures features{};
+        vkGetPhysicalDeviceFeatures(m_Impl->context.GetPhysicalDevice(), &features);
+
+        const float deviceMax = props.limits.maxSamplerAnisotropy;
+        const float requested = std::clamp(maxAnisotropy, 1.0f, deviceMax);
+        const bool enable = features.samplerAnisotropy && requested > 1.0f;
+
+        if (m_Impl->sampler != VK_NULL_HANDLE &&
+            std::abs(m_Impl->currentAnisotropy - requested) < 0.001f) {
+            return;
+        }
+
         VkSamplerCreateInfo si{};
         si.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
         si.magFilter = VK_FILTER_LINEAR;
@@ -151,10 +173,30 @@ namespace Manro {
         si.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
         si.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
         si.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        si.mipLodBias = 0.0f;
+        si.anisotropyEnable = enable ? VK_TRUE : VK_FALSE;
+        si.maxAnisotropy = enable ? requested : 1.0f;
+        si.compareEnable = VK_FALSE;
+        si.compareOp = VK_COMPARE_OP_ALWAYS;
+        si.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+        si.unnormalizedCoordinates = VK_FALSE;
+        si.minLod = 0.0f;
         si.maxLod = VK_LOD_CLAMP_NONE;
 
-        if (vkCreateSampler(m_Impl->context.GetDevice(), &si, nullptr, &m_Impl->sampler) != VK_SUCCESS)
-            throw std::runtime_error("[CTextureManager] Failed to create default sampler");
+        VkSampler newSampler = VK_NULL_HANDLE;
+        if (vkCreateSampler(m_Impl->context.GetDevice(), &si, nullptr, &newSampler) != VK_SUCCESS) {
+            if (m_Impl->sampler == VK_NULL_HANDLE)
+                throw std::runtime_error("[CTextureManager] Failed to create default sampler");
+            LOG_ERROR("[CTextureManager] Failed to rebuild sampler; keeping current");
+            return;
+        }
+
+        if (m_Impl->sampler != VK_NULL_HANDLE) {
+            vkDeviceWaitIdle(m_Impl->context.GetDevice());
+            vkDestroySampler(m_Impl->context.GetDevice(), m_Impl->sampler, nullptr);
+        }
+        m_Impl->sampler = newSampler;
+        m_Impl->currentAnisotropy = si.maxAnisotropy;
     }
 
     void CTextureManager::InitDefaults() {
@@ -346,6 +388,20 @@ namespace Manro {
     TextureHandle CTextureManager::Upload(const u8 *pixels, int width, int height) {
         VkDeviceSize imageSize = static_cast<VkDeviceSize>(width) * height * 4;
 
+        const u32 mipLevels = static_cast<u32>(
+            std::floor(std::log2(std::max(width, height)))) + 1;
+
+        VkFormatProperties formatProps{};
+        vkGetPhysicalDeviceFormatProperties(
+            m_Impl->context.GetPhysicalDevice(),
+            VK_FORMAT_R8G8B8A8_UNORM,
+            &formatProps);
+        const bool canBlit =
+            (formatProps.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) &&
+            (formatProps.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_SRC_BIT) &&
+            (formatProps.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT);
+        const u32 finalMipLevels = canBlit ? mipLevels : 1u;
+
         VkBuffer stagingBuf{};
         VmaAllocation stagingAlloc{};
         VmaAllocationInfo stagingAllocInfo{};
@@ -374,12 +430,15 @@ namespace Manro {
         imageCI.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
         imageCI.imageType = VK_IMAGE_TYPE_2D;
         imageCI.extent = {static_cast<u32>(width), static_cast<u32>(height), 1};
-        imageCI.mipLevels = 1;
+        imageCI.mipLevels = finalMipLevels;
         imageCI.arrayLayers = 1;
         imageCI.format = VK_FORMAT_R8G8B8A8_UNORM;
         imageCI.tiling = VK_IMAGE_TILING_OPTIMAL;
         imageCI.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         imageCI.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        if (finalMipLevels > 1) {
+            imageCI.usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+        }
         imageCI.samples = VK_SAMPLE_COUNT_1_BIT;
         imageCI.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
@@ -399,7 +458,7 @@ namespace Manro {
         viewCI.image = tex.image;
         viewCI.viewType = VK_IMAGE_VIEW_TYPE_2D;
         viewCI.format = VK_FORMAT_R8G8B8A8_UNORM;
-        viewCI.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        viewCI.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, finalMipLevels, 0, 1};
 
         if (vkCreateImageView(m_Impl->context.GetDevice(), &viewCI, nullptr, &tex.view) != VK_SUCCESS) {
             LOG_ERROR("[CTextureManager] Failed to create image view");
@@ -422,7 +481,7 @@ namespace Manro {
             barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             barrier.image = tex.image;
-            barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, finalMipLevels, 0, 1};
 
             barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
             barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
@@ -438,13 +497,80 @@ namespace Manro {
             vkCmdCopyBufferToImage(cmd, stagingBuf, tex.image,
                                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
-            barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-            barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-            barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-            vkCmdPipelineBarrier(cmd,
-                                 VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                                 0, 0, nullptr, 0, nullptr, 1, &barrier);
+            if (finalMipLevels > 1) {
+                i32 mipWidth = width;
+                i32 mipHeight = height;
+
+                for (u32 i = 1; i < finalMipLevels; ++i) {
+                    // Transition mip (i-1) -> TRANSFER_SRC to blit from it
+                    VkImageMemoryBarrier mipBarrier{};
+                    mipBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                    mipBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    mipBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    mipBarrier.image = tex.image;
+                    mipBarrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, i - 1, 1, 0, 1};
+                    mipBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+                    mipBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+                    mipBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+                    mipBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+                    vkCmdPipelineBarrier(cmd,
+                                         VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                         0, 0, nullptr, 0, nullptr, 1, &mipBarrier);
+
+                    VkImageBlit blit{};
+                    blit.srcOffsets[0] = {0, 0, 0};
+                    blit.srcOffsets[1] = {mipWidth, mipHeight, 1};
+                    blit.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, i - 1, 0, 1};
+                    blit.dstOffsets[0] = {0, 0, 0};
+                    blit.dstOffsets[1] = {
+                        mipWidth > 1 ? mipWidth / 2 : 1,
+                        mipHeight > 1 ? mipHeight / 2 : 1,
+                        1
+                    };
+                    blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, i, 0, 1};
+
+                    vkCmdBlitImage(cmd,
+                                   tex.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                   tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                   1, &blit, VK_FILTER_LINEAR);
+
+                    // Transition mip (i-1) -> SHADER_READ_ONLY (final).
+                    mipBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+                    mipBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                    mipBarrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+                    mipBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                    vkCmdPipelineBarrier(cmd,
+                                         VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                         0, 0, nullptr, 0, nullptr, 1, &mipBarrier);
+
+                    if (mipWidth > 1) mipWidth /= 2;
+                    if (mipHeight > 1) mipHeight /= 2;
+                }
+
+                // Transition RANSFER_DST -> SHADER_READ_ONLY
+                VkImageMemoryBarrier lastBarrier{};
+                lastBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                lastBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                lastBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                lastBarrier.image = tex.image;
+                lastBarrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, finalMipLevels - 1, 1, 0, 1};
+                lastBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+                lastBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                lastBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+                lastBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                vkCmdPipelineBarrier(cmd,
+                                     VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                     0, 0, nullptr, 0, nullptr, 1, &lastBarrier);
+            } else {
+                // mip 0 for sampling
+                barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+                barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+                barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                vkCmdPipelineBarrier(cmd,
+                                     VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                     0, 0, nullptr, 0, nullptr, 1, &barrier);
+            }
         }
 
         m_Impl->pendingStagingBuffers.push_back({stagingBuf, stagingAlloc});
