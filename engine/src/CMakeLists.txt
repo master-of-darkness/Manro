@@ -119,6 +119,10 @@ else ()
     target_link_libraries(Manro PRIVATE m dl pthread)
 endif ()
 
+target_precompile_headers(Manro PRIVATE
+        "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/pch.hpp>"
+)
+
 target_compile_options(Manro PRIVATE
         -Wall -Wextra -Werror -Wno-unused-parameter -Wunused
         $<$<CONFIG:Release>:-O3 -DNDEBUG -fvisibility=hidden -fvisibility-inlines-hidden -ffunction-sections -fdata-sections>
