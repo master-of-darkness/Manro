@@ -34,7 +34,7 @@ namespace Manro {
 
         VkDescriptorSet Allocate(VkDescriptorSetLayout layout);
 
-        VkDevice Device() const { return m_Device; }
+        [[nodiscard]] VkDevice Device() const { return m_Device; }
 
     private:
         VkDevice m_Device = VK_NULL_HANDLE;
@@ -71,9 +71,9 @@ namespace Manro {
 
         void Shutdown();
 
-        VkDescriptorSet GetSet() const { return m_Set; }
+        [[nodiscard]] VkDescriptorSet GetSet() const { return m_Set; }
 
-        VkDescriptorSetLayout GetLayout() const { return m_Layout; }
+        [[nodiscard]] VkDescriptorSetLayout GetLayout() const { return m_Layout; }
 
         void UpdateSlot(u32 index, VkImageView view,
                         VkImageLayout layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
