@@ -4,7 +4,7 @@
 #include <Manro/Core/Handles.h>
 
 namespace Manro {
-    struct TransformComponent {
+    struct TransformComponent_t {
         Vec3 Position;
         Vec3 Rotation;
         Vec3 Scale;
@@ -16,7 +16,7 @@ namespace Manro {
         Kinematic,
     };
 
-    struct RigidBodyComponent {
+    struct RigidBodyComponent_t {
         PhysicsBodyHandle BodyId{kInvalidBodyHandle};
         PhysicsBodyType Type{PhysicsBodyType::Static};
 

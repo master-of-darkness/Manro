@@ -17,7 +17,7 @@ namespace Manro {
     static constexpr u32 kFourCC_DXT5 = 0x35545844;
     static constexpr u32 kFourCC_ATI2 = 0x32495441;
 
-    struct DDSPixelFormat {
+    struct DDSPixelFormat_t {
         u32 size;
         u32 flags;
         u32 fourCC;
@@ -25,7 +25,7 @@ namespace Manro {
         u32 rBitMask, gBitMask, bBitMask, aBitMask;
     };
 
-    struct DDSHeader {
+    struct DDSHeader_t {
         u32 size;
         u32 flags;
         u32 height;
@@ -34,7 +34,7 @@ namespace Manro {
         u32 depth;
         u32 mipMapCount;
         u32 reserved1[11];
-        DDSPixelFormat ddspf;
+        DDSPixelFormat_t ddspf;
         u32 caps;
         u32 caps2;
         u32 caps3;
@@ -152,14 +152,14 @@ namespace Manro {
             }
     }
 
-    static bool LoadDDS(const std::vector<u8> &data, TextureData &out) {
-        if (data.size() < 4 + sizeof(DDSHeader)) return false;
+    static bool LoadDDS(const std::vector<u8> &data, TextureData_t &out) {
+        if (data.size() < 4 + sizeof(DDSHeader_t)) return false;
 
         u32 magic;
         std::memcpy(&magic, data.data(), 4);
         if (magic != kDDSMagic) return false;
 
-        DDSHeader hdr{};
+        DDSHeader_t hdr{};
         std::memcpy(&hdr, data.data() + 4, sizeof(hdr));
 
         u32 fourCC = hdr.ddspf.fourCC;
@@ -224,8 +224,8 @@ namespace Manro {
         return tail == ext;
     }
 
-    static bool LoadIndividual(const std::string &filepath, TextureData &out) {
-        auto &vfs = VirtualFS::Get();
+    static bool LoadIndividual(const std::string &filepath, TextureData_t &out) {
+        auto &vfs = CVirtualFS::Get();
         std::vector<u8> fileData = vfs.ReadFile(filepath);
         if (fileData.empty()) {
             return false;
@@ -233,7 +233,7 @@ namespace Manro {
 
         if (HasExtension(filepath, ".dds")) {
             if (!LoadDDS(fileData, out)) {
-                LOG_ERROR("[TextureLoader] Failed to load DDS: {}", filepath);
+                LOG_ERROR("[CTextureLoader] Failed to load DDS: {}", filepath);
                 return false;
             }
             return true;
@@ -246,7 +246,7 @@ namespace Manro {
                                               &width, &height, &srcChannels, STBI_rgb_alpha);
 
         if (!data) {
-            LOG_ERROR("[TextureLoader] Failed to load image: {} - {}", filepath, stbi_failure_reason());
+            LOG_ERROR("[CTextureLoader] Failed to load image: {} - {}", filepath, stbi_failure_reason());
             return false;
         }
 
@@ -261,9 +261,9 @@ namespace Manro {
         return true;
     }
 
-    std::vector<TextureData> TextureLoader::Load(const std::vector<std::string> &filepaths, JobSystem &jobs) {
-        std::vector<TextureData> results(filepaths.size());
-        const JobHandle handle = jobs.CreateHandle();
+    std::vector<TextureData_t> CTextureLoader::Load(const std::vector<std::string> &filepaths, CJobSystem &jobs) {
+        std::vector<TextureData_t> results(filepaths.size());
+        const CJobHandle handle = jobs.CreateHandle();
 
         for (size_t i = 0; i < filepaths.size(); ++i) {
             jobs.Execute(handle, [&filepaths, &results, i]() {
@@ -275,20 +275,20 @@ namespace Manro {
         return results;
     }
 
-    TextureData TextureLoader::LoadOne(const std::string &filepath) {
+    TextureData_t CTextureLoader::LoadOne(const std::string &filepath) {
         MNR_PROFILE_SCOPE("LoadTexture");
-        TextureData result;
+        TextureData_t result;
         LoadIndividual(filepath, result);
         return result;
     }
 
-    std::vector<TextureData> TextureLoader::LoadCubemap(const std::string &filepath) {
-        TextureData rawData;
+    std::vector<TextureData_t> CTextureLoader::LoadCubemap(const std::string &filepath) {
+        TextureData_t rawData;
         if (!LoadIndividual(filepath, rawData)) {
             return {};
         }
 
-        std::vector<TextureData> faces(6);
+        std::vector<TextureData_t> faces(6);
         int faceSize = 0;
 
         if (rawData.width == rawData.height * 4 / 3) {
@@ -301,7 +301,7 @@ namespace Manro {
         } else if (rawData.height == rawData.width * 6) {
             // ... (1x6)
         } else {
-            LOG_ERROR("[TextureLoader] Unsupported cubemap layout for {}: {}x{}", filepath, rawData.width,
+            LOG_ERROR("[CTextureLoader] Unsupported cubemap layout for {}: {}x{}", filepath, rawData.width,
                       rawData.height);
             return {};
         }

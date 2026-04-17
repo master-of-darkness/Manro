@@ -4,16 +4,16 @@
 #include <stdexcept>
 
 namespace Manro {
-    Pipeline::Pipeline(const VulkanContext &context) : m_Context(context) {
+    CPipeline::CPipeline(const CVulkanContext &context) : m_Context(context) {
     }
 
-    Pipeline::~Pipeline() {
+    CPipeline::~CPipeline() {
         Shutdown();
     }
 
-    void Pipeline::BuildGraphics(const std::vector<u8> &vertexSpv,
-                                 const std::vector<u8> &fragmentSpv,
-                                 const PipelineConfigParams &config) {
+    void CPipeline::BuildGraphics(const std::vector<u8> &vertexSpv,
+                                  const std::vector<u8> &fragmentSpv,
+                                  const PipelineConfigParams_t &config) {
         VkShaderModule vertModule = CreateShaderModule(vertexSpv);
         VkShaderModule fragModule = VK_NULL_HANDLE;
 
@@ -151,8 +151,8 @@ namespace Manro {
         vkDestroyShaderModule(m_Context.GetDevice(), vertModule, nullptr);
     }
 
-    void Pipeline::BuildCompute(const std::vector<u8> &computeSpv,
-                                const PipelineConfigParams &config) {
+    void CPipeline::BuildCompute(const std::vector<u8> &computeSpv,
+                                 const PipelineConfigParams_t &config) {
         VkShaderModule compModule = CreateShaderModule(computeSpv);
 
         VkPushConstantRange pushRange{};
@@ -191,8 +191,8 @@ namespace Manro {
         vkDestroyShaderModule(m_Context.GetDevice(), compModule, nullptr);
     }
 
-    void Pipeline::BuildShadowDepth(const std::vector<u8> &vertexSpv,
-                                    const PipelineConfigParams &config) {
+    void CPipeline::BuildShadowDepth(const std::vector<u8> &vertexSpv,
+                                     const PipelineConfigParams_t &config) {
         VkShaderModule vertModule = CreateShaderModule(vertexSpv);
 
         VkPipelineShaderStageCreateInfo stage{};
@@ -298,7 +298,7 @@ namespace Manro {
         vkDestroyShaderModule(m_Context.GetDevice(), vertModule, nullptr);
     }
 
-    void Pipeline::Shutdown() {
+    void CPipeline::Shutdown() {
         if (m_Pipeline) {
             vkDestroyPipeline(m_Context.GetDevice(), m_Pipeline, nullptr);
             m_Pipeline = VK_NULL_HANDLE;
@@ -309,7 +309,7 @@ namespace Manro {
         }
     }
 
-    VkShaderModule Pipeline::CreateShaderModule(const std::vector<u8> &spvCode) {
+    VkShaderModule CPipeline::CreateShaderModule(const std::vector<u8> &spvCode) {
         VkShaderModuleCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
         info.codeSize = spvCode.size();

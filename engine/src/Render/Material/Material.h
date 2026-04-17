@@ -4,23 +4,23 @@
 #include <volk.h>
 
 namespace Manro {
-    class VulkanContext;
+    class CVulkanContext;
 
-    class Pipeline;
+    class CPipeline;
 
-    class Material {
+    class CMaterial {
     public:
-        Material(const VulkanContext &ctx, Scope<Pipeline> pipeline, VkDescriptorSetLayout layout);
+        CMaterial(const CVulkanContext &ctx, Scope<CPipeline> pipeline, VkDescriptorSetLayout layout);
 
-        ~Material();
+        ~CMaterial();
 
-        Material(const Material &) = delete;
+        CMaterial(const CMaterial &) = delete;
 
-        Material &operator=(const Material &) = delete;
+        CMaterial &operator=(const CMaterial &) = delete;
 
-        const Pipeline &GetPipeline() const;
+        const CPipeline &GetPipeline() const;
 
-        const VulkanContext &GetContext() const;
+        const CVulkanContext &GetContext() const;
 
         VkPipeline GetHandle() const;
 
@@ -29,8 +29,8 @@ namespace Manro {
         VkDescriptorSetLayout GetDescriptorSetLayout() const;
 
     private:
-        const VulkanContext &m_Context;
-        Scope<Pipeline> m_Pipeline;
+        const CVulkanContext &m_Context;
+        Scope<CPipeline> m_Pipeline;
         VkDescriptorSetLayout m_DescriptorSetLayout{VK_NULL_HANDLE};
     };
 } // namespace Manro

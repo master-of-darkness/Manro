@@ -6,10 +6,10 @@
 #include <unordered_map>
 
 namespace Manro {
-    class Buffer;
-    struct MeshManagerImpl;
+    class CBuffer;
+    struct MeshManagerImpl_t;
 
-    struct LoadedMesh {
+    struct LoadedMesh_t {
         u32 firstVertex;
         u32 firstIndex;
         u32 indexCount;
@@ -17,25 +17,25 @@ namespace Manro {
         float radius;
     };
 
-    class MeshManager {
+    class CMeshManager {
     public:
-        explicit MeshManager(MeshManagerImpl *impl);
+        explicit CMeshManager(MeshManagerImpl_t *impl);
 
-        ~MeshManager();
+        ~CMeshManager();
 
-        MeshManager(const MeshManager &) = delete;
+        CMeshManager(const CMeshManager &) = delete;
 
-        MeshManager &operator=(const MeshManager &) = delete;
+        CMeshManager &operator=(const CMeshManager &) = delete;
 
-        MeshHandle Upload(const ModelData &data);
+        MeshHandle Upload(const ModelData_t &data);
 
-        const LoadedMesh *Get(MeshHandle handle) const;
+        const LoadedMesh_t *Get(MeshHandle handle) const;
 
-        Buffer *GetVertexBuffer() const;
+        CBuffer *GetVertexBuffer() const;
 
-        Buffer *GetIndexBuffer() const;
+        CBuffer *GetIndexBuffer() const;
 
     private:
-        Scope<MeshManagerImpl> m_Impl;
+        Scope<MeshManagerImpl_t> m_Impl;
     };
 } // namespace Manro

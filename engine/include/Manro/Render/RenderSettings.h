@@ -21,7 +21,7 @@ namespace Manro {
         MSAA_64X = 64
     };
 
-    struct ShadowSettings {
+    struct ShadowSettings_t {
         bool enabled = true;
         int resolution = 2048;
         float bias = 0.005f;
@@ -29,7 +29,7 @@ namespace Manro {
         float softShadows = 1.0f;
     };
 
-    struct LightingSettings {
+    struct LightingSettings_t {
         float iblIntensity = 1.0f;
         float gamma = 2.2f;
         bool enableAmbientOcclusion = false;
@@ -37,20 +37,20 @@ namespace Manro {
         float aoRadius = 0.5f;
     };
 
-    struct PostProcessSettings {
+    struct PostProcessSettings_t {
         bool enableBloom = false;
         float bloomIntensity = 1.0f;
         float bloomThreshold = 1.0f;
-        TonemapperData tonemapping{};
+        TonemapperData_t tonemapping{};
     };
 
-    struct RayTracingSettings {
+    struct RayTracingSettings_t {
         bool enableReflections = false;
         bool enableTransparency = false;
         int maxBounces = 2;
     };
 
-    struct RenderSettings {
+    struct RenderSettings_t {
         float resolutionScale = 1.0f;
         AntiAliasingMode aaMode = AntiAliasingMode::MSAA;
         MSAASampleCount msaaSamples = MSAASampleCount::MSAA_4X;
@@ -62,9 +62,9 @@ namespace Manro {
         float farZ = 10000.0f;
         float maxDrawDistance = 10000.0f;
 
-        ShadowSettings shadows;
-        LightingSettings lighting;
-        PostProcessSettings postProcess;
-        RayTracingSettings rayTracing;
+        ShadowSettings_t shadows;
+        LightingSettings_t lighting;
+        PostProcessSettings_t postProcess;
+        RayTracingSettings_t rayTracing;
     };
 } // namespace Manro

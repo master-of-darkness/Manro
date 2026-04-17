@@ -1,27 +1,27 @@
 #include "Internal/SceneRenderer.h"
 #include "Internal/ScenePassState.h"
-#include <../Core/Profiling.h>
+#include "../Core/Profiling.h"
 
 namespace Manro {
-    SceneRenderer::SceneRenderer() = default;
+    CSceneRenderer::CSceneRenderer() = default;
 
-    void SceneRenderer::SetZPrepassState(const Internal::ZPrepassPassState *state) {
+    void CSceneRenderer::SetZPrepassState(const Internal::ZPrepassPassState_t *state) {
         m_ZPrepassState = state;
     }
 
-    void SceneRenderer::SetPbrPassState(const Internal::PbrPassState *state) {
+    void CSceneRenderer::SetPbrPassState(const Internal::PbrPassState_t *state) {
         m_PbrPassState = state;
     }
 
-    void SceneRenderer::SetSkyboxPassState(const Internal::SkyboxPassState *state) {
+    void CSceneRenderer::SetSkyboxPassState(const Internal::SkyboxPassState_t *state) {
         m_SkyboxPassState = state;
     }
 
-    void SceneRenderer::SetCompositePassState(const Internal::CompositePassState *state) {
+    void CSceneRenderer::SetCompositePassState(const Internal::CompositePassState_t *state) {
         m_CompositePassState = state;
     }
 
-    void SceneRenderer::Flush(VkCommandBuffer cmd) {
+    void CSceneRenderer::Flush(VkCommandBuffer cmd) {
         if (!cmd) {
             return;
         }

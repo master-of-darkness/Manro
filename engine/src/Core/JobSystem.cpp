@@ -4,7 +4,7 @@
 #include "Profiling.h"
 
 namespace Manro {
-    JobSystem::JobSystem(u32 numThreads) {
+    CJobSystem::CJobSystem(u32 numThreads) {
         if (numThreads == 0) {
             numThreads = std::max(1u, std::thread::hardware_concurrency() - 1u);
         }
@@ -13,11 +13,11 @@ namespace Manro {
         m_Running = true;
 
         for (u32 i = 0; i < numThreads; ++i) {
-            m_Threads.emplace_back(&JobSystem::WorkerThread, this);
+            m_Threads.emplace_back(&CJobSystem::WorkerThread, this);
         }
     }
 
-    JobSystem::~JobSystem() {
+    CJobSystem::~CJobSystem() {
         m_Running = false;
         m_WakeCondition.notify_all();
 
@@ -29,15 +29,15 @@ namespace Manro {
         m_Threads.clear();
     }
 
-    JobHandle JobSystem::CreateHandle() {
-        return JobHandle(std::make_shared<std::atomic<u32> >(0));
+    CJobHandle CJobSystem::CreateHandle() {
+        return CJobHandle(std::make_shared<std::atomic<u32> >(0));
     }
 
-    void JobSystem::Execute(std::function<void()> job) {
+    void CJobSystem::Execute(std::function<void()> job) {
         Execute(m_GlobalHandle, std::move(job));
     }
 
-    void JobSystem::Execute(JobHandle handle, std::function<void()> job) {
+    void CJobSystem::Execute(CJobHandle handle, std::function<void()> job) {
         if (!m_Running) return;
         if (!handle.IsValid()) {
             handle = m_GlobalHandle;
@@ -46,17 +46,17 @@ namespace Manro {
         {
             std::scoped_lock lock(m_Mutex);
             handle.m_PendingJobs->fetch_add(1, std::memory_order_relaxed);
-            m_Jobs.push(JobEntry{std::move(job), handle.m_PendingJobs});
-            m_JobsInFlight++;
+            m_Jobs.push(JobEntry_t{std::move(job), handle.m_PendingJobs});
+            ++m_JobsInFlight;
         }
         m_WakeCondition.notify_one();
     }
 
-    void JobSystem::Dispatch(u32 jobCount, const std::function<void(u32)> &job) {
+    void CJobSystem::Dispatch(u32 jobCount, const std::function<void(u32)> &job) {
         Dispatch(m_GlobalHandle, jobCount, job);
     }
 
-    void JobSystem::Dispatch(JobHandle handle, u32 jobCount, const std::function<void(u32)> &job) {
+    void CJobSystem::Dispatch(CJobHandle handle, u32 jobCount, const std::function<void(u32)> &job) {
         if (jobCount == 0) return;
 
         for (u32 i = 0; i < jobCount; ++i) {
@@ -64,7 +64,7 @@ namespace Manro {
         }
     }
 
-    void JobSystem::Wait(const JobHandle &handle) {
+    void CJobSystem::Wait(const CJobHandle &handle) {
         if (!handle.IsValid()) return;
 
         while (handle.m_PendingJobs->load(std::memory_order_acquire) > 0) {
@@ -75,14 +75,14 @@ namespace Manro {
         }
     }
 
-    void JobSystem::WaitAll() {
+    void CJobSystem::WaitAll() {
         Wait(m_GlobalHandle);
     }
 
-    void JobSystem::WorkerThread() {
+    void CJobSystem::WorkerThread() {
         MNR_PROFILE_THREAD("Worker");
         while (m_Running) {
-            JobEntry job;
+            JobEntry_t job;
 
             {
                 std::unique_lock<std::mutex> lock(m_Mutex);

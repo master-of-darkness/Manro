@@ -6,14 +6,14 @@
 #include <vector>
 
 namespace Manro {
-    class VulkanContext;
+    class CVulkanContext;
 
-    struct PoolSizeRatio {
+    struct PoolSizeRatio_t {
         VkDescriptorType type;
         float ratio;
     };
 
-    static constexpr PoolSizeRatio kDefaultPoolSizes[] = {
+    static constexpr PoolSizeRatio_t kDefaultPoolSizes[] = {
         {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4.f},
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 10.f},
         {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4.f},
@@ -22,10 +22,10 @@ namespace Manro {
         {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2.f},
     };
 
-    class PerFrameAllocator {
+    class CPerFrameAllocator {
     public:
         void Init(VkDevice device, u32 maxSetsPerFrame,
-                  const PoolSizeRatio *ratios = kDefaultPoolSizes,
+                  const PoolSizeRatio_t *ratios = kDefaultPoolSizes,
                   u32 ratioCount = static_cast<u32>(std::size(kDefaultPoolSizes)));
 
         void Shutdown();
@@ -41,10 +41,10 @@ namespace Manro {
         VkDescriptorPool m_Pool = VK_NULL_HANDLE;
     };
 
-    class PersistentAllocator {
+    class CPersistentAllocator {
     public:
         void Init(VkDevice device, u32 initialPoolSets = 256,
-                  const PoolSizeRatio *ratios = kDefaultPoolSizes,
+                  const PoolSizeRatio_t *ratios = kDefaultPoolSizes,
                   u32 ratioCount = static_cast<u32>(std::size(kDefaultPoolSizes)));
 
         void Shutdown();
@@ -57,13 +57,13 @@ namespace Manro {
         VkDescriptorPool GrowPool();
 
         VkDevice m_Device = VK_NULL_HANDLE;
-        u32 m_SetsPerPool = 256;
-        std::vector<PoolSizeRatio> m_Ratios;
+        u32 m_unSetsPerPool = 256;
+        std::vector<PoolSizeRatio_t> m_Ratios;
         std::vector<VkDescriptorPool> m_Pools;
         VkDescriptorPool m_Current = VK_NULL_HANDLE;
     };
 
-    class BindlessAllocator {
+    class CBindlessAllocator {
     public:
         static constexpr u32 kMaxTextures = 4096;
 

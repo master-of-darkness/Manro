@@ -5,186 +5,186 @@
 #include <SDL3_mixer/SDL_mixer.h>
 
 namespace Manro {
-    bool AudioBackend::Initialize() {
-        if (m_Initialized) return true;
+    bool CAudioBackend::Initialize() {
+        if (m_bInitialized) return true;
 
         if (!MIX_Init()) {
             LOG_ERROR("[Audio] MIX_Init failed: {}", SDL_GetError());
             return false;
         }
 
-        m_Mixer = MIX_CreateMixerDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, nullptr);
-        if (!m_Mixer) {
+        m_pMixer = MIX_CreateMixerDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, nullptr);
+        if (!m_pMixer) {
             LOG_ERROR("[Audio] MIX_CreateMixerDevice failed: {}", SDL_GetError());
             MIX_Quit();
             return false;
         }
 
-        m_Initialized = true;
+        m_bInitialized = true;
         return true;
     }
 
-    void AudioBackend::Shutdown() {
-        if (!m_Initialized) return;
+    void CAudioBackend::Shutdown() {
+        if (!m_bInitialized) return;
 
         for (auto &sound: m_Sounds | std::views::values) {
-            if (sound.track) MIX_DestroyTrack(sound.track);
-            if (sound.audio) MIX_DestroyAudio(sound.audio);
+            if (sound.pTrack) MIX_DestroyTrack(sound.pTrack);
+            if (sound.pAudio) MIX_DestroyAudio(sound.pAudio);
         }
         m_Sounds.clear();
 
-        if (m_MusicTrack) {
-            MIX_StopTrack(m_MusicTrack, 0);
-            MIX_DestroyTrack(m_MusicTrack);
-            m_MusicTrack = nullptr;
+        if (m_pMusicTrack) {
+            MIX_StopTrack(m_pMusicTrack, 0);
+            MIX_DestroyTrack(m_pMusicTrack);
+            m_pMusicTrack = nullptr;
         }
-        if (m_MusicAudio) {
-            MIX_DestroyAudio(m_MusicAudio);
-            m_MusicAudio = nullptr;
+        if (m_pMusicAudio) {
+            MIX_DestroyAudio(m_pMusicAudio);
+            m_pMusicAudio = nullptr;
         }
 
-        if (m_Mixer) {
-            MIX_DestroyMixer(m_Mixer);
-            m_Mixer = nullptr;
+        if (m_pMixer) {
+            MIX_DestroyMixer(m_pMixer);
+            m_pMixer = nullptr;
         }
 
         MIX_Quit();
-        m_Initialized = false;
+        m_bInitialized = false;
     }
 
-    SoundHandle AudioBackend::LoadSound(const std::string &filepath) {
-        if (!m_Initialized) return kInvalidSound;
+    SoundHandle CAudioBackend::LoadSound(const std::string &filepath) {
+        if (!m_bInitialized) return kInvalidSound;
 
-        MIX_Audio *audio = MIX_LoadAudio(m_Mixer, filepath.c_str(), true);
-        if (!audio) {
+        MIX_Audio *pAudio = MIX_LoadAudio(m_pMixer, filepath.c_str(), true);
+        if (!pAudio) {
             LOG_ERROR("[Audio] Failed to load '{}': {}", filepath, SDL_GetError());
             return kInvalidSound;
         }
 
-        MIX_Track *track = MIX_CreateTrack(m_Mixer);
-        MIX_SetTrackAudio(track, audio);
+        MIX_Track *pTrack = MIX_CreateTrack(m_pMixer);
+        MIX_SetTrackAudio(pTrack, pAudio);
 
-        SoundHandle handle = m_NextHandle++;
-        m_Sounds[handle] = {audio, track};
+        SoundHandle handle = m_nNextHandle++;
+        m_Sounds[handle] = {pAudio, pTrack};
 
         return handle;
     }
 
-    void AudioBackend::UnloadSound(const SoundHandle handle) {
+    void CAudioBackend::UnloadSound(const SoundHandle handle) {
         auto it = m_Sounds.find(handle);
         if (it == m_Sounds.end()) return;
 
-        if (it->second.track) {
-            MIX_StopTrack(it->second.track, 0);
-            MIX_DestroyTrack(it->second.track);
+        if (it->second.pTrack) {
+            MIX_StopTrack(it->second.pTrack, 0);
+            MIX_DestroyTrack(it->second.pTrack);
         }
 
-        if (it->second.audio) {
-            MIX_DestroyAudio(it->second.audio);
+        if (it->second.pAudio) {
+            MIX_DestroyAudio(it->second.pAudio);
         }
 
         m_Sounds.erase(it);
     }
 
-    void AudioBackend::Play(const SoundHandle handle, const bool loop) {
+    void CAudioBackend::Play(const SoundHandle handle, const bool loop) {
         auto it = m_Sounds.find(handle);
-        if (it == m_Sounds.end() || !it->second.track) return;
+        if (it == m_Sounds.end() || !it->second.pTrack) return;
 
-        MIX_SetTrackLoops(it->second.track, loop ? -1 : 0);
+        MIX_SetTrackLoops(it->second.pTrack, loop ? -1 : 0);
 
-        MIX_PlayTrack(it->second.track, 0);
+        MIX_PlayTrack(it->second.pTrack, 0);
     }
 
-    void AudioBackend::Stop(SoundHandle handle) {
+    void CAudioBackend::Stop(SoundHandle handle) {
         auto it = m_Sounds.find(handle);
-        if (it == m_Sounds.end() || !it->second.track) return;
+        if (it == m_Sounds.end() || !it->second.pTrack) return;
 
-        MIX_StopTrack(it->second.track, 0);
+        MIX_StopTrack(it->second.pTrack, 0);
     }
 
-    void AudioBackend::Pause(const SoundHandle handle) {
+    void CAudioBackend::Pause(const SoundHandle handle) {
         auto it = m_Sounds.find(handle);
-        if (it == m_Sounds.end() || !it->second.track) return;
+        if (it == m_Sounds.end() || !it->second.pTrack) return;
 
-        MIX_PauseTrack(it->second.track);
+        MIX_PauseTrack(it->second.pTrack);
     }
 
-    void AudioBackend::Resume(const SoundHandle handle) {
+    void CAudioBackend::Resume(const SoundHandle handle) {
         auto it = m_Sounds.find(handle);
-        if (it == m_Sounds.end() || !it->second.track) return;
+        if (it == m_Sounds.end() || !it->second.pTrack) return;
 
-        MIX_ResumeTrack(it->second.track);
+        MIX_ResumeTrack(it->second.pTrack);
     }
 
-    bool AudioBackend::IsPlaying(const SoundHandle handle) const {
+    bool CAudioBackend::IsPlaying(const SoundHandle handle) const {
         auto it = m_Sounds.find(handle);
-        if (it == m_Sounds.end() || !it->second.track) return false;
+        if (it == m_Sounds.end() || !it->second.pTrack) return false;
 
-        return MIX_TrackPlaying(it->second.track);
+        return MIX_TrackPlaying(it->second.pTrack);
     }
 
-    void AudioBackend::SetVolume(const SoundHandle handle, const f32 volume) {
+    void CAudioBackend::SetVolume(const SoundHandle handle, const f32 volume) {
         auto it = m_Sounds.find(handle);
-        if (it == m_Sounds.end() || !it->second.track) return;
+        if (it == m_Sounds.end() || !it->second.pTrack) return;
 
-        MIX_SetTrackGain(it->second.track, std::clamp(volume, 0.f, 1.f));
+        MIX_SetTrackGain(it->second.pTrack, std::clamp(volume, 0.f, 1.f));
     }
 
-    void AudioBackend::SetMasterVolume(const f32 volume) {
-        if (!m_Mixer) return;
+    void CAudioBackend::SetMasterVolume(const f32 volume) {
+        if (!m_pMixer) return;
 
-        m_MasterVolume = std::clamp(volume, 0.f, 1.f);
-        MIX_SetMixerGain(m_Mixer, m_MasterVolume);
+        m_flMasterVolume = std::clamp(volume, 0.f, 1.f);
+        MIX_SetMixerGain(m_pMixer, m_flMasterVolume);
     }
 
-    void AudioBackend::PlayMusic(const std::string &filepath, bool loop) {
-        if (!m_Initialized) return;
+    void CAudioBackend::PlayMusic(const std::string &filepath, bool loop) {
+        if (!m_bInitialized) return;
 
         StopMusic();
 
-        if (m_MusicTrack) {
-            MIX_DestroyTrack(m_MusicTrack);
-            m_MusicTrack = nullptr;
+        if (m_pMusicTrack) {
+            MIX_DestroyTrack(m_pMusicTrack);
+            m_pMusicTrack = nullptr;
         }
-        if (m_MusicAudio) {
-            MIX_DestroyAudio(m_MusicAudio);
-            m_MusicAudio = nullptr;
+        if (m_pMusicAudio) {
+            MIX_DestroyAudio(m_pMusicAudio);
+            m_pMusicAudio = nullptr;
         }
 
-        m_MusicAudio = MIX_LoadAudio(m_Mixer, filepath.c_str(), false);
-        if (!m_MusicAudio) {
+        m_pMusicAudio = MIX_LoadAudio(m_pMixer, filepath.c_str(), false);
+        if (!m_pMusicAudio) {
             LOG_ERROR("[Audio] Failed to load music '{}': {}", filepath, SDL_GetError());
             return;
         }
 
-        m_MusicTrack = MIX_CreateTrack(m_Mixer);
-        MIX_SetTrackAudio(m_MusicTrack, m_MusicAudio);
-        MIX_SetTrackLoops(m_MusicTrack, loop ? -1 : 0);
+        m_pMusicTrack = MIX_CreateTrack(m_pMixer);
+        MIX_SetTrackAudio(m_pMusicTrack, m_pMusicAudio);
+        MIX_SetTrackLoops(m_pMusicTrack, loop ? -1 : 0);
 
-        MIX_PlayTrack(m_MusicTrack, 0);
+        MIX_PlayTrack(m_pMusicTrack, 0);
     }
 
-    void AudioBackend::StopMusic() {
-        if (m_MusicTrack) {
-            MIX_StopTrack(m_MusicTrack, 0);
+    void CAudioBackend::StopMusic() {
+        if (m_pMusicTrack) {
+            MIX_StopTrack(m_pMusicTrack, 0);
         }
     }
 
-    void AudioBackend::PauseMusic() {
-        if (m_MusicTrack) {
-            MIX_PauseTrack(m_MusicTrack);
+    void CAudioBackend::PauseMusic() {
+        if (m_pMusicTrack) {
+            MIX_PauseTrack(m_pMusicTrack);
         }
     }
 
-    void AudioBackend::ResumeMusic() {
-        if (m_MusicTrack) {
-            MIX_ResumeTrack(m_MusicTrack);
+    void CAudioBackend::ResumeMusic() {
+        if (m_pMusicTrack) {
+            MIX_ResumeTrack(m_pMusicTrack);
         }
     }
 
-    void AudioBackend::SetMusicVolume(const f32 volume) {
-        if (m_MusicTrack) {
-            MIX_SetTrackGain(m_MusicTrack, std::clamp(volume, 0.f, 1.f));
+    void CAudioBackend::SetMusicVolume(const f32 volume) {
+        if (m_pMusicTrack) {
+            MIX_SetTrackGain(m_pMusicTrack, std::clamp(volume, 0.f, 1.f));
         }
     }
 } // namespace Manro

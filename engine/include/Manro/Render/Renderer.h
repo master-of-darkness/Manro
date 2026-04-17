@@ -14,12 +14,12 @@
 
 namespace Manro {
     class IWindow;
-    class Material;
-    class MeshManager;
-    class Model;
-    class RendererImpl;
+    class CMaterial;
+    class CMeshManager;
+    class CModel;
+    class CRendererImpl;
 
-    struct FrameStats {
+    struct FrameStats_t {
         u32 drawCalls = 0;
         u32 triangleCount = 0;
         u32 instanceCount = 0;
@@ -30,22 +30,22 @@ namespace Manro {
 
     using LightData = shaderio::GltfLight;
 
-    class Renderer {
+    class CRenderer {
     public:
-        /// Constructor with default RendererConfig
-        Renderer(IWindow &window, u32 width, u32 height,
-                 const RenderSettings &settings = {});
+        /// Constructor with default RendererConfig_t
+        CRenderer(IWindow &window, u32 width, u32 height,
+                  const RenderSettings_t &settings = {});
 
-        /// Constructor with custom RendererConfig
-        Renderer(IWindow &window, u32 width, u32 height,
-                 const RenderSettings &settings,
-                 const RendererConfig &config);
+        /// Constructor with custom RendererConfig_t
+        CRenderer(IWindow &window, u32 width, u32 height,
+                  const RenderSettings_t &settings,
+                  const RendererConfig_t &config);
 
-        ~Renderer();
+        ~CRenderer();
 
-        Renderer(const Renderer &) = delete;
+        CRenderer(const CRenderer &) = delete;
 
-        Renderer &operator=(const Renderer &) = delete;
+        CRenderer &operator=(const CRenderer &) = delete;
 
         bool BeginFrame();
 
@@ -57,15 +57,15 @@ namespace Manro {
 
         void EndFrameAndPresent();
 
-        void DrawMesh(MeshHandle mesh, MaterialInstance &mat, const Mat4 &model);
+        void DrawMesh(MeshHandle mesh, CMaterialInstance &mat, const Mat4 &model);
 
-        void DrawMeshStatic(MeshHandle mesh, MaterialInstance &mat, const Mat4 &model);
+        void DrawMeshStatic(MeshHandle mesh, CMaterialInstance &mat, const Mat4 &model);
 
         void ClearStaticDraws();
 
-        void DrawModel(const Model &model, const Mat4 &transform);
+        void DrawModel(const CModel &model, const Mat4 &transform);
 
-        void DrawModelStatic(const Model &model, const Mat4 &transform);
+        void DrawModelStatic(const CModel &model, const Mat4 &transform);
 
         void AddLight(const LightData &light);
 
@@ -77,32 +77,32 @@ namespace Manro {
 
         void SetSkybox(TextureHandle cubemap);
 
-        MeshHandle UploadMesh(const ModelData &data);
+        MeshHandle UploadMesh(const ModelData_t &data);
 
-        TextureHandle UploadTexture(const TextureData &data);
+        TextureHandle UploadTexture(const TextureData_t &data);
 
-        TextureHandle UploadCubemap(const std::vector<TextureData> &faces);
+        TextureHandle UploadCubemap(const std::vector<TextureData_t> &faces);
 
-        Ref<Material> GetDefaultMaterial() const;
+        Ref<CMaterial> GetDefaultMaterial() const;
 
-        Scope<MaterialInstance> CreateMaterialInstance(Ref<Material> mat);
+        Scope<CMaterialInstance> CreateMaterialInstance(Ref<CMaterial> mat);
 
         void OnResize(u32 width, u32 height);
 
         float GetAspectRatio() const;
 
-        MeshManager &GetMeshes();
+        CMeshManager &GetMeshes();
 
-        void SetSettings(const RenderSettings &settings);
+        void SetSettings(const RenderSettings_t &settings);
 
-        const RenderSettings &GetSettings() const;
+        const RenderSettings_t &GetSettings() const;
 
-        RenderSettings &GetSettings();
+        RenderSettings_t &GetSettings();
 
         /// Get the renderer configuration (read-only, set at construction time)
-        const RendererConfig &GetConfig() const;
+        const RendererConfig_t &GetConfig() const;
 
-        const FrameStats &GetLastFrameStats() const;
+        const FrameStats_t &GetLastFrameStats() const;
 
         void SetDebugUIEnabled(bool enabled);
 
@@ -129,6 +129,6 @@ namespace Manro {
         void DrawAxes(const Mat4 &transform, float size = 50.f);
 
     private:
-        Scope<RendererImpl> m_Impl;
+        Scope<CRendererImpl> m_Impl;
     };
 } // namespace Manro

@@ -5,17 +5,17 @@
 #include <volk.h>
 
 namespace Manro {
-    class VulkanContext;
+    class CVulkanContext;
 
-    class RenderTargetManager {
+    class CRenderTargetManager {
     public:
-        explicit RenderTargetManager(VulkanContext &ctx);
+        explicit CRenderTargetManager(CVulkanContext &ctx);
 
-        ~RenderTargetManager() = default;
+        ~CRenderTargetManager() = default;
 
-        RenderTargetManager(const RenderTargetManager &) = delete;
+        CRenderTargetManager(const CRenderTargetManager &) = delete;
 
-        RenderTargetManager &operator=(const RenderTargetManager &) = delete;
+        CRenderTargetManager &operator=(const CRenderTargetManager &) = delete;
 
         void Create(u32 width, u32 height, VkSampleCountFlagBits samples);
 
@@ -37,11 +37,11 @@ namespace Manro {
 
         void CreateMsaaColor(u32 w, u32 h, VkSampleCountFlagBits samples);
 
-        VulkanContext &m_Context;
+        CVulkanContext &m_Context;
 
-        AllocatedImage m_OffscreenColor{};
-        AllocatedImage m_MsaaColorImage{};
-        AllocatedImage m_DepthImage{};
+        AllocatedImage_t m_OffscreenColor{};
+        AllocatedImage_t m_MsaaColorImage{};
+        AllocatedImage_t m_DepthImage{};
 
         VkSampler m_OffscreenSampler{VK_NULL_HANDLE};
 

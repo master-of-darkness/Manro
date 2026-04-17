@@ -5,15 +5,15 @@
 #include <vector>
 
 namespace Manro {
-    struct Vertex {
+    struct Vertex_t {
         Vec3 position;
         Vec3 normal;
         Vec2 uv;
         Vec4 tangent;
     };
 
-    struct SubMeshData {
-        std::vector<Vertex> vertices;
+    struct SubMeshData_t {
+        std::vector<Vertex_t> vertices;
         std::vector<u32> indices;
         std::string diffuseTexturePath;
         std::string normalTexturePath;
@@ -28,8 +28,8 @@ namespace Manro {
         bool doubleSided{false};
     };
 
-    struct ModelData {
-        std::vector<Vertex> vertices;
+    struct ModelData_t {
+        std::vector<Vertex_t> vertices;
         std::vector<u32> indices;
         std::string diffuseTexturePath;
         std::string normalTexturePath;
@@ -43,16 +43,16 @@ namespace Manro {
         bool doubleSided{false};
     };
 
-    class JobSystem;
+    class CJobSystem;
 
-    class ModelLoader {
+    class CModelLoader {
     public:
-        static std::vector<ModelData> Load(const std::vector<std::string> &filepaths, JobSystem &jobs);
+        static std::vector<ModelData_t> Load(const std::vector<std::string> &filepaths, CJobSystem &jobs);
 
-        static std::vector<std::vector<SubMeshData> > LoadSubMeshes(const std::vector<std::string> &filepaths,
-                                                                    JobSystem &jobs);
+        static std::vector<std::vector<SubMeshData_t> > LoadSubMeshes(const std::vector<std::string> &filepaths,
+                                                                      CJobSystem &jobs);
 
-        static std::vector<SubMeshData> LoadSubMeshes(const std::string &filepath);
+        static std::vector<SubMeshData_t> LoadSubMeshes(const std::string &filepath);
 
         static std::string NormalisePath(const std::string &p);
     };

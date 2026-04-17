@@ -9,42 +9,42 @@
 #include <string>
 
 namespace Manro {
-    class Renderer;
+    class CRenderer;
 
-    class JobSystem;
+    class CJobSystem;
 
-    struct ModelSubMesh {
+    struct ModelSubMesh_t {
         MeshHandle meshId;
-        Scope<MaterialInstance> material;
+        Scope<CMaterialInstance> material;
     };
 
-    class Model {
+    class CModel {
     public:
-        struct PreparedAssets {
-            std::vector<std::vector<SubMeshData> > subMeshes;
+        struct PreparedAssets_t {
+            std::vector<std::vector<SubMeshData_t> > subMeshes;
             std::vector<std::string> texturePaths;
-            std::vector<TextureData> textures;
+            std::vector<TextureData_t> textures;
         };
 
-        Model() = default;
+        CModel() = default;
 
-        ~Model() = default;
+        ~CModel() = default;
 
-        static PreparedAssets Prepare(const std::vector<std::string> &paths, JobSystem &jobs);
+        static PreparedAssets_t Prepare(const std::vector<std::string> &paths, CJobSystem &jobs);
 
-        static std::vector<Scope<Model> > CommitPrepared(PreparedAssets prepared, Renderer &renderer);
+        static std::vector<Scope<CModel> > CommitPrepared(PreparedAssets_t prepared, CRenderer &renderer);
 
-        static std::vector<Scope<Model> > Load(const std::vector<std::string> &paths,
-                                               Renderer &renderer,
-                                               JobSystem &jobs);
+        static std::vector<Scope<CModel> > Load(const std::vector<std::string> &paths,
+                                                CRenderer &renderer,
+                                                CJobSystem &jobs);
 
-        void AddSubMesh(MeshHandle meshId, Scope<MaterialInstance> material) {
+        void AddSubMesh(MeshHandle meshId, Scope<CMaterialInstance> material) {
             m_SubMeshes.push_back({meshId, std::move(material)});
         }
 
-        const std::vector<ModelSubMesh> &GetSubMeshes() const { return m_SubMeshes; }
+        const std::vector<ModelSubMesh_t> &GetSubMeshes() const { return m_SubMeshes; }
 
     private:
-        std::vector<ModelSubMesh> m_SubMeshes;
+        std::vector<ModelSubMesh_t> m_SubMeshes;
     };
 } // namespace Manro

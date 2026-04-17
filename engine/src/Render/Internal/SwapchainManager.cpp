@@ -5,11 +5,11 @@
 #include <stdexcept>
 
 namespace Manro {
-    SwapchainManager::SwapchainManager(VulkanContext &ctx)
+    CSwapchainManager::CSwapchainManager(CVulkanContext &ctx)
         : m_Context(ctx) {
     }
 
-    void SwapchainManager::Init(u32 width, u32 height, bool vsync) {
+    void CSwapchainManager::Init(u32 width, u32 height, bool vsync) {
         vkb::SwapchainBuilder builder{
             m_Context.GetPhysicalDevice(),
             m_Context.GetDevice(),
@@ -47,10 +47,10 @@ namespace Manro {
         m_SwapchainImages = imagesRet.value();
         m_SwapchainImageViews = imageViewsRet.value();
         m_SwapchainImageLayouts.assign(m_SwapchainImages.size(), VK_IMAGE_LAYOUT_UNDEFINED);
-        m_NeedsRecreate = false;
+        m_bNeedsRecreate = false;
     }
 
-    void SwapchainManager::Cleanup() {
+    void CSwapchainManager::Cleanup() {
         VkDevice device = m_Context.GetDevice();
         for (auto view: m_SwapchainImageViews) {
             if (view != VK_NULL_HANDLE)
@@ -65,7 +65,7 @@ namespace Manro {
         }
     }
 
-    void SwapchainManager::CreateRenderFinishedSemaphores() {
+    void CSwapchainManager::CreateRenderFinishedSemaphores() {
         VkDevice device = m_Context.GetDevice();
         VkSemaphoreCreateInfo si{};
         si.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -76,7 +76,7 @@ namespace Manro {
         }
     }
 
-    void SwapchainManager::DestroyRenderFinishedSemaphores() {
+    void CSwapchainManager::DestroyRenderFinishedSemaphores() {
         VkDevice device = m_Context.GetDevice();
         for (auto sem: m_RenderFinishedSemaphores) {
             if (sem != VK_NULL_HANDLE)
@@ -85,7 +85,7 @@ namespace Manro {
         m_RenderFinishedSemaphores.clear();
     }
 
-    void SwapchainManager::CreateFrameSyncObjects(u32 frameCount) {
+    void CSwapchainManager::CreateFrameSyncObjects(u32 frameCount) {
         VkDevice device = m_Context.GetDevice();
 
         VkSemaphoreCreateInfo si{};
@@ -106,7 +106,7 @@ namespace Manro {
         }
     }
 
-    void SwapchainManager::DestroyFrameSyncObjects() {
+    void CSwapchainManager::DestroyFrameSyncObjects() {
         VkDevice device = m_Context.GetDevice();
         for (auto sem: m_ImageAvailableSemaphores) {
             if (sem != VK_NULL_HANDLE)
@@ -120,13 +120,13 @@ namespace Manro {
         m_InFlightFences.clear();
     }
 
-    void SwapchainManager::Shutdown() {
+    void CSwapchainManager::Shutdown() {
         DestroyFrameSyncObjects();
         DestroyRenderFinishedSemaphores();
         Cleanup();
     }
 
-    void SwapchainManager::Recreate(u32 width, u32 height, bool vsync) {
+    void CSwapchainManager::Recreate(u32 width, u32 height, bool vsync) {
         vkDeviceWaitIdle(m_Context.GetDevice());
         DestroyRenderFinishedSemaphores();
         Cleanup();

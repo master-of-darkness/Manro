@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Manro/ECS/Entity.h>
-#include <Manro/ECS/ComponentArray.h>
+#include <Manro/ECS/CComponentArray.h>
 #include <Manro/ECS/ComponentTypeId.h>
 #include <queue>
 #include <memory>
@@ -9,9 +9,9 @@
 #include <functional>
 
 namespace Manro {
-    class Registry {
+    class CRegistry {
     public:
-        Registry() {
+        CRegistry() {
             for (Entity e = 0; e < MAX_ENTITIES; ++e)
                 m_Available.push(e);
             m_Arrays.reserve(64);
@@ -19,10 +19,10 @@ namespace Manro {
         }
 
         Entity CreateEntity() {
-            assert(m_LivingCount < MAX_ENTITIES && "Too many entities.");
+            assert(m_unLivingCount < MAX_ENTITIES && "Too many entities.");
             Entity id = m_Available.front();
             m_Available.pop();
-            ++m_LivingCount;
+            ++m_unLivingCount;
             return id;
         }
 
@@ -30,7 +30,7 @@ namespace Manro {
             assert(entity < MAX_ENTITIES);
             m_Signatures[entity].reset();
             m_Available.push(entity);
-            --m_LivingCount;
+            --m_unLivingCount;
             for (auto &arr: m_Arrays)
                 if (arr) arr->EntityDestroyed(entity);
         }
@@ -47,7 +47,7 @@ namespace Manro {
             if (id >= m_Arrays.size())
                 m_Arrays.resize(id + 1);
             assert(!m_Arrays[id] && "Component registered twice.");
-            m_Arrays[id] = std::make_unique<ComponentArray<T> >();
+            m_Arrays[id] = std::make_unique<CComponentArray<T> >();
         }
 
         template<typename T>
@@ -89,29 +89,29 @@ namespace Manro {
         }
 
         template<typename T>
-        const ComponentArray<T> *GetComponentArrayRO() const {
+        const CComponentArray<T> *GetComponentArrayRO() const {
             u32 id = ComponentTypeId<T>();
             if (id >= m_Arrays.size() || !m_Arrays[id]) return nullptr;
-            return static_cast<const ComponentArray<T> *>(m_Arrays[id].get());
+            return static_cast<const CComponentArray<T> *>(m_Arrays[id].get());
         }
 
     private:
         template<typename T>
-        ComponentArray<T> &GetArray() {
+        CComponentArray<T> &GetArray() {
             u32 id = ComponentTypeId<T>();
             assert(id < m_Arrays.size() && m_Arrays[id] && "Component not registered.");
-            return *static_cast<ComponentArray<T> *>(m_Arrays[id].get());
+            return *static_cast<CComponentArray<T> *>(m_Arrays[id].get());
         }
 
         template<typename T>
-        const ComponentArray<T> &GetArray() const {
+        const CComponentArray<T> &GetArray() const {
             u32 id = ComponentTypeId<T>();
             assert(id < m_Arrays.size() && m_Arrays[id] && "Component not registered.");
-            return *static_cast<const ComponentArray<T> *>(m_Arrays[id].get());
+            return *static_cast<const CComponentArray<T> *>(m_Arrays[id].get());
         }
 
         std::queue<Entity> m_Available;
-        u32 m_LivingCount{0};
+        u32 m_unLivingCount{0};
         std::array<Signature, MAX_ENTITIES> m_Signatures;
         std::vector<std::unique_ptr<IComponentArray> > m_Arrays;
     };

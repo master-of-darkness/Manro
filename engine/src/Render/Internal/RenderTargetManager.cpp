@@ -5,18 +5,18 @@
 #include <stdexcept>
 
 namespace Manro {
-    RenderTargetManager::RenderTargetManager(VulkanContext &ctx)
+    CRenderTargetManager::CRenderTargetManager(CVulkanContext &ctx)
         : m_Context(ctx) {
     }
 
-    void RenderTargetManager::Create(u32 width, u32 height, VkSampleCountFlagBits samples) {
+    void CRenderTargetManager::Create(u32 width, u32 height, VkSampleCountFlagBits samples) {
         m_LastSamples = samples;
         CreateOffscreen(width, height);
         CreateDepth(width, height, samples);
         CreateMsaaColor(width, height, samples);
     }
 
-    void RenderTargetManager::Destroy() {
+    void CRenderTargetManager::Destroy() {
         VkDevice device = m_Context.GetDevice();
 
         if (m_OffscreenSampler != VK_NULL_HANDLE) {
@@ -29,8 +29,8 @@ namespace Manro {
         DestroyImage(m_Context, m_DepthImage);
     }
 
-    void RenderTargetManager::CreateOffscreen(u32 w, u32 h) {
-        ImageCreateParams p{};
+    void CRenderTargetManager::CreateOffscreen(u32 w, u32 h) {
+        ImageCreateParams_t p{};
         p.width = w;
         p.height = h;
         p.format = m_OffscreenFormat;
@@ -69,8 +69,8 @@ namespace Manro {
         });
     }
 
-    void RenderTargetManager::CreateDepth(u32 w, u32 h, VkSampleCountFlagBits samples) {
-        ImageCreateParams p{};
+    void CRenderTargetManager::CreateDepth(u32 w, u32 h, VkSampleCountFlagBits samples) {
+        ImageCreateParams_t p{};
         p.width = w;
         p.height = h;
         p.format = m_DepthFormat;
@@ -79,10 +79,10 @@ namespace Manro {
         m_DepthImage = CreateImage(m_Context, p, VK_IMAGE_ASPECT_DEPTH_BIT);
     }
 
-    void RenderTargetManager::CreateMsaaColor(u32 w, u32 h, VkSampleCountFlagBits samples) {
+    void CRenderTargetManager::CreateMsaaColor(u32 w, u32 h, VkSampleCountFlagBits samples) {
         if (samples == VK_SAMPLE_COUNT_1_BIT) return;
 
-        ImageCreateParams p{};
+        ImageCreateParams_t p{};
         p.width = w;
         p.height = h;
         p.format = m_OffscreenFormat;

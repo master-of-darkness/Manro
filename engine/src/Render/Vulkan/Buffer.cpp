@@ -6,9 +6,9 @@
 #include <cstring>
 
 namespace Manro {
-    Buffer::Buffer(const VulkanContext &context, VkDeviceSize size, VkBufferUsageFlags usage,
-                   VmaMemoryUsage memoryUsage)
-        : m_Context(context), m_Size(size) {
+    CBuffer::CBuffer(const CVulkanContext &context, VkDeviceSize size, VkBufferUsageFlags usage,
+                     VmaMemoryUsage memoryUsage)
+        : m_Context(context), m_unSize(size) {
         VkBufferCreateInfo bufferInfo{};
         bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         bufferInfo.size = size;
@@ -27,23 +27,23 @@ namespace Manro {
         }
     }
 
-    Buffer::~Buffer() {
+    CBuffer::~CBuffer() {
         if (m_Buffer) {
             vmaDestroyBuffer(m_Context.GetAllocator(), m_Buffer, m_Allocation);
         }
     }
 
-    void *Buffer::Map() {
+    void *CBuffer::Map() {
         void *data;
         vmaMapMemory(m_Context.GetAllocator(), m_Allocation, &data);
         return data;
     }
 
-    void Buffer::Unmap() {
+    void CBuffer::Unmap() {
         vmaUnmapMemory(m_Context.GetAllocator(), m_Allocation);
     }
 
-    void Buffer::LoadData(const void *data, size_t size, size_t offset) {
+    void CBuffer::LoadData(const void *data, size_t size, size_t offset) {
         void *mappedData;
 
         if (m_AllocationInfo.pMappedData) {

@@ -15,7 +15,7 @@ namespace Manro {
         Restored,
     };
 
-    struct WindowDesc {
+    struct WindowDesc_t {
         std::string Title = "Manro";
         u32 Width = 1280;
         u32 Height = 720;
@@ -27,7 +27,7 @@ namespace Manro {
     public:
         ~IWindow() override = default;
 
-        virtual bool Initialize(const WindowDesc &desc) = 0;
+        virtual bool Initialize(const WindowDesc_t &desc) = 0;
 
         virtual void Shutdown() = 0;
 

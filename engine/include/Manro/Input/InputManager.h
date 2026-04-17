@@ -6,27 +6,27 @@
 namespace Manro {
     class IInputBackend;
 
-    class InputManager {
+    class CInputManager {
     public:
-        InputManager() = default;
+        CInputManager() = default;
 
-        ~InputManager() = default;
+        ~CInputManager() = default;
 
-        InputManager(const InputManager &) = delete;
+        CInputManager(const CInputManager &) = delete;
 
-        InputManager &operator=(const InputManager &) = delete;
+        CInputManager &operator=(const CInputManager &) = delete;
 
         void SetBackend(IInputBackend *backend) { m_Backend = backend; }
 
-        UserCmd Poll() const;
+        UserCmd_t Poll() const;
 
         bool IsKeyDown(Key k) const;
 
         bool IsMouseButtonDown(MouseButton button) const;
 
-        RawMouseDelta ConsumeMouseDelta() const;
+        RawMouseDelta_t ConsumeMouseDelta() const;
 
-        void ProcessEvent(const PlatformEvent &event) const;
+        void ProcessEvent(const PlatformEvent_t &event) const;
 
     private:
         IInputBackend *m_Backend{nullptr};

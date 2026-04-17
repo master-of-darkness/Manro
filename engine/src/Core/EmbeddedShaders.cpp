@@ -19,7 +19,7 @@
 
 namespace Manro {
     void RegisterEmbeddedShaders() {
-        auto &vfs = VirtualFS::Get();
+        auto &vfs = CVirtualFS::Get();
 
         vfs.Mount("shaders://pbr.vert.spv", pbr_vert_spv, pbr_vert_spv_len);
         vfs.Mount("shaders://pbr.frag.spv", pbr_frag_spv, pbr_frag_spv_len);

@@ -8,23 +8,23 @@
 #include <functional>
 
 namespace Manro {
-    class Registry;
+    class CRegistry;
 
     using BodySyncCallback = std::function<void(u32 entity, const Vec3 & pos, const Vec3 & vel)>;
 
-    class PhysicsWorld {
+    class CPhysicsWorld {
     public:
-        struct StaticBodyDesc {
+        struct StaticBodyDesc_t {
             float friction;
             float restitution;
             float convexRadius;
 
-            StaticBodyDesc(float friction = 0.2f, float restitution = 0.f, float convexRadius = 0.01f)
+            StaticBodyDesc_t(float friction = 0.2f, float restitution = 0.f, float convexRadius = 0.01f)
                 : friction(friction), restitution(restitution), convexRadius(convexRadius) {
             }
         };
 
-        struct DynamicBodyDesc {
+        struct DynamicBodyDesc_t {
             float mass;
             float friction;
             float restitution;
@@ -34,14 +34,14 @@ namespace Manro {
             float maxLinearVelocity;
             float maxAngularVelocity;
 
-            DynamicBodyDesc(float mass = 1.f,
-                            float friction = 0.2f,
-                            float restitution = 0.f,
-                            float convexRadius = 0.02f,
-                            bool allowSleeping = false,
-                            bool lockRotation = false,
-                            float maxLinearVelocity = 50000.f,
-                            float maxAngularVelocity = 100.f)
+            DynamicBodyDesc_t(float mass = 1.f,
+                              float friction = 0.2f,
+                              float restitution = 0.f,
+                              float convexRadius = 0.02f,
+                              bool allowSleeping = false,
+                              bool lockRotation = false,
+                              float maxLinearVelocity = 50000.f,
+                              float maxAngularVelocity = 100.f)
                 : mass(mass),
                   friction(friction),
                   restitution(restitution),
@@ -53,37 +53,37 @@ namespace Manro {
             }
         };
 
-        struct RaycastHit {
+        struct RaycastHit_t {
             PhysicsBodyHandle body{kInvalidBodyHandle};
             Vec3 position{0.f};
             float fraction{0.f};
             Vec3 normal{0.f};
         };
 
-        PhysicsWorld();
+        CPhysicsWorld();
 
-        ~PhysicsWorld();
+        ~CPhysicsWorld();
 
-        PhysicsWorld(const PhysicsWorld &) = delete;
+        CPhysicsWorld(const CPhysicsWorld &) = delete;
 
-        PhysicsWorld &operator=(const PhysicsWorld &) = delete;
+        CPhysicsWorld &operator=(const CPhysicsWorld &) = delete;
 
         void Step(float deltaTime);
 
         PhysicsBodyHandle AddStaticBox(const Vec3 &position, const Vec3 &halfExtents,
-                                       const StaticBodyDesc &desc = {});
+                                       const StaticBodyDesc_t &desc = {});
 
         PhysicsBodyHandle AddDynamicBox(const Vec3 &position, const Vec3 &halfExtents,
-                                        const DynamicBodyDesc &desc = {});
+                                        const DynamicBodyDesc_t &desc = {});
 
         PhysicsBodyHandle AddDynamicCapsule(const Vec3 &position, float radius, float halfHeight,
-                                            const DynamicBodyDesc &desc = {});
+                                            const DynamicBodyDesc_t &desc = {});
 
         PhysicsBodyHandle AddStaticMesh(const std::vector<Vec3> &vertices, const std::vector<u32> &indices,
                                         const Mat4 &transform = Mat4(1.f));
 
         PhysicsBodyHandle AddDynamicCone(const Vec3 &position, float radius, float height,
-                                         const DynamicBodyDesc &desc = {});
+                                         const DynamicBodyDesc_t &desc = {});
 
         void RemoveBody(PhysicsBodyHandle handle);
 
@@ -106,7 +106,7 @@ namespace Manro {
         bool IsGrounded(PhysicsBodyHandle handle) const;
 
         bool RaycastClosest(const Vec3 &origin, const Vec3 &direction, float distance,
-                            RaycastHit &outHit, PhysicsBodyHandle ignore = kInvalidBodyHandle) const;
+                            RaycastHit_t &outHit, PhysicsBodyHandle ignore = kInvalidBodyHandle) const;
 
         void SetKinematicVelocity(PhysicsBodyHandle handle, const Vec3 &velocity);
 
@@ -114,21 +114,21 @@ namespace Manro {
 
         void ForEachDynamicBody(const BodySyncCallback &cb) const;
 
-        void DrawPhysics(class Renderer &renderer) const;
+        void DrawPhysics(class CRenderer &renderer) const;
 
     private:
-        struct Impl;
-        std::unique_ptr<Impl> m_Impl;
+        struct Impl_t;
+        std::unique_ptr<Impl_t> m_Impl;
 
-        float m_Accumulator{0.f};
+        float m_flAccumulator{0.f};
 
         static constexpr float FIXED_STEP = 1.f / 60.f;
 
-        struct KinematicMove {
+        struct KinematicMove_t {
             u32 rawId;
             Vec3 velocity;
         };
 
-        std::vector<KinematicMove> m_PendingKinematicMoves;
+        std::vector<KinematicMove_t> m_PendingKinematicMoves;
     };
 } // namespace Manro

@@ -5,17 +5,17 @@
 #include <vector>
 
 namespace Manro {
-    class VulkanContext;
+    class CVulkanContext;
 
-    class SwapchainManager {
+    class CSwapchainManager {
     public:
-        explicit SwapchainManager(VulkanContext &ctx);
+        explicit CSwapchainManager(CVulkanContext &ctx);
 
-        ~SwapchainManager() = default;
+        ~CSwapchainManager() = default;
 
-        SwapchainManager(const SwapchainManager &) = delete;
+        CSwapchainManager(const CSwapchainManager &) = delete;
 
-        SwapchainManager &operator=(const SwapchainManager &) = delete;
+        CSwapchainManager &operator=(const CSwapchainManager &) = delete;
 
         void Init(u32 width, u32 height, bool vsync);
 
@@ -44,13 +44,13 @@ namespace Manro {
         VkSemaphore GetImageAvailableSemaphore(u32 i) const { return m_ImageAvailableSemaphores[i]; }
         VkSemaphore GetRenderFinishedSemaphore(u32 i) const { return m_RenderFinishedSemaphores[i]; }
         VkFence GetInFlightFence(u32 i) const { return m_InFlightFences[i]; }
-        bool NeedsRecreate() const { return m_NeedsRecreate; }
-        void SetNeedsRecreate(bool v) { m_NeedsRecreate = v; }
+        bool NeedsRecreate() const { return m_bNeedsRecreate; }
+        void SetNeedsRecreate(bool v) { m_bNeedsRecreate = v; }
 
         const std::vector<VkImage> &GetImages() const { return m_SwapchainImages; }
 
     private:
-        VulkanContext &m_Context;
+        CVulkanContext &m_Context;
 
         VkSwapchainKHR m_Swapchain{VK_NULL_HANDLE};
         VkFormat m_SwapchainFormat{VK_FORMAT_UNDEFINED};
@@ -61,6 +61,6 @@ namespace Manro {
         std::vector<VkSemaphore> m_ImageAvailableSemaphores;
         std::vector<VkSemaphore> m_RenderFinishedSemaphores;
         std::vector<VkFence> m_InFlightFences;
-        bool m_NeedsRecreate{false};
+        bool m_bNeedsRecreate{false};
     };
 } // namespace Manro

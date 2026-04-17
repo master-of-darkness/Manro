@@ -7,34 +7,34 @@
 #include <vector>
 
 namespace Manro {
-    class MeshManager;
-    class MaterialInstance;
-    class MaterialSystem;
-    class Model;
+    class CMeshManager;
+    class CMaterialInstance;
+    class CMaterialSystem;
+    class CModel;
 
-    class InstanceBatcher {
+    class CInstanceBatcher {
     public:
         void Init(u32 maxInstances);
 
-        void DrawMesh(MeshHandle meshId, MaterialInstance &material, const Mat4 &model,
-                      MeshManager &meshes, MaterialSystem &matSys, FrameStats &stats);
+        void DrawMesh(MeshHandle meshId, CMaterialInstance &material, const Mat4 &model,
+                      CMeshManager &meshes, CMaterialSystem &matSys, FrameStats_t &stats);
 
-        void DrawMeshStatic(MeshHandle meshId, MaterialInstance &material, const Mat4 &model,
-                            MeshManager &meshes, MaterialSystem &matSys);
+        void DrawMeshStatic(MeshHandle meshId, CMaterialInstance &material, const Mat4 &model,
+                            CMeshManager &meshes, CMaterialSystem &matSys);
 
-        void DrawModel(const Model &model, const Mat4 &transform,
-                       MeshManager &meshes, MaterialSystem &matSys, FrameStats &stats);
+        void DrawModel(const CModel &model, const Mat4 &transform,
+                       CMeshManager &meshes, CMaterialSystem &matSys, FrameStats_t &stats);
 
-        void DrawModelStatic(const Model &model, const Mat4 &transform,
-                             MeshManager &meshes, MaterialSystem &matSys);
+        void DrawModelStatic(const CModel &model, const Mat4 &transform,
+                             CMeshManager &meshes, CMaterialSystem &matSys);
 
         void ClearStaticDraws();
 
         void ClearFrameInstances();
 
-        void UploadToGpu(FrameData &frame);
+        void UploadToGpu(FrameData_t &frame);
 
-        void InvalidateStaticUpload(std::vector<FrameData> &frames);
+        void InvalidateStaticUpload(std::vector<FrameData_t> &frames);
 
         [[nodiscard]] u32 GetTotalInstanceCount() const {
             return static_cast<u32>(m_StaticInstances.size() + m_CurrentFrameInstances.size());
@@ -44,21 +44,21 @@ namespace Manro {
             return static_cast<u32>(m_StaticInstances.size());
         }
 
-        [[nodiscard]] u32 GetStaticTriangleCount() const { return m_StaticTriangleCount; }
+        [[nodiscard]] u32 GetStaticTriangleCount() const { return m_unStaticTriangleCount; }
 
-        [[nodiscard]] const std::vector<MeshInstance> &GetStaticInstances() const { return m_StaticInstances; }
+        [[nodiscard]] const std::vector<MeshInstance_t> &GetStaticInstances() const { return m_StaticInstances; }
 
-        [[nodiscard]] const std::vector<CullData> &GetStaticCullData() const { return m_StaticCullData; }
+        [[nodiscard]] const std::vector<CullData_t> &GetStaticCullData() const { return m_StaticCullData; }
 
-        [[nodiscard]] const std::vector<MeshInstance> &GetFrameInstances() const { return m_CurrentFrameInstances; }
+        [[nodiscard]] const std::vector<MeshInstance_t> &GetFrameInstances() const { return m_CurrentFrameInstances; }
 
-        [[nodiscard]] const std::vector<CullData> &GetFrameCullData() const { return m_CurrentFrameCullData; }
+        [[nodiscard]] const std::vector<CullData_t> &GetFrameCullData() const { return m_CurrentFrameCullData; }
 
     private:
-        std::vector<MeshInstance> m_CurrentFrameInstances;
-        std::vector<CullData> m_CurrentFrameCullData;
-        std::vector<MeshInstance> m_StaticInstances;
-        std::vector<CullData> m_StaticCullData;
-        u32 m_StaticTriangleCount = 0;
+        std::vector<MeshInstance_t> m_CurrentFrameInstances;
+        std::vector<CullData_t> m_CurrentFrameCullData;
+        std::vector<MeshInstance_t> m_StaticInstances;
+        std::vector<CullData_t> m_StaticCullData;
+        u32 m_unStaticTriangleCount = 0;
     };
 } // namespace Manro

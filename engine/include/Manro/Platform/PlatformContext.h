@@ -5,26 +5,26 @@
 #include <Manro/Core/Types.h>
 
 namespace Manro {
-    class InputManager;
+    class CInputManager;
 
-    class PlatformContext {
+    class CPlatformContext {
     public:
-        PlatformContext();
+        CPlatformContext();
 
-        ~PlatformContext();
+        ~CPlatformContext();
 
-        PlatformContext(const PlatformContext &) = delete;
+        CPlatformContext(const CPlatformContext &) = delete;
 
-        PlatformContext &operator=(const PlatformContext &) = delete;
+        CPlatformContext &operator=(const CPlatformContext &) = delete;
 
-        bool PollEvents(const InputManager *inputManager = nullptr);
+        bool PollEvents(const CInputManager *inputManager = nullptr);
 
-        WindowManager &GetWindowManager() { return m_WindowManager; }
+        CWindowManager &GetWindowManager() { return m_WindowManager; }
 
-        AudioManager &GetAudioManager() { return m_AudioManager; }
+        CAudioManager &GetAudioManager() { return m_AudioManager; }
 
     private:
-        WindowManager m_WindowManager;
-        AudioManager m_AudioManager;
+        CWindowManager m_WindowManager;
+        CAudioManager m_AudioManager;
     };
 } // namespace Manro

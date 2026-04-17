@@ -20,7 +20,7 @@ namespace Manro {
         PipelineVariant_Compute = 1 << 6, // marks this as a compute PSO key
     };
 
-    struct PipelineKey {
+    struct PipelineKey_t {
         u64 vertHash = 0; // FNV-1a of the SPIR-V bytecode
         u64 fragHash = 0; // 0 for compute pipelines
         u64 compHash = 0; // 0 for graphics pipelines
@@ -32,7 +32,7 @@ namespace Manro {
         u32 setLayoutCount = 0;
         u64 setLayoutHash = 0;
 
-        bool operator==(const PipelineKey &o) const {
+        bool operator==(const PipelineKey_t &o) const {
             return vertHash == o.vertHash
                    && fragHash == o.fragHash
                    && compHash == o.compHash
@@ -46,11 +46,11 @@ namespace Manro {
         }
     };
 
-    struct PipelineKeyHash {
-        size_t operator()(const PipelineKey &k) const noexcept {
+    struct PipelineKeyHash_t {
+        size_t operator()(const PipelineKey_t &k) const noexcept {
             const u8 *data = reinterpret_cast<const u8 *>(&k);
             size_t hash = 14695981039346656037ull;
-            for (size_t i = 0; i < sizeof(PipelineKey); ++i) {
+            for (size_t i = 0; i < sizeof(PipelineKey_t); ++i) {
                 hash ^= data[i];
                 hash *= 1099511628211ull;
             }
@@ -61,17 +61,17 @@ namespace Manro {
     using GraphicsBuildFn = std::function<VkPipeline(VkPipelineCache)>;
     using ComputeBuildFn = std::function<VkPipeline(VkPipelineCache)>;
 
-    class PipelineCache {
+    class CPipelineCache {
     public:
         void Init(VkDevice device, const std::string &diskPath = "");
 
         void Shutdown();
 
-        VkPipeline GetGraphics(const PipelineKey &key, GraphicsBuildFn buildFn);
+        VkPipeline GetGraphics(const PipelineKey_t &key, GraphicsBuildFn buildFn);
 
-        VkPipeline GetCompute(const PipelineKey &key, ComputeBuildFn buildFn);
+        VkPipeline GetCompute(const PipelineKey_t &key, ComputeBuildFn buildFn);
 
-        void Invalidate(const PipelineKey &key);
+        void Invalidate(const PipelineKey_t &key);
 
         static u64 HashSpirV(const std::vector<u8> &spv);
 
@@ -84,7 +84,7 @@ namespace Manro {
         VkPipelineCache m_Cache = VK_NULL_HANDLE;
         std::string m_DiskPath;
 
-        using PSOMap = std::unordered_map<PipelineKey, VkPipeline, PipelineKeyHash>;
+        using PSOMap = std::unordered_map<PipelineKey_t, VkPipeline, PipelineKeyHash_t>;
         PSOMap m_Graphics;
         PSOMap m_Compute;
 

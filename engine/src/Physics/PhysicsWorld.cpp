@@ -1,8 +1,8 @@
 #include <Manro/Physics/PhysicsWorld.h>
 #include <Manro/Core/Logger.h>
 #include <Manro/Core/Handles.h>
-#include <../Core/Profiling.h>
 #include <Manro/Render/Renderer.h>
+#include "../Core/Profiling.h"
 
 #include <Jolt/Jolt.h>
 #include <Jolt/Core/Factory.h>
@@ -56,9 +56,9 @@ namespace {
         static constexpr JPH::uint NUM_LAYERS = 2;
     }
 
-    class BPLayerInterfaceImpl final : public JPH::BroadPhaseLayerInterface {
+    class CBPLayerInterfaceImpl final : public JPH::BroadPhaseLayerInterface {
     public:
-        BPLayerInterfaceImpl() {
+        CBPLayerInterfaceImpl() {
             m_Map[Layers::NON_MOVING] = BroadPhaseLayers::NON_MOVING;
             m_Map[Layers::MOVING] = BroadPhaseLayers::MOVING;
         }
@@ -86,7 +86,7 @@ namespace {
         JPH::BroadPhaseLayer m_Map[Layers::NUM_LAYERS];
     };
 
-    class ObjectVsBroadPhaseLayerFilterImpl final : public JPH::ObjectVsBroadPhaseLayerFilter {
+    class CObjectVsBroadPhaseLayerFilterImpl final : public JPH::ObjectVsBroadPhaseLayerFilter {
     public:
         bool ShouldCollide(JPH::ObjectLayer l1, JPH::BroadPhaseLayer l2) const override {
             switch (l1) {
@@ -100,7 +100,7 @@ namespace {
         }
     };
 
-    class ObjectLayerPairFilterImpl final : public JPH::ObjectLayerPairFilter {
+    class CObjectLayerPairFilterImpl final : public JPH::ObjectLayerPairFilter {
     public:
         bool ShouldCollide(JPH::ObjectLayer l1, JPH::ObjectLayer l2) const override {
             switch (l1) {
@@ -132,7 +132,7 @@ static inline JPH::BodyID fromHandle(Manro::u32 handle) { return JPH::BodyID(han
 
 namespace Manro {
     namespace {
-        static void ApplyDynamicBodyDesc(JPH::BodyCreationSettings &bcs, const PhysicsWorld::DynamicBodyDesc &desc) {
+        static void ApplyDynamicBodyDesc(JPH::BodyCreationSettings &bcs, const CPhysicsWorld::DynamicBodyDesc_t &desc) {
             bcs.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
             bcs.mMassPropertiesOverride.mMass = desc.mass;
             bcs.mAllowSleeping = desc.allowSleeping;
@@ -148,19 +148,19 @@ namespace Manro {
         }
     }
 
-    struct PhysicsWorld::Impl {
+    struct CPhysicsWorld::Impl_t {
         std::unique_ptr<JPH::TempAllocatorImpl> tempAllocator;
         std::unique_ptr<JPH::JobSystemThreadPool> jobSystem;
         std::unique_ptr<JPH::PhysicsSystem> physicsSystem;
 
-        BPLayerInterfaceImpl bpLayerInterface;
-        ObjectVsBroadPhaseLayerFilterImpl objVsBroadPhase;
-        ObjectLayerPairFilterImpl objLayerFilter;
+        CBPLayerInterfaceImpl bpLayerInterface;
+        CObjectVsBroadPhaseLayerFilterImpl objVsBroadPhase;
+        CObjectLayerPairFilterImpl objLayerFilter;
 
         std::unordered_map<u32, u32> bodyToEntity;
     };
 
-    static void DrawShapeDebug(Renderer &renderer,
+    static void DrawShapeDebug(CRenderer &renderer,
                                const JPH::Shape *shape,
                                const JPH::RMat44 &worldTransform,
                                u32 color) {
@@ -221,7 +221,7 @@ namespace Manro {
         }
     }
 
-    PhysicsWorld::PhysicsWorld() {
+    CPhysicsWorld::CPhysicsWorld() {
         JPH::RegisterDefaultAllocator();
 #ifdef JPH_ENABLE_ASSERTS
         JPH::AssertFailed = JoltAssertFailed;
@@ -229,7 +229,7 @@ namespace Manro {
         JPH::Factory::sInstance = new JPH::Factory();
         JPH::RegisterTypes();
 
-        m_Impl = std::make_unique<Impl>();
+        m_Impl = std::make_unique<Impl_t>();
         m_Impl->tempAllocator = std::make_unique<JPH::TempAllocatorImpl>(64 * 1024 * 1024);
         m_Impl->jobSystem = std::make_unique<JPH::JobSystemThreadPool>(
             JPH::cMaxPhysicsJobs, JPH::cMaxPhysicsBarriers,
@@ -243,18 +243,18 @@ namespace Manro {
         m_Impl->physicsSystem->SetGravity(JPH::Vec3(0.f, -981.f, 0.f));
     }
 
-    PhysicsWorld::~PhysicsWorld() {
+    CPhysicsWorld::~CPhysicsWorld() {
         m_Impl.reset();
         JPH::UnregisterTypes();
         delete JPH::Factory::sInstance;
         JPH::Factory::sInstance = nullptr;
     }
 
-    void PhysicsWorld::Step(float deltaTime) {
+    void CPhysicsWorld::Step(float deltaTime) {
         MNR_PROFILE_FUNCTION();
-        m_Accumulator += (deltaTime > 0.25f) ? 0.25f : deltaTime;
+        m_flAccumulator += (deltaTime > 0.25f) ? 0.25f : deltaTime;
 
-        while (m_Accumulator >= FIXED_STEP) {
+        while (m_flAccumulator >= FIXED_STEP) {
             auto &bi = m_Impl->physicsSystem->GetBodyInterface();
             for (auto &km: m_PendingKinematicMoves) {
                 JPH::BodyID bid = fromHandle(km.rawId);
@@ -272,21 +272,21 @@ namespace Manro {
                                               m_Impl->tempAllocator.get(),
                                               m_Impl->jobSystem.get());
             }
-            m_Accumulator -= FIXED_STEP;
+            m_flAccumulator -= FIXED_STEP;
         }
         m_PendingKinematicMoves.clear();
     }
 
-    void PhysicsWorld::SetBodyUserData(PhysicsBodyHandle handle, u32 entityId) {
+    void CPhysicsWorld::SetBodyUserData(PhysicsBodyHandle handle, u32 entityId) {
         m_Impl->bodyToEntity[handle] = entityId;
     }
 
-    u32 PhysicsWorld::GetBodyUserData(PhysicsBodyHandle handle) const {
+    u32 CPhysicsWorld::GetBodyUserData(PhysicsBodyHandle handle) const {
         auto it = m_Impl->bodyToEntity.find(handle);
         return (it != m_Impl->bodyToEntity.end()) ? it->second : 0xFFFFFFFF;
     }
 
-    void PhysicsWorld::ForEachDynamicBody(const BodySyncCallback &cb) const {
+    void CPhysicsWorld::ForEachDynamicBody(const BodySyncCallback &cb) const {
         if (!cb) return;
         auto &bi = m_Impl->physicsSystem->GetBodyInterface();
         for (auto &[handle, entityId]: m_Impl->bodyToEntity) {
@@ -305,14 +305,14 @@ namespace Manro {
         }
     }
 
-    PhysicsBodyHandle PhysicsWorld::AddStaticBox(const Vec3 &position, const Vec3 &halfExtents,
-                                                 const StaticBodyDesc &desc) {
+    PhysicsBodyHandle CPhysicsWorld::AddStaticBox(const Vec3 &position, const Vec3 &halfExtents,
+                                                  const StaticBodyDesc_t &desc) {
         auto &bi = m_Impl->physicsSystem->GetBodyInterface();
         JPH::BoxShapeSettings ss(JPH::Vec3(halfExtents.x, halfExtents.y, halfExtents.z));
         ss.mConvexRadius = desc.convexRadius;
         auto sr = ss.Create();
         if (sr.HasError()) {
-            LOG_ERROR("[PhysicsWorld] {}", sr.GetError());
+            LOG_ERROR("[CPhysicsWorld] {}", sr.GetError());
             return kInvalidBodyHandle;
         }
 
@@ -327,14 +327,14 @@ namespace Manro {
         return toHandle(body->GetID());
     }
 
-    PhysicsBodyHandle PhysicsWorld::AddDynamicBox(const Vec3 &position, const Vec3 &halfExtents,
-                                                  const DynamicBodyDesc &desc) {
+    PhysicsBodyHandle CPhysicsWorld::AddDynamicBox(const Vec3 &position, const Vec3 &halfExtents,
+                                                   const DynamicBodyDesc_t &desc) {
         auto &bi = m_Impl->physicsSystem->GetBodyInterface();
         JPH::BoxShapeSettings ss(JPH::Vec3(halfExtents.x, halfExtents.y, halfExtents.z));
         ss.mConvexRadius = desc.convexRadius;
         auto sr = ss.Create();
         if (sr.HasError()) {
-            LOG_ERROR("[PhysicsWorld] {}", sr.GetError());
+            LOG_ERROR("[CPhysicsWorld] {}", sr.GetError());
             return kInvalidBodyHandle;
         }
 
@@ -349,13 +349,13 @@ namespace Manro {
     }
 
     PhysicsBodyHandle
-    PhysicsWorld::AddDynamicCapsule(const Vec3 &position, float radius, float halfHeight,
-                                    const DynamicBodyDesc &desc) {
+    CPhysicsWorld::AddDynamicCapsule(const Vec3 &position, float radius, float halfHeight,
+                                     const DynamicBodyDesc_t &desc) {
         auto &bi = m_Impl->physicsSystem->GetBodyInterface();
         JPH::CapsuleShapeSettings cs(halfHeight, radius);
         auto sr = cs.Create();
         if (sr.HasError()) {
-            LOG_ERROR("[PhysicsWorld] {}", sr.GetError());
+            LOG_ERROR("[CPhysicsWorld] {}", sr.GetError());
             return kInvalidBodyHandle;
         }
 
@@ -364,7 +364,7 @@ namespace Manro {
             JPH::Vec3(0.f, centerOffset, 0.f), JPH::Quat::sIdentity(), sr.Get());
         auto rsr = rts.Create();
         if (rsr.HasError()) {
-            LOG_ERROR("[PhysicsWorld] {}", rsr.GetError());
+            LOG_ERROR("[CPhysicsWorld] {}", rsr.GetError());
             return kInvalidBodyHandle;
         }
 
@@ -378,9 +378,9 @@ namespace Manro {
         return toHandle(body->GetID());
     }
 
-    PhysicsBodyHandle PhysicsWorld::AddStaticMesh(const std::vector<Vec3> &vertices,
-                                                  const std::vector<u32> &indices,
-                                                  const Mat4 &transform) {
+    PhysicsBodyHandle CPhysicsWorld::AddStaticMesh(const std::vector<Vec3> &vertices,
+                                                   const std::vector<u32> &indices,
+                                                   const Mat4 &transform) {
         if (vertices.empty() || indices.empty()) return kInvalidBodyHandle;
 
         JPH::VertexList joltVertices;
@@ -413,14 +413,14 @@ namespace Manro {
         }
 
         if (joltTriangles.empty()) {
-            LOG_ERROR("[PhysicsWorld] AddStaticMesh: no valid triangles after filtering.");
+            LOG_ERROR("[CPhysicsWorld] AddStaticMesh: no valid triangles after filtering.");
             return kInvalidBodyHandle;
         }
 
         JPH::MeshShapeSettings meshSettings(joltVertices, joltTriangles);
         auto sr = meshSettings.Create();
         if (sr.HasError()) {
-            LOG_ERROR("[PhysicsWorld] MeshShape error: {}", sr.GetError());
+            LOG_ERROR("[CPhysicsWorld] MeshShape error: {}", sr.GetError());
             return kInvalidBodyHandle;
         }
 
@@ -433,8 +433,8 @@ namespace Manro {
         return toHandle(body->GetID());
     }
 
-    PhysicsBodyHandle PhysicsWorld::AddDynamicCone(const Vec3 &position, float radius, float height,
-                                                   const DynamicBodyDesc &desc) {
+    PhysicsBodyHandle CPhysicsWorld::AddDynamicCone(const Vec3 &position, float radius, float height,
+                                                    const DynamicBodyDesc_t &desc) {
         auto &bi = m_Impl->physicsSystem->GetBodyInterface();
         std::vector<JPH::Vec3> points;
         points.push_back(JPH::Vec3(0, height * 0.5f, 0));
@@ -445,7 +445,7 @@ namespace Manro {
         JPH::ConvexHullShapeSettings cs(points.data(), static_cast<int>(points.size()));
         auto sr = cs.Create();
         if (sr.HasError()) {
-            LOG_ERROR("[PhysicsWorld] {}", sr.GetError());
+            LOG_ERROR("[CPhysicsWorld] {}", sr.GetError());
             return kInvalidBodyHandle;
         }
 
@@ -459,7 +459,7 @@ namespace Manro {
         return toHandle(body->GetID());
     }
 
-    void PhysicsWorld::RemoveBody(PhysicsBodyHandle handle) {
+    void CPhysicsWorld::RemoveBody(PhysicsBodyHandle handle) {
         JPH::BodyID id = fromHandle(handle);
         if (id.IsInvalid()) return;
         auto &bi = m_Impl->physicsSystem->GetBodyInterface();
@@ -468,7 +468,7 @@ namespace Manro {
         m_Impl->bodyToEntity.erase(handle);
     }
 
-    bool PhysicsWorld::IsGrounded(PhysicsBodyHandle handle) const {
+    bool CPhysicsWorld::IsGrounded(PhysicsBodyHandle handle) const {
         JPH::BodyID id = fromHandle(handle);
         if (id.IsInvalid()) return false;
         auto &bi = m_Impl->physicsSystem->GetBodyInterface();
@@ -518,8 +518,8 @@ namespace Manro {
         return false;
     }
 
-    bool PhysicsWorld::RaycastClosest(const Vec3 &origin, const Vec3 &direction, float distance,
-                                      RaycastHit &outHit, PhysicsBodyHandle ignore) const {
+    bool CPhysicsWorld::RaycastClosest(const Vec3 &origin, const Vec3 &direction, float distance,
+                                       RaycastHit_t &outHit, PhysicsBodyHandle ignore) const {
         if (distance <= 0.f) return false;
 
         const float dirLen = glm::length(direction);
@@ -570,14 +570,14 @@ namespace Manro {
         return true;
     }
 
-    void PhysicsWorld::ApplyLinearImpulse(PhysicsBodyHandle handle, const Vec3 &impulse) {
+    void CPhysicsWorld::ApplyLinearImpulse(PhysicsBodyHandle handle, const Vec3 &impulse) {
         JPH::BodyID id = fromHandle(handle);
         if (id.IsInvalid()) return;
         m_Impl->physicsSystem->GetBodyInterface().AddImpulse(
             id, JPH::Vec3(impulse.x, impulse.y, impulse.z));
     }
 
-    Vec3 PhysicsWorld::GetBodyPosition(PhysicsBodyHandle handle) const {
+    Vec3 CPhysicsWorld::GetBodyPosition(PhysicsBodyHandle handle) const {
         JPH::BodyID id = fromHandle(handle);
         if (id.IsInvalid()) return Vec3(0.f);
         JPH::RVec3 pos = m_Impl->physicsSystem->GetBodyInterface().GetPosition(id);
@@ -586,28 +586,28 @@ namespace Manro {
                     static_cast<f32>(pos.GetZ()));
     }
 
-    void PhysicsWorld::SetBodyPosition(PhysicsBodyHandle handle, const Vec3 &position) {
+    void CPhysicsWorld::SetBodyPosition(PhysicsBodyHandle handle, const Vec3 &position) {
         JPH::BodyID id = fromHandle(handle);
         if (id.IsInvalid()) return;
         m_Impl->physicsSystem->GetBodyInterface().SetPosition(
             id, JPH::RVec3(position.x, position.y, position.z), JPH::EActivation::Activate);
     }
 
-    Vec3 PhysicsWorld::GetBodyLinearVelocity(PhysicsBodyHandle handle) const {
+    Vec3 CPhysicsWorld::GetBodyLinearVelocity(PhysicsBodyHandle handle) const {
         JPH::BodyID id = fromHandle(handle);
         if (id.IsInvalid()) return Vec3(0.f);
         JPH::Vec3 vel = m_Impl->physicsSystem->GetBodyInterface().GetLinearVelocity(id);
         return Vec3(vel.GetX(), vel.GetY(), vel.GetZ());
     }
 
-    void PhysicsWorld::SetLinearVelocity(PhysicsBodyHandle handle, const Vec3 &velocity) {
+    void CPhysicsWorld::SetLinearVelocity(PhysicsBodyHandle handle, const Vec3 &velocity) {
         JPH::BodyID id = fromHandle(handle);
         if (id.IsInvalid()) return;
         m_Impl->physicsSystem->GetBodyInterface().SetLinearVelocity(
             id, JPH::Vec3(velocity.x, velocity.y, velocity.z));
     }
 
-    void PhysicsWorld::SetBodyMotionType(PhysicsBodyHandle handle, bool kinematic) {
+    void CPhysicsWorld::SetBodyMotionType(PhysicsBodyHandle handle, bool kinematic) {
         JPH::BodyID id = fromHandle(handle);
         if (id.IsInvalid()) return;
         auto &bi = m_Impl->physicsSystem->GetBodyInterface();
@@ -617,11 +617,11 @@ namespace Manro {
             JPH::EActivation::Activate);
     }
 
-    void PhysicsWorld::SetKinematicVelocity(PhysicsBodyHandle handle, const Vec3 &velocity) {
+    void CPhysicsWorld::SetKinematicVelocity(PhysicsBodyHandle handle, const Vec3 &velocity) {
         m_PendingKinematicMoves.push_back({handle, velocity});
     }
 
-    void PhysicsWorld::WakeBodyAndNeighbours(PhysicsBodyHandle handle, float radius) {
+    void CPhysicsWorld::WakeBodyAndNeighbours(PhysicsBodyHandle handle, float radius) {
         JPH::BodyID id = fromHandle(handle);
         if (id.IsInvalid()) return;
         auto &bi = m_Impl->physicsSystem->GetBodyInterface();
@@ -633,7 +633,7 @@ namespace Manro {
         JPH::AABox box(JPH::Vec3(px - radius, py - radius, pz - radius),
                        JPH::Vec3(px + radius, py + radius, pz + radius));
 
-        class WC : public JPH::CollideShapeBodyCollector {
+        class CWC : public JPH::CollideShapeBodyCollector {
         public:
             std::vector<JPH::BodyID> hits;
 
@@ -647,7 +647,7 @@ namespace Manro {
         }
     }
 
-    void PhysicsWorld::DrawPhysics(Renderer &renderer) const {
+    void CPhysicsWorld::DrawPhysics(CRenderer &renderer) const {
         JPH::BodyIDVector allBodies;
         m_Impl->physicsSystem->GetBodies(allBodies);
         auto &bi = m_Impl->physicsSystem->GetBodyInterface();

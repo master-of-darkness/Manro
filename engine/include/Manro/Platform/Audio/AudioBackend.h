@@ -9,11 +9,11 @@ struct MIX_Track;
 struct MIX_Mixer;
 
 namespace Manro {
-    class AudioBackend final : public IAudioBackend {
+    class CAudioBackend final : public IAudioBackend {
     public:
-        AudioBackend() = default;
+        CAudioBackend() = default;
 
-        ~AudioBackend() override { Shutdown(); }
+        ~CAudioBackend() override { Shutdown(); }
 
         bool Initialize() override;
 
@@ -48,20 +48,20 @@ namespace Manro {
         void SetMusicVolume(f32 volume) override;
 
     private:
-        struct LoadedSound {
-            MIX_Audio *audio{nullptr};
-            MIX_Track *track{nullptr};
+        struct LoadedSound_t {
+            MIX_Audio *pAudio{nullptr};
+            MIX_Track *pTrack{nullptr};
         };
 
-        std::unordered_map<SoundHandle, LoadedSound> m_Sounds;
-        SoundHandle m_NextHandle{1};
+        std::unordered_map<SoundHandle, LoadedSound_t> m_Sounds;
+        SoundHandle m_nNextHandle{1};
 
-        MIX_Mixer *m_Mixer{nullptr};
+        MIX_Mixer *m_pMixer{nullptr};
 
-        MIX_Audio *m_MusicAudio{nullptr};
-        MIX_Track *m_MusicTrack{nullptr};
+        MIX_Audio *m_pMusicAudio{nullptr};
+        MIX_Track *m_pMusicTrack{nullptr};
 
-        bool m_Initialized{false};
-        float m_MasterVolume{1.0f};
+        bool m_bInitialized{false};
+        float m_flMasterVolume{1.0f};
     };
 } // namespace Manro

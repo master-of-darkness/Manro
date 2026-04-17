@@ -6,9 +6,9 @@
 #include <Manro/Render/Material/MaterialData.h>
 
 namespace Manro {
-    class MaterialInstance {
+    class CMaterialInstance {
     public:
-        MaterialInstance(Ref<Material> material)
+        CMaterialInstance(Ref<CMaterial> material)
             : m_Material(material), m_Data(shaderio::defaultGltfMaterial()) {
         }
 
@@ -17,7 +17,7 @@ namespace Manro {
             m_Data.pbrBaseColorTexture = (!texture.IsValid())
                                              ? static_cast<uint16_t>(0)
                                              : static_cast<uint16_t>(texture.Index() + 1);
-            m_Dirty = true;
+            m_bDirty = true;
         }
 
         TextureHandle GetTexture() const {
@@ -26,32 +26,32 @@ namespace Manro {
                        : TextureHandle::Make(m_Data.pbrBaseColorTexture - 1, 0);
         }
 
-        const Material &GetMaterial() const { return *m_Material; }
+        const CMaterial &GetMaterial() const { return *m_Material; }
 
-        Ref<Material> GetMaterialRef() const { return m_Material; }
+        Ref<CMaterial> GetMaterialRef() const { return m_Material; }
 
-        u32 GetRendererIndex() const { return m_RendererIndex; }
+        u32 GetRendererIndex() const { return m_unRendererIndex; }
 
         void SetRendererIndex(u32 index) {
-            m_RendererIndex = index;
-            m_Dirty = false;
+            m_unRendererIndex = index;
+            m_bDirty = false;
         }
 
-        bool IsDirty() const { return m_Dirty; }
+        bool IsDirty() const { return m_bDirty; }
 
-        void MarkDirty() { m_Dirty = true; }
+        void MarkDirty() { m_bDirty = true; }
 
         const MaterialData &GetData() const { return m_Data; }
 
         MaterialData &ModifyData() {
-            m_Dirty = true;
+            m_bDirty = true;
             return m_Data;
         }
 
     private:
-        Ref<Material> m_Material;
+        Ref<CMaterial> m_Material;
         MaterialData m_Data;
-        u32 m_RendererIndex{0xFFFFFFFF};
-        bool m_Dirty{true};
+        u32 m_unRendererIndex{0xFFFFFFFF};
+        bool m_bDirty{true};
     };
 } // namespace Manro

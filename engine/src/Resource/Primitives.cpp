@@ -5,18 +5,18 @@
 
 namespace Manro {
     namespace {
-        struct CubeFace {
+        struct CubeFace_t {
             Vec3 normal;
             Vec3 tangentDir;
             Vec3 bitangentDir;
         };
     }
 
-    ModelData Primitives::CreateCube(float size) {
-        ModelData data;
+    ModelData_t CPrimitives::CreateCube(float size) {
+        ModelData_t data;
         const float h = size * 0.5f;
 
-        const std::array<CubeFace, 6> faces{
+        const std::array<CubeFace_t, 6> faces{
             {
                 {{0.f, 0.f, 1.f}, {1.f, 0.f, 0.f}, {0.f, 1.f, 0.f}},
                 {{0.f, 0.f, -1.f}, {-1.f, 0.f, 0.f}, {0.f, 1.f, 0.f}},
@@ -39,7 +39,7 @@ namespace Manro {
         data.vertices.reserve(24);
         data.indices.reserve(36);
 
-        for (const CubeFace &face: faces) {
+        for (const CubeFace_t &face: faces) {
             const u32 baseIdx = static_cast<u32>(data.vertices.size());
             const Vec3 center = face.normal * h;
             const Vec3 tangent = face.tangentDir * h;
@@ -55,7 +55,7 @@ namespace Manro {
             };
 
             for (size_t i = 0; i < positions.size(); ++i) {
-                Vertex vert{};
+                Vertex_t vert{};
                 vert.position = positions[i];
                 vert.normal = face.normal;
                 vert.uv = uvs[i];

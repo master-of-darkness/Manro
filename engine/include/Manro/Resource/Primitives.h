@@ -4,8 +4,8 @@
 #include <Manro/Core/Types.h>
 
 namespace Manro {
-    class Primitives {
+    class CPrimitives {
     public:
-        static ModelData CreateCube(float size = 1.0f);
+        static ModelData_t CreateCube(float size = 1.0f);
     };
 } // namespace Manro

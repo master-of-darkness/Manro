@@ -3,86 +3,86 @@
 #include <Manro/Render/Renderer.h>
 
 namespace Manro {
-    Scope<RendererImpl> CreateRendererImpl(IWindow &window, u32 width, u32 height,
-                                           const RenderSettings &settings, const RendererConfig &config);
+    Scope<CRendererImpl> CreateRendererImpl(IWindow &window, u32 width, u32 height,
+                                            const RenderSettings_t &settings, const RendererConfig_t &config);
 
-    bool RendererImplBeginFrame(RendererImpl &impl);
+    bool RendererImplBeginFrame(CRendererImpl & impl);
 
-    void RendererImplBeginRendering(RendererImpl &impl);
+    void RendererImplBeginRendering(CRendererImpl & impl);
 
-    void RendererImplRenderQueue(RendererImpl &impl);
+    void RendererImplRenderQueue(CRendererImpl & impl);
 
-    void RendererImplEndRendering(RendererImpl &impl);
+    void RendererImplEndRendering(CRendererImpl & impl);
 
-    void RendererImplEndFrameAndPresent(RendererImpl &impl);
+    void RendererImplEndFrameAndPresent(CRendererImpl & impl);
 
-    void RendererImplDrawMesh(RendererImpl &impl, MeshHandle mesh, MaterialInstance &mat, const Mat4 &model);
+    void RendererImplDrawMesh(CRendererImpl &impl, MeshHandle mesh, CMaterialInstance &mat, const Mat4 &model);
 
-    void RendererImplDrawMeshStatic(RendererImpl &impl, MeshHandle mesh, MaterialInstance &mat, const Mat4 &model);
+    void RendererImplDrawMeshStatic(CRendererImpl &impl, MeshHandle mesh, CMaterialInstance &mat, const Mat4 &model);
 
-    void RendererImplClearStaticDraws(RendererImpl &impl);
+    void RendererImplClearStaticDraws(CRendererImpl & impl);
 
-    void RendererImplDrawModel(RendererImpl &impl, const Model &model, const Mat4 &transform);
+    void RendererImplDrawModel(CRendererImpl &impl, const CModel &model, const Mat4 &transform);
 
-    void RendererImplDrawModelStatic(RendererImpl &impl, const Model &model, const Mat4 &transform);
+    void RendererImplDrawModelStatic(CRendererImpl &impl, const CModel &model, const Mat4 &transform);
 
-    void RendererImplAddLight(RendererImpl &impl, const LightData &light);
+    void RendererImplAddLight(CRendererImpl &impl, const LightData &light);
 
-    void RendererImplClearLights(RendererImpl &impl);
+    void RendererImplClearLights(CRendererImpl & impl);
 
-    void RendererImplSetViewProjection(RendererImpl &impl, const Mat4 &view, const Mat4 &proj);
+    void RendererImplSetViewProjection(CRendererImpl &impl, const Mat4 &view, const Mat4 &proj);
 
-    void RendererImplSetCameraPosition(RendererImpl &impl, const Vec3 &pos);
+    void RendererImplSetCameraPosition(CRendererImpl &impl, const Vec3 &pos);
 
-    void RendererImplSetSkybox(RendererImpl &impl, TextureHandle cubemap);
+    void RendererImplSetSkybox(CRendererImpl &impl, TextureHandle cubemap);
 
-    MeshHandle RendererImplUploadMesh(RendererImpl &impl, const ModelData &data);
+    MeshHandle RendererImplUploadMesh(CRendererImpl &impl, const ModelData_t &data);
 
-    TextureHandle RendererImplUploadTexture(RendererImpl &impl, const TextureData &data);
+    TextureHandle RendererImplUploadTexture(CRendererImpl &impl, const TextureData_t &data);
 
-    TextureHandle RendererImplUploadCubemap(RendererImpl &impl, const std::vector<TextureData> &faces);
+    TextureHandle RendererImplUploadCubemap(CRendererImpl &impl, const std::vector<TextureData_t> &faces);
 
-    Ref<Material> RendererImplGetDefaultMaterial(const RendererImpl &impl);
+    Ref<CMaterial> RendererImplGetDefaultMaterial(const CRendererImpl &impl);
 
-    Scope<MaterialInstance> RendererImplCreateMaterialInstance(RendererImpl &impl, const Ref<Material> &mat);
+    Scope<CMaterialInstance> RendererImplCreateMaterialInstance(CRendererImpl &impl, const Ref<CMaterial> &mat);
 
-    void RendererImplOnResize(RendererImpl &impl, u32 width, u32 height);
+    void RendererImplOnResize(CRendererImpl &impl, u32 width, u32 height);
 
-    float RendererImplGetAspectRatio(const RendererImpl &impl);
+    float RendererImplGetAspectRatio(const CRendererImpl &impl);
 
-    MeshManager &RendererImplGetMeshes(RendererImpl &impl);
+    CMeshManager &RendererImplGetMeshes(CRendererImpl & impl);
 
-    void RendererImplSetSettings(RendererImpl &impl, const RenderSettings &settings);
+    void RendererImplSetSettings(CRendererImpl &impl, const RenderSettings_t &settings);
 
-    const RenderSettings &RendererImplGetSettingsConst(const RendererImpl &impl);
+    const RenderSettings_t &RendererImplGetSettingsConst(const CRendererImpl &impl);
 
-    RenderSettings &RendererImplGetSettings(RendererImpl &impl);
+    RenderSettings_t &RendererImplGetSettings(CRendererImpl & impl);
 
-    const RendererConfig &RendererImplGetConfig(const RendererImpl &impl);
+    const RendererConfig_t &RendererImplGetConfig(const CRendererImpl &impl);
 
-    const FrameStats &RendererImplGetLastFrameStats(const RendererImpl &impl);
+    const FrameStats_t &RendererImplGetLastFrameStats(const CRendererImpl &impl);
 
-    void RendererImplSetDebugUIEnabled(const RendererImpl &impl, bool enabled);
+    void RendererImplSetDebugUIEnabled(const CRendererImpl &impl, bool enabled);
 
-    bool RendererImplIsDebugUIEnabled(const RendererImpl &impl);
+    bool RendererImplIsDebugUIEnabled(const CRendererImpl &impl);
 
-    void RendererImplGetVramStats(const RendererImpl &impl, u64 &usage, u64 &budget);
+    void RendererImplGetVramStats(const CRendererImpl &impl, u64 &usage, u64 &budget);
 
-    std::string RendererImplGetAdapterName(const RendererImpl &impl);
+    std::string RendererImplGetAdapterName(const CRendererImpl &impl);
 
-    void RendererImplDrawLine(const RendererImpl &impl, const Vec3 &a, const Vec3 &b, u32 color, bool depthTest);
+    void RendererImplDrawLine(const CRendererImpl &impl, const Vec3 &a, const Vec3 &b, u32 color, bool depthTest);
 
-    void RendererImplDrawAABB(const RendererImpl &impl, const Vec3 &min, const Vec3 &max, u32 color, bool depthTest);
+    void RendererImplDrawAABB(const CRendererImpl &impl, const Vec3 &min, const Vec3 &max, u32 color, bool depthTest);
 
-    void RendererImplDrawBox(const RendererImpl &impl, const Vec3 &center, const Vec3 &half, const Mat4 &transform,
+    void RendererImplDrawBox(const CRendererImpl &impl, const Vec3 &center, const Vec3 &half, const Mat4 &transform,
                              u32 color, bool depthTest);
 
-    void RendererImplDrawSphere(const RendererImpl &impl, const Vec3 &center, float radius, u32 color, int segments,
+    void RendererImplDrawSphere(const CRendererImpl &impl, const Vec3 &center, float radius, u32 color, int segments,
                                 bool depthTest);
 
-    void RendererImplDrawFrustum(const RendererImpl &impl, const Mat4 &invViewProj, u32 color, bool depthTest);
+    void RendererImplDrawFrustum(const CRendererImpl &impl, const Mat4 &invViewProj, u32 color, bool depthTest);
 
-    void RendererImplDrawCross(const RendererImpl &impl, const Vec3 &center, float size, u32 color, bool depthTest);
+    void RendererImplDrawCross(const CRendererImpl &impl, const Vec3 &center, float size, u32 color, bool depthTest);
 
-    void RendererImplDrawAxes(const RendererImpl &impl, const Mat4 &transform, float size);
+    void RendererImplDrawAxes(const CRendererImpl &impl, const Mat4 &transform, float size);
 }

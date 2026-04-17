@@ -8,21 +8,21 @@
 #include <volk.h>
 
 namespace Manro {
-    DrawSystem::DrawSystem(const VulkanContext &context)
+    CDrawSystem::CDrawSystem(const CVulkanContext &context)
         : m_Context(context) {
     }
 
-    DrawSystem::~DrawSystem() {
+    CDrawSystem::~CDrawSystem() {
         Shutdown();
     }
 
-    void DrawSystem::Init(VkFormat colorFormat, VkFormat depthFormat, VkSampleCountFlagBits msaaSamples) {
+    void CDrawSystem::Init(VkFormat colorFormat, VkFormat depthFormat, VkSampleCountFlagBits msaaSamples) {
         CreateBuffers();
         CreateComputePipeline();
         CreateRenderPipelines(colorFormat, depthFormat, msaaSamples);
     }
 
-    void DrawSystem::Shutdown() {
+    void CDrawSystem::Shutdown() {
         if (m_DescriptorPool) {
             vkDestroyDescriptorPool(m_Context.GetDevice(), m_DescriptorPool, nullptr);
             m_DescriptorPool = VK_NULL_HANDLE;
@@ -48,71 +48,71 @@ namespace Manro {
         m_CounterBuffer.reset();
     }
 
-    void DrawSystem::CreateBuffers() {
-        m_LineCommandBuffer = CreateScope<Buffer>(
+    void CDrawSystem::CreateBuffers() {
+        m_LineCommandBuffer = CreateScope<CBuffer>(
             m_Context,
-            sizeof(DrawLineCmd) * kMaxLines,
+            sizeof(DrawLineCmd_t) * kMaxLines,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
             VMA_MEMORY_USAGE_CPU_TO_GPU
         );
 
-        m_BoxCommandBuffer = CreateScope<Buffer>(
+        m_BoxCommandBuffer = CreateScope<CBuffer>(
             m_Context,
-            sizeof(DrawBoxCmd) * kMaxBoxes,
+            sizeof(DrawBoxCmd_t) * kMaxBoxes,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
             VMA_MEMORY_USAGE_CPU_TO_GPU
         );
 
-        m_SphereCommandBuffer = CreateScope<Buffer>(
+        m_SphereCommandBuffer = CreateScope<CBuffer>(
             m_Context,
-            sizeof(DrawSphereCmd) * kMaxSpheres,
+            sizeof(DrawSphereCmd_t) * kMaxSpheres,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
             VMA_MEMORY_USAGE_CPU_TO_GPU
         );
 
-        m_FrustumCommandBuffer = CreateScope<Buffer>(
+        m_FrustumCommandBuffer = CreateScope<CBuffer>(
             m_Context,
-            sizeof(DrawFrustumCmd) * kMaxFrustums,
+            sizeof(DrawFrustumCmd_t) * kMaxFrustums,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
             VMA_MEMORY_USAGE_CPU_TO_GPU
         );
 
-        m_CrossCommandBuffer = CreateScope<Buffer>(
+        m_CrossCommandBuffer = CreateScope<CBuffer>(
             m_Context,
-            sizeof(DrawCrossCmd) * kMaxCrosses,
+            sizeof(DrawCrossCmd_t) * kMaxCrosses,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
             VMA_MEMORY_USAGE_CPU_TO_GPU
         );
 
-        m_VertexBuffer = CreateScope<Buffer>(
+        m_VertexBuffer = CreateScope<CBuffer>(
             m_Context,
-            sizeof(LineVertex) * kMaxVertices,
+            sizeof(LineVertex_t) * kMaxVertices,
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
             VMA_MEMORY_USAGE_GPU_ONLY
         );
 
-        m_VertexBufferNoDepth = CreateScope<Buffer>(
+        m_VertexBufferNoDepth = CreateScope<CBuffer>(
             m_Context,
-            sizeof(LineVertex) * kMaxVertices,
+            sizeof(LineVertex_t) * kMaxVertices,
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
             VMA_MEMORY_USAGE_GPU_ONLY
         );
 
-        m_IndirectBuffer = CreateScope<Buffer>(
+        m_IndirectBuffer = CreateScope<CBuffer>(
             m_Context,
-            sizeof(DrawIndirectCmd),
+            sizeof(DrawIndirectCmd_t),
             VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
             VMA_MEMORY_USAGE_GPU_ONLY
         );
 
-        m_IndirectBufferNoDepth = CreateScope<Buffer>(
+        m_IndirectBufferNoDepth = CreateScope<CBuffer>(
             m_Context,
-            sizeof(DrawIndirectCmd),
+            sizeof(DrawIndirectCmd_t),
             VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
             VMA_MEMORY_USAGE_GPU_ONLY
         );
 
-        m_CounterBuffer = CreateScope<Buffer>(
+        m_CounterBuffer = CreateScope<CBuffer>(
             m_Context,
             sizeof(u32) * 2,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
@@ -120,7 +120,7 @@ namespace Manro {
         );
     }
 
-    void DrawSystem::CreateComputePipeline() {
+    void CDrawSystem::CreateComputePipeline() {
         VkDevice device = m_Context.GetDevice();
 
         // Create descriptor set layout
@@ -198,31 +198,31 @@ namespace Manro {
         vkUpdateDescriptorSets(device, 10, writes, 0, nullptr);
 
         // Load compute shader
-        auto compSpv = VirtualFS::Get().ReadFile("shaders://line_expand.comp.spv");
+        auto compSpv = CVirtualFS::Get().ReadFile("shaders://line_expand.comp.spv");
         if (compSpv.empty()) {
-            LOG_ERROR("[DrawSystem] Failed to load line_expand compute shader");
+            LOG_ERROR("[CDrawSystem] Failed to load line_expand compute shader");
             return;
         }
 
-        PipelineConfigParams cfg{};
+        PipelineConfigParams_t cfg{};
         cfg.descriptorSetLayouts = {m_ComputeSetLayout};
         cfg.pushConstantSize = sizeof(u32) * 5;
         cfg.pushConstantStages = VK_SHADER_STAGE_COMPUTE_BIT;
 
-        m_ExpandPipeline = CreateScope<Pipeline>(m_Context);
+        m_ExpandPipeline = CreateScope<CPipeline>(m_Context);
         m_ExpandPipeline->BuildCompute(compSpv, cfg);
     }
 
-    void DrawSystem::CreateRenderPipelines(VkFormat colorFormat, VkFormat depthFormat,
-                                           VkSampleCountFlagBits msaaSamples) {
-        auto vertSpv = VirtualFS::Get().ReadFile("shaders://gizmo.vert.spv");
-        auto fragSpv = VirtualFS::Get().ReadFile("shaders://gizmo.frag.spv");
+    void CDrawSystem::CreateRenderPipelines(VkFormat colorFormat, VkFormat depthFormat,
+                                            VkSampleCountFlagBits msaaSamples) {
+        auto vertSpv = CVirtualFS::Get().ReadFile("shaders://gizmo.vert.spv");
+        auto fragSpv = CVirtualFS::Get().ReadFile("shaders://gizmo.frag.spv");
         if (vertSpv.empty() || fragSpv.empty()) {
-            LOG_ERROR("[DrawSystem] Gizmo shaders not found");
+            LOG_ERROR("[CDrawSystem] Gizmo shaders not found");
             return;
         }
 
-        PipelineConfigParams cfg{};
+        PipelineConfigParams_t cfg{};
         cfg.vertexEntryPoint = "main";
         cfg.fragmentEntryPoint = "main";
         cfg.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
@@ -230,11 +230,11 @@ namespace Manro {
         cfg.depthAttachmentFormat = depthFormat;
         cfg.msaaSamples = msaaSamples;
         cfg.vertexInputBindings = {
-            {0, sizeof(LineVertex), VK_VERTEX_INPUT_RATE_VERTEX}
+            {0, sizeof(LineVertex_t), VK_VERTEX_INPUT_RATE_VERTEX}
         };
         cfg.vertexInputAttributes = {
-            {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(LineVertex, position)},
-            {1, 0, VK_FORMAT_R32_UINT, offsetof(LineVertex, color)},
+            {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(LineVertex_t, position)},
+            {1, 0, VK_FORMAT_R32_UINT, offsetof(LineVertex_t, color)},
         };
         cfg.pushConstantSize = sizeof(Mat4);
         cfg.pushConstantStages = VK_SHADER_STAGE_VERTEX_BIT;
@@ -242,27 +242,27 @@ namespace Manro {
         cfg.depthCompareOp = VK_COMPARE_OP_LESS;
         cfg.depthTestEnable = VK_TRUE;
 
-        m_RenderPipeline = CreateScope<Pipeline>(m_Context);
+        m_RenderPipeline = CreateScope<CPipeline>(m_Context);
         m_RenderPipeline->BuildGraphics(vertSpv, fragSpv, cfg);
 
         cfg.depthTestEnable = VK_FALSE;
-        m_RenderPipelineNoDepth = CreateScope<Pipeline>(m_Context);
+        m_RenderPipelineNoDepth = CreateScope<CPipeline>(m_Context);
         m_RenderPipelineNoDepth->BuildGraphics(vertSpv, fragSpv, cfg);
     }
 
-    void DrawSystem::BeginFrame() {
-        m_LineCount = 0;
-        m_BoxCount = 0;
-        m_SphereCount = 0;
-        m_FrustumCount = 0;
-        m_CrossCount = 0;
-        m_DepthVertexCount = 0;
-        m_NoDepthVertexCount = 0;
+    void CDrawSystem::BeginFrame() {
+        m_unLineCount = 0;
+        m_unBoxCount = 0;
+        m_unSphereCount = 0;
+        m_unFrustumCount = 0;
+        m_unCrossCount = 0;
+        m_unDepthVertexCount = 0;
+        m_unNoDepthVertexCount = 0;
     }
 
-    void DrawSystem::DispatchExpand(VkCommandBuffer cmd) {
-        if (m_LineCount == 0 && m_BoxCount == 0 && m_SphereCount == 0 &&
-            m_FrustumCount == 0 && m_CrossCount == 0) {
+    void CDrawSystem::DispatchExpand(VkCommandBuffer cmd) {
+        if (m_unLineCount == 0 && m_unBoxCount == 0 && m_unSphereCount == 0 &&
+            m_unFrustumCount == 0 && m_unCrossCount == 0) {
             return;
         }
 
@@ -292,16 +292,16 @@ namespace Manro {
             u32 frustumCount;
             u32 crossCount;
         } pushConstants;
-        pushConstants.lineCount = m_LineCount;
-        pushConstants.boxCount = m_BoxCount;
-        pushConstants.sphereCount = m_SphereCount;
-        pushConstants.frustumCount = m_FrustumCount;
-        pushConstants.crossCount = m_CrossCount;
+        pushConstants.lineCount = m_unLineCount;
+        pushConstants.boxCount = m_unBoxCount;
+        pushConstants.sphereCount = m_unSphereCount;
+        pushConstants.frustumCount = m_unFrustumCount;
+        pushConstants.crossCount = m_unCrossCount;
 
         vkCmdPushConstants(cmd, m_ExpandPipeline->GetLayout(), VK_SHADER_STAGE_COMPUTE_BIT,
                            0, sizeof(pushConstants), &pushConstants);
 
-        u32 maxCount = m_LineCount + m_BoxCount + m_SphereCount + m_FrustumCount + m_CrossCount;
+        u32 maxCount = m_unLineCount + m_unBoxCount + m_unSphereCount + m_unFrustumCount + m_unCrossCount;
         u32 dispatchX = (maxCount + 255) / 256;
         vkCmdDispatch(cmd, dispatchX, 1, 1);
 
@@ -315,14 +315,14 @@ namespace Manro {
                              0, 1, &computeBarrier, 0, nullptr, 0, nullptr);
     }
 
-    void DrawSystem::Draw(VkCommandBuffer cmd, const Mat4 &viewProj,
-                          VkImageView colorTarget,
+    void CDrawSystem::Draw(VkCommandBuffer cmd, const Mat4 &viewProj,
+                           VkImageView colorTarget,
                           VkImageView resolveColorTarget,
                           VkImageView depthTarget,
                           u32 width, u32 height,
                           bool useMsaaResolve) {
-        if (m_LineCount == 0 && m_BoxCount == 0 && m_SphereCount == 0 &&
-            m_FrustumCount == 0 && m_CrossCount == 0) {
+        if (m_unLineCount == 0 && m_unBoxCount == 0 && m_unSphereCount == 0 &&
+            m_unFrustumCount == 0 && m_unCrossCount == 0) {
             return;
         }
 
@@ -368,7 +368,7 @@ namespace Manro {
 
         VkDeviceSize offset = 0;
 
-        if (m_DepthVertexCount > 0) {
+        if (m_unDepthVertexCount > 0) {
             vkCmdBeginRendering(cmd, &renderInfo);
             vkCmdSetViewport(cmd, 0, 1, &viewport);
             vkCmdSetScissor(cmd, 0, 1, &scissor);
@@ -378,12 +378,13 @@ namespace Manro {
 
             VkBuffer vertexBuffer = m_VertexBuffer->GetHandle();
             vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer, &offset);
-            vkCmdDraw(cmd, m_DepthVertexCount, 1, 0, 0);
+            vkCmdDraw(cmd, m_unDepthVertexCount, 1, 0, 0);
             vkCmdEndRendering(cmd);
         }
 
         // Draw without depth test
-        if (m_RenderPipelineNoDepth &&m_NoDepthVertexCount 
+        if (m_RenderPipelineNoDepth &&m_unNoDepthVertexCount
+
         >
         0
         )
@@ -397,51 +398,51 @@ namespace Manro {
 
             VkBuffer vertexBufferNoDepth = m_VertexBufferNoDepth->GetHandle();
             vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBufferNoDepth, &offset);
-            vkCmdDraw(cmd, m_NoDepthVertexCount, 1, 0, 0);
+            vkCmdDraw(cmd, m_unNoDepthVertexCount, 1, 0, 0);
             vkCmdEndRendering(cmd);
         }
     }
 
-    void DrawSystem::SubmitLine(const Vec3 &a, const Vec3 &b, u32 color, bool depthTest) {
-        if (m_LineCount >= kMaxLines) return;
-        u32 &vertexCount = depthTest ? m_DepthVertexCount : m_NoDepthVertexCount;
+    void CDrawSystem::SubmitLine(const Vec3 &a, const Vec3 &b, u32 color, bool depthTest) {
+        if (m_unLineCount >= kMaxLines) return;
+        u32 &vertexCount = depthTest ? m_unDepthVertexCount : m_unNoDepthVertexCount;
         if (vertexCount + 2 > kMaxVertices) return;
 
-        DrawLineCmd cmd;
+        DrawLineCmd_t cmd;
         cmd.start = a;
         cmd.end = b;
         cmd.color = color;
         cmd.depthTest = depthTest ? 1u : 0u;
 
-        m_LineCommandBuffer->LoadData(&cmd, sizeof(DrawLineCmd), sizeof(DrawLineCmd) * m_LineCount);
-        m_LineCount++;
+        m_LineCommandBuffer->LoadData(&cmd, sizeof(DrawLineCmd_t), sizeof(DrawLineCmd_t) * m_unLineCount);
+        m_unLineCount++;
         vertexCount += 2;
     }
 
-    void DrawSystem::SubmitBox(const Vec3 &center, const Vec3 &halfExtents, const Mat4 &transform, u32 color,
-                               bool depthTest) {
-        if (m_BoxCount >= kMaxBoxes) return;
-        u32 &vertexCount = depthTest ? m_DepthVertexCount : m_NoDepthVertexCount;
+    void CDrawSystem::SubmitBox(const Vec3 &center, const Vec3 &halfExtents, const Mat4 &transform, u32 color,
+                                bool depthTest) {
+        if (m_unBoxCount >= kMaxBoxes) return;
+        u32 &vertexCount = depthTest ? m_unDepthVertexCount : m_unNoDepthVertexCount;
         if (vertexCount + 24 > kMaxVertices) return;
 
-        DrawBoxCmd cmd;
+        DrawBoxCmd_t cmd;
         cmd.center = center;
         cmd.halfExtents = halfExtents;
         cmd.transform = transform;
         cmd.color = color;
         cmd.depthTest = depthTest ? 1u : 0u;
 
-        m_BoxCommandBuffer->LoadData(&cmd, sizeof(DrawBoxCmd), sizeof(DrawBoxCmd) * m_BoxCount);
-        m_BoxCount++;
+        m_BoxCommandBuffer->LoadData(&cmd, sizeof(DrawBoxCmd_t), sizeof(DrawBoxCmd_t) * m_unBoxCount);
+        m_unBoxCount++;
         vertexCount += 24;
     }
 
-    void DrawSystem::SubmitSphere(const Vec3 &center, float radius, u32 color, int segments, bool depthTest) {
-        if (m_SphereCount >= kMaxSpheres) return;
-        u32 &vertexCount = depthTest ? m_DepthVertexCount : m_NoDepthVertexCount;
+    void CDrawSystem::SubmitSphere(const Vec3 &center, float radius, u32 color, int segments, bool depthTest) {
+        if (m_unSphereCount >= kMaxSpheres) return;
+        u32 &vertexCount = depthTest ? m_unDepthVertexCount : m_unNoDepthVertexCount;
         if (vertexCount + 48 > kMaxVertices) return;
 
-        DrawSphereCmd cmd;
+        DrawSphereCmd_t cmd;
         cmd.center = center;
         cmd.radius = radius;
         cmd.color = color;
@@ -449,41 +450,41 @@ namespace Manro {
         cmd.depthTest = depthTest ? 1u : 0u;
         cmd._pad0 = 0;
 
-        m_SphereCommandBuffer->LoadData(&cmd, sizeof(DrawSphereCmd), sizeof(DrawSphereCmd) * m_SphereCount);
-        m_SphereCount++;
+        m_SphereCommandBuffer->LoadData(&cmd, sizeof(DrawSphereCmd_t), sizeof(DrawSphereCmd_t) * m_unSphereCount);
+        m_unSphereCount++;
         vertexCount += 48;
     }
 
-    void DrawSystem::SubmitFrustum(const Mat4 &invViewProj, u32 color, bool depthTest) {
-        if (m_FrustumCount >= kMaxFrustums) return;
-        u32 &vertexCount = depthTest ? m_DepthVertexCount : m_NoDepthVertexCount;
+    void CDrawSystem::SubmitFrustum(const Mat4 &invViewProj, u32 color, bool depthTest) {
+        if (m_unFrustumCount >= kMaxFrustums) return;
+        u32 &vertexCount = depthTest ? m_unDepthVertexCount : m_unNoDepthVertexCount;
         if (vertexCount + 24 > kMaxVertices) return;
 
-        DrawFrustumCmd cmd;
+        DrawFrustumCmd_t cmd;
         cmd.invViewProj = invViewProj;
         cmd.color = color;
         cmd.depthTest = depthTest ? 1u : 0u;
         cmd._pad0 = 0;
         cmd._pad1 = 0;
 
-        m_FrustumCommandBuffer->LoadData(&cmd, sizeof(DrawFrustumCmd), sizeof(DrawFrustumCmd) * m_FrustumCount);
-        m_FrustumCount++;
+        m_FrustumCommandBuffer->LoadData(&cmd, sizeof(DrawFrustumCmd_t), sizeof(DrawFrustumCmd_t) * m_unFrustumCount);
+        m_unFrustumCount++;
         vertexCount += 24;
     }
 
-    void DrawSystem::SubmitCross(const Vec3 &center, float size, u32 color, bool depthTest) {
-        if (m_CrossCount >= kMaxCrosses) return;
-        u32 &vertexCount = depthTest ? m_DepthVertexCount : m_NoDepthVertexCount;
+    void CDrawSystem::SubmitCross(const Vec3 &center, float size, u32 color, bool depthTest) {
+        if (m_unCrossCount >= kMaxCrosses) return;
+        u32 &vertexCount = depthTest ? m_unDepthVertexCount : m_unNoDepthVertexCount;
         if (vertexCount + 6 > kMaxVertices) return;
 
-        DrawCrossCmd cmd;
+        DrawCrossCmd_t cmd;
         cmd.center = center;
         cmd.size = size;
         cmd.color = color;
         cmd.depthTest = depthTest ? 1u : 0u;
 
-        m_CrossCommandBuffer->LoadData(&cmd, sizeof(DrawCrossCmd), sizeof(DrawCrossCmd) * m_CrossCount);
-        m_CrossCount++;
+        m_CrossCommandBuffer->LoadData(&cmd, sizeof(DrawCrossCmd_t), sizeof(DrawCrossCmd_t) * m_unCrossCount);
+        m_unCrossCount++;
         vertexCount += 6;
     }
 } // namespace Manro

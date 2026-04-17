@@ -4,47 +4,47 @@
 #include <Manro/Interfaces/Interface.h>
 
 namespace Manro {
-    class Renderer;
+    class CRenderer;
 
-    class JobSystem;
+    class CJobSystem;
 
-    class InputManager;
+    class CInputManager;
 
     class IWindow;
 
-    struct UserCmd;
+    struct UserCmd_t;
 
-    struct FrameContext {
+    struct FrameContext_t {
         f32 DeltaTime{0.f};
         f32 TotalTime{0.f};
         u64 FrameIndex{0};
     };
 
-    struct InitContext {
-        IWindow &Window;
-        JobSystem &Jobs;
-        Renderer &Renderer;
+    struct InitContext_t {
+        IWindow &CWindow;
+        CJobSystem &Jobs;
+        CRenderer &CRenderer;
     };
 
-    struct RenderContext {
-        Renderer &Renderer;
-        const FrameContext &Frame;
+    struct RenderContext_t {
+        CRenderer &CRenderer;
+        const FrameContext_t &Frame;
     };
 
     class IApplication : public Interface {
     public:
         ~IApplication() override = default;
 
-        virtual void OnStartup(const InitContext &ctx) = 0;
+        virtual void OnStartup(const InitContext_t &ctx) = 0;
 
         virtual void OnShutdown() = 0;
 
-        virtual bool OnUpdate(const FrameContext &ctx, const UserCmd &cmd) = 0;
+        virtual bool OnUpdate(const FrameContext_t &ctx, const UserCmd_t &cmd) = 0;
 
-        virtual void OnRender(FrameContext &ctx) = 0;
+        virtual void OnRender(FrameContext_t &ctx) = 0;
 
-        virtual InputManager *GetInputManager() { return nullptr; }
+        virtual CInputManager *GetInputManager() { return nullptr; }
 
-        virtual struct WindowDesc GetWindowDesc() const = 0;
+        virtual struct WindowDesc_t GetWindowDesc() const = 0;
     };
 } // namespace Manro

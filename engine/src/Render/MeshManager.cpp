@@ -9,30 +9,30 @@
 #include <cstring>
 
 namespace Manro {
-    MeshManagerImpl::MeshManagerImpl(const VulkanContext &ctx) : Context(ctx) {
-        VertexBuffer = CreateScope<Buffer>(Context, sizeof(Vertex) * kMaxVertices,
-                                           VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+    MeshManagerImpl_t::MeshManagerImpl_t(const CVulkanContext &ctx) : Context(ctx) {
+        VertexBuffer = CreateScope<CBuffer>(Context, sizeof(Vertex_t) * kMaxVertices,
+                                            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                            VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                                            VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                            VMA_MEMORY_USAGE_GPU_ONLY);
+        IndexBuffer = CreateScope<CBuffer>(Context, sizeof(u32) * kMaxIndices,
+                                           VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
                                            VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
                                            VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                            VMA_MEMORY_USAGE_GPU_ONLY);
-        IndexBuffer = CreateScope<Buffer>(Context, sizeof(u32) * kMaxIndices,
-                                          VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                                          VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
-                                          VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                                          VMA_MEMORY_USAGE_GPU_ONLY);
     }
 
-    MeshManager::MeshManager(MeshManagerImpl *impl) : m_Impl(impl) {
+    CMeshManager::CMeshManager(MeshManagerImpl_t *impl) : m_Impl(impl) {
     }
 
-    MeshManager::~MeshManager() = default;
+    CMeshManager::~CMeshManager() = default;
 
-    MeshHandle MeshManager::Upload(const ModelData &data) {
+    MeshHandle CMeshManager::Upload(const ModelData_t &data) {
         if (data.vertices.empty() || data.indices.empty()) return kInvalidMesh;
 
-        if (m_Impl->CurrentVertexOffset + data.vertices.size() > MeshManagerImpl::kMaxVertices ||
-            m_Impl->CurrentIndexOffset + data.indices.size() > MeshManagerImpl::kMaxIndices) {
-            LOG_ERROR("[MeshManager] Mesh mega-buffer overflow!");
+        if (m_Impl->CurrentVertexOffset + data.vertices.size() > MeshManagerImpl_t::kMaxVertices ||
+            m_Impl->CurrentIndexOffset + data.indices.size() > MeshManagerImpl_t::kMaxIndices) {
+            LOG_ERROR("[CMeshManager] Mesh mega-buffer overflow!");
             return kInvalidMesh;
         }
 
@@ -40,7 +40,7 @@ namespace Manro {
         u32 firstIndex = m_Impl->CurrentIndexOffset;
         u32 indexCount = static_cast<u32>(data.indices.size());
 
-        const VkDeviceSize vertexBytes = sizeof(Vertex) * data.vertices.size();
+        const VkDeviceSize vertexBytes = sizeof(Vertex_t) * data.vertices.size();
         const VkDeviceSize indexBytes = sizeof(u32) * data.indices.size();
         const VkDeviceSize stagingSize = vertexBytes + indexBytes;
 
@@ -60,7 +60,7 @@ namespace Manro {
 
         if (vmaCreateBuffer(m_Impl->Context.GetAllocator(), &stagingCI, &stagingAllocCI,
                             &stagingBuffer, &stagingAllocation, &stagingAllocationInfo) != VK_SUCCESS) {
-            LOG_ERROR("[MeshManager] Failed to create staging buffer for mesh upload");
+            LOG_ERROR("[CMeshManager] Failed to create staging buffer for mesh upload");
             return kInvalidMesh;
         }
 
@@ -72,7 +72,7 @@ namespace Manro {
         ExecuteOneShot(m_Impl->Context, [&](VkCommandBuffer cmd) {
             VkBufferCopy vertexCopy{};
             vertexCopy.srcOffset = 0;
-            vertexCopy.dstOffset = sizeof(Vertex) * firstVertex;
+            vertexCopy.dstOffset = sizeof(Vertex_t) * firstVertex;
             vertexCopy.size = vertexBytes;
             vkCmdCopyBuffer(cmd, stagingBuffer, m_Impl->VertexBuffer->GetHandle(), 1, &vertexCopy);
 
@@ -89,20 +89,20 @@ namespace Manro {
         m_Impl->CurrentIndexOffset += static_cast<u32>(data.indices.size());
 
         MeshHandle id = m_Impl->NextId++;
-        m_Impl->Meshes.emplace(id, LoadedMesh{firstVertex, firstIndex, indexCount, data.center, data.radius});
+        m_Impl->Meshes.emplace(id, LoadedMesh_t{firstVertex, firstIndex, indexCount, data.center, data.radius});
         return id;
     }
 
-    const LoadedMesh *MeshManager::Get(MeshHandle handle) const {
+    const LoadedMesh_t *CMeshManager::Get(MeshHandle handle) const {
         auto it = m_Impl->Meshes.find(handle);
         return it != m_Impl->Meshes.end() ? &it->second : nullptr;
     }
 
-    Buffer *MeshManager::GetVertexBuffer() const {
+    CBuffer *CMeshManager::GetVertexBuffer() const {
         return m_Impl->VertexBuffer.get();
     }
 
-    Buffer *MeshManager::GetIndexBuffer() const {
+    CBuffer *CMeshManager::GetIndexBuffer() const {
         return m_Impl->IndexBuffer.get();
     }
 } // namespace Manro

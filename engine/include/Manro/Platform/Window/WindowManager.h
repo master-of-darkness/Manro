@@ -7,17 +7,17 @@
 #include <string>
 
 namespace Manro {
-    class WindowManager {
+    class CWindowManager {
     public:
-        WindowManager() = default;
+        CWindowManager() = default;
 
-        ~WindowManager() { ShutdownAll(); }
+        ~CWindowManager() { ShutdownAll(); }
 
-        WindowManager(const WindowManager &) = delete;
+        CWindowManager(const CWindowManager &) = delete;
 
-        WindowManager &operator=(const WindowManager &) = delete;
+        CWindowManager &operator=(const CWindowManager &) = delete;
 
-        WindowHandle AddWindow(const WindowDesc &desc);
+        WindowHandle AddWindow(const WindowDesc_t &desc);
 
         void DestroyWindow(WindowHandle handle);
 
@@ -37,7 +37,7 @@ namespace Manro {
         std::unordered_map<WindowHandle, Scope<IWindow> > m_Windows;
         std::unordered_map<u32, WindowHandle> m_PlatformIdToHandle;
 
-        WindowHandle m_NextHandle{WindowHandle::Make(1, 0)};
+        WindowHandle m_nNextHandle{WindowHandle::Make(1, 0)};
         WindowHandle m_PrimaryHandle{kInvalidWindow};
     };
 } // namespace Manro

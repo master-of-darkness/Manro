@@ -2,29 +2,29 @@
 #include <Manro/Interfaces/IInputBackend.h>
 
 namespace Manro {
-    UserCmd InputManager::Poll() const {
-        UserCmd cmd{};
+    UserCmd_t CInputManager::Poll() const {
+        UserCmd_t cmd{};
         if (m_ActionMap)
             m_ActionMap->BuildUserCmd(cmd);
         return cmd;
     }
 
-    bool InputManager::IsKeyDown(Key k) const {
+    bool CInputManager::IsKeyDown(Key k) const {
         if (!m_Backend) return false;
         return m_Backend->IsKeyDown(k);
     }
 
-    bool InputManager::IsMouseButtonDown(MouseButton button) const {
+    bool CInputManager::IsMouseButtonDown(MouseButton button) const {
         if (!m_Backend) return false;
         return m_Backend->IsMouseButtonDown(button);
     }
 
-    RawMouseDelta InputManager::ConsumeMouseDelta() const {
+    RawMouseDelta_t CInputManager::ConsumeMouseDelta() const {
         if (!m_Backend) return {};
         return m_Backend->ConsumeMouseDelta();
     }
 
-    void InputManager::ProcessEvent(const PlatformEvent &event) const {
+    void CInputManager::ProcessEvent(const PlatformEvent_t &event) const {
         if (m_Backend)
             m_Backend->ProcessEvent(event);
     }

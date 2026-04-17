@@ -8,25 +8,25 @@
 #include <imgui_impl_sdl3.h>
 
 namespace Manro {
-    PlatformContext::PlatformContext() {
+    CPlatformContext::CPlatformContext() {
         if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) {
-            LOG_ERROR("[PlatformContext] SDL_Init failed: {}", SDL_GetError());
+            LOG_ERROR("[CPlatformContext] SDL_Init failed: {}", SDL_GetError());
             return;
         }
 
-        auto audioBackend = CreateScope<AudioBackend>();
+        auto audioBackend = CreateScope<CAudioBackend>();
         if (!m_AudioManager.Initialize(std::move(audioBackend))) {
-            LOG_WARN("[PlatformContext] Audio backend failed – continuing without audio.");
+            LOG_WARN("[CPlatformContext] Audio backend failed – continuing without audio.");
         }
     }
 
-    PlatformContext::~PlatformContext() {
+    CPlatformContext::~CPlatformContext() {
         m_AudioManager.Shutdown();
         m_WindowManager.ShutdownAll();
         SDL_Quit();
     }
 
-    bool PlatformContext::PollEvents(const InputManager *inputManager) {
+    bool CPlatformContext::PollEvents(const CInputManager *inputManager) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             bool passToImGui = true;
@@ -68,7 +68,7 @@ namespace Manro {
 
                 default:
                     if (inputManager) {
-                        inputManager->ProcessEvent(PlatformEvent{&event});
+                        inputManager->ProcessEvent(PlatformEvent_t{&event});
                     }
                     break;
             }

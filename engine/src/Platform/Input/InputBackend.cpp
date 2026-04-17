@@ -3,7 +3,7 @@
 #include <Manro/Core/Logger.h>
 
 namespace Manro {
-    Key InputBackend::SdlScancodeToKey(int sc) {
+    Key CInputBackend::SdlScancodeToKey(int sc) {
         switch (static_cast<SDL_Scancode>(sc)) {
             case SDL_SCANCODE_W:
                 return Key::W;
@@ -70,14 +70,14 @@ namespace Manro {
         }
     }
 
-    void InputBackend::ProcessEvent(const PlatformEvent &platformEvent) {
+    void CInputBackend::ProcessEvent(const PlatformEvent_t &platformEvent) {
         const SDL_Event &event = *static_cast<const SDL_Event *>(platformEvent.data);
         switch (event.type) {
             case SDL_EVENT_KEY_DOWN:
             case SDL_EVENT_KEY_UP: {
                 Key k = SdlScancodeToKey(event.key.scancode);
                 if (k != Key::Unknown)
-                    m_KeyDown[static_cast<size_t>(k)] = (event.type == SDL_EVENT_KEY_DOWN);
+                    m_bKeyDown[static_cast<size_t>(k)] = (event.type == SDL_EVENT_KEY_DOWN);
                 break;
             }
 
@@ -104,31 +104,31 @@ namespace Manro {
                 }
 
                 const auto idx = static_cast<size_t>(button);
-                if (idx < m_MouseButtons.size())
-                    m_MouseButtons[idx] = (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN);
+                if (idx < m_bMouseButtons.size())
+                    m_bMouseButtons[idx] = (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN);
                 break;
             }
 
             case SDL_EVENT_GAMEPAD_AXIS_MOTION: {
                 int axis = event.gaxis.axis;
                 if (axis >= 0 && axis < 6) {
-                    m_GamepadAxes[axis] =
+                    m_flGamepadAxes[axis] =
                             static_cast<float>(event.gaxis.value) / 32767.f;
                 }
                 break;
             }
             case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
-                m_GamepadButtons |= (1u << event.gbutton.button);
+                m_unGamepadButtons |= (1u << event.gbutton.button);
                 break;
             case SDL_EVENT_GAMEPAD_BUTTON_UP:
-                m_GamepadButtons &= ~(1u << event.gbutton.button);
+                m_unGamepadButtons &= ~(1u << event.gbutton.button);
                 break;
             case SDL_EVENT_GAMEPAD_ADDED:
-                LOG_INFO("[InputBackend] Gamepad connected (id {})", event.gdevice.which);
+                LOG_INFO("[CInputBackend] Gamepad connected (id {})", event.gdevice.which);
                 SDL_OpenGamepad(event.gdevice.which);
                 break;
             case SDL_EVENT_GAMEPAD_REMOVED:
-                LOG_INFO("[InputBackend] Gamepad disconnected");
+                LOG_INFO("[CInputBackend] Gamepad disconnected");
                 break;
 
             default:
@@ -136,29 +136,29 @@ namespace Manro {
         }
     }
 
-    bool InputBackend::IsKeyDown(Key k) const {
+    bool CInputBackend::IsKeyDown(Key k) const {
         auto idx = static_cast<size_t>(k);
-        return idx < m_KeyDown.size() && m_KeyDown[idx];
+        return idx < m_bKeyDown.size() && m_bKeyDown[idx];
     }
 
-    bool InputBackend::IsMouseButtonDown(MouseButton button) const {
+    bool CInputBackend::IsMouseButtonDown(MouseButton button) const {
         const auto idx = static_cast<size_t>(button);
-        return idx < m_MouseButtons.size() && m_MouseButtons[idx];
+        return idx < m_bMouseButtons.size() && m_bMouseButtons[idx];
     }
 
-    RawMouseDelta InputBackend::ConsumeMouseDelta() {
-        RawMouseDelta d = m_MouseDelta;
+    RawMouseDelta_t CInputBackend::ConsumeMouseDelta() {
+        RawMouseDelta_t d = m_MouseDelta;
         m_MouseDelta = {};
         return d;
     }
 
-    float InputBackend::GetGamepadAxis(int axis) const {
+    float CInputBackend::GetGamepadAxis(int axis) const {
         if (axis < 0 || axis >= 6) return 0.f;
-        return m_GamepadAxes[axis];
+        return m_flGamepadAxes[axis];
     }
 
-    bool InputBackend::IsGamepadButtonDown(int btn) const {
+    bool CInputBackend::IsGamepadButtonDown(int btn) const {
         if (btn < 0 || btn >= 32) return false;
-        return (m_GamepadButtons >> btn) & 1u;
+        return (m_unGamepadButtons >> btn) & 1u;
     }
 } // namespace Manro

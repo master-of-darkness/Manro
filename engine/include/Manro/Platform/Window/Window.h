@@ -3,13 +3,13 @@
 #include <Manro/Interfaces/IWindow.h>
 
 namespace Manro {
-    class Window final : public IWindow {
+    class CWindow final : public IWindow {
     public:
-        Window() = default;
+        CWindow() = default;
 
-        ~Window() override { Shutdown(); }
+        ~CWindow() override { Shutdown(); }
 
-        bool Initialize(const WindowDesc &desc) override;
+        bool Initialize(const WindowDesc_t &desc) override;
 
         void Shutdown() override;
 
@@ -19,13 +19,13 @@ namespace Manro {
 
         void SetFullscreen(bool fullscreen) override;
 
-        bool IsFullscreen() const override { return m_Fullscreen; }
+        bool IsFullscreen() const override { return m_bFullscreen; }
 
-        bool IsOpen() const override { return m_Open; }
+        bool IsOpen() const override { return m_bOpen; }
 
-        u32 GetWidth() const override { return m_Width; }
+        u32 GetWidth() const override { return m_unWidth; }
 
-        u32 GetHeight() const override { return m_Height; }
+        u32 GetHeight() const override { return m_unHeight; }
 
         std::string GetTitle() const override { return m_Title; }
 
@@ -45,9 +45,9 @@ namespace Manro {
         void *m_Handle{nullptr};
         EventCallback m_Callback;
         std::string m_Title;
-        u32 m_Width{0};
-        u32 m_Height{0};
-        bool m_Open{false};
-        bool m_Fullscreen{false};
+        u32 m_unWidth{0};
+        u32 m_unHeight{0};
+        bool m_bOpen{false};
+        bool m_bFullscreen{false};
     };
 } // namespace Manro

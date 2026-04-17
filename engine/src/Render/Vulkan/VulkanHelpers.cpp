@@ -8,8 +8,8 @@
 #include <vector>
 
 namespace Manro {
-    AllocatedImage CreateImage(const VulkanContext &ctx, const ImageCreateParams &params,
-                               VkImageAspectFlags aspect) {
+    AllocatedImage_t CreateImage(const CVulkanContext &ctx, const ImageCreateParams_t &params,
+                                 VkImageAspectFlags aspect) {
         VkImageCreateInfo imageInfo{};
         imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
         imageInfo.imageType = VK_IMAGE_TYPE_2D;
@@ -27,7 +27,7 @@ namespace Manro {
         allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
         allocInfo.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 
-        AllocatedImage result{};
+        AllocatedImage_t result{};
         if (vmaCreateImage(ctx.GetAllocator(), &imageInfo, &allocInfo,
                            &result.image, &result.allocation, nullptr) != VK_SUCCESS) {
             throw std::runtime_error("[VulkanHelpers] Failed to create image!");
@@ -52,7 +52,7 @@ namespace Manro {
         return result;
     }
 
-    void DestroyImage(const VulkanContext &ctx, AllocatedImage &img) {
+    void DestroyImage(const CVulkanContext &ctx, AllocatedImage_t &img) {
         if (img.view) {
             vkDestroyImageView(ctx.GetDevice(), img.view, nullptr);
             img.view = VK_NULL_HANDLE;
@@ -64,7 +64,7 @@ namespace Manro {
         }
     }
 
-    void ExecuteOneShot(const VulkanContext &ctx, const OneShotWork &work) {
+    void ExecuteOneShot(const CVulkanContext &ctx, const OneShotWork &work) {
         VkDevice device = ctx.GetDevice();
         VkCommandPool commandPool = ctx.GetOneShotCommandPool();
         VkCommandBuffer commandBuffer = ctx.GetOneShotCommandBuffer();

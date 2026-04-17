@@ -10,12 +10,12 @@
 #include "Manro/Render/Renderer.h"
 
 namespace Manro {
-    class Renderer;
+    class CRenderer;
 
-    class JobSystem;
+    class CJobSystem;
 }
 
-struct FlyCamera {
+struct FlyCamera_t {
     Manro::Vec3 Position{0.f, 150.f, 0.f};
     float Yaw{-90.f};
     float Pitch{-10.f};
@@ -25,14 +25,14 @@ struct FlyCamera {
 
     Manro::Vec3 Forward() const;
 
-    void Update(const Manro::InputManager &input, float dt);
+    void Update(const Manro::CInputManager &input, float dt);
 
     Manro::Mat4 View() const;
 
     static Manro::Mat4 Projection(float fovDeg, float aspect, float nearZ, float farZ);
 };
 
-struct BenchWaypoint {
+struct BenchWaypoint_t {
     Manro::Vec3 position;
     float yaw; // degrees
     float pitch; // degrees
@@ -42,7 +42,7 @@ enum class BenchmarkState {
     Idle, Warmup, Running, Done
 };
 
-struct BenchmarkResult {
+struct BenchmarkResult_t {
     float avgFps{0.f};
     float minFps{0.f};
     float maxFps{0.f};
@@ -55,23 +55,23 @@ struct BenchmarkResult {
     Manro::u32 avgTriangles{0};
 };
 
-class Sponza final : public Manro::IApplication {
+class CSponza final : public Manro::IApplication {
 public:
-    Sponza() = default;
+    CSponza() = default;
 
-    ~Sponza() = default;
+    ~CSponza() = default;
 
-    Manro::WindowDesc GetWindowDesc() const override;
+    Manro::WindowDesc_t GetWindowDesc() const override;
 
-    void OnStartup(const Manro::InitContext &ctx) override;
+    void OnStartup(const Manro::InitContext_t &ctx) override;
 
     void OnShutdown() override;
 
-    bool OnUpdate(const Manro::FrameContext &ctx, const Manro::UserCmd &cmd) override;
+    bool OnUpdate(const Manro::FrameContext_t &ctx, const Manro::UserCmd_t &cmd) override;
 
-    void OnRender(Manro::FrameContext &frame) override;
+    void OnRender(Manro::FrameContext_t &frame) override;
 
-    Manro::InputManager *GetInputManager() override { return &m_InputManager; }
+    Manro::CInputManager *GetInputManager() override { return &m_InputManager; }
 
 private:
     void LoadScene();
@@ -86,56 +86,56 @@ private:
 
     void AdvanceBenchCamera(float dt);
 
-    static Manro::Vec3 CatmullRomPos(const BenchWaypoint &p0, const BenchWaypoint &p1,
-                                     const BenchWaypoint &p2, const BenchWaypoint &p3,
+    static Manro::Vec3 CatmullRomPos(const BenchWaypoint_t &p0, const BenchWaypoint_t &p1,
+                                     const BenchWaypoint_t &p2, const BenchWaypoint_t &p3,
                                      float t);
 
     static float CatmullRomAngle(float a0, float a1, float a2, float a3, float t);
 
     Manro::IWindow *m_Window{nullptr};
-    Manro::JobSystem *m_Jobs{nullptr};
-    Manro::Renderer *m_Renderer{nullptr};
+    Manro::CJobSystem *m_Jobs{nullptr};
+    Manro::CRenderer *m_Renderer{nullptr};
 
-    Manro::JobSystem m_LoadJobs;
-    Manro::InputBackend m_InputBackend;
-    Manro::InputManager m_InputManager;
+    Manro::CJobSystem m_LoadJobs;
+    Manro::CInputBackend m_InputBackend;
+    Manro::CInputManager m_InputManager;
 
-    Manro::Scope<Manro::Model> m_Model;
+    Manro::Scope<Manro::CModel> m_Model;
 
-    FlyCamera m_Camera;
-    bool m_InputCaptured{true};
-    bool m_CtrlWasDown{false};
-    bool m_F11WasDown{false};
+    FlyCamera_t m_Camera;
+    bool m_bInputCaptured{true};
+    bool m_bCtrlWasDown{false};
+    bool m_bF11WasDown{false};
 
-    float m_AccumulatedTime{0.f};
+    float m_flAccumulatedTime{0.f};
 
-    Manro::FrameStats m_LastStats{};
+    Manro::FrameStats_t m_LastStats{};
     static constexpr int kHistoryLen = 120;
-    float m_FrameTimeHistory[kHistoryLen]{};
-    int m_FrameTimeOffset{0};
+    float m_flFrameTimeHistory[kHistoryLen]{};
+    int m_nFrameTimeOffset{0};
 
     BenchmarkState m_BenchState{BenchmarkState::Idle};
-    BenchmarkResult m_BenchResult{};
-    float m_BenchElapsed{0.f};
-    float m_WarmupElapsed{0.f};
-    int m_BenchDuration{30};
-    float m_WarmupDuration{3.f};
-    int m_BenchLightCount{8};
+    BenchmarkResult_t m_BenchResult{};
+    float m_flBenchElapsed{0.f};
+    float m_flWarmupElapsed{0.f};
+    int m_nBenchDuration{30};
+    float m_flWarmupDuration{3.f};
+    int m_nBenchLightCount{8};
     Manro::u64 m_BenchDrawCallsAcc{0};
     Manro::u64 m_BenchTrianglesAcc{0};
     std::vector<float> m_BenchFrameTimes;
     std::vector<Manro::LightData> m_BenchLights;
 
-    float m_PathT{0.f};
-    float m_PathSpeed{0.25f};
+    float m_flPathT{0.f};
+    float m_flPathSpeed{0.25f};
 
     Manro::Vec3 m_SavedCamPos{};
-    float m_SavedCamYaw{0.f};
-    float m_SavedCamPitch{0.f};
+    float m_flSavedCamYaw{0.f};
+    float m_flSavedCamPitch{0.f};
 
-    bool m_ShowBenchWindow{false};
-    bool m_IsRunning{true};
+    bool m_bShowBenchWindow{false};
+    bool m_bIsRunning{true};
 
-    static const BenchWaypoint kWaypoints[];
+    static const BenchWaypoint_t kWaypoints[];
     static const int kWaypointCount;
 };

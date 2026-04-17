@@ -1,5 +1,5 @@
 #pragma once
 
 namespace Manro {
-    class Material;
+    class CMaterial;
 } // namespace Manro

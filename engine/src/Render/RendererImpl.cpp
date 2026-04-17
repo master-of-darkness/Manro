@@ -38,13 +38,12 @@
 
 
 namespace Manro {
-
-    class RendererImpl final {
+    class CRendererImpl final {
     public:
-        RendererImpl(IWindow &window, u32 width, u32 height, const RenderSettings &settings,
-                     const RendererConfig &config = RendererConfig::Default());
+        CRendererImpl(IWindow &window, u32 width, u32 height, const RenderSettings_t &settings,
+                      const RendererConfig_t &config = RendererConfig_t::Default());
 
-        ~RendererImpl();
+        ~CRendererImpl();
 
         bool BeginFrame();
 
@@ -56,15 +55,15 @@ namespace Manro {
 
         void EndFrameAndPresent();
 
-        void DrawMesh(MeshHandle mesh, MaterialInstance &mat, const Mat4 &model);
+        void DrawMesh(MeshHandle mesh, CMaterialInstance &mat, const Mat4 &model);
 
-        void DrawMeshStatic(MeshHandle mesh, MaterialInstance &mat, const Mat4 &model);
+        void DrawMeshStatic(MeshHandle mesh, CMaterialInstance &mat, const Mat4 &model);
 
         void ClearStaticDraws();
 
-        void DrawModel(const Model &model, const Mat4 &transform);
+        void DrawModel(const CModel &model, const Mat4 &transform);
 
-        void DrawModelStatic(const Model &model, const Mat4 &transform);
+        void DrawModelStatic(const CModel &model, const Mat4 &transform);
 
         void AddLight(const LightData &light);
 
@@ -79,7 +78,7 @@ namespace Manro {
 
         void SetSkybox(TextureHandle cubemap) {
             if (cubemap == kInvalidTexture)
-            LOG_ERROR("[Renderer] SetSkybox called with invalid texture!");
+                LOG_ERROR("[CRenderer] SetSkybox called with invalid texture!");
             std::vector<VkBuffer> uboBuffers;
             std::vector<VkDescriptorSet> skyboxSets;
             uboBuffers.reserve(m_Frames.size());
@@ -91,39 +90,39 @@ namespace Manro {
             m_Skybox.SetTexture(cubemap, m_Textures, uboBuffers, skyboxSets);
         }
 
-        MeshHandle UploadMesh(const ModelData &data) { return m_Meshes.Upload(data); }
+        MeshHandle UploadMesh(const ModelData_t &data) { return m_Meshes.Upload(data); }
 
-        TextureHandle UploadTexture(const TextureData &data) { return m_Textures.Upload(data); }
+        TextureHandle UploadTexture(const TextureData_t &data) { return m_Textures.Upload(data); }
 
-        TextureHandle UploadCubemap(const std::vector<TextureData> &faces) { return m_Textures.UploadCubemap(faces); }
+        TextureHandle UploadCubemap(const std::vector<TextureData_t> &faces) { return m_Textures.UploadCubemap(faces); }
 
-        Ref<Material> GetDefaultMaterial() const { return m_PipelineMgr.GetDefaultMaterial(); }
+        Ref<CMaterial> GetDefaultMaterial() const { return m_PipelineMgr.GetDefaultMaterial(); }
 
 
-        static Scope<MaterialInstance> CreateMaterialInstance(const Ref<Material> &mat);
+        static Scope<CMaterialInstance> CreateMaterialInstance(const Ref<CMaterial> &mat);
 
         void OnResize(u32 width, u32 height);
 
         float GetAspectRatio() const {
-            if (m_PendingHeight == 0) return 1.f;
-            return static_cast<float>(m_PendingWidth) / static_cast<float>(m_PendingHeight);
+            if (m_unPendingHeight == 0) return 1.f;
+            return static_cast<float>(m_unPendingWidth) / static_cast<float>(m_unPendingHeight);
         }
 
-        VulkanContext &GetContext() { return m_Context; }
+        CVulkanContext &GetContext() { return m_Context; }
 
-        TextureManager &GetTextures() { return m_Textures; }
+        CTextureManager &GetTextures() { return m_Textures; }
 
-        MeshManager &GetMeshes() { return m_Meshes; }
+        CMeshManager &GetMeshes() { return m_Meshes; }
 
-        void SetSettings(const RenderSettings &settings);
+        void SetSettings(const RenderSettings_t &settings);
 
-        const RenderSettings &GetSettings() const { return m_Settings; }
+        const RenderSettings_t &GetSettings() const { return m_Settings; }
 
-        RenderSettings &GetSettings() { return m_Settings; }
+        RenderSettings_t &GetSettings() { return m_Settings; }
 
-        const RendererConfig &GetConfig() const { return m_Config; }
+        const RendererConfig_t &GetConfig() const { return m_Config; }
 
-        const FrameStats &GetLastFrameStats() const { return m_LastFrameStats; }
+        const FrameStats_t &GetLastFrameStats() const { return m_LastFrameStats; }
 
         void SetDebugUIEnabled(bool enabled) const {
             if (m_Overlay) m_Overlay->SetDebugUIEnabled(enabled);
@@ -180,36 +179,36 @@ namespace Manro {
         u32 GetMaxTilesY() const { return std::max(1u, 2304u / GetTileSize()); }
         u32 GetMaxTiles() const { return GetMaxTilesX() * GetMaxTilesY(); }
 
-        VulkanContext m_Context;
-        Scope<SceneRenderer> m_SceneRenderer;
+        CVulkanContext m_Context;
+        Scope<CSceneRenderer> m_SceneRenderer;
 
-        TextureManager m_Textures;
-        MeshManager m_Meshes;
+        CTextureManager m_Textures;
+        CMeshManager m_Meshes;
 
-        std::vector<PerFrameAllocator> m_PerFrameAlloc;
-        PersistentAllocator m_PersistentAlloc;
-        BindlessAllocator m_BindlessAlloc;
-        PipelineCache m_PipelineCache;
+        std::vector<CPerFrameAllocator> m_PerFrameAlloc;
+        CPersistentAllocator m_PersistentAlloc;
+        CBindlessAllocator m_BindlessAlloc;
+        CPipelineCache m_PipelineCache;
 
-        Scope<Overlay> m_Overlay;
+        Scope<COverlay> m_Overlay;
 
-        InstanceBatcher m_InstanceBatcher;
+        CInstanceBatcher m_InstanceBatcher;
 
-        Scope<DrawSystem> m_DrawSystem;
+        Scope<CDrawSystem> m_DrawSystem;
 
-        SwapchainManager m_Swapchain;
-        RenderTargetManager m_RenderTargets;
-        ShadowSystem m_Shadow;
-        SkyboxRenderer m_Skybox;
+        CSwapchainManager m_Swapchain;
+        CRenderTargetManager m_RenderTargets;
+        CShadowSystem m_Shadow;
+        CSkyboxRenderer m_Skybox;
 
-        GpuCullDispatcher m_CullDispatcher;
-        PipelineManager m_PipelineMgr;
+        CGpuCullDispatcher m_CullDispatcher;
+        CPipelineManager m_PipelineMgr;
 
-        std::vector<FrameData> m_Frames;
-        u32 m_CurrentFrame = 0;
-        u32 m_CurrentImageIndex = 0;
+        std::vector<FrameData_t> m_Frames;
+        u32 m_unCurrentFrame = 0;
+        u32 m_unCurrentImageIndex = 0;
 
-        MaterialSystem m_MaterialSystem;
+        CMaterialSystem m_MaterialSystem;
 
         std::vector<LightData> m_PendingLights;
 
@@ -217,26 +216,26 @@ namespace Manro {
         Mat4 m_ProjectionMatrix = Mat4(1.f);
         Vec3 m_CameraPosition = Vec3(0.f);
 
-        u32 m_PendingWidth = 0;
-        u32 m_PendingHeight = 0;
-        bool m_PendingResize = false;
-        bool m_PendingShadowRecreate = false;
+        u32 m_unPendingWidth = 0;
+        u32 m_unPendingHeight = 0;
+        bool m_bPendingResize = false;
+        bool m_bPendingShadowRecreate = false;
 
-        FrameStats m_CurrentFrameStats{};
-        FrameStats m_LastFrameStats{};
+        FrameStats_t m_CurrentFrameStats{};
+        FrameStats_t m_LastFrameStats{};
 
-        RenderSettings m_Settings{};
-        RendererConfig m_Config{};
+        RenderSettings_t m_Settings{};
+        RendererConfig_t m_Config{};
         VkExtent2D m_RenderExtent{};
 
         MnrGpuProfileCtx m_TracyGpuCtx{};
     };
 
-    RendererImpl::RendererImpl(IWindow &window, u32 width, u32 height,
-                               const RenderSettings &settings,
-                               const RendererConfig &config)
+    CRendererImpl::CRendererImpl(IWindow &window, u32 width, u32 height,
+                                 const RenderSettings_t &settings,
+                                 const RendererConfig_t &config)
         : m_Context("ManroEngine", window),
-          m_Textures(m_Context, m_BindlessAlloc), m_Meshes(new MeshManagerImpl(m_Context)),
+          m_Textures(m_Context, m_BindlessAlloc), m_Meshes(new MeshManagerImpl_t(m_Context)),
           m_Swapchain(m_Context), m_RenderTargets(m_Context), m_Shadow(m_Context), m_Skybox(m_Context),
           m_CullDispatcher(m_Context),
           m_PipelineMgr(m_Context),
@@ -245,8 +244,8 @@ namespace Manro {
         NormalizeRenderSettings(m_Settings, m_Context.GetMaxUsableSampleCount());
         m_Swapchain.Init(width, height, m_Settings.enableVSync);
 
-        m_PendingWidth = width;
-        m_PendingHeight = height;
+        m_unPendingWidth = width;
+        m_unPendingHeight = height;
         m_RenderExtent.width = std::max(1u, static_cast<u32>(width * m_Settings.resolutionScale));
         m_RenderExtent.height = std::max(1u, static_cast<u32>(height * m_Settings.resolutionScale));
 
@@ -260,7 +259,7 @@ namespace Manro {
         m_BindlessAlloc.Init(device);
         m_Textures.InitDefaults();
         m_PipelineCache.Init(device, "manro_pipeline_cache.bin");
-        m_SceneRenderer = CreateScope<SceneRenderer>();
+        m_SceneRenderer = CreateScope<CSceneRenderer>();
 
         m_RenderTargets.Create(m_RenderExtent.width, m_RenderExtent.height,
                                ToVulkanSampleCount(m_Settings.msaaSamples));
@@ -280,7 +279,7 @@ namespace Manro {
         m_PipelineMgr.BuildCompositePipeline(m_Swapchain.GetFormat());
         m_CullDispatcher.BuildPipelines(m_PipelineCache);
 
-        m_DrawSystem = CreateScope<DrawSystem>(m_Context);
+        m_DrawSystem = CreateScope<CDrawSystem>(m_Context);
         m_DrawSystem->Init(m_RenderTargets.GetOffscreenFormat(),
                            m_RenderTargets.GetDepthFormat(),
                            ToVulkanSampleCount(m_Settings.msaaSamples));
@@ -307,15 +306,15 @@ namespace Manro {
         m_InstanceBatcher.Init(GetMaxInstances());
         m_PendingLights.reserve(GetMaxLights());
 
-        OverlayInfo guiInfo{};
+        OverlayInfo_t guiInfo{};
         guiInfo.context = &m_Context;
         guiInfo.window = &window;
         guiInfo.colorFormat = m_Swapchain.GetFormat();
         guiInfo.imageCount = m_Swapchain.GetImageCount();
-        m_Overlay = CreateScope<Overlay>(guiInfo);
+        m_Overlay = CreateScope<COverlay>(guiInfo);
     }
 
-    RendererImpl::~RendererImpl() {
+    CRendererImpl::~CRendererImpl() {
         if (!m_Context.GetDevice()) return;
         vkDeviceWaitIdle(m_Context.GetDevice());
 
@@ -348,27 +347,27 @@ namespace Manro {
         m_PipelineMgr.Shutdown();
     }
 
-    void RendererImpl::AddLight(const LightData &light) {
+    void CRendererImpl::AddLight(const LightData &light) {
         if (m_PendingLights.size() < GetMaxLights())
             m_PendingLights.push_back(light);
     }
 
-    void RendererImpl::ClearLights() {
+    void CRendererImpl::ClearLights() {
         m_PendingLights.clear();
     }
 
-    void RendererImpl::OnResize(u32 width, u32 height) {
-        if (m_PendingWidth == width && m_PendingHeight == height &&
+    void CRendererImpl::OnResize(u32 width, u32 height) {
+        if (m_unPendingWidth == width && m_unPendingHeight == height &&
             m_Swapchain.GetExtent().width == width && m_Swapchain.GetExtent().height == height) {
             return;
         }
-        m_PendingWidth = width;
-        m_PendingHeight = height;
-        m_PendingResize = true;
+        m_unPendingWidth = width;
+        m_unPendingHeight = height;
+        m_bPendingResize = true;
     }
 
-    void RendererImpl::SetSettings(const RenderSettings &settings) {
-        RenderSettings normalized = settings;
+    void CRendererImpl::SetSettings(const RenderSettings_t &settings) {
+        RenderSettings_t normalized = settings;
         NormalizeRenderSettings(normalized, m_Context.GetMaxUsableSampleCount());
 
         bool needsResize = (m_Settings.resolutionScale != normalized.resolutionScale) ||
@@ -379,26 +378,26 @@ namespace Manro {
         m_Settings = normalized;
 
         if (needsShadowRecreate) {
-            m_PendingShadowRecreate = true;
+            m_bPendingShadowRecreate = true;
         }
 
         if (needsResize) {
-            m_PendingResize = true;
+            m_bPendingResize = true;
         }
     }
 
-    Scope<MaterialInstance> RendererImpl::CreateMaterialInstance(const Ref<Material> &material) {
-        return CreateScope<MaterialInstance>(material);
+    Scope<CMaterialInstance> CRendererImpl::CreateMaterialInstance(const Ref<CMaterial> &material) {
+        return CreateScope<CMaterialInstance>(material);
     }
 
-    void RendererImpl::InitializeSwapchain(u32 width, u32 height, bool vsync) {
+    void CRendererImpl::InitializeSwapchain(u32 width, u32 height, bool vsync) {
         m_Swapchain.Init(width, height, vsync);
     }
 
-    void RendererImpl::RecreateSwapchain() {
-        const u32 w = m_PendingWidth;
-        const u32 h = m_PendingHeight;
-        m_PendingResize = false;
+    void CRendererImpl::RecreateSwapchain() {
+        const u32 w = m_unPendingWidth;
+        const u32 h = m_unPendingHeight;
+        m_bPendingResize = false;
         if (w == 0 || h == 0) return;
 
         m_Swapchain.Recreate(w, h, m_Settings.enableVSync);
@@ -428,7 +427,7 @@ namespace Manro {
         m_Swapchain.SetNeedsRecreate(false);
     }
 
-    void RendererImpl::FinalizeFrameAndPresent(VkCommandBuffer cb) {
+    void CRendererImpl::FinalizeFrameAndPresent(VkCommandBuffer cb) {
         MNR_PROFILE_FUNCTION();
         {
             MNR_GPU_ZONE(m_TracyGpuCtx, cb, "Present Transition");
@@ -440,7 +439,7 @@ namespace Manro {
             b.dstAccessMask = 0;
             b.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             b.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-            b.image = m_Swapchain.GetImage(m_CurrentImageIndex);
+            b.image = m_Swapchain.GetImage(m_unCurrentImageIndex);
             b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
             VkDependencyInfo dep{};
             dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
@@ -448,7 +447,7 @@ namespace Manro {
             dep.pImageMemoryBarriers = &b;
             vkCmdPipelineBarrier2(cb, &dep);
         }
-        m_Swapchain.SetImageLayout(m_CurrentImageIndex, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+        m_Swapchain.SetImageLayout(m_unCurrentImageIndex, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
         MNR_GPU_COLLECT(m_TracyGpuCtx, cb);
 
@@ -458,18 +457,18 @@ namespace Manro {
 
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        VkSemaphore waitSemaphores[] = {m_Swapchain.GetImageAvailableSemaphore(m_CurrentFrame)};
+        VkSemaphore waitSemaphores[] = {m_Swapchain.GetImageAvailableSemaphore(m_unCurrentFrame)};
         VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
         submitInfo.waitSemaphoreCount = 1;
         submitInfo.pWaitSemaphores = waitSemaphores;
         submitInfo.pWaitDstStageMask = waitStages;
         submitInfo.commandBufferCount = 1;
         submitInfo.pCommandBuffers = &cb;
-        VkSemaphore signalSemaphores[] = {m_Swapchain.GetRenderFinishedSemaphore(m_CurrentImageIndex)};
+        VkSemaphore signalSemaphores[] = {m_Swapchain.GetRenderFinishedSemaphore(m_unCurrentImageIndex)};
         submitInfo.signalSemaphoreCount = 1;
         submitInfo.pSignalSemaphores = signalSemaphores;
 
-        VkFence submitFence = m_Swapchain.GetInFlightFence(m_CurrentFrame);
+        VkFence submitFence = m_Swapchain.GetInFlightFence(m_unCurrentFrame);
         if (vkQueueSubmit(m_Context.GetGraphicsQueue(), 1, &submitInfo, submitFence) != VK_SUCCESS) {
             throw std::runtime_error("Failed to submit frame command buffer");
         }
@@ -481,7 +480,7 @@ namespace Manro {
         VkSwapchainKHR swapchains[] = {m_Swapchain.GetHandle()};
         presentInfo.swapchainCount = 1;
         presentInfo.pSwapchains = swapchains;
-        presentInfo.pImageIndices = &m_CurrentImageIndex;
+        presentInfo.pImageIndices = &m_unCurrentImageIndex;
 
         VkResult presentResult = vkQueuePresentKHR(m_Context.GetGraphicsQueue(), &presentInfo);
         if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR) {
@@ -490,29 +489,29 @@ namespace Manro {
             throw std::runtime_error("Failed to present swapchain image");
         }
 
-        m_CurrentFrame = (m_CurrentFrame + 1) % GetFrameCount();
+        m_unCurrentFrame = (m_unCurrentFrame + 1) % GetFrameCount();
     }
 
-    bool RendererImpl::BeginFrame() {
+    bool CRendererImpl::BeginFrame() {
         MNR_PROFILE_FUNCTION();
 
         // Handle recreate before acquiring a new swapchain image.
         // Acquiring first and then bailing out can leave frame fences unsignaled.
-        if (m_PendingWidth == 0 || m_PendingHeight == 0) return false;
+        if (m_unPendingWidth == 0 || m_unPendingHeight == 0) return false;
         {
             MNR_PROFILE_SCOPE("SwapchainRecreate");
-            if (m_PendingResize || m_Swapchain.NeedsRecreate()) {
+            if (m_bPendingResize || m_Swapchain.NeedsRecreate()) {
                 RecreateSwapchain();
                 return false;
             }
-            if (m_PendingShadowRecreate) {
+            if (m_bPendingShadowRecreate) {
                 std::vector<VkDescriptorSet> pbrSets;
                 pbrSets.reserve(m_Frames.size());
                 for (auto &f: m_Frames) pbrSets.push_back(f.pbrSet);
                 m_Shadow.Recreate(m_PipelineMgr.GetDescriptorPool(), m_Settings.shadows,
                                   m_PipelineMgr.GetPbrSetLayout(),
                                   pbrSets);
-                m_PendingShadowRecreate = false;
+                m_bPendingShadowRecreate = false;
                 return false;
             }
         }
@@ -523,19 +522,19 @@ namespace Manro {
         }
 
         VkDevice device = m_Context.GetDevice();
-        FrameData &frame = m_Frames[m_CurrentFrame];
+        FrameData_t &frame = m_Frames[m_unCurrentFrame];
 
         {
             MNR_PROFILE_SCOPE("WaitForFence");
-            VkFence inFlightFence = m_Swapchain.GetInFlightFence(m_CurrentFrame);
+            VkFence inFlightFence = m_Swapchain.GetInFlightFence(m_unCurrentFrame);
             vkWaitForFences(device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
         }
 
         {
             MNR_PROFILE_SCOPE("AcquireSwapchainImage");
             VkResult acquireResult = vkAcquireNextImageKHR(device, m_Swapchain.GetHandle(), UINT64_MAX,
-                                                           m_Swapchain.GetImageAvailableSemaphore(m_CurrentFrame),
-                                                           VK_NULL_HANDLE, &m_CurrentImageIndex);
+                                                           m_Swapchain.GetImageAvailableSemaphore(m_unCurrentFrame),
+                                                           VK_NULL_HANDLE, &m_unCurrentImageIndex);
             if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR) {
                 m_Swapchain.SetNeedsRecreate(true);
                 return false;
@@ -549,7 +548,7 @@ namespace Manro {
 
         {
             MNR_PROFILE_SCOPE("ResetCommandPool");
-            VkFence inFlightFence = m_Swapchain.GetInFlightFence(m_CurrentFrame);
+            VkFence inFlightFence = m_Swapchain.GetInFlightFence(m_unCurrentFrame);
             vkResetFences(device, 1, &inFlightFence);
             vkResetCommandPool(device, frame.commandPool, 0);
 
@@ -563,7 +562,7 @@ namespace Manro {
 
         {
             MNR_PROFILE_SCOPE("FrameStateReset");
-            m_PerFrameAlloc[m_CurrentFrame].Reset();
+            m_PerFrameAlloc[m_unCurrentFrame].Reset();
 
             m_LastFrameStats = m_CurrentFrameStats;
             m_InstanceBatcher.ClearFrameInstances();
@@ -587,7 +586,7 @@ namespace Manro {
 
             if (m_Overlay && m_Overlay->IsDebugUIEnabled()) {
                 bool settingsChanged = false;
-                RenderSettings editedSettings = m_Settings;
+                RenderSettings_t editedSettings = m_Settings;
                 m_Overlay->DrawDebugger(
                     m_LastFrameStats.drawCalls,
                     m_LastFrameStats.triangleCount,
@@ -609,24 +608,24 @@ namespace Manro {
         return true;
     }
 
-    void RendererImpl::UploadLights(u32 frameIndex) {
+    void CRendererImpl::UploadLights(u32 frameIndex) {
         m_CurrentFrameStats.lightCount = static_cast<u32>(m_PendingLights.size());
-        FrameData &frame = m_Frames[frameIndex];
+        FrameData_t &frame = m_Frames[frameIndex];
         if (!m_PendingLights.empty())
             frame.lightBuffer->LoadData(
                 m_PendingLights.data(),
                 sizeof(LightData) * m_PendingLights.size());
     }
 
-    void RendererImpl::BeginRendering() {
+    void CRendererImpl::BeginRendering() {
         MNR_PROFILE_FUNCTION();
-        FrameData &frame = m_Frames[m_CurrentFrame];
+        FrameData_t &frame = m_Frames[m_unCurrentFrame];
         VkCommandBuffer cb = frame.commandBuffer;
         VkExtent2D ext = m_RenderExtent;
 
         {
             MNR_PROFILE_SCOPE("UploadLights");
-            UploadLights(m_CurrentFrame);
+            UploadLights(m_unCurrentFrame);
         }
 
         u32 totalInstCount = m_InstanceBatcher.GetTotalInstanceCount();
@@ -682,7 +681,7 @@ namespace Manro {
             vkCmdPipelineBarrier2(cb, &dep);
         }
 
-        UniformBufferObject ubo{};
+        UniformBufferObject_t ubo{};
         ubo.model = Mat4(1.f);
         ubo.view = m_ViewMatrix;
         ubo.proj = m_ProjectionMatrix;
@@ -737,9 +736,9 @@ namespace Manro {
         }
     }
 
-    void RendererImpl::RenderQueue() {
+    void CRendererImpl::RenderQueue() {
         MNR_PROFILE_FUNCTION();
-        FrameData &frame = m_Frames[m_CurrentFrame];
+        FrameData_t &frame = m_Frames[m_unCurrentFrame];
 
         u32 instanceCount = m_InstanceBatcher.GetTotalInstanceCount();
         auto *indexBuffer = m_Meshes.GetIndexBuffer();
@@ -751,7 +750,7 @@ namespace Manro {
                                 m_RenderTargets.GetDepthView() != VK_NULL_HANDLE);
         const bool hasSkybox = m_Skybox.IsValid();
 
-        Internal::ZPrepassPassState zState{};
+        Internal::ZPrepassPassState_t zState{};
         if (hasMeshes || m_RenderTargets.GetDepthView() != VK_NULL_HANDLE) {
             zState.extent = m_RenderExtent;
             zState.depthView = m_RenderTargets.GetDepthView();
@@ -767,12 +766,12 @@ namespace Manro {
                 zState.indirectBuffer = frame.indirectBuffer->GetHandle();
                 zState.countBuffer = frame.countBuffer->GetHandle();
                 zState.instanceCount = instanceCount;
-                zState.drawStride = sizeof(DrawCommand);
+                zState.drawStride = sizeof(DrawCommand_t);
             }
             m_SceneRenderer->SetZPrepassState(&zState);
         }
 
-        Internal::PbrPassState pbrState{};
+        Internal::PbrPassState_t pbrState{};
         if (hasMeshes) {
             pbrState.extent = m_RenderExtent;
             pbrState.msaaSamples = ToVulkanSampleCount(m_Settings.msaaSamples);
@@ -790,11 +789,11 @@ namespace Manro {
             pbrState.indirectBuffer = frame.indirectBuffer->GetHandle();
             pbrState.countBuffer = frame.countBuffer->GetHandle();
             pbrState.instanceCount = instanceCount;
-            pbrState.drawStride = sizeof(DrawCommand);
+            pbrState.drawStride = sizeof(DrawCommand_t);
             m_SceneRenderer->SetPbrPassState(&pbrState);
         }
 
-        Internal::SkyboxPassState skyState{};
+        Internal::SkyboxPassState_t skyState{};
         if (hasSkybox) {
             skyState.extent = m_RenderExtent;
             skyState.offscreenColorView = m_RenderTargets.GetOffscreenView();
@@ -817,9 +816,9 @@ namespace Manro {
     }
 
 
-    void RendererImpl::EndRendering() {
+    void CRendererImpl::EndRendering() {
         MNR_PROFILE_FUNCTION();
-        FrameData &frame = m_Frames[m_CurrentFrame];
+        FrameData_t &frame = m_Frames[m_unCurrentFrame];
         VkCommandBuffer cb = frame.commandBuffer;
 
         if (m_DrawSystem) {
@@ -844,9 +843,9 @@ namespace Manro {
         }
     }
 
-    void RendererImpl::EndFrameAndPresent() {
+    void CRendererImpl::EndFrameAndPresent() {
         MNR_PROFILE_FUNCTION();
-        FrameData &frame = m_Frames[m_CurrentFrame];
+        FrameData_t &frame = m_Frames[m_unCurrentFrame];
         VkCommandBuffer cb = frame.commandBuffer;
         VkExtent2D ext{m_Swapchain.GetExtent().width, m_Swapchain.GetExtent().height};
 
@@ -875,9 +874,9 @@ namespace Manro {
             b.srcAccessMask = 0;
             b.dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
             b.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-            b.oldLayout = m_Swapchain.GetImageLayout(m_CurrentImageIndex);
+            b.oldLayout = m_Swapchain.GetImageLayout(m_unCurrentImageIndex);
             b.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            b.image = m_Swapchain.GetImage(m_CurrentImageIndex);
+            b.image = m_Swapchain.GetImage(m_unCurrentImageIndex);
             b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
             VkDependencyInfo dep{};
             dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
@@ -885,25 +884,25 @@ namespace Manro {
             dep.pImageMemoryBarriers = &b;
             vkCmdPipelineBarrier2(cb, &dep);
         }
-        m_Swapchain.SetImageLayout(m_CurrentImageIndex, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+        m_Swapchain.SetImageLayout(m_unCurrentImageIndex, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
         if (m_SceneRenderer) {
-            CompositePushConstants cpc{};
+            CompositePushConstants_t cpc{};
             cpc.tm = m_Settings.postProcess.tonemapping;
-            cpc.tm.inputMatrix = SlangFloat3x3(glm::mat3(cpc.tm.exposure));
+            cpc.tm.inputMatrix = SlangFloat3x3_t(glm::mat3(cpc.tm.exposure));
             cpc.imageSize = Vec2(static_cast<float>(m_RenderExtent.width), static_cast<float>(m_RenderExtent.height));
             cpc.bloomIntensity = m_Settings.postProcess.bloomIntensity;
             cpc.bloomThreshold = m_Settings.postProcess.bloomThreshold;
             cpc.bloomEnabled = m_Settings.postProcess.enableBloom ? 1 : 0;
 
-            Internal::CompositePassState compositeState{};
+            Internal::CompositePassState_t compositeState{};
             compositeState.extent = ext;
-            compositeState.colorView = m_Swapchain.GetImageView(m_CurrentImageIndex);
+            compositeState.colorView = m_Swapchain.GetImageView(m_unCurrentImageIndex);
             compositeState.pipeline = m_PipelineMgr.GetCompositePipeline()->GetHandle();
             compositeState.pipelineLayout = m_PipelineMgr.GetCompositePipeline()->GetLayout();
             compositeState.descriptorSet = frame.compositeSet;
             compositeState.pushConstants = &cpc;
-            compositeState.pushConstantSize = sizeof(CompositePushConstants);
+            compositeState.pushConstantSize = sizeof(CompositePushConstants_t);
             compositeState.pushConstantStages = VK_SHADER_STAGE_FRAGMENT_BIT;
 
             m_SceneRenderer->SetCompositePassState(&compositeState);
@@ -911,10 +910,10 @@ namespace Manro {
         }
 
         if (m_Overlay) {
-            MNR_GPU_ZONE(m_TracyGpuCtx, cb, "GUI Overlay");
+            MNR_GPU_ZONE(m_TracyGpuCtx, cb, "GUI COverlay");
             VkRenderingAttachmentInfo guiColorAtt{};
             guiColorAtt.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-            guiColorAtt.imageView = m_Swapchain.GetImageView(m_CurrentImageIndex);
+            guiColorAtt.imageView = m_Swapchain.GetImageView(m_unCurrentImageIndex);
             guiColorAtt.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             guiColorAtt.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
             guiColorAtt.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -933,30 +932,30 @@ namespace Manro {
         FinalizeFrameAndPresent(cb);
     }
 
-    void RendererImpl::DrawMesh(MeshHandle meshId, MaterialInstance &material, const Mat4 &model) {
+    void CRendererImpl::DrawMesh(MeshHandle meshId, CMaterialInstance &material, const Mat4 &model) {
         m_InstanceBatcher.DrawMesh(meshId, material, model, m_Meshes, m_MaterialSystem, m_CurrentFrameStats);
     }
 
-    void RendererImpl::DrawModel(const Model &model, const Mat4 &transform) {
+    void CRendererImpl::DrawModel(const CModel &model, const Mat4 &transform) {
         m_InstanceBatcher.DrawModel(model, transform, m_Meshes, m_MaterialSystem, m_CurrentFrameStats);
     }
 
-    void RendererImpl::DrawModelStatic(const Model &model, const Mat4 &transform) {
+    void CRendererImpl::DrawModelStatic(const CModel &model, const Mat4 &transform) {
         m_InstanceBatcher.DrawModelStatic(model, transform, m_Meshes, m_MaterialSystem);
         m_InstanceBatcher.InvalidateStaticUpload(m_Frames);
     }
 
-    void RendererImpl::DrawMeshStatic(MeshHandle meshId, MaterialInstance &material, const Mat4 &model) {
+    void CRendererImpl::DrawMeshStatic(MeshHandle meshId, CMaterialInstance &material, const Mat4 &model) {
         m_InstanceBatcher.DrawMeshStatic(meshId, material, model, m_Meshes, m_MaterialSystem);
         m_InstanceBatcher.InvalidateStaticUpload(m_Frames);
     }
 
-    void RendererImpl::ClearStaticDraws() {
+    void CRendererImpl::ClearStaticDraws() {
         m_InstanceBatcher.ClearStaticDraws();
         m_InstanceBatcher.InvalidateStaticUpload(m_Frames);
     }
 
-    void RendererImpl::CreateCommandBuffers() {
+    void CRendererImpl::CreateCommandBuffers() {
         const u32 frameCount = GetFrameCount();
         const u32 maxLights = GetMaxLights();
         const u32 maxInstances = GetMaxInstances();
@@ -966,7 +965,7 @@ namespace Manro {
         m_Frames.resize(frameCount);
 
         for (u32 i = 0; i < frameCount; ++i) {
-            FrameData &f = m_Frames[i];
+            FrameData_t &f = m_Frames[i];
 
             VkCommandPoolCreateInfo poolInfo{};
             poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -985,51 +984,51 @@ namespace Manro {
                 throw std::runtime_error("Failed to allocate frame command buffer");
             }
 
-            f.uboBuffer = CreateScope<Buffer>(
-                m_Context, sizeof(UniformBufferObject),
+            f.uboBuffer = CreateScope<CBuffer>(
+                m_Context, sizeof(UniformBufferObject_t),
                 VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
-            f.lightBuffer = CreateScope<Buffer>(
+            f.lightBuffer = CreateScope<CBuffer>(
                 m_Context, sizeof(LightData) * maxLights,
                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
-            struct TileHeader {
+            struct TileHeader_t {
                 u32 offset, count, pad0, pad1;
             };
-            f.tileHeaderBuffer = CreateScope<Buffer>(
-                m_Context, sizeof(TileHeader) * maxTiles,
+            f.tileHeaderBuffer = CreateScope<CBuffer>(
+                m_Context, sizeof(TileHeader_t) * maxTiles,
                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
 
-            f.tileLightIndexBuffer = CreateScope<Buffer>(
+            f.tileLightIndexBuffer = CreateScope<CBuffer>(
                 m_Context, sizeof(u32) * maxTiles * maxLightsPerTile,
                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
 
-            f.instanceBuffer = CreateScope<Buffer>(
-                m_Context, sizeof(MeshInstance) * maxInstances,
+            f.instanceBuffer = CreateScope<CBuffer>(
+                m_Context, sizeof(MeshInstance_t) * maxInstances,
                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                 VMA_MEMORY_USAGE_CPU_TO_GPU);
 
-            f.cullDataBuffer = CreateScope<Buffer>(
-                m_Context, sizeof(CullData) * maxInstances,
+            f.cullDataBuffer = CreateScope<CBuffer>(
+                m_Context, sizeof(CullData_t) * maxInstances,
                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
-            f.indirectBuffer = CreateScope<Buffer>(
-                m_Context, sizeof(DrawCommand) * maxInstances,
+            f.indirectBuffer = CreateScope<CBuffer>(
+                m_Context, sizeof(DrawCommand_t) * maxInstances,
                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
                 VMA_MEMORY_USAGE_GPU_ONLY);
 
-            f.countBuffer = CreateScope<Buffer>(
+            f.countBuffer = CreateScope<CBuffer>(
                 m_Context, sizeof(u32),
                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
                 VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                 VMA_MEMORY_USAGE_GPU_ONLY);
 
-            f.shadowIndirectBuffer = CreateScope<Buffer>(
-                m_Context, sizeof(DrawCommand) * maxInstances,
+            f.shadowIndirectBuffer = CreateScope<CBuffer>(
+                m_Context, sizeof(DrawCommand_t) * maxInstances,
                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
                 VMA_MEMORY_USAGE_GPU_ONLY);
 
-            f.shadowCountBuffer = CreateScope<Buffer>(
+            f.shadowCountBuffer = CreateScope<CBuffer>(
                 m_Context, sizeof(u32),
                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
                 VK_BUFFER_USAGE_TRANSFER_DST_BIT,
@@ -1043,45 +1042,45 @@ namespace Manro {
         }
     }
 
-    void RendererImpl::DrawLine(const Vec3 &a, const Vec3 &b, u32 color, bool depthTest) const {
+    void CRendererImpl::DrawLine(const Vec3 &a, const Vec3 &b, u32 color, bool depthTest) const {
         if (m_DrawSystem) {
             m_DrawSystem->SubmitLine(a, b, color, depthTest);
         }
     }
 
-    void RendererImpl::DrawAABB(const Vec3 &min, const Vec3 &max, u32 color, bool depthTest) const {
+    void CRendererImpl::DrawAABB(const Vec3 &min, const Vec3 &max, u32 color, bool depthTest) const {
         if (m_DrawSystem) {
             m_DrawSystem->SubmitBox((min + max) * 0.5f, (max - min) * 0.5f, Mat4(1.0f), color, depthTest);
         }
     }
 
-    void RendererImpl::DrawBox(const Vec3 &center, const Vec3 &half,
-                               const Mat4 &transform, u32 color, bool depthTest) const {
+    void CRendererImpl::DrawBox(const Vec3 &center, const Vec3 &half,
+                                const Mat4 &transform, u32 color, bool depthTest) const {
         if (m_DrawSystem) {
             m_DrawSystem->SubmitBox(center, half, transform, color, depthTest);
         }
     }
 
-    void RendererImpl::DrawSphere(const Vec3 &center, float radius,
-                                  u32 color, int segments, bool depthTest) const {
+    void CRendererImpl::DrawSphere(const Vec3 &center, float radius,
+                                   u32 color, int segments, bool depthTest) const {
         if (m_DrawSystem) {
             m_DrawSystem->SubmitSphere(center, radius, color, segments, depthTest);
         }
     }
 
-    void RendererImpl::DrawFrustum(const Mat4 &invViewProj, u32 color, bool depthTest) const {
+    void CRendererImpl::DrawFrustum(const Mat4 &invViewProj, u32 color, bool depthTest) const {
         if (m_DrawSystem) {
             m_DrawSystem->SubmitFrustum(invViewProj, color, depthTest);
         }
     }
 
-    void RendererImpl::DrawCross(const Vec3 &center, float size, u32 color, bool depthTest) const {
+    void CRendererImpl::DrawCross(const Vec3 &center, float size, u32 color, bool depthTest) const {
         if (m_DrawSystem) {
             m_DrawSystem->SubmitCross(center, size, color, depthTest);
         }
     }
 
-    void RendererImpl::DrawAxes(const Mat4 &transform, float size) const {
+    void CRendererImpl::DrawAxes(const Mat4 &transform, float size) const {
         Vec3 origin = Vec3(transform[3]);
         Vec3 axisX = Vec3(transform[0]) * size;
         Vec3 axisY = Vec3(transform[1]) * size;
@@ -1092,116 +1091,116 @@ namespace Manro {
         DrawLine(origin, origin + axisZ, 0xFFFF0000u, true);
     }
 
-    Scope<RendererImpl> CreateRendererImpl(IWindow &window, u32 width, u32 height,
-                                           const RenderSettings &settings, const RendererConfig &config) {
-        return CreateScope<RendererImpl>(window, width, height, settings, config);
+    Scope<CRendererImpl> CreateRendererImpl(IWindow &window, u32 width, u32 height,
+                                            const RenderSettings_t &settings, const RendererConfig_t &config) {
+        return CreateScope<CRendererImpl>(window, width, height, settings, config);
     }
 
-    Renderer::Renderer(IWindow &window, u32 width, u32 height, const RenderSettings &settings)
-        : Renderer(window, width, height, settings, RendererConfig::Default()) {
+    CRenderer::CRenderer(IWindow &window, u32 width, u32 height, const RenderSettings_t &settings)
+        : CRenderer(window, width, height, settings, RendererConfig_t::Default()) {
     }
 
-    Renderer::Renderer(IWindow &window, u32 width, u32 height, const RenderSettings &settings,
-                       const RendererConfig &config)
+    CRenderer::CRenderer(IWindow &window, u32 width, u32 height, const RenderSettings_t &settings,
+                         const RendererConfig_t &config)
         : m_Impl(CreateRendererImpl(window, width, height, settings, config)) {
     }
 
-    Renderer::~Renderer() = default;
+    CRenderer::~CRenderer() = default;
 
-    bool RendererImplBeginFrame(RendererImpl &impl) { return impl.BeginFrame(); }
-    void RendererImplBeginRendering(RendererImpl &impl) { impl.BeginRendering(); }
-    void RendererImplRenderQueue(RendererImpl &impl) { impl.RenderQueue(); }
-    void RendererImplEndRendering(RendererImpl &impl) { impl.EndRendering(); }
-    void RendererImplEndFrameAndPresent(RendererImpl &impl) { impl.EndFrameAndPresent(); }
+    bool RendererImplBeginFrame(CRendererImpl &impl) { return impl.BeginFrame(); }
+    void RendererImplBeginRendering(CRendererImpl &impl) { impl.BeginRendering(); }
+    void RendererImplRenderQueue(CRendererImpl &impl) { impl.RenderQueue(); }
+    void RendererImplEndRendering(CRendererImpl &impl) { impl.EndRendering(); }
+    void RendererImplEndFrameAndPresent(CRendererImpl &impl) { impl.EndFrameAndPresent(); }
 
-    void RendererImplDrawMesh(RendererImpl &impl, MeshHandle mesh, MaterialInstance &mat, const Mat4 &model) {
+    void RendererImplDrawMesh(CRendererImpl &impl, MeshHandle mesh, CMaterialInstance &mat, const Mat4 &model) {
         impl.DrawMesh(mesh, mat, model);
     }
 
-    void RendererImplDrawMeshStatic(RendererImpl &impl, MeshHandle mesh, MaterialInstance &mat, const Mat4 &model) {
+    void RendererImplDrawMeshStatic(CRendererImpl &impl, MeshHandle mesh, CMaterialInstance &mat, const Mat4 &model) {
         impl.DrawMeshStatic(mesh, mat, model);
     }
 
-    void RendererImplClearStaticDraws(RendererImpl &impl) { impl.ClearStaticDraws(); }
+    void RendererImplClearStaticDraws(CRendererImpl &impl) { impl.ClearStaticDraws(); }
 
-    void RendererImplDrawModel(RendererImpl &impl, const Model &model, const Mat4 &transform) {
+    void RendererImplDrawModel(CRendererImpl &impl, const CModel &model, const Mat4 &transform) {
         impl.DrawModel(model, transform);
     }
 
-    void RendererImplDrawModelStatic(RendererImpl &impl, const Model &model, const Mat4 &transform) {
+    void RendererImplDrawModelStatic(CRendererImpl &impl, const CModel &model, const Mat4 &transform) {
         impl.DrawModelStatic(model, transform);
     }
 
-    void RendererImplAddLight(RendererImpl &impl, const LightData &light) { impl.AddLight(light); }
-    void RendererImplClearLights(RendererImpl &impl) { impl.ClearLights(); }
+    void RendererImplAddLight(CRendererImpl &impl, const LightData &light) { impl.AddLight(light); }
+    void RendererImplClearLights(CRendererImpl &impl) { impl.ClearLights(); }
 
-    void RendererImplSetViewProjection(RendererImpl &impl, const Mat4 &view, const Mat4 &proj) {
+    void RendererImplSetViewProjection(CRendererImpl &impl, const Mat4 &view, const Mat4 &proj) {
         impl.SetViewProjection(view, proj);
     }
 
-    void RendererImplSetCameraPosition(RendererImpl &impl, const Vec3 &pos) { impl.SetCameraPosition(pos); }
-    void RendererImplSetSkybox(RendererImpl &impl, TextureHandle cubemap) { impl.SetSkybox(cubemap); }
-    MeshHandle RendererImplUploadMesh(RendererImpl &impl, const ModelData &data) { return impl.UploadMesh(data); }
+    void RendererImplSetCameraPosition(CRendererImpl &impl, const Vec3 &pos) { impl.SetCameraPosition(pos); }
+    void RendererImplSetSkybox(CRendererImpl &impl, TextureHandle cubemap) { impl.SetSkybox(cubemap); }
+    MeshHandle RendererImplUploadMesh(CRendererImpl &impl, const ModelData_t &data) { return impl.UploadMesh(data); }
 
-    TextureHandle RendererImplUploadTexture(RendererImpl &impl, const TextureData &data) {
+    TextureHandle RendererImplUploadTexture(CRendererImpl &impl, const TextureData_t &data) {
         return impl.UploadTexture(data);
     }
 
-    TextureHandle RendererImplUploadCubemap(RendererImpl &impl, const std::vector<TextureData> &faces) {
+    TextureHandle RendererImplUploadCubemap(CRendererImpl &impl, const std::vector<TextureData_t> &faces) {
         return impl.UploadCubemap(faces);
     }
 
-    Ref<Material> RendererImplGetDefaultMaterial(const RendererImpl &impl) { return impl.GetDefaultMaterial(); }
+    Ref<CMaterial> RendererImplGetDefaultMaterial(const CRendererImpl &impl) { return impl.GetDefaultMaterial(); }
 
-    Scope<MaterialInstance> RendererImplCreateMaterialInstance(RendererImpl &impl, const Ref<Material> &mat) {
-        return RendererImpl::CreateMaterialInstance(mat);
+    Scope<CMaterialInstance> RendererImplCreateMaterialInstance(CRendererImpl &impl, const Ref<CMaterial> &mat) {
+        return CRendererImpl::CreateMaterialInstance(mat);
     }
 
-    void RendererImplOnResize(RendererImpl &impl, u32 width, u32 height) { impl.OnResize(width, height); }
-    float RendererImplGetAspectRatio(const RendererImpl &impl) { return impl.GetAspectRatio(); }
-    MeshManager &RendererImplGetMeshes(RendererImpl &impl) { return impl.GetMeshes(); }
-    void RendererImplSetSettings(RendererImpl &impl, const RenderSettings &settings) { impl.SetSettings(settings); }
-    const RenderSettings &RendererImplGetSettingsConst(const RendererImpl &impl) { return impl.GetSettings(); }
-    RenderSettings &RendererImplGetSettings(RendererImpl &impl) { return impl.GetSettings(); }
-    const RendererConfig &RendererImplGetConfig(const RendererImpl &impl) { return impl.GetConfig(); }
+    void RendererImplOnResize(CRendererImpl &impl, u32 width, u32 height) { impl.OnResize(width, height); }
+    float RendererImplGetAspectRatio(const CRendererImpl &impl) { return impl.GetAspectRatio(); }
+    CMeshManager &RendererImplGetMeshes(CRendererImpl &impl) { return impl.GetMeshes(); }
+    void RendererImplSetSettings(CRendererImpl &impl, const RenderSettings_t &settings) { impl.SetSettings(settings); }
+    const RenderSettings_t &RendererImplGetSettingsConst(const CRendererImpl &impl) { return impl.GetSettings(); }
+    RenderSettings_t &RendererImplGetSettings(CRendererImpl &impl) { return impl.GetSettings(); }
+    const RendererConfig_t &RendererImplGetConfig(const CRendererImpl &impl) { return impl.GetConfig(); }
 
-    const FrameStats &RendererImplGetLastFrameStats(const RendererImpl &impl) { return impl.GetLastFrameStats(); }
-    void RendererImplSetDebugUIEnabled(const RendererImpl &impl, bool enabled) { impl.SetDebugUIEnabled(enabled); }
-    bool RendererImplIsDebugUIEnabled(const RendererImpl &impl) { return impl.IsDebugUIEnabled(); }
+    const FrameStats_t &RendererImplGetLastFrameStats(const CRendererImpl &impl) { return impl.GetLastFrameStats(); }
+    void RendererImplSetDebugUIEnabled(const CRendererImpl &impl, bool enabled) { impl.SetDebugUIEnabled(enabled); }
+    bool RendererImplIsDebugUIEnabled(const CRendererImpl &impl) { return impl.IsDebugUIEnabled(); }
 
-    void RendererImplGetVramStats(const RendererImpl &impl, u64 &usage, u64 &budget) {
+    void RendererImplGetVramStats(const CRendererImpl &impl, u64 &usage, u64 &budget) {
         impl.GetVramStats(usage, budget);
     }
 
-    std::string RendererImplGetAdapterName(const RendererImpl &impl) { return impl.GetAdapterName(); }
+    std::string RendererImplGetAdapterName(const CRendererImpl &impl) { return impl.GetAdapterName(); }
 
-    void RendererImplDrawLine(const RendererImpl &impl, const Vec3 &a, const Vec3 &b, u32 color, bool depthTest) {
+    void RendererImplDrawLine(const CRendererImpl &impl, const Vec3 &a, const Vec3 &b, u32 color, bool depthTest) {
         impl.DrawLine(a, b, color, depthTest);
     }
 
-    void RendererImplDrawAABB(const RendererImpl &impl, const Vec3 &min, const Vec3 &max, u32 color, bool depthTest) {
+    void RendererImplDrawAABB(const CRendererImpl &impl, const Vec3 &min, const Vec3 &max, u32 color, bool depthTest) {
         impl.DrawAABB(min, max, color, depthTest);
     }
 
-    void RendererImplDrawBox(const RendererImpl &impl, const Vec3 &center, const Vec3 &half, const Mat4 &transform,
+    void RendererImplDrawBox(const CRendererImpl &impl, const Vec3 &center, const Vec3 &half, const Mat4 &transform,
                              u32 color, bool depthTest) {
         impl.DrawBox(center, half, transform, color, depthTest);
     }
 
-    void RendererImplDrawSphere(const RendererImpl &impl, const Vec3 &center, float radius, u32 color, int segments,
+    void RendererImplDrawSphere(const CRendererImpl &impl, const Vec3 &center, float radius, u32 color, int segments,
                                 bool depthTest) {
         impl.DrawSphere(center, radius, color, segments, depthTest);
     }
 
-    void RendererImplDrawFrustum(const RendererImpl &impl, const Mat4 &invViewProj, u32 color, bool depthTest) {
+    void RendererImplDrawFrustum(const CRendererImpl &impl, const Mat4 &invViewProj, u32 color, bool depthTest) {
         impl.DrawFrustum(invViewProj, color, depthTest);
     }
 
-    void RendererImplDrawCross(const RendererImpl &impl, const Vec3 &center, float size, u32 color, bool depthTest) {
+    void RendererImplDrawCross(const CRendererImpl &impl, const Vec3 &center, float size, u32 color, bool depthTest) {
         impl.DrawCross(center, size, color, depthTest);
     }
 
-    void RendererImplDrawAxes(const RendererImpl &impl, const Mat4 &transform, float size) {
+    void RendererImplDrawAxes(const CRendererImpl &impl, const Mat4 &transform, float size) {
         impl.DrawAxes(transform, size);
     }
 } // namespace Manro

@@ -14,16 +14,16 @@ namespace Manro {
     };
 
     template<typename T>
-    class ComponentArray : public IComponentArray {
+    class CComponentArray : public IComponentArray {
     public:
-        ComponentArray() {
+        CComponentArray() {
             m_SparseMap.fill(NULL_ENTITY);
         }
 
         void InsertData(Entity entity, T component) {
             assert(m_SparseMap[entity] == NULL_ENTITY && "Component added to same entity more than once.");
 
-            size_t newIndex = m_Size;
+            size_t newIndex = m_unSize;
             m_SparseMap[entity] = newIndex;
             m_DenseToEntityMap[newIndex] = entity;
 
@@ -32,14 +32,14 @@ namespace Manro {
             } else {
                 m_ComponentArray[newIndex] = std::move(component);
             }
-            m_Size++;
+            m_unSize++;
         }
 
         void RemoveData(Entity entity) {
             assert(m_SparseMap[entity] != NULL_ENTITY && "Removing non-existent component.");
 
             size_t indexOfRemovedElement = m_SparseMap[entity];
-            size_t indexOfLastElement = m_Size - 1;
+            size_t indexOfLastElement = m_unSize - 1;
 
             m_ComponentArray[indexOfRemovedElement] = std::move(m_ComponentArray[indexOfLastElement]);
 
@@ -48,7 +48,7 @@ namespace Manro {
             m_DenseToEntityMap[indexOfRemovedElement] = entityOfLastElement;
 
             m_SparseMap[entity] = NULL_ENTITY;
-            m_Size--;
+            m_unSize--;
         }
 
         T &GetData(Entity entity) {
@@ -64,7 +64,7 @@ namespace Manro {
 
         std::vector<T> &GetDenseArray() { return m_ComponentArray; }
 
-        size_t GetSize() const { return m_Size; }
+        size_t GetSize() const { return m_unSize; }
 
         const std::array<Entity, MAX_ENTITIES> &GetDenseToEntityMap() const { return m_DenseToEntityMap; }
 
@@ -72,6 +72,6 @@ namespace Manro {
         std::vector<T> m_ComponentArray;
         std::array<Entity, MAX_ENTITIES> m_SparseMap;
         std::array<Entity, MAX_ENTITIES> m_DenseToEntityMap;
-        size_t m_Size{0};
+        size_t m_unSize{0};
     };
 } // namespace Manro

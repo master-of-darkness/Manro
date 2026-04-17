@@ -6,27 +6,27 @@
 #include <volk.h>
 
 namespace Manro {
-    class VulkanContext;
+    class CVulkanContext;
 
-    class BindlessAllocator;
+    class CBindlessAllocator;
 
-    class TextureManager {
+    class CTextureManager {
     public:
-        TextureManager(const VulkanContext &ctx, BindlessAllocator &bindlessAlloc);
+        CTextureManager(const CVulkanContext &ctx, CBindlessAllocator &bindlessAlloc);
 
-        ~TextureManager();
+        ~CTextureManager();
 
-        TextureManager(const TextureManager &) = delete;
+        CTextureManager(const CTextureManager &) = delete;
 
-        TextureManager &operator=(const TextureManager &) = delete;
+        CTextureManager &operator=(const CTextureManager &) = delete;
 
         void InitDefaults();
 
-        TextureHandle Upload(const TextureData &data);
+        TextureHandle Upload(const TextureData_t &data);
 
         TextureHandle Upload(const u8 *pixels, int width, int height);
 
-        TextureHandle UploadCubemap(const std::vector<TextureData> &faces);
+        TextureHandle UploadCubemap(const std::vector<TextureData_t> &faces);
 
         void FlushPendingUploads();
 
@@ -41,7 +41,7 @@ namespace Manro {
         VkDescriptorSetLayout GetBindlessLayout() const;
 
     private:
-        struct Impl;
-        Impl *m_Impl;
+        struct Impl_t;
+        Impl_t *m_Impl;
     };
 } // namespace Manro

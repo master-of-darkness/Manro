@@ -14,21 +14,21 @@ namespace Manro {
         Count
     };
 
-    struct SlangFloat3x3 {
+    struct SlangFloat3x3_t {
         glm::vec4 col0{1.0f, 0.0f, 0.0f, 0.0f};
         glm::vec4 col1{0.0f, 1.0f, 0.0f, 0.0f};
         glm::vec4 col2{0.0f, 0.0f, 1.0f, 0.0f};
 
-        SlangFloat3x3() = default;
+        SlangFloat3x3_t() = default;
 
-        SlangFloat3x3(const glm::mat3 &m) {
+        SlangFloat3x3_t(const glm::mat3 &m) {
             col0 = glm::vec4(m[0], 0.0f);
             col1 = glm::vec4(m[1], 0.0f);
             col2 = glm::vec4(m[2], 0.0f);
         }
     };
 
-    struct TonemapperData {
+    struct TonemapperData_t {
         int isActive = 1;
         int method = static_cast<int>(ToneMapMethod::Filmic);
 
@@ -37,7 +37,7 @@ namespace Manro {
         float tint = 3.25895312e-3f;
         float _pad0[3];
 
-        alignas(16) SlangFloat3x3 inputMatrix;
+        alignas(16) SlangFloat3x3_t inputMatrix;
 
         // Post effects
         float contrast = 1.0f;
@@ -68,8 +68,8 @@ namespace Manro {
         int dither = 1;
     };
 
-    struct CompositePushConstants {
-        TonemapperData tm;
+    struct CompositePushConstants_t {
+        TonemapperData_t tm;
         glm::vec2 imageSize;
         float bloomIntensity{1.0f};
         float bloomThreshold{1.0f};

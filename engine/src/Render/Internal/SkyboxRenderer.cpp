@@ -9,12 +9,12 @@
 #include <stdexcept>
 
 namespace Manro {
-    SkyboxRenderer::SkyboxRenderer(VulkanContext &ctx)
+    CSkyboxRenderer::CSkyboxRenderer(CVulkanContext &ctx)
         : m_Context(ctx) {
     }
 
-    void SkyboxRenderer::Init(VkDescriptorPool pool, u32 frameCount,
-                              VkFormat colorFmt, VkFormat depthFmt,
+    void CSkyboxRenderer::Init(VkDescriptorPool pool, u32 frameCount,
+                               VkFormat colorFmt, VkFormat depthFmt,
                               VkSampleCountFlagBits samples) {
         VkDevice device = m_Context.GetDevice();
 
@@ -45,34 +45,34 @@ namespace Manro {
         u32 skyboxIndices[36];
         for (u32 i = 0; i < 36; ++i) skyboxIndices[i] = i;
 
-        m_SkyboxVertexBuffer = CreateScope<Buffer>(m_Context, sizeof(skyboxVertices),
-                                                   VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        m_SkyboxVertexBuffer = CreateScope<CBuffer>(m_Context, sizeof(skyboxVertices),
+                                                    VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                                                    VMA_MEMORY_USAGE_CPU_TO_GPU);
         m_SkyboxVertexBuffer->LoadData(skyboxVertices, sizeof(skyboxVertices));
 
-        m_SkyboxIndexBuffer = CreateScope<Buffer>(m_Context, sizeof(skyboxIndices),
-                                                  VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        m_SkyboxIndexBuffer = CreateScope<CBuffer>(m_Context, sizeof(skyboxIndices),
+                                                   VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
                                                   VMA_MEMORY_USAGE_CPU_TO_GPU);
         m_SkyboxIndexBuffer->LoadData(skyboxIndices, sizeof(skyboxIndices));
 
         BuildPipeline(colorFmt, depthFmt, samples);
     }
 
-    void SkyboxRenderer::RebuildPipeline(VkFormat colorFmt, VkFormat depthFmt,
-                                         VkSampleCountFlagBits samples) {
+    void CSkyboxRenderer::RebuildPipeline(VkFormat colorFmt, VkFormat depthFmt,
+                                          VkSampleCountFlagBits samples) {
         BuildPipeline(colorFmt, depthFmt, samples);
     }
 
-    void SkyboxRenderer::BuildPipeline(VkFormat colorFmt, VkFormat depthFmt,
-                                       VkSampleCountFlagBits samples) {
-        auto vertSpv = VirtualFS::Get().ReadFile("shaders://skybox.vert.spv");
-        auto fragSpv = VirtualFS::Get().ReadFile("shaders://skybox.frag.spv");
+    void CSkyboxRenderer::BuildPipeline(VkFormat colorFmt, VkFormat depthFmt,
+                                        VkSampleCountFlagBits samples) {
+        auto vertSpv = CVirtualFS::Get().ReadFile("shaders://skybox.vert.spv");
+        auto fragSpv = CVirtualFS::Get().ReadFile("shaders://skybox.frag.spv");
         if (vertSpv.empty() || fragSpv.empty()) {
-            LOG_ERROR("[SkyboxRenderer] Skybox shaders not found");
+            LOG_ERROR("[CSkyboxRenderer] Skybox shaders not found");
             return;
         }
 
-        PipelineConfigParams cfg{};
+        PipelineConfigParams_t cfg{};
         cfg.vertexEntryPoint = "main";
         cfg.fragmentEntryPoint = "main";
         cfg.colorAttachmentFormat = colorFmt;
@@ -87,15 +87,15 @@ namespace Manro {
         cfg.vertexInputAttributes.resize(1);
         cfg.vertexInputAttributes[0] = {0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0};
 
-        m_SkyboxPipeline = CreateScope<Pipeline>(m_Context);
+        m_SkyboxPipeline = CreateScope<CPipeline>(m_Context);
         m_SkyboxPipeline->BuildGraphics(vertSpv, fragSpv, cfg);
     }
 
-    void SkyboxRenderer::SetTexture(TextureHandle h, TextureManager &textures,
-                                    const std::vector<VkBuffer> &uboBuffers,
+    void CSkyboxRenderer::SetTexture(TextureHandle h, CTextureManager &textures,
+                                     const std::vector<VkBuffer> &uboBuffers,
                                     const std::vector<VkDescriptorSet> &skyboxSets) {
         if (h == kInvalidTexture)
-        LOG_ERROR("[SkyboxRenderer] SetTexture called with invalid texture!");
+            LOG_ERROR("[CSkyboxRenderer] SetTexture called with invalid texture!");
 
         m_SkyboxTexture = h;
 
@@ -104,8 +104,8 @@ namespace Manro {
         }
     }
 
-    void SkyboxRenderer::UpdateDescriptorSet(u32 /*fi*/, VkDescriptorSet set,
-                                             VkBuffer uboBuffer, TextureManager &textures) {
+    void CSkyboxRenderer::UpdateDescriptorSet(u32 /*fi*/, VkDescriptorSet set,
+                                              VkBuffer uboBuffer, CTextureManager &textures) {
         VkDescriptorBufferInfo uboI{uboBuffer, 0, VK_WHOLE_SIZE};
 
         VkDescriptorImageInfo skyI{};
@@ -131,7 +131,7 @@ namespace Manro {
         vkUpdateDescriptorSets(m_Context.GetDevice(), 2, writes, 0, nullptr);
     }
 
-    void SkyboxRenderer::Shutdown() {
+    void CSkyboxRenderer::Shutdown() {
         VkDevice device = m_Context.GetDevice();
 
         m_SkyboxPipeline.reset();
@@ -144,19 +144,19 @@ namespace Manro {
         }
     }
 
-    VkPipeline SkyboxRenderer::GetPipeline() const {
+    VkPipeline CSkyboxRenderer::GetPipeline() const {
         return m_SkyboxPipeline ? m_SkyboxPipeline->GetHandle() : VK_NULL_HANDLE;
     }
 
-    VkPipelineLayout SkyboxRenderer::GetPipelineLayout() const {
+    VkPipelineLayout CSkyboxRenderer::GetPipelineLayout() const {
         return m_SkyboxPipeline ? m_SkyboxPipeline->GetLayout() : VK_NULL_HANDLE;
     }
 
-    VkBuffer SkyboxRenderer::GetVertexBuffer() const {
+    VkBuffer CSkyboxRenderer::GetVertexBuffer() const {
         return m_SkyboxVertexBuffer ? m_SkyboxVertexBuffer->GetHandle() : VK_NULL_HANDLE;
     }
 
-    VkBuffer SkyboxRenderer::GetIndexBuffer() const {
+    VkBuffer CSkyboxRenderer::GetIndexBuffer() const {
         return m_SkyboxIndexBuffer ? m_SkyboxIndexBuffer->GetHandle() : VK_NULL_HANDLE;
     }
 } // namespace Manro

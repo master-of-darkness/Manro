@@ -5,27 +5,27 @@
 #include <array>
 
 namespace Manro {
-    class InputBackend final : public IInputBackend {
+    class CInputBackend final : public IInputBackend {
     public:
-        void ProcessEvent(const PlatformEvent &event) override;
+        void ProcessEvent(const PlatformEvent_t &event) override;
 
         bool IsKeyDown(Key k) const override;
 
         bool IsMouseButtonDown(MouseButton button) const override;
 
-        RawMouseDelta ConsumeMouseDelta() override;
+        RawMouseDelta_t ConsumeMouseDelta() override;
 
         float GetGamepadAxis(int axis) const;
 
         bool IsGamepadButtonDown(int btn) const;
 
     private:
-        std::array<bool, static_cast<size_t>(Key::_Count)> m_KeyDown{};
-        std::array<bool, static_cast<size_t>(MouseButton::_Count)> m_MouseButtons{};
-        RawMouseDelta m_MouseDelta{};
+        std::array<bool, static_cast<size_t>(Key::_Count)> m_bKeyDown{};
+        std::array<bool, static_cast<size_t>(MouseButton::_Count)> m_bMouseButtons{};
+        RawMouseDelta_t m_MouseDelta{};
 
-        float m_GamepadAxes[6]{};
-        u32 m_GamepadButtons{0};
+        float m_flGamepadAxes[6]{};
+        u32 m_unGamepadButtons{0};
 
         static Key SdlScancodeToKey(int scancode);
     };

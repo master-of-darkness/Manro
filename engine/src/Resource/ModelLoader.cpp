@@ -2,7 +2,7 @@
 #include <Manro/Core/JobSystem.h>
 #include <Manro/Core/Logger.h>
 #include <Manro/Core/VirtualFS.h>
-#include <../Core/Profiling.h>
+#include "../Core/Profiling.h"
 
 #define TINYOBJLOADER_IMPLEMENTATION
 
@@ -38,9 +38,9 @@
 namespace Manro {
     using Mat3 = glm::mat3;
 
-    class VirtualFSMaterialReader : public tinyobj::MaterialReader {
+    class CVirtualFSMaterialReader : public tinyobj::MaterialReader {
     public:
-        explicit VirtualFSMaterialReader(std::string baseDir) : m_BaseDir(std::move(baseDir)) {
+        explicit CVirtualFSMaterialReader(std::string baseDir) : m_BaseDir(std::move(baseDir)) {
         }
 
         bool operator()(const std::string &matId,
@@ -48,7 +48,7 @@ namespace Manro {
                         std::map<std::string, int> *matMap, std::string *warn,
                         std::string *err) override {
             std::string filepath = m_BaseDir + matId;
-            auto &vfs = VirtualFS::Get();
+            auto &vfs = CVirtualFS::Get();
             std::vector<u8> data = vfs.ReadFile(filepath);
             if (data.empty()) {
                 if (err) (*err) += "Failed to load material file: " + filepath + "\n";
@@ -65,9 +65,9 @@ namespace Manro {
         std::string m_BaseDir;
     };
 
-    // tinygltf VirtualFS callbacks
+    // tinygltf CVirtualFS callbacks
     static bool VfsFileExists(const std::string &abs_filename, void *user_data) {
-        return VirtualFS::Get().FileExists(abs_filename);
+        return CVirtualFS::Get().FileExists(abs_filename);
     }
 
     static std::string VfsExpandFilePath(const std::string &filepath, void *user_data) {
@@ -76,7 +76,7 @@ namespace Manro {
 
     static bool VfsReadWholeFile(std::vector<unsigned char> *out, std::string *err,
                                  const std::string &filepath, void *user_data) {
-        auto data = VirtualFS::Get().ReadFile(filepath);
+        auto data = CVirtualFS::Get().ReadFile(filepath);
         if (data.empty()) {
             if (err) *err = "Failed to read file: " + filepath;
             return false;
@@ -96,7 +96,7 @@ namespace Manro {
     ) {
         return
 
-                VirtualFS::Get()
+                CVirtualFS::Get()
 
                 .
                 GetFileSize(abs_filename, *filesize_out
@@ -104,14 +104,14 @@ namespace Manro {
     }
 
     // MikkTSpace interface
-    struct MikkContext {
-        std::vector<Vertex> *vertices;
+    struct MikkContext_t {
+        std::vector<Vertex_t> *vertices;
         const std::vector<u32> *indices;
     };
 
     static int MikkGetNumFaces(const SMikkTSpaceContext *context) {
-        MikkContext *ctx = (MikkContext *) context->m_pUserData;
-        return (int) (ctx->indices->size() / 3);
+        MikkContext_t *ctx = static_cast<MikkContext_t *>(context->m_pUserData);
+        return static_cast<int>(ctx->indices->size() / 3);
     }
 
     static int MikkGetNumVerticesOfFace(const SMikkTSpaceContext *context, const int iFace) {
@@ -119,7 +119,7 @@ namespace Manro {
     }
 
     static void MikkGetPosition(const SMikkTSpaceContext *context, float fvPosOut[], const int iFace, const int iVert) {
-        MikkContext *ctx = (MikkContext *) context->m_pUserData;
+        MikkContext_t *ctx = static_cast<MikkContext_t *>(context->m_pUserData);
         u32 index = (*ctx->indices)[iFace * 3 + iVert];
         const Vec3 &pos = (*ctx->vertices)[index].position;
         fvPosOut[0] = pos.x;
@@ -128,7 +128,7 @@ namespace Manro {
     }
 
     static void MikkGetNormal(const SMikkTSpaceContext *context, float fvNormOut[], const int iFace, const int iVert) {
-        MikkContext *ctx = (MikkContext *) context->m_pUserData;
+        MikkContext_t *ctx = static_cast<MikkContext_t *>(context->m_pUserData);
         u32 index = (*ctx->indices)[iFace * 3 + iVert];
         const Vec3 &norm = (*ctx->vertices)[index].normal;
         fvNormOut[0] = norm.x;
@@ -138,7 +138,7 @@ namespace Manro {
 
     static void MikkGetTexCoord(const SMikkTSpaceContext *context, float fvTexcOut[], const int iFace,
                                 const int iVert) {
-        MikkContext *ctx = (MikkContext *) context->m_pUserData;
+        MikkContext_t *ctx = static_cast<MikkContext_t *>(context->m_pUserData);
         u32 index = (*ctx->indices)[iFace * 3 + iVert];
         const Vec2 &uv = (*ctx->vertices)[index].uv;
         fvTexcOut[0] = uv.x;
@@ -148,15 +148,15 @@ namespace Manro {
     static void
     MikkSetTSpaceBasic(const SMikkTSpaceContext *context, const float fvTangent[], const float fSign, const int iFace,
                        const int iVert) {
-        MikkContext *ctx = (MikkContext *) context->m_pUserData;
+        MikkContext_t *ctx = static_cast<MikkContext_t *>(context->m_pUserData);
         u32 index = (*ctx->indices)[iFace * 3 + iVert];
-        Vertex &v = (*ctx->vertices)[index];
+        Vertex_t &v = (*ctx->vertices)[index];
         v.tangent = {fvTangent[0], fvTangent[1], fvTangent[2], fSign};
     }
 
-    static void GenerateTangents(std::vector<Vertex> &vertices, const std::vector<u32> &indices) {
+    static void GenerateTangents(std::vector<Vertex_t> &vertices, const std::vector<u32> &indices) {
         if (indices.empty()) return;
-        MikkContext mikkCtx = {&vertices, &indices};
+        MikkContext_t mikkCtx = {&vertices, &indices};
         SMikkTSpaceInterface mikkInterface = {};
         mikkInterface.m_getNumFaces = MikkGetNumFaces;
         mikkInterface.m_getNumVerticesOfFace = MikkGetNumVerticesOfFace;
@@ -172,22 +172,22 @@ namespace Manro {
         genTangSpaceDefault(&context);
     }
 
-    std::string ModelLoader::NormalisePath(const std::string &p) {
+    std::string CModelLoader::NormalisePath(const std::string &p) {
         std::string out = p;
-        std::replace(out.begin(), out.end(), '\\', '/');
+        std::ranges::replace(out, '\\', '/');
         return out;
     }
 
-    struct VertKey {
+    struct VertKey_t {
         int vi, ni, ti, matId;
 
-        bool operator==(const VertKey &o) const {
+        bool operator==(const VertKey_t &o) const {
             return vi == o.vi && ni == o.ni && ti == o.ti && matId == o.matId;
         }
     };
 
-    struct VertKeyHash {
-        size_t operator()(const VertKey &k) const {
+    struct VertKeyHash_t {
+        size_t operator()(const VertKey_t &k) const {
             size_t h = std::hash<int>{}(k.vi);
             h ^= std::hash<int>{}(k.ni) + 0x9e3779b9 + (h << 6) + (h >> 2);
             h ^= std::hash<int>{}(k.ti) + 0x9e3779b9 + (h << 6) + (h >> 2);
@@ -199,12 +199,12 @@ namespace Manro {
     static bool HasExtension(const std::string &path, const std::string &ext) {
         if (path.size() < ext.size()) return false;
         std::string tail = path.substr(path.size() - ext.size());
-        std::transform(tail.begin(), tail.end(), tail.begin(),
-                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        std::ranges::transform(tail, tail.begin(),
+                               [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         return tail == ext;
     }
 
-    static void LoadObj(const std::string &filepath, std::vector<SubMeshData> &out) {
+    static void LoadObj(const std::string &filepath, std::vector<SubMeshData_t> &out) {
         tinyobj::attrib_t attrib;
         std::vector<tinyobj::shape_t> shapes;
         std::vector<tinyobj::material_t> materials;
@@ -215,28 +215,28 @@ namespace Manro {
         if (slash != std::string::npos)
             baseDir = filepath.substr(0, slash + 1);
 
-        std::vector<u8> objData = VirtualFS::Get().ReadFile(filepath);
+        std::vector<u8> objData = CVirtualFS::Get().ReadFile(filepath);
         if (objData.empty()) return;
         std::string objContent(reinterpret_cast<const char *>(objData.data()), objData.size());
         std::stringstream ss(objContent);
 
-        VirtualFSMaterialReader matReader(baseDir);
+        CVirtualFSMaterialReader matReader(baseDir);
         bool ok = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, &ss, &matReader);
 
         if (!ok) {
-            LOG_ERROR("[ModelLoader] Failed to load OBJ: {} - {}", filepath, err);
+            LOG_ERROR("[CModelLoader] Failed to load OBJ: {} - {}", filepath, err);
             return;
         }
 
         const int kNoMat = static_cast<int>(materials.size());
-        std::vector<SubMeshData> buckets(materials.size() + 1);
+        std::vector<SubMeshData_t> buckets(materials.size() + 1);
 
         for (int i = 0; i < static_cast<int>(materials.size()); ++i) {
             if (!materials[i].diffuse_texname.empty())
-                buckets[i].diffuseTexturePath = ModelLoader::NormalisePath(baseDir + materials[i].diffuse_texname);
+                buckets[i].diffuseTexturePath = CModelLoader::NormalisePath(baseDir + materials[i].diffuse_texname);
         }
 
-        std::vector<std::unordered_map<VertKey, u32, VertKeyHash> > indexMaps(buckets.size());
+        std::vector<std::unordered_map<VertKey_t, u32, VertKeyHash_t> > indexMaps(buckets.size());
 
         for (const auto &shape: shapes) {
             size_t indexOffset = 0;
@@ -245,18 +245,18 @@ namespace Manro {
                 int matId = shape.mesh.material_ids.empty() ? -1 : shape.mesh.material_ids[f];
                 int bucketIdx = (matId >= 0 && matId < kNoMat) ? matId : kNoMat;
 
-                SubMeshData &bucket = buckets[bucketIdx];
+                SubMeshData_t &bucket = buckets[bucketIdx];
                 auto &imap = indexMaps[bucketIdx];
 
                 for (int v = 0; v < faceVerts; ++v) {
                     tinyobj::index_t idx = shape.mesh.indices[indexOffset + v];
-                    VertKey key{idx.vertex_index, idx.normal_index, idx.texcoord_index, matId};
+                    VertKey_t key{idx.vertex_index, idx.normal_index, idx.texcoord_index, matId};
 
                     auto it = imap.find(key);
                     if (it != imap.end()) {
                         bucket.indices.push_back(it->second);
                     } else {
-                        Vertex vert{};
+                        Vertex_t vert{};
                         vert.position = {
                             attrib.vertices[3 * idx.vertex_index + 0],
                             attrib.vertices[3 * idx.vertex_index + 1],
@@ -319,7 +319,7 @@ namespace Manro {
 
     static void TraverseGltfNodes(const tinygltf::Model &model, int nodeIdx, const Mat4 &parentTransform,
                                   const std::string &baseDir, const std::string &modelPath,
-                                  std::vector<SubMeshData> &out) {
+                                  std::vector<SubMeshData_t> &out) {
         if (nodeIdx < 0 || nodeIdx >= static_cast<int>(model.nodes.size())) return;
         const auto &node = model.nodes[nodeIdx];
 
@@ -351,10 +351,10 @@ namespace Manro {
         if (node.mesh >= 0 && node.mesh < static_cast<int>(model.meshes.size())) {
             const auto &gltfMesh = model.meshes[node.mesh];
             for (const auto &primitive: gltfMesh.primitives) {
-                SubMeshData smd;
+                SubMeshData_t smd;
 
                 // Position
-                if (primitive.attributes.count("POSITION") > 0) {
+                if (primitive.attributes.contains("POSITION")) {
                     const tinygltf::Accessor &accessor = model.accessors[primitive.attributes.at("POSITION")];
                     const tinygltf::BufferView &bufferView = model.bufferViews[accessor.bufferView];
                     const tinygltf::Buffer &buffer = model.buffers[bufferView.buffer];
@@ -370,7 +370,7 @@ namespace Manro {
                 }
 
                 // Normal
-                if (primitive.attributes.count("NORMAL") > 0) {
+                if (primitive.attributes.contains("NORMAL")) {
                     const tinygltf::Accessor &accessor = model.accessors[primitive.attributes.at("NORMAL")];
                     const tinygltf::BufferView &bufferView = model.bufferViews[accessor.bufferView];
                     const tinygltf::Buffer &buffer = model.buffers[bufferView.buffer];
@@ -387,7 +387,7 @@ namespace Manro {
                 }
 
                 // UV
-                if (primitive.attributes.count("TEXCOORD_0") > 0) {
+                if (primitive.attributes.contains("TEXCOORD_0")) {
                     const tinygltf::Accessor &accessor = model.accessors[primitive.attributes.at("TEXCOORD_0")];
                     const tinygltf::BufferView &bufferView = model.bufferViews[accessor.bufferView];
                     const tinygltf::Buffer &buffer = model.buffers[bufferView.buffer];
@@ -443,7 +443,7 @@ namespace Manro {
                         const auto &img = model.images[tex.source];
                         if (!img.uri.empty()) {
                             if (img.uri.substr(0, 5) != "data:") {
-                                smd.diffuseTexturePath = ModelLoader::NormalisePath(baseDir + img.uri);
+                                smd.diffuseTexturePath = CModelLoader::NormalisePath(baseDir + img.uri);
                             }
                         } else if (img.bufferView >= 0) {
                             std::string ext = ".png";
@@ -458,7 +458,7 @@ namespace Manro {
                         const auto &img = model.images[tex.source];
                         if (!img.uri.empty()) {
                             if (img.uri.substr(0, 5) != "data:") {
-                                smd.normalTexturePath = ModelLoader::NormalisePath(baseDir + img.uri);
+                                smd.normalTexturePath = CModelLoader::NormalisePath(baseDir + img.uri);
                             }
                         } else if (img.bufferView >= 0) {
                             std::string ext = ".png";
@@ -495,13 +495,13 @@ namespace Manro {
         }
     }
 
-    static void LoadGltf(const std::string &filepath, std::vector<SubMeshData> &out) {
+    static void LoadGltf(const std::string &filepath, std::vector<SubMeshData_t> &out) {
         std::string baseDir;
         auto slash = filepath.find_last_of("/\\");
         if (slash != std::string::npos)
             baseDir = filepath.substr(0, slash + 1);
 
-        auto fileData = VirtualFS::Get().ReadFile(filepath);
+        auto fileData = CVirtualFS::Get().ReadFile(filepath);
         if (fileData.empty()) return;
 
         tinygltf::Model model;
@@ -529,9 +529,9 @@ namespace Manro {
         }
 
         if (!warn.empty())
-            LOG_WARN("[ModelLoader] GLTF Warning ({}): {}", filepath, warn);
+            LOG_WARN("[CModelLoader] GLTF Warning ({}): {}", filepath, warn);
         if (!err.empty())
-            LOG_ERROR("[ModelLoader] GLTF Error ({}): {}", filepath, err);
+            LOG_ERROR("[CModelLoader] GLTF Error ({}): {}", filepath, err);
         if (!ret) return;
 
         for (size_t i = 0; i < model.images.size(); ++i) {
@@ -543,11 +543,11 @@ namespace Manro {
                 if (img.mimeType == "image/jpeg") ext = ".jpg";
                 std::string virtualPath = "memory://" + filepath + "/image_" + std::to_string(i) + ext;
 
-                if (!VirtualFS::Get().FileExists(virtualPath)) {
+                if (!CVirtualFS::Get().FileExists(virtualPath)) {
                     std::vector<u8> data(buf.data.begin() + bv.byteOffset,
                                          buf.data.begin() + bv.byteOffset + bv.byteLength);
-                    VirtualFS::Get().MountOwned(virtualPath, std::move(data));
-                    LOG_INFO("[ModelLoader] Mounted embedded GLB texture: {}", virtualPath);
+                    CVirtualFS::Get().MountOwned(virtualPath, std::move(data));
+                    LOG_INFO("[CModelLoader] Mounted embedded GLB texture: {}", virtualPath);
                 }
             }
         }
@@ -559,10 +559,10 @@ namespace Manro {
     }
 
 
-    std::vector<std::vector<SubMeshData> >
-    ModelLoader::LoadSubMeshes(const std::vector<std::string> &filepaths, JobSystem &jobs) {
-        std::vector<std::vector<SubMeshData> > allResults(filepaths.size());
-        const JobHandle handle = jobs.CreateHandle();
+    std::vector<std::vector<SubMeshData_t> >
+    CModelLoader::LoadSubMeshes(const std::vector<std::string> &filepaths, CJobSystem &jobs) {
+        std::vector<std::vector<SubMeshData_t> > allResults(filepaths.size());
+        const CJobHandle handle = jobs.CreateHandle();
 
         for (size_t i = 0; i < filepaths.size(); ++i) {
             jobs.Execute(handle, [&filepaths, &allResults, i]() {
@@ -573,25 +573,25 @@ namespace Manro {
         return allResults;
     }
 
-    std::vector<SubMeshData> ModelLoader::LoadSubMeshes(const std::string &filepath) {
+    std::vector<SubMeshData_t> CModelLoader::LoadSubMeshes(const std::string &filepath) {
         MNR_PROFILE_SCOPE("LoadModel");
-        std::vector<SubMeshData> result;
+        std::vector<SubMeshData_t> result;
         if (HasExtension(filepath, ".obj")) {
             LoadObj(filepath, result);
         } else if (HasExtension(filepath, ".gltf") || HasExtension(filepath, ".glb")) {
             LoadGltf(filepath, result);
         } else {
-            LOG_ERROR("[ModelLoader] Unsupported extension: {}", filepath);
+            LOG_ERROR("[CModelLoader] Unsupported extension: {}", filepath);
         }
         return result;
     }
 
-    std::vector<ModelData> ModelLoader::Load(const std::vector<std::string> &filepaths, JobSystem &jobs) {
+    std::vector<ModelData_t> CModelLoader::Load(const std::vector<std::string> &filepaths, CJobSystem &jobs) {
         auto subMeshes = LoadSubMeshes(filepaths, jobs);
-        std::vector<ModelData> results(filepaths.size());
+        std::vector<ModelData_t> results(filepaths.size());
 
         for (size_t i = 0; i < filepaths.size(); ++i) {
-            ModelData &md = results[i];
+            ModelData_t &md = results[i];
             for (const auto &sm: subMeshes[i]) {
                 if (sm.vertices.empty()) continue;
                 u32 currentVertexOffset = static_cast<u32>(md.vertices.size());

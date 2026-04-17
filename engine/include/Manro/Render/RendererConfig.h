@@ -3,7 +3,7 @@
 #include <Manro/Core/Types.h>
 // TODO: mutable in runtime
 namespace Manro {
-    struct RendererConfig {
+    struct RendererConfig_t {
         u32 maxFramesInFlight = 3;
 
         /// Maximum number of instance transforms that can be batched per frame.
@@ -31,8 +31,8 @@ namespace Manro {
         bool tripleBuffering = true;
 
         /// Returns default configuration suitable for most desktop GPUs.
-        static RendererConfig Default() {
-            return RendererConfig{};
+        static RendererConfig_t Default() {
+            return RendererConfig_t{};
         }
     };
 } // namespace Manro

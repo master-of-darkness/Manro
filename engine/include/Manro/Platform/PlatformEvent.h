@@ -1,7 +1,7 @@
 #pragma once
 
 namespace Manro {
-    struct PlatformEvent {
+    struct PlatformEvent_t {
         const void *data;
     };
 } // namespace Manro

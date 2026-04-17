@@ -3,13 +3,13 @@
 #include <vk_mem_alloc.h>
 
 namespace Manro {
-    class VulkanContext;
+    class CVulkanContext;
 
-    class Buffer {
+    class CBuffer {
     public:
-        Buffer(const VulkanContext &context, VkDeviceSize size, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
+        CBuffer(const CVulkanContext &context, VkDeviceSize size, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
 
-        ~Buffer();
+        ~CBuffer();
 
         void *Map();
 
@@ -19,13 +19,13 @@ namespace Manro {
 
         VkBuffer GetHandle() const { return m_Buffer; }
 
-        VkDeviceSize GetSize() const { return m_Size; }
+        VkDeviceSize GetSize() const { return m_unSize; }
 
     private:
-        const VulkanContext &m_Context;
+        const CVulkanContext &m_Context;
         VkBuffer m_Buffer{nullptr};
         VmaAllocation m_Allocation{nullptr};
         VmaAllocationInfo m_AllocationInfo{};
-        VkDeviceSize m_Size{0};
+        VkDeviceSize m_unSize{0};
     };
 } // namespace Manro

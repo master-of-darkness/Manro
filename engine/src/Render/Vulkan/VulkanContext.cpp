@@ -12,7 +12,7 @@
 #include <stdexcept>
 
 namespace Manro {
-    VulkanContext::VulkanContext(const char *appName, IWindow &window) {
+    CVulkanContext::CVulkanContext(const char *appName, IWindow &window) {
         if (volkInitialize() != VK_SUCCESS) {
             LOG_ERROR("Failed to initialize volk!");
             return;
@@ -23,7 +23,7 @@ namespace Manro {
         CreateLogicalDevice();
     }
 
-    VulkanContext::~VulkanContext() {
+    CVulkanContext::~CVulkanContext() {
         if (m_Device && m_OneShotFence) {
             vkDestroyFence(m_Device, m_OneShotFence, nullptr);
             m_OneShotFence = VK_NULL_HANDLE;
@@ -49,7 +49,7 @@ namespace Manro {
         }
     }
 
-    void VulkanContext::CreateInstance(const char *appName) {
+    void CVulkanContext::CreateInstance(const char *appName) {
         vkb::InstanceBuilder builder;
 
         u32 count = 0;
@@ -77,14 +77,14 @@ namespace Manro {
         volkLoadInstance(m_Instance);
     }
 
-    void VulkanContext::CreateSurface(IWindow &window) {
+    void CVulkanContext::CreateSurface(IWindow &window) {
         SDL_Window *sdlWindow = static_cast<SDL_Window *>(window.GetNativeHandle());
         if (!SDL_Vulkan_CreateSurface(sdlWindow, m_Instance, nullptr, &m_Surface)) {
             LOG_ERROR("Failed to create SDL3 Vulkan surface: {}", SDL_GetError());
         }
     }
 
-    void VulkanContext::PickPhysicalDevice() {
+    void CVulkanContext::PickPhysicalDevice() {
         vkb::PhysicalDeviceSelector selector{vkb_Instance};
 
         VkPhysicalDeviceVulkan12Features features12{};
@@ -151,7 +151,7 @@ namespace Manro {
         m_PhysicalDevice = vkb_PhysDev.physical_device;
     }
 
-    void VulkanContext::CreateLogicalDevice() {
+    void CVulkanContext::CreateLogicalDevice() {
         vkb::DeviceBuilder device_builder{vkb_PhysDev};
 
         auto dev_ret = device_builder.build();
@@ -165,7 +165,7 @@ namespace Manro {
         volkLoadDevice(m_Device);
 
         m_GraphicsQueue = vkb_Device.get_queue(vkb::QueueType::graphics).value();
-        m_GraphicsQueueFamilyIndex = vkb_Device.get_queue_index(vkb::QueueType::graphics).value();
+        m_unGraphicsQueueFamilyIndex = vkb_Device.get_queue_index(vkb::QueueType::graphics).value();
 
         VmaAllocatorCreateInfo allocatorInfo{};
         allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_4;
@@ -182,12 +182,12 @@ namespace Manro {
         vmaCreateAllocator(&allocatorInfo, &m_Allocator);
     }
 
-    void VulkanContext::EnsureOneShotResources() const {
+    void CVulkanContext::EnsureOneShotResources() const {
         if (m_OneShotCommandPool != VK_NULL_HANDLE) return;
 
         VkCommandPoolCreateInfo poolInfo{};
         poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        poolInfo.queueFamilyIndex = m_GraphicsQueueFamilyIndex;
+        poolInfo.queueFamilyIndex = m_unGraphicsQueueFamilyIndex;
         poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
         if (vkCreateCommandPool(m_Device, &poolInfo, nullptr, &m_OneShotCommandPool) != VK_SUCCESS) {
             throw std::runtime_error("Failed to create one-shot command pool");
@@ -215,22 +215,22 @@ namespace Manro {
         }
     }
 
-    VkCommandPool VulkanContext::GetOneShotCommandPool() const {
+    VkCommandPool CVulkanContext::GetOneShotCommandPool() const {
         EnsureOneShotResources();
         return m_OneShotCommandPool;
     }
 
-    VkCommandBuffer VulkanContext::GetOneShotCommandBuffer() const {
+    VkCommandBuffer CVulkanContext::GetOneShotCommandBuffer() const {
         EnsureOneShotResources();
         return m_OneShotCommandBuffer;
     }
 
-    VkFence VulkanContext::GetOneShotFence() const {
+    VkFence CVulkanContext::GetOneShotFence() const {
         EnsureOneShotResources();
         return m_OneShotFence;
     }
 
-    VkSampleCountFlagBits VulkanContext::GetMaxUsableSampleCount() const {
+    VkSampleCountFlagBits CVulkanContext::GetMaxUsableSampleCount() const {
         VkPhysicalDeviceProperties props;
         vkGetPhysicalDeviceProperties(m_PhysicalDevice, &props);
         VkSampleCountFlags counts =
@@ -245,7 +245,7 @@ namespace Manro {
         return VK_SAMPLE_COUNT_1_BIT;
     }
 
-    void VulkanContext::GetVramStats(u64 &usage, u64 &budget) const {
+    void CVulkanContext::GetVramStats(u64 &usage, u64 &budget) const {
         VmaBudget budgets[VK_MAX_MEMORY_HEAPS];
         vmaGetHeapBudgets(m_Allocator, budgets);
         usage = 0;

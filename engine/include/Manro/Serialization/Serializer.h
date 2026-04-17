@@ -6,11 +6,11 @@
 #include <type_traits>
 
 namespace Manro {
-    class BinaryArchive {
+    class CBinaryArchive {
     public:
-        BinaryArchive() = default;
+        CBinaryArchive() = default;
 
-        BinaryArchive(const std::vector<u8> &data) : m_Buffer(data), m_ReadOffset(0) {
+        CBinaryArchive(const std::vector<u8> &data) : m_Buffer(data), m_unReadOffset(0) {
         }
 
         template<typename T>
@@ -38,8 +38,8 @@ namespace Manro {
             requires std::is_trivially_copyable_v<T>
         void Read(T &outData) {
             size_t size = sizeof(T);
-            std::memcpy(&outData, m_Buffer.data() + m_ReadOffset, size);
-            m_ReadOffset += size;
+            std::memcpy(&outData, m_Buffer.data() + m_unReadOffset, size);
+            m_unReadOffset += size;
         }
 
         template<typename T>
@@ -50,20 +50,20 @@ namespace Manro {
             outData.resize(count);
 
             size_t size = count * sizeof(T);
-            std::memcpy(outData.data(), m_Buffer.data() + m_ReadOffset, size);
-            m_ReadOffset += size;
+            std::memcpy(outData.data(), m_Buffer.data() + m_unReadOffset, size);
+            m_unReadOffset += size;
         }
 
         const std::vector<u8> &GetBuffer() const { return m_Buffer; }
 
         void Reset() {
             m_Buffer.clear();
-            m_ReadOffset = 0;
+            m_unReadOffset = 0;
         }
 
     private:
         std::vector<u8> m_Buffer;
-        size_t m_ReadOffset{0};
+        size_t m_unReadOffset{0};
     };
 
 #define SERIALIZE(...) \

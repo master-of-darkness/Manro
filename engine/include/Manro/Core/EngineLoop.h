@@ -3,7 +3,7 @@
 namespace Manro {
     class IApplication;
 
-    class EngineLoop {
+    class CEngineLoop {
     public:
         static void Run(IApplication &app);
     };

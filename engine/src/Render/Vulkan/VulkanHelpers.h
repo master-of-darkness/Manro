@@ -6,9 +6,9 @@
 #include <string>
 
 namespace Manro {
-    class VulkanContext;
+    class CVulkanContext;
 
-    struct ImageCreateParams {
+    struct ImageCreateParams_t {
         u32 width{0};
         u32 height{0};
         VkFormat format{VK_FORMAT_UNDEFINED};
@@ -16,20 +16,20 @@ namespace Manro {
         VkSampleCountFlagBits samples{VK_SAMPLE_COUNT_1_BIT};
     };
 
-    struct AllocatedImage {
+    struct AllocatedImage_t {
         VkImage image{VK_NULL_HANDLE};
         VkImageView view{VK_NULL_HANDLE};
         VmaAllocation allocation{nullptr};
     };
 
-    AllocatedImage CreateImage(const VulkanContext &ctx, const ImageCreateParams &params,
-                               VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT);
+    AllocatedImage_t CreateImage(const CVulkanContext &ctx, const ImageCreateParams_t &params,
+                                 VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT);
 
     std::vector<u8> ReadBinaryFile(const std::string &filepath);
 
-    void DestroyImage(const VulkanContext &ctx, AllocatedImage &img);
+    void DestroyImage(const CVulkanContext &ctx, AllocatedImage_t &img);
 
     using OneShotWork = std::function<void(VkCommandBuffer cmd)>;
 
-    void ExecuteOneShot(const VulkanContext &ctx, const OneShotWork &work);
+    void ExecuteOneShot(const CVulkanContext &ctx, const OneShotWork &work);
 } // namespace Manro

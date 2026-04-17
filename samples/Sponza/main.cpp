@@ -2,6 +2,6 @@
 #include "Manro/Core/EngineLoop.h"
 
 int main() {
-    Sponza app;
-    Manro::EngineLoop::Run(app);
+    CSponza app;
+    Manro::CEngineLoop::Run(app);
 }

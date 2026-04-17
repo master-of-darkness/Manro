@@ -4,7 +4,7 @@
 #include <volk.h>
 
 namespace Manro::Internal {
-    struct ZPrepassPassState {
+    struct ZPrepassPassState_t {
         VkExtent2D extent{};
         VkImageView depthView{VK_NULL_HANDLE};
         VkPipeline pipeline{VK_NULL_HANDLE};
@@ -20,7 +20,7 @@ namespace Manro::Internal {
         u32 drawStride{0};
     };
 
-    struct PbrPassState {
+    struct PbrPassState_t {
         VkExtent2D extent{};
         VkSampleCountFlagBits msaaSamples{VK_SAMPLE_COUNT_1_BIT};
         VkImageView msaaColorView{VK_NULL_HANDLE};
@@ -41,7 +41,7 @@ namespace Manro::Internal {
         u32 drawStride{0};
     };
 
-    struct CompositePassState {
+    struct CompositePassState_t {
         VkExtent2D extent{};
         VkImageView colorView{VK_NULL_HANDLE};
         VkPipeline pipeline{VK_NULL_HANDLE};
@@ -52,7 +52,7 @@ namespace Manro::Internal {
         VkShaderStageFlags pushConstantStages{VK_SHADER_STAGE_FRAGMENT_BIT};
     };
 
-    struct SkyboxPassState {
+    struct SkyboxPassState_t {
         VkExtent2D extent{};
         VkImageView offscreenColorView{VK_NULL_HANDLE};
         VkImageView msaaColorView{VK_NULL_HANDLE};

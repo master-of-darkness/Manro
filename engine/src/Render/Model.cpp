@@ -8,9 +8,9 @@
 #include <set>
 
 namespace Manro {
-    Model::PreparedAssets Model::Prepare(const std::vector<std::string> &paths, JobSystem &jobs) {
-        PreparedAssets prepared;
-        prepared.subMeshes = ModelLoader::LoadSubMeshes(paths, jobs);
+    CModel::PreparedAssets_t CModel::Prepare(const std::vector<std::string> &paths, CJobSystem &jobs) {
+        PreparedAssets_t prepared;
+        prepared.subMeshes = CModelLoader::LoadSubMeshes(paths, jobs);
         std::set<std::string> uniqueTexturePaths;
         for (const auto &modelSubMeshes: prepared.subMeshes) {
             for (const auto &sm: modelSubMeshes) {
@@ -24,12 +24,12 @@ namespace Manro {
         }
 
         prepared.texturePaths.assign(uniqueTexturePaths.begin(), uniqueTexturePaths.end());
-        prepared.textures = TextureLoader::Load(prepared.texturePaths, jobs);
+        prepared.textures = CTextureLoader::Load(prepared.texturePaths, jobs);
         return prepared;
     }
 
-    std::vector<Scope<Model> > Model::CommitPrepared(PreparedAssets prepared, Renderer &renderer) {
-        std::vector<Scope<Model> > results;
+    std::vector<Scope<CModel> > CModel::CommitPrepared(PreparedAssets_t prepared, CRenderer &renderer) {
+        std::vector<Scope<CModel> > results;
         results.reserve(prepared.subMeshes.size());
         std::unordered_map<std::string, TextureHandle> textureCache;
         for (size_t i = 0; i < prepared.texturePaths.size(); ++i) {
@@ -40,11 +40,11 @@ namespace Manro {
         }
 
         for (size_t i = 0; i < prepared.subMeshes.size(); ++i) {
-            auto model = CreateScope<Model>();
+            auto model = CreateScope<CModel>();
             for (auto &sd: prepared.subMeshes[i]) {
                 if (sd.vertices.empty()) continue;
 
-                ModelData md;
+                ModelData_t md;
                 md.vertices = std::move(sd.vertices);
                 md.indices = std::move(sd.indices);
                 md.diffuseTexturePath = sd.diffuseTexturePath;
@@ -84,12 +84,12 @@ namespace Manro {
         return results;
     }
 
-    std::vector<Scope<Model> > Model::Load(const std::vector<std::string> &paths,
-                                           Renderer &renderer,
-                                           JobSystem &jobs) {
+    std::vector<Scope<CModel> > CModel::Load(const std::vector<std::string> &paths,
+                                             CRenderer &renderer,
+                                             CJobSystem &jobs) {
         auto prepared = Prepare(paths, jobs);
         auto results = CommitPrepared(std::move(prepared), renderer);
-        LOG_INFO("[Model] Load of {} models completed", paths.size());
+        LOG_INFO("[CModel] Load of {} models completed", paths.size());
         return results;
     }
 } // namespace Manro

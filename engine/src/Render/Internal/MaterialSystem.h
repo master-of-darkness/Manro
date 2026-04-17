@@ -9,18 +9,18 @@
 #include <volk.h>
 
 namespace Manro {
-    class VulkanContext;
-    class MaterialInstance;
+    class CVulkanContext;
+    class CMaterialInstance;
 
-    class MaterialSystem {
+    class CMaterialSystem {
     public:
-        explicit MaterialSystem(VulkanContext &ctx);
+        explicit CMaterialSystem(CVulkanContext &ctx);
 
         void Init();
 
         void Shutdown();
 
-        u32 ResolveMaterialIndex(MaterialInstance &material);
+        u32 ResolveMaterialIndex(CMaterialInstance &material);
 
         void FlushToGpu();
 
@@ -30,15 +30,15 @@ namespace Manro {
 
         [[nodiscard]] u32 GetMaterialCount() const { return static_cast<u32>(m_Materials.size()); }
 
-        [[nodiscard]] bool IsDirty() const { return m_MaterialsDirty; }
+        [[nodiscard]] bool IsDirty() const { return m_bMaterialsDirty; }
 
     private:
-        VulkanContext &m_Context;
+        CVulkanContext &m_Context;
 
         std::vector<MaterialData> m_Materials;
-        std::unordered_map<MaterialData, u32, MaterialDataHash> m_MaterialCache;
-        Scope<Buffer> m_MaterialBuffer;
-        Scope<Buffer> m_TextureInfoBuffer;
-        bool m_MaterialsDirty = true;
+        std::unordered_map<MaterialData, u32, MaterialDataHash_t> m_MaterialCache;
+        Scope<CBuffer> m_MaterialBuffer;
+        Scope<CBuffer> m_TextureInfoBuffer;
+        bool m_bMaterialsDirty = true;
     };
 } // namespace Manro

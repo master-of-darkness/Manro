@@ -19,11 +19,11 @@
 #include <stdexcept>
 
 namespace Manro {
-    PipelineManager::PipelineManager(VulkanContext &ctx)
+    CPipelineManager::CPipelineManager(CVulkanContext &ctx)
         : m_Context(ctx) {
     }
 
-    void PipelineManager::CreateDescriptorLayouts() {
+    void CPipelineManager::CreateDescriptorLayouts() {
         {
             VkDescriptorSetLayoutBinding b[14];
             b[0] = {
@@ -86,7 +86,7 @@ namespace Manro {
         }
     }
 
-    void PipelineManager::CreateDescriptorPool(u32 frameCount) {
+    void CPipelineManager::CreateDescriptorPool(u32 frameCount) {
         VkDescriptorPoolSize sizes[] = {
             {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, (frameCount * 10)},
             {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, (frameCount * 20)},
@@ -104,7 +104,7 @@ namespace Manro {
             throw std::runtime_error("Failed to create descriptor pool");
     }
 
-    void PipelineManager::Shutdown() {
+    void CPipelineManager::Shutdown() {
         m_DefaultMaterial.reset();
         m_PbrPipeline.reset();
         m_ZPrepassPipeline.reset();
@@ -124,81 +124,83 @@ namespace Manro {
         }
     }
 
-    void PipelineManager::BuildPbrPipeline(const RenderTargetManager &rt,
-                                           const TextureManager &tex,
-                                           const RenderSettings &settings) {
-        auto vertSpv = VirtualFS::Get().ReadFile("shaders://pbr.vert.spv");
-        auto fragSpv = VirtualFS::Get().ReadFile("shaders://pbr.frag.spv");
-        auto zPrepassFragSpv = VirtualFS::Get().ReadFile("shaders://pbr_zprepass.frag.spv");
+    void CPipelineManager::BuildPbrPipeline(const CRenderTargetManager &rt,
+                                            const CTextureManager &tex,
+                                            const RenderSettings_t &settings) {
+        auto vertSpv = CVirtualFS::Get().ReadFile("shaders://pbr.vert.spv");
+        auto fragSpv = CVirtualFS::Get().ReadFile("shaders://pbr.frag.spv");
+        auto zPrepassFragSpv = CVirtualFS::Get().ReadFile("shaders://pbr_zprepass.frag.spv");
         if (vertSpv.empty() || fragSpv.empty()) {
-            LOG_ERROR("[Renderer] PBR shaders not found");
+            LOG_ERROR("[CRenderer] PBR shaders not found");
             return;
         }
         if (zPrepassFragSpv.empty()) {
-            LOG_WARN("[Renderer] Alpha-cutout z-prepass shader not found, masked materials may render opaque.");
+            LOG_WARN("[CRenderer] Alpha-cutout z-prepass shader not found, masked materials may render opaque.");
         }
 
-        PipelineConfigParams cfg{};
+        PipelineConfigParams_t cfg{};
         cfg.vertexEntryPoint = "main";
         cfg.fragmentEntryPoint = "main";
         cfg.colorAttachmentFormat = rt.GetOffscreenFormat();
         cfg.depthAttachmentFormat = rt.GetDepthFormat();
         cfg.msaaSamples = ToVulkanSampleCount(settings.msaaSamples);
-        cfg.pushConstantSize = sizeof(PBRPushConstants);
+        cfg.pushConstantSize = sizeof(PBRPushConstants_t);
         cfg.descriptorSetLayouts = {m_PbrSetLayout, tex.GetBindlessLayout()};
 
         cfg.vertexInputBindings.resize(2);
-        cfg.vertexInputBindings[0] = {0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX};
-        cfg.vertexInputBindings[1] = {1, sizeof(MeshInstance), VK_VERTEX_INPUT_RATE_INSTANCE};
+        cfg.vertexInputBindings[0] = {0, sizeof(Vertex_t), VK_VERTEX_INPUT_RATE_VERTEX};
+        cfg.vertexInputBindings[1] = {1, sizeof(MeshInstance_t), VK_VERTEX_INPUT_RATE_INSTANCE};
 
         cfg.vertexInputAttributes.resize(12);
-        cfg.vertexInputAttributes[0] = {0, 0, VK_FORMAT_R32G32B32_SFLOAT, static_cast<u32>(offsetof(Vertex, position))};
-        cfg.vertexInputAttributes[1] = {1, 0, VK_FORMAT_R32G32B32_SFLOAT, static_cast<u32>(offsetof(Vertex, normal))};
-        cfg.vertexInputAttributes[2] = {2, 0, VK_FORMAT_R32G32_SFLOAT, static_cast<u32>(offsetof(Vertex, uv))};
+        cfg.vertexInputAttributes[0] = {
+            0, 0, VK_FORMAT_R32G32B32_SFLOAT, static_cast<u32>(offsetof(Vertex_t, position))
+        };
+        cfg.vertexInputAttributes[1] = {1, 0, VK_FORMAT_R32G32B32_SFLOAT, static_cast<u32>(offsetof(Vertex_t, normal))};
+        cfg.vertexInputAttributes[2] = {2, 0, VK_FORMAT_R32G32_SFLOAT, static_cast<u32>(offsetof(Vertex_t, uv))};
         cfg.vertexInputAttributes[3] = {
-            3, 0, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(Vertex, tangent))
+            3, 0, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(Vertex_t, tangent))
         };
         cfg.vertexInputAttributes[4] = {
             4, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
-            static_cast<u32>(offsetof(MeshInstance, modelMatrix))
+            static_cast<u32>(offsetof(MeshInstance_t, modelMatrix))
         };
         cfg.vertexInputAttributes[5] = {
             5, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
-            static_cast<u32>(offsetof(MeshInstance, modelMatrix)) + 16
+            static_cast<u32>(offsetof(MeshInstance_t, modelMatrix)) + 16
         };
         cfg.vertexInputAttributes[6] = {
-            6, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(MeshInstance, modelMatrix)) + 32
+            6, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(MeshInstance_t, modelMatrix)) + 32
         };
         cfg.vertexInputAttributes[7] = {
-            7, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(MeshInstance, modelMatrix)) + 48
+            7, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(MeshInstance_t, modelMatrix)) + 48
         };
         cfg.vertexInputAttributes[8] = {
             8, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
-            static_cast<u32>(offsetof(MeshInstance, normalMatrix))
+            static_cast<u32>(offsetof(MeshInstance_t, normalMatrix))
         };
         cfg.vertexInputAttributes[9] = {
-            9, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(MeshInstance, normalMatrix)) + 16
+            9, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(MeshInstance_t, normalMatrix)) + 16
         };
         cfg.vertexInputAttributes[10] = {
-            10, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(MeshInstance, normalMatrix)) + 32
+            10, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(MeshInstance_t, normalMatrix)) + 32
         };
         cfg.vertexInputAttributes[11] = {
-            11, 1, VK_FORMAT_R32_UINT, static_cast<u32>(offsetof(MeshInstance, materialIndex))
+            11, 1, VK_FORMAT_R32_UINT, static_cast<u32>(offsetof(MeshInstance_t, materialIndex))
         };
 
         cfg.depthWriteEnable = VK_FALSE;
         cfg.depthCompareOp = VK_COMPARE_OP_EQUAL;
 
-        m_PbrPipeline = CreateScope<Pipeline>(m_Context);
+        m_PbrPipeline = CreateScope<CPipeline>(m_Context);
         m_PbrPipeline->BuildGraphics(vertSpv, fragSpv, cfg);
 
-        PipelineConfigParams zCfg = cfg;
+        PipelineConfigParams_t zCfg = cfg;
         zCfg.fragmentEntryPoint = zPrepassFragSpv.empty() ? "" : "main";
         zCfg.colorAttachmentFormat = VK_FORMAT_UNDEFINED;
         zCfg.depthWriteEnable = VK_TRUE;
         zCfg.depthCompareOp = VK_COMPARE_OP_LESS;
 
-        m_ZPrepassPipeline = CreateScope<Pipeline>(m_Context);
+        m_ZPrepassPipeline = CreateScope<CPipeline>(m_Context);
         m_ZPrepassPipeline->BuildGraphics(vertSpv, zPrepassFragSpv, zCfg);
 
         VkDescriptorSetLayoutBinding stub{
@@ -210,37 +212,37 @@ namespace Manro {
         dci.pBindings = &stub;
         VkDescriptorSetLayout stubLayout;
         vkCreateDescriptorSetLayout(m_Context.GetDevice(), &dci, nullptr, &stubLayout);
-        m_DefaultMaterial = CreateRef<Material>(m_Context, nullptr, stubLayout);
+        m_DefaultMaterial = CreateRef<CMaterial>(m_Context, nullptr, stubLayout);
     }
 
-    void PipelineManager::BuildCompositePipeline(VkFormat swapchainFormat) {
-        auto vertSpv = VirtualFS::Get().ReadFile("shaders://composite.vert.spv");
-        auto fragSpv = VirtualFS::Get().ReadFile("shaders://composite.frag.spv");
+    void CPipelineManager::BuildCompositePipeline(VkFormat swapchainFormat) {
+        auto vertSpv = CVirtualFS::Get().ReadFile("shaders://composite.vert.spv");
+        auto fragSpv = CVirtualFS::Get().ReadFile("shaders://composite.frag.spv");
         if (vertSpv.empty() || fragSpv.empty()) {
-            LOG_ERROR("[Renderer] Composite shaders not found");
+            LOG_ERROR("[CRenderer] Composite shaders not found");
             return;
         }
 
-        PipelineConfigParams cfg{};
+        PipelineConfigParams_t cfg{};
         cfg.vertexEntryPoint = "main";
         cfg.fragmentEntryPoint = "main";
         cfg.colorAttachmentFormat = swapchainFormat;
         cfg.depthAttachmentFormat = VK_FORMAT_UNDEFINED;
         cfg.msaaSamples = VK_SAMPLE_COUNT_1_BIT;
-        cfg.pushConstantSize = sizeof(CompositePushConstants);
+        cfg.pushConstantSize = sizeof(CompositePushConstants_t);
         cfg.pushConstantStages = VK_SHADER_STAGE_FRAGMENT_BIT;
         cfg.descriptorSetLayouts = {m_CompositeSetLayout};
 
-        m_CompositePipeline = CreateScope<Pipeline>(m_Context);
+        m_CompositePipeline = CreateScope<CPipeline>(m_Context);
         m_CompositePipeline->BuildGraphics(vertSpv, fragSpv, cfg);
     }
 
-    void PipelineManager::UpdatePbrDescriptorSet(u32 fi, FrameData &frame,
-                                                 const MaterialSystem &matSys,
-                                                 TextureManager &tex,
-                                                 const ShadowSystem &shadow,
-                                                 SkyboxRenderer &skybox) {
-        VkDescriptorBufferInfo uboI{frame.uboBuffer->GetHandle(), 0, sizeof(UniformBufferObject)};
+    void CPipelineManager::UpdatePbrDescriptorSet(u32 fi, FrameData_t &frame,
+                                                  const CMaterialSystem &matSys,
+                                                  CTextureManager &tex,
+                                                  const CShadowSystem &shadow,
+                                                  CSkyboxRenderer &skybox) {
+        VkDescriptorBufferInfo uboI{frame.uboBuffer->GetHandle(), 0, sizeof(UniformBufferObject_t)};
         VkDescriptorBufferInfo lightI{frame.lightBuffer->GetHandle(), 0, VK_WHOLE_SIZE};
         VkDescriptorBufferInfo tileHI{frame.tileHeaderBuffer->GetHandle(), 0, VK_WHOLE_SIZE};
         VkDescriptorBufferInfo tileLI{frame.tileLightIndexBuffer->GetHandle(), 0, VK_WHOLE_SIZE};
@@ -335,8 +337,8 @@ namespace Manro {
         UpdateSkyboxDescriptorSet(fi, frame, skybox, tex);
     }
 
-    void PipelineManager::UpdateCompositeDescriptorSet(u32 fi, FrameData &frame,
-                                                       const RenderTargetManager &rt) {
+    void CPipelineManager::UpdateCompositeDescriptorSet(u32 fi, FrameData_t &frame,
+                                                        const CRenderTargetManager &rt) {
         VkDescriptorImageInfo imgI{};
         imgI.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         imgI.imageView = rt.GetOffscreenView();
@@ -352,18 +354,18 @@ namespace Manro {
         vkUpdateDescriptorSets(m_Context.GetDevice(), 1, &w, 0, nullptr);
     }
 
-    void PipelineManager::UpdateSkyboxDescriptorSet(u32 fi, FrameData &frame,
-                                                    SkyboxRenderer &skybox,
-                                                    TextureManager &tex) {
+    void CPipelineManager::UpdateSkyboxDescriptorSet(u32 fi, FrameData_t &frame,
+                                                     CSkyboxRenderer &skybox,
+                                                     CTextureManager &tex) {
         if (skybox.GetTexture() == kInvalidTexture) return;
         skybox.UpdateDescriptorSet(fi, frame.skyboxSet,
                                    frame.uboBuffer->GetHandle(), tex);
     }
 
-    void PipelineManager::AllocateFrameDescriptorSets(FrameData &frame,
-                                                      const GpuCullDispatcher &cull,
-                                                      const ShadowSystem &shadow,
-                                                      const SkyboxRenderer &skybox) {
+    void CPipelineManager::AllocateFrameDescriptorSets(FrameData_t &frame,
+                                                       const CGpuCullDispatcher &cull,
+                                                       const CShadowSystem &shadow,
+                                                       const CSkyboxRenderer &skybox) {
         VkDescriptorSetLayout layouts[5] = {
             m_PbrSetLayout, m_CompositeSetLayout,
             cull.GetCullSetLayout(), cull.GetMeshCullSetLayout(),

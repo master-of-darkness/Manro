@@ -4,33 +4,33 @@
 #include <filesystem>
 
 namespace Manro {
-    VirtualFS &VirtualFS::Get() {
-        static VirtualFS instance;
+    CVirtualFS &CVirtualFS::Get() {
+        static CVirtualFS instance;
         return instance;
     }
 
-    void VirtualFS::Mount(std::string_view virtualPath, const u8 *data, size_t size) {
+    void CVirtualFS::Mount(std::string_view virtualPath, const u8 *data, size_t size) {
         std::lock_guard<std::mutex> lock(m_Mutex);
-        m_Blobs[std::string(virtualPath)] = Blob{data, size, {}};
+        m_Blobs[std::string(virtualPath)] = Blob_t{data, size, {}};
     }
 
-    void VirtualFS::MountOwned(std::string_view virtualPath, std::vector<u8> &&data) {
+    void CVirtualFS::MountOwned(std::string_view virtualPath, std::vector<u8> &&data) {
         std::lock_guard<std::mutex> lock(m_Mutex);
         size_t size = data.size();
         const u8 *ptr = data.data();
-        m_Blobs[std::string(virtualPath)] = Blob{ptr, size, std::move(data)};
+        m_Blobs[std::string(virtualPath)] = Blob_t{ptr, size, std::move(data)};
     }
 
-    void VirtualFS::SetBaseDir(std::string_view dir) {
+    void CVirtualFS::SetBaseDir(std::string_view dir) {
         m_BaseDir = std::string(dir);
         while (!m_BaseDir.empty() &&
                (m_BaseDir.back() == '/' || m_BaseDir.back() == '\\')) {
             m_BaseDir.pop_back();
         }
-        LOG_INFO("[VirtualFS] Base dir set to: {}", m_BaseDir);
+        LOG_INFO("[CVirtualFS] Base dir set to: {}", m_BaseDir);
     }
 
-    std::string VirtualFS::ResolvePath(std::string_view path) const {
+    std::string CVirtualFS::ResolvePath(std::string_view path) const {
         if (!path.empty() && (path[0] == '/' || (path.size() > 1 && path[1] == ':'))) {
             return std::string(path);
         }
@@ -40,12 +40,12 @@ namespace Manro {
         return m_BaseDir + "/" + std::string(path);
     }
 
-    std::vector<u8> VirtualFS::ReadFile(std::string_view path) const {
+    std::vector<u8> CVirtualFS::ReadFile(std::string_view path) const {
         {
             std::lock_guard<std::mutex> lock(m_Mutex);
             auto it = m_Blobs.find(std::string(path));
             if (it != m_Blobs.end()) {
-                const Blob &blob = it->second;
+                const Blob_t &blob = it->second;
                 return std::vector<u8>(blob.data, blob.data + blob.size);
             }
         }
@@ -53,7 +53,7 @@ namespace Manro {
         std::string resolved = ResolvePath(path);
         std::ifstream file(resolved, std::ios::ate | std::ios::binary);
         if (!file.is_open()) {
-            LOG_ERROR("[VirtualFS] Failed to open file: {}", resolved);
+            LOG_ERROR("[CVirtualFS] Failed to open file: {}", resolved);
             return {};
         }
 
@@ -64,7 +64,7 @@ namespace Manro {
         return buffer;
     }
 
-    bool VirtualFS::GetFileSize(std::string_view path, size_t &size) const {
+    bool CVirtualFS::GetFileSize(std::string_view path, size_t &size) const {
         {
             std::lock_guard<std::mutex> lock(m_Mutex);
             auto it = m_Blobs.find(std::string(path));
@@ -82,7 +82,7 @@ namespace Manro {
         return false;
     }
 
-    bool VirtualFS::FileExists(std::string_view path) const {
+    bool CVirtualFS::FileExists(std::string_view path) const {
         {
             std::lock_guard<std::mutex> lock(m_Mutex);
             if (m_Blobs.find(std::string(path)) != m_Blobs.end()) {

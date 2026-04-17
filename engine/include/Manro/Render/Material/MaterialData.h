@@ -18,7 +18,7 @@ namespace shaderio {
 namespace Manro {
     using MaterialData = shaderio::GltfShadeMaterial;
 
-    struct MaterialDataHash {
+    struct MaterialDataHash_t {
         size_t operator()(const MaterialData &md) const {
             const uint64_t *p = reinterpret_cast<const uint64_t *>(&md);
             size_t h = 0;

@@ -6,15 +6,15 @@
 #include <string>
 
 namespace Manro {
-    class AudioManager {
+    class CAudioManager {
     public:
-        AudioManager() = default;
+        CAudioManager() = default;
 
-        ~AudioManager() { Shutdown(); }
+        ~CAudioManager() { Shutdown(); }
 
-        AudioManager(const AudioManager &) = delete;
+        CAudioManager(const CAudioManager &) = delete;
 
-        AudioManager &operator=(const AudioManager &) = delete;
+        CAudioManager &operator=(const CAudioManager &) = delete;
 
         bool Initialize(Scope<IAudioBackend> backend);
 
@@ -50,6 +50,6 @@ namespace Manro {
 
     private:
         Scope<IAudioBackend> m_Backend;
-        bool m_Initialized{false};
+        bool m_bInitialized{false};
     };
 } // namespace Manro

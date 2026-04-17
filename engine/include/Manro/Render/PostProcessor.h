@@ -4,13 +4,13 @@
 #include <Manro/Render/Tonemap/Tonemapper.h>
 
 namespace Manro {
-    class PostProcessor {
+    class CPostProcessor {
     public:
-        PostProcessor() = default;
+        CPostProcessor() = default;
 
         void Apply(TextureHandle offscreenTex,
                    TextureHandle targetTex,
-                   const TonemapperData &settings) {
+                   const TonemapperData_t &settings) {
             (void) offscreenTex;
             (void) targetTex;
             (void) settings;

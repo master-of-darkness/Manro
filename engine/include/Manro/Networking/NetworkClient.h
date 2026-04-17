@@ -7,15 +7,15 @@
 #include <unordered_map>
 #include <functional>
 
-struct _ENetHost;
-struct _ENetPeer;
+struct _ENetHost_t;
+struct _ENetPeer_t;
 
 namespace Manro {
-    class Registry;
+    class CRegistry;
 
-    class PhysicsWorld;
+    class CPhysicsWorld;
 
-    struct InterpolationState {
+    struct InterpolationState_t {
         Vec3 previousPosition{0.f, 0.f, 0.f};
         Vec3 targetPosition{0.f, 0.f, 0.f};
         Vec3 targetVelocity{0.f, 0.f, 0.f};
@@ -24,7 +24,7 @@ namespace Manro {
         f32 lastUpdateTime{0.f};
     };
 
-    struct RemoteEntitySnapshot {
+    struct RemoteEntitySnapshot_t {
         u32 entityId{0};
         Vec3 position{0.f, 0.f, 0.f};
         Vec3 velocity{0.f, 0.f, 0.f};
@@ -33,23 +33,23 @@ namespace Manro {
         bool isNew{false};
     };
 
-    class NetworkClient {
+    class CNetworkClient {
     public:
-        NetworkClient();
+        CNetworkClient();
 
-        ~NetworkClient();
+        ~CNetworkClient();
 
         void Connect(const std::string &address, u16 port);
 
         void Disconnect();
 
-        void Tick(Registry &registry, PhysicsWorld *physics, const UserCmd &cmd, f32 deltaTime);
+        void Tick(CRegistry &registry, CPhysicsWorld *physics, const UserCmd_t &cmd, f32 deltaTime);
 
-        using OnEntitySpawnedFn = std::function<void(Registry &, const RemoteEntitySnapshot &)>;
+        using OnEntitySpawnedFn = std::function<void(CRegistry &, const RemoteEntitySnapshot_t &)>;
 
-        using OnEntityUpdatedFn = std::function<void(Registry &, const RemoteEntitySnapshot &)>;
+        using OnEntityUpdatedFn = std::function<void(CRegistry &, const RemoteEntitySnapshot_t &)>;
 
-        using OnEntityDespawnedFn = std::function<void(Registry &, u32 entityId)>;
+        using OnEntityDespawnedFn = std::function<void(CRegistry &, u32 entityId)>;
 
         void SetOnEntitySpawned(OnEntitySpawnedFn fn) { m_OnEntitySpawned = std::move(fn); }
 
@@ -59,30 +59,30 @@ namespace Manro {
 
         void SetLocalPlayerEntityId(Entity id) { m_LocalPlayerEntityId = id; }
 
-        f32 GetServerTime() const { return m_ServerTime; }
+        f32 GetServerTime() const { return m_flServerTime; }
 
-        f32 GetRoundTripTime() const { return m_RoundTripTime; }
+        f32 GetRoundTripTime() const { return m_flRoundTripTime; }
 
         Vec3 GetInterpolatedPosition(u32 entityId, f32 currentTime);
 
     private:
         void ProcessServerSnapshot(const void *data, size_t size,
-                                   Registry &registry, PhysicsWorld *physics);
+                                   CRegistry &registry, CPhysicsWorld *physics);
 
-        void ApplyInterpolation(Registry &registry, f32 currentTime);
+        void ApplyInterpolation(CRegistry &registry, f32 currentTime);
 
         void ReconcileLocalPlayer(const Vec3 &serverPosition,
-                                  Registry &registry, PhysicsWorld *physics);
+                                  CRegistry &registry, CPhysicsWorld *physics);
 
-        bool m_IsConnected{false};
-        _ENetHost *m_ClientHost{nullptr};
-        _ENetPeer *m_ServerPeer{nullptr};
+        bool m_bIsConnected{false};
+        _ENetHost_t *m_ClientHost{nullptr};
+        _ENetPeer_t *m_ServerPeer{nullptr};
 
-        f32 m_ServerTime{0.f};
-        f32 m_RoundTripTime{0.1f};
-        f32 m_ClientTime{0.f};
+        f32 m_flServerTime{0.f};
+        f32 m_flRoundTripTime{0.1f};
+        f32 m_flClientTime{0.f};
 
-        std::unordered_map<u32, InterpolationState> m_InterpolationStates;
+        std::unordered_map<u32, InterpolationState_t> m_InterpolationStates;
 
         Entity m_LocalPlayerEntityId{NULL_ENTITY};
         Entity m_ServerPlayerEntityId{NULL_ENTITY};

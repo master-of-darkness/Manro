@@ -9,15 +9,15 @@
 namespace Manro {
     class IWindow;
 
-    class VulkanContext {
+    class CVulkanContext {
     public:
-        VulkanContext(const char *appName, IWindow &window);
+        CVulkanContext(const char *appName, IWindow &window);
 
-        ~VulkanContext();
+        ~CVulkanContext();
 
-        VulkanContext(const VulkanContext &) = delete;
+        CVulkanContext(const CVulkanContext &) = delete;
 
-        VulkanContext &operator=(const VulkanContext &) = delete;
+        CVulkanContext &operator=(const CVulkanContext &) = delete;
 
         VkInstance GetInstance() const { return m_Instance; }
 
@@ -27,7 +27,7 @@ namespace Manro {
 
         VkQueue GetGraphicsQueue() const { return m_GraphicsQueue; }
 
-        u32 GetGraphicsQueueFamilyIndex() const { return m_GraphicsQueueFamilyIndex; }
+        u32 GetGraphicsQueueFamilyIndex() const { return m_unGraphicsQueueFamilyIndex; }
 
         VkCommandPool GetOneShotCommandPool() const;
 
@@ -68,7 +68,7 @@ namespace Manro {
         vkb::Device vkb_Device;
         vkb::PhysicalDevice vkb_PhysDev;
         VkQueue m_GraphicsQueue{nullptr};
-        u32 m_GraphicsQueueFamilyIndex{0};
+        u32 m_unGraphicsQueueFamilyIndex{0};
         VkSurfaceKHR m_Surface{nullptr};
         VmaAllocator m_Allocator{nullptr};
         mutable VkCommandPool m_OneShotCommandPool{VK_NULL_HANDLE};

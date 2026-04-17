@@ -4,18 +4,18 @@
 #include <volk.h>
 
 namespace Manro {
-    class VulkanContext;
-    class Buffer;
-    class Pipeline;
+    class CVulkanContext;
+    class CBuffer;
+    class CPipeline;
 
-    struct DrawLineCmd {
+    struct DrawLineCmd_t {
         Vec3 start;
         u32 color;
         Vec3 end;
         u32 depthTest;
     };
 
-    struct DrawBoxCmd {
+    struct DrawBoxCmd_t {
         Vec3 center;
         u32 color;
         Vec3 halfExtents;
@@ -23,7 +23,7 @@ namespace Manro {
         Mat4 transform;
     };
 
-    struct DrawSphereCmd {
+    struct DrawSphereCmd_t {
         Vec3 center;
         float radius;
         u32 color;
@@ -32,7 +32,7 @@ namespace Manro {
         u32 _pad0;
     };
 
-    struct DrawFrustumCmd {
+    struct DrawFrustumCmd_t {
         Mat4 invViewProj;
         u32 color;
         u32 depthTest;
@@ -40,34 +40,34 @@ namespace Manro {
         u32 _pad1;
     };
 
-    struct DrawCrossCmd {
+    struct DrawCrossCmd_t {
         Vec3 center;
         float size;
         u32 color;
         u32 depthTest;
     };
 
-    struct LineVertex {
+    struct LineVertex_t {
         Vec3 position;
         u32 color;
     };
 
-    struct DrawIndirectCmd {
+    struct DrawIndirectCmd_t {
         u32 vertexCount;
         u32 instanceCount;
         u32 firstVertex;
         u32 firstInstance;
     };
 
-    class DrawSystem {
+    class CDrawSystem {
     public:
-        explicit DrawSystem(const VulkanContext &context);
+        explicit CDrawSystem(const CVulkanContext &context);
 
-        ~DrawSystem();
+        ~CDrawSystem();
 
-        DrawSystem(const DrawSystem &) = delete;
+        CDrawSystem(const CDrawSystem &) = delete;
 
-        DrawSystem &operator=(const DrawSystem &) = delete;
+        CDrawSystem &operator=(const CDrawSystem &) = delete;
 
         void Init(VkFormat colorFormat, VkFormat depthFormat, VkSampleCountFlagBits msaaSamples);
 
@@ -101,7 +101,7 @@ namespace Manro {
 
         void CreateRenderPipelines(VkFormat colorFormat, VkFormat depthFormat, VkSampleCountFlagBits msaaSamples);
 
-        const VulkanContext &m_Context;
+        const CVulkanContext &m_Context;
 
         static constexpr u32 kMaxLines = 65536;
         static constexpr u32 kMaxBoxes = 8192;
@@ -110,33 +110,33 @@ namespace Manro {
         static constexpr u32 kMaxCrosses = 4096;
         static constexpr u32 kMaxVertices = 1024 * 1024;
 
-        Scope<Buffer> m_LineCommandBuffer;
-        Scope<Buffer> m_BoxCommandBuffer;
-        Scope<Buffer> m_SphereCommandBuffer;
-        Scope<Buffer> m_FrustumCommandBuffer;
-        Scope<Buffer> m_CrossCommandBuffer;
+        Scope<CBuffer> m_LineCommandBuffer;
+        Scope<CBuffer> m_BoxCommandBuffer;
+        Scope<CBuffer> m_SphereCommandBuffer;
+        Scope<CBuffer> m_FrustumCommandBuffer;
+        Scope<CBuffer> m_CrossCommandBuffer;
 
-        Scope<Buffer> m_VertexBuffer;
-        Scope<Buffer> m_VertexBufferNoDepth;
-        Scope<Buffer> m_IndirectBuffer;
-        Scope<Buffer> m_IndirectBufferNoDepth;
-        Scope<Buffer> m_CounterBuffer;
+        Scope<CBuffer> m_VertexBuffer;
+        Scope<CBuffer> m_VertexBufferNoDepth;
+        Scope<CBuffer> m_IndirectBuffer;
+        Scope<CBuffer> m_IndirectBufferNoDepth;
+        Scope<CBuffer> m_CounterBuffer;
 
-        Scope<Pipeline> m_ExpandPipeline;
-        Scope<Pipeline> m_RenderPipeline;
-        Scope<Pipeline> m_RenderPipelineNoDepth;
+        Scope<CPipeline> m_ExpandPipeline;
+        Scope<CPipeline> m_RenderPipeline;
+        Scope<CPipeline> m_RenderPipelineNoDepth;
 
         VkDescriptorPool m_DescriptorPool{VK_NULL_HANDLE};
         VkDescriptorSetLayout m_ComputeSetLayout{VK_NULL_HANDLE};
         VkDescriptorSet m_ComputeDescriptorSet{VK_NULL_HANDLE};
         VkDescriptorSet m_ComputeDescriptorSetNoDepth{VK_NULL_HANDLE};
 
-        u32 m_LineCount{0};
-        u32 m_BoxCount{0};
-        u32 m_SphereCount{0};
-        u32 m_FrustumCount{0};
-        u32 m_CrossCount{0};
-        u32 m_DepthVertexCount{0};
-        u32 m_NoDepthVertexCount{0};
+        u32 m_unLineCount{0};
+        u32 m_unBoxCount{0};
+        u32 m_unSphereCount{0};
+        u32 m_unFrustumCount{0};
+        u32 m_unCrossCount{0};
+        u32 m_unDepthVertexCount{0};
+        u32 m_unNoDepthVertexCount{0};
     };
 } // namespace Manro

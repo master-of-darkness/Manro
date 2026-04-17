@@ -18,11 +18,11 @@ namespace Manro {
         Left = 0, Right, Middle, _Count
     };
 
-    struct RawMouseDelta {
+    struct RawMouseDelta_t {
         f32 x{0.f}, y{0.f};
     };
 
-    struct UserCmd {
+    struct UserCmd_t {
         f32 MoveForward{0.f};
         f32 MoveRight{0.f};
 
@@ -54,7 +54,7 @@ namespace Manro {
     public:
         virtual ~IInputActionMap() = default;
 
-        virtual void BuildUserCmd(UserCmd &cmd) = 0;
+        virtual void BuildUserCmd(UserCmd_t &cmd) = 0;
 
         virtual void OnFocusLost() {
         }

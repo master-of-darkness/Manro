@@ -12,7 +12,7 @@
 #include <imgui_frag_spv.h>
 
 namespace Manro {
-    Overlay::Overlay(const OverlayInfo &info) : m_Context(info.context) {
+    COverlay::COverlay(const OverlayInfo_t &info) : m_Context(info.context) {
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
         ImGui::GetIO().IniFilename = nullptr;
@@ -23,7 +23,7 @@ namespace Manro {
         SetupBackend(info);
     }
 
-    Overlay::~Overlay() {
+    COverlay::~COverlay() {
         vkDeviceWaitIdle(m_Context->GetDevice());
         ImGui_ImplVulkan_Shutdown();
         ImGui_ImplSDL3_Shutdown();
@@ -32,7 +32,7 @@ namespace Manro {
             vkDestroyDescriptorPool(m_Context->GetDevice(), m_Pool, nullptr);
     }
 
-    void Overlay::CreateDescriptorPool() {
+    void COverlay::CreateDescriptorPool() {
         VkDescriptorPoolSize sizes[] = {
             {VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
             {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
@@ -53,10 +53,10 @@ namespace Manro {
         ci.poolSizeCount = (u32) IM_ARRAYSIZE(sizes);
         ci.pPoolSizes = sizes;
         if (vkCreateDescriptorPool(m_Context->GetDevice(), &ci, nullptr, &m_Pool) != VK_SUCCESS)
-            LOG_ERROR("[Overlay] Failed to create descriptor pool");
+            LOG_ERROR("[COverlay] Failed to create descriptor pool");
     }
 
-    void Overlay::SetupBackend(const OverlayInfo &info) {
+    void COverlay::SetupBackend(const OverlayInfo_t &info) {
         ImGui_ImplVulkan_LoadFunctions(VK_API_VERSION_1_3,
                                        [](const char *fn, void *ud) {
                                            return vkGetInstanceProcAddr(static_cast<VkInstance>(ud), fn);
@@ -91,22 +91,22 @@ namespace Manro {
         ii.CustomShaderFragCreateInfo.codeSize = imgui_frag_spv_len;
 
         if (!ImGui_ImplVulkan_Init(&ii))
-            LOG_ERROR("[Overlay] Failed to initialize ImGui Vulkan backend");
+            LOG_ERROR("[COverlay] Failed to initialize ImGui Vulkan backend");
     }
 
-    void Overlay::NewFrame() {
+    void COverlay::NewFrame() {
         ImGui_ImplVulkan_NewFrame();
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
     }
 
-    void Overlay::DrawDebugger(u32 drawCalls, u32 triangles, u32 instances,
-                               const std::string &gpuName, RenderSettings &settings, bool &settingsChanged) {
-        if (!m_ShowDebugUI) return;
+    void COverlay::DrawDebugger(u32 drawCalls, u32 triangles, u32 instances,
+                                const std::string &gpuName, RenderSettings_t &settings, bool &settingsChanged) {
+        if (!m_bShowDebugUI) return;
 
         float frameTime = ImGui::GetIO().DeltaTime * 1000.0f;
         ImGui::SetNextWindowPos({10.f, 10.f}, ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Debug", &m_ShowDebugUI, ImGuiWindowFlags_AlwaysAutoResize)) {
+        if (ImGui::Begin("Debug", &m_bShowDebugUI, ImGuiWindowFlags_AlwaysAutoResize)) {
             if (ImGui::CollapsingHeader("Performance", ImGuiTreeNodeFlags_DefaultOpen)) {
                 ImGui::Text("GPU: %s", gpuName.c_str());
                 ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
@@ -143,7 +143,7 @@ namespace Manro {
         ImGui::End();
     }
 
-    void Overlay::Render(VkCommandBuffer cb) {
+    void COverlay::Render(VkCommandBuffer cb) {
         ImGui::Render();
         if (auto *dd = ImGui::GetDrawData())
             ImGui_ImplVulkan_RenderDrawData(dd, cb);

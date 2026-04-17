@@ -19,8 +19,8 @@
 #endif
 
 namespace Manro {
-    void EngineLoop::Run(IApplication &app) {
-        Logger::Init();
+    void CEngineLoop::Run(IApplication &app) {
+        CLogger::Init();
 #ifdef MANRO_PROFILING
         LOG_WARN("Profiling is enabled. This may impact performance.");
 #endif
@@ -30,8 +30,8 @@ namespace Manro {
         timeBeginPeriod(1);
 #endif
 
-        JobSystem jobs;
-        PlatformContext platform;
+        CJobSystem jobs;
+        CPlatformContext platform;
 
         RegisterEmbeddedShaders();
 
@@ -40,9 +40,9 @@ namespace Manro {
         WindowHandle wh = wm.AddWindow(winDesc);
         IWindow *win = wm.Get(wh);
 
-        Renderer renderer(*win, winDesc.Width, winDesc.Height);
+        CRenderer renderer(*win, winDesc.Width, winDesc.Height);
 
-        InputManager *inputManager = app.GetInputManager();
+        CInputManager *inputManager = app.GetInputManager();
 
         bool running = true;
         win->SetEventCallback([&](WindowEvent ev, u32 w, u32 h) {
@@ -50,7 +50,7 @@ namespace Manro {
             if (ev == WindowEvent::Resized) renderer.OnResize(w, h);
         });
 
-        InitContext ictx{*win, jobs, renderer};
+        InitContext_t ictx{*win, jobs, renderer};
         app.OnStartup(ictx);
 
         using Clock = std::chrono::steady_clock;
@@ -72,8 +72,8 @@ namespace Manro {
                 if (!platform.PollEvents(inputManager)) break;
             }
 
-            UserCmd cmd = inputManager->Poll();
-            FrameContext fctx{dt, totalTime, frameIndex++};
+            UserCmd_t cmd = inputManager->Poll();
+            FrameContext_t fctx{dt, totalTime, frameIndex++};
 
             {
                 MNR_PROFILE_SCOPE("Update");

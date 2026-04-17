@@ -4,8 +4,8 @@
 #include <stdexcept>
 
 namespace Manro {
-    void PerFrameAllocator::Init(VkDevice device, u32 maxSets,
-                                 const PoolSizeRatio *ratios, u32 ratioCount) {
+    void CPerFrameAllocator::Init(VkDevice device, u32 maxSets,
+                                  const PoolSizeRatio_t *ratios, u32 ratioCount) {
         m_Device = device;
 
         std::vector<VkDescriptorPoolSize> sizes(ratioCount);
@@ -21,21 +21,21 @@ namespace Manro {
         ci.pPoolSizes = sizes.data();
 
         if (vkCreateDescriptorPool(m_Device, &ci, nullptr, &m_Pool) != VK_SUCCESS)
-            throw std::runtime_error("[PerFrameAllocator] Failed to create descriptor pool");
+            throw std::runtime_error("[CPerFrameAllocator] Failed to create descriptor pool");
     }
 
-    void PerFrameAllocator::Shutdown() {
+    void CPerFrameAllocator::Shutdown() {
         if (m_Pool) {
             vkDestroyDescriptorPool(m_Device, m_Pool, nullptr);
             m_Pool = VK_NULL_HANDLE;
         }
     }
 
-    void PerFrameAllocator::Reset() {
+    void CPerFrameAllocator::Reset() {
         vkResetDescriptorPool(m_Device, m_Pool, 0);
     }
 
-    VkDescriptorSet PerFrameAllocator::Allocate(VkDescriptorSetLayout layout) {
+    VkDescriptorSet CPerFrameAllocator::Allocate(VkDescriptorSetLayout layout) {
         VkDescriptorSetAllocateInfo ai{};
         ai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
         ai.descriptorPool = m_Pool;
@@ -45,28 +45,28 @@ namespace Manro {
         VkDescriptorSet set = VK_NULL_HANDLE;
         VkResult result = vkAllocateDescriptorSets(m_Device, &ai, &set);
         if (result != VK_SUCCESS) {
-            LOG_ERROR("[PerFrameAllocator] vkAllocateDescriptorSets failed: {}", (int) result);
+            LOG_ERROR("[CPerFrameAllocator] vkAllocateDescriptorSets failed: {}", (int) result);
             return VK_NULL_HANDLE;
         }
         return set;
     }
 
-    void PersistentAllocator::Init(VkDevice device, u32 initialPoolSets,
-                                   const PoolSizeRatio *ratios, u32 ratioCount) {
+    void CPersistentAllocator::Init(VkDevice device, u32 initialPoolSets,
+                                    const PoolSizeRatio_t *ratios, u32 ratioCount) {
         m_Device = device;
-        m_SetsPerPool = initialPoolSets;
+        m_unSetsPerPool = initialPoolSets;
         m_Ratios.assign(ratios, ratios + ratioCount);
         m_Current = GrowPool();
     }
 
-    void PersistentAllocator::Shutdown() {
+    void CPersistentAllocator::Shutdown() {
         for (auto pool: m_Pools)
             vkDestroyDescriptorPool(m_Device, pool, nullptr);
         m_Pools.clear();
         m_Current = VK_NULL_HANDLE;
     }
 
-    VkDescriptorSet PersistentAllocator::Allocate(VkDescriptorSetLayout layout) {
+    VkDescriptorSet CPersistentAllocator::Allocate(VkDescriptorSetLayout layout) {
         VkDescriptorSetAllocateInfo ai{};
         ai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
         ai.descriptorPool = m_Current;
@@ -84,41 +84,41 @@ namespace Manro {
         }
 
         if (result != VK_SUCCESS) {
-            LOG_ERROR("[PersistentAllocator] vkAllocateDescriptorSets failed: {}", (int) result);
+            LOG_ERROR("[CPersistentAllocator] vkAllocateDescriptorSets failed: {}", (int) result);
             return VK_NULL_HANDLE;
         }
         return set;
     }
 
-    void PersistentAllocator::Free(VkDescriptorSet set) {
+    void CPersistentAllocator::Free(VkDescriptorSet set) {
         vkFreeDescriptorSets(m_Device, m_Current, 1, &set);
     }
 
-    VkDescriptorPool PersistentAllocator::GrowPool() {
+    VkDescriptorPool CPersistentAllocator::GrowPool() {
         std::vector<VkDescriptorPoolSize> sizes(m_Ratios.size());
         for (u32 i = 0; i < m_Ratios.size(); ++i) {
             sizes[i].type = m_Ratios[i].type;
-            sizes[i].descriptorCount = static_cast<u32>(m_SetsPerPool * m_Ratios[i].ratio);
+            sizes[i].descriptorCount = static_cast<u32>(m_unSetsPerPool * m_Ratios[i].ratio);
         }
 
         VkDescriptorPoolCreateInfo ci{};
         ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         ci.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-        ci.maxSets = m_SetsPerPool;
+        ci.maxSets = m_unSetsPerPool;
         ci.poolSizeCount = static_cast<u32>(sizes.size());
         ci.pPoolSizes = sizes.data();
 
         VkDescriptorPool pool = VK_NULL_HANDLE;
         if (vkCreateDescriptorPool(m_Device, &ci, nullptr, &pool) != VK_SUCCESS)
-            throw std::runtime_error("[PersistentAllocator] Failed to grow descriptor pool");
+            throw std::runtime_error("[CPersistentAllocator] Failed to grow descriptor pool");
 
         m_Pools.push_back(pool);
 
-        m_SetsPerPool = std::min(m_SetsPerPool * 2, 4096u);
+        m_unSetsPerPool = std::min(m_unSetsPerPool * 2, 4096u);
         return pool;
     }
 
-    void BindlessAllocator::Init(VkDevice device) {
+    void CBindlessAllocator::Init(VkDevice device) {
         m_Device = device;
 
         VkDescriptorPoolSize poolSize{};
@@ -133,7 +133,7 @@ namespace Manro {
         poolCI.pPoolSizes = &poolSize;
 
         if (vkCreateDescriptorPool(m_Device, &poolCI, nullptr, &m_Pool) != VK_SUCCESS)
-            throw std::runtime_error("[BindlessAllocator] Failed to create pool");
+            throw std::runtime_error("[CBindlessAllocator] Failed to create pool");
 
         // Layout
         VkDescriptorSetLayoutBinding binding{};
@@ -160,7 +160,7 @@ namespace Manro {
         layoutCI.pNext = &bindingFlags;
 
         if (vkCreateDescriptorSetLayout(m_Device, &layoutCI, nullptr, &m_Layout) != VK_SUCCESS)
-            throw std::runtime_error("[BindlessAllocator] Failed to create layout");
+            throw std::runtime_error("[CBindlessAllocator] Failed to create layout");
 
         // Allocate the single set
         u32 varCount = kMaxTextures;
@@ -177,10 +177,10 @@ namespace Manro {
         allocInfo.pNext = &varCI;
 
         if (vkAllocateDescriptorSets(m_Device, &allocInfo, &m_Set) != VK_SUCCESS)
-            throw std::runtime_error("[BindlessAllocator] Failed to allocate set");
+            throw std::runtime_error("[CBindlessAllocator] Failed to allocate set");
     }
 
-    void BindlessAllocator::Shutdown() {
+    void CBindlessAllocator::Shutdown() {
         if (m_Layout) {
             vkDestroyDescriptorSetLayout(m_Device, m_Layout, nullptr);
             m_Layout = VK_NULL_HANDLE;
@@ -192,7 +192,7 @@ namespace Manro {
         m_Set = VK_NULL_HANDLE;
     }
 
-    void BindlessAllocator::UpdateSlot(u32 index, VkImageView view, VkImageLayout layout) {
+    void CBindlessAllocator::UpdateSlot(u32 index, VkImageView view, VkImageLayout layout) {
         VkDescriptorImageInfo imgInfo{};
         imgInfo.imageView = view;
         imgInfo.imageLayout = layout;

@@ -5,46 +5,46 @@
 #include <unordered_map>
 #include <functional>
 
-struct _ENetHost;
-struct _ENetPeer;
+struct _ENetHost_t;
+struct _ENetPeer_t;
 
 namespace Manro {
-    class Registry;
+    class CRegistry;
 
-    class PhysicsWorld;
+    class CPhysicsWorld;
 
     namespace Networking {
-        struct ClientInput;
+        struct ClientInput_t;
     }
 
-    class NetworkServer {
+    class CNetworkServer {
     public:
-        explicit NetworkServer(u16 port);
+        explicit CNetworkServer(u16 port);
 
-        ~NetworkServer();
+        ~CNetworkServer();
 
-        NetworkServer(const NetworkServer &) = delete;
+        CNetworkServer(const CNetworkServer &) = delete;
 
-        NetworkServer &operator=(const NetworkServer &) = delete;
+        CNetworkServer &operator=(const CNetworkServer &) = delete;
 
-        void Tick(Registry &registry,
-                  PhysicsWorld &physics,
+        void Tick(CRegistry &registry,
+                  CPhysicsWorld &physics,
                   float deltaTime);
 
-        void BroadcastSnapshot(Registry &registry, PhysicsWorld &physics);
+        void BroadcastSnapshot(CRegistry &registry, CPhysicsWorld &physics);
 
-        f32 GetServerTime() const { return m_ServerTime; }
+        f32 GetServerTime() const { return m_flServerTime; }
 
     private:
-        void HandleNewConnection(_ENetPeer *peer);
+        void HandleNewConnection(_ENetPeer_t *peer);
 
-        void HandleDisconnection(_ENetPeer *peer, Registry &registry);
+        void HandleDisconnection(_ENetPeer_t *peer, CRegistry &registry);
 
-        void ValidateAndStoreInput(u32 clientId, const Networking::ClientInput *inp);
+        void ValidateAndStoreInput(u32 clientId, const Networking::ClientInput_t *inp);
 
-        u16 m_Port{0};
+        u16 m_unPort{0};
 
-        f32 m_ServerTime{0.f};
+        f32 m_flServerTime{0.f};
         static constexpr f32 SNAPSHOT_RATE = 0.05f;
     };
 } // namespace Manro

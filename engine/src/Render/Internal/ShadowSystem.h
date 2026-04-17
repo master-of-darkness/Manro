@@ -8,12 +8,12 @@
 #include <volk.h>
 
 namespace Manro {
-    class VulkanContext;
-    class Pipeline;
-    class Buffer;
-    class MeshManager;
+    class CVulkanContext;
+    class CPipeline;
+    class CBuffer;
+    class CMeshManager;
 
-    struct ShadowUniformData {
+    struct ShadowUniformData_t {
         Mat4 lightViewProj;
         Vec4 lightDir;
         Vec2 shadowMapSize;
@@ -23,31 +23,31 @@ namespace Manro {
         float _pad[3];
     };
 
-    struct ShadowFrameResources {
+    struct ShadowFrameResources_t {
         VkDescriptorSet pbrSet{VK_NULL_HANDLE};
         VkBuffer instanceBuffer{VK_NULL_HANDLE};
     };
 
-    struct ShadowPushConstants {
+    struct ShadowPushConstants_t {
         Mat4 lightViewProj;
     };
 
-    class ShadowSystem {
+    class CShadowSystem {
     public:
-        explicit ShadowSystem(VulkanContext &ctx);
+        explicit CShadowSystem(CVulkanContext &ctx);
 
-        ~ShadowSystem() = default;
+        ~CShadowSystem() = default;
 
-        ShadowSystem(const ShadowSystem &) = delete;
+        CShadowSystem(const CShadowSystem &) = delete;
 
-        ShadowSystem &operator=(const ShadowSystem &) = delete;
+        CShadowSystem &operator=(const CShadowSystem &) = delete;
 
         void SetGpuProfileCtx(MnrGpuProfileCtx ctx) { m_GpuProfileCtx = ctx; }
 
-        void Init(VkDescriptorPool pool, const ShadowSettings &s,
+        void Init(VkDescriptorPool pool, const ShadowSettings_t &s,
                   VkDescriptorSetLayout pbrSetLayout);
 
-        void Recreate(VkDescriptorPool pool, const ShadowSettings &s,
+        void Recreate(VkDescriptorPool pool, const ShadowSettings_t &s,
                       VkDescriptorSetLayout pbrSetLayout,
                       std::vector<VkDescriptorSet> &pbrSets);
 
@@ -62,13 +62,13 @@ namespace Manro {
                         VkBuffer shadowIndirectBuffer,
                         VkBuffer shadowCountBuffer,
                         const std::vector<LightData> &pendingLights,
-                        const ShadowSettings &s);
+                        const ShadowSettings_t &s);
 
         void UpdatePbrDescriptorSetShadow(VkDescriptorSet pbrSet) const;
 
         static Mat4 ComputeLightViewProj(const Vec3 &lightDir);
 
-        bool IsEnabled() const { return m_Enabled; }
+        bool IsEnabled() const { return m_bEnabled; }
         VkImageView GetShadowMapView() const { return m_ShadowMap.view; }
         VkSampler GetShadowSampler() const { return m_ShadowSampler; }
 
@@ -77,26 +77,26 @@ namespace Manro {
         VkPipelineLayout GetPipelineLayout() const;
 
         VkDescriptorSetLayout GetMeshCullSetLayout() const { return m_ShadowMeshCullSetLayout; }
-        const ShadowUniformData &GetUniform() const { return m_ShadowUniform; }
+        const ShadowUniformData_t &GetUniform() const { return m_ShadowUniform; }
 
         VkBuffer GetUniformBufferHandle() const;
 
     private:
-        void CreateResources(const ShadowSettings &s);
+        void CreateResources(const ShadowSettings_t &s);
 
         void BuildPipeline(VkDescriptorSetLayout pbrSetLayout);
 
         void BuildMeshCullLayout(VkDescriptorPool pool);
 
-        VulkanContext &m_Context;
+        CVulkanContext &m_Context;
 
-        AllocatedImage m_ShadowMap{};
+        AllocatedImage_t m_ShadowMap{};
         VkSampler m_ShadowSampler{VK_NULL_HANDLE};
-        Scope<Buffer> m_ShadowUniformBuffer;
-        ShadowUniformData m_ShadowUniform{};
-        bool m_Enabled{false};
+        Scope<CBuffer> m_ShadowUniformBuffer;
+        ShadowUniformData_t m_ShadowUniform{};
+        bool m_bEnabled{false};
 
-        Scope<Pipeline> m_ShadowPipeline;
+        Scope<CPipeline> m_ShadowPipeline;
         VkDescriptorSetLayout m_ShadowMeshCullSetLayout{VK_NULL_HANDLE};
 
         MnrGpuProfileCtx m_GpuProfileCtx{};

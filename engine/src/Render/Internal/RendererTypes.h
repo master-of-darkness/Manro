@@ -8,20 +8,20 @@
 #include <algorithm>
 
 namespace Manro {
-    struct FrameData {
+    struct FrameData_t {
         VkCommandPool commandPool = VK_NULL_HANDLE;
         VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
 
-        Scope<Buffer> uboBuffer;
-        Scope<Buffer> lightBuffer;
-        Scope<Buffer> instanceBuffer;
-        Scope<Buffer> cullDataBuffer;
-        Scope<Buffer> indirectBuffer;
-        Scope<Buffer> countBuffer;
-        Scope<Buffer> tileHeaderBuffer;
-        Scope<Buffer> tileLightIndexBuffer;
-        Scope<Buffer> shadowIndirectBuffer;
-        Scope<Buffer> shadowCountBuffer;
+        Scope<CBuffer> uboBuffer;
+        Scope<CBuffer> lightBuffer;
+        Scope<CBuffer> instanceBuffer;
+        Scope<CBuffer> cullDataBuffer;
+        Scope<CBuffer> indirectBuffer;
+        Scope<CBuffer> countBuffer;
+        Scope<CBuffer> tileHeaderBuffer;
+        Scope<CBuffer> tileLightIndexBuffer;
+        Scope<CBuffer> shadowIndirectBuffer;
+        Scope<CBuffer> shadowCountBuffer;
 
         VkDescriptorSet pbrSet = VK_NULL_HANDLE;
         VkDescriptorSet cullSet = VK_NULL_HANDLE;
@@ -33,7 +33,7 @@ namespace Manro {
         bool staticUploaded = false;
     };
 
-    struct UniformBufferObject {
+    struct UniformBufferObject_t {
         Mat4 model;
         Mat4 view;
         Mat4 proj;
@@ -67,7 +67,7 @@ namespace Manro {
         int _padMat[3]{};
     };
 
-    struct PBRPushConstants {
+    struct PBRPushConstants_t {
         Vec4 baseColorFactor{1.f, 1.f, 1.f, 1.f};
         float metallicFactor{1.f};
         float roughnessFactor{1.f};
@@ -91,7 +91,7 @@ namespace Manro {
         float _pad2;
     };
 
-    struct MeshCullPushConstants {
+    struct MeshCullPushConstants_t {
         Vec4 planes[6];
         Vec4 cameraPos;
         u32 instanceCount;
@@ -100,14 +100,14 @@ namespace Manro {
         u32 _pad;
     };
 
-    struct CullData {
+    struct CullData_t {
         float center[3];
         float radius;
         u32 instanceId;
         u32 _pad[3];
     };
 
-    struct MeshInstance {
+    struct MeshInstance_t {
         Mat4 modelMatrix;
         float normalMatrix[3][4];
         u32 materialIndex;
@@ -120,7 +120,7 @@ namespace Manro {
         u32 _pad[3];
     };
 
-    struct DrawCommand {
+    struct DrawCommand_t {
         u32 indexCount;
         u32 instanceCount;
         u32 firstIndex;
@@ -154,7 +154,7 @@ namespace Manro {
         }
     }
 
-    static inline void NormalizeRenderSettings(RenderSettings &settings, VkSampleCountFlagBits maxSamples) {
+    static inline void NormalizeRenderSettings(RenderSettings_t &settings, VkSampleCountFlagBits maxSamples) {
         settings.resolutionScale = std::clamp(settings.resolutionScale, 0.1f, 2.0f);
 
         if (settings.aaMode != AntiAliasingMode::MSAA) {

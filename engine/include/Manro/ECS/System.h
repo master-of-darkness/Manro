@@ -4,9 +4,9 @@
 #include <set>
 
 namespace Manro {
-    class System {
+    class CSystem {
     public:
-        virtual ~System() = default;
+        virtual ~CSystem() = default;
 
         void AddEntity(Entity e) { m_Entities.insert(e); }
 

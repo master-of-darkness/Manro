@@ -11,11 +11,11 @@
 #include <Manro/Render/MeshManager.h>
 
 namespace Manro {
-    GpuCullDispatcher::GpuCullDispatcher(VulkanContext &ctx)
+    CGpuCullDispatcher::CGpuCullDispatcher(CVulkanContext &ctx)
         : m_Context(ctx) {
     }
 
-    void GpuCullDispatcher::Init() {
+    void CGpuCullDispatcher::Init() {
         // Cull set layout
         {
             VkDescriptorSetLayoutBinding b[4];
@@ -47,7 +47,7 @@ namespace Manro {
         }
     }
 
-    void GpuCullDispatcher::Shutdown() {
+    void CGpuCullDispatcher::Shutdown() {
         m_CullPipeline.reset();
         m_MeshCullPipeline.reset();
         if (m_CullSetLayout) {
@@ -60,28 +60,28 @@ namespace Manro {
         }
     }
 
-    void GpuCullDispatcher::BuildPipelines(PipelineCache &cache) {
+    void CGpuCullDispatcher::BuildPipelines(CPipelineCache &cache) {
         // Light tile culling pipeline
         {
-            auto compSpv = VirtualFS::Get().ReadFile("shaders://forward_plus_cull.comp.spv");
+            auto compSpv = CVirtualFS::Get().ReadFile("shaders://forward_plus_cull.comp.spv");
             if (compSpv.empty()) {
-                LOG_ERROR("[Renderer] Cull shader not found");
+                LOG_ERROR("[CRenderer] Cull shader not found");
                 return;
             }
 
-            PipelineConfigParams cfg{};
+            PipelineConfigParams_t cfg{};
             cfg.computeEntryPoint = "main";
             cfg.pushConstantSize = 176;
             cfg.descriptorSetLayouts = {m_CullSetLayout};
 
-            PipelineKey key{};
-            key.compHash = PipelineCache::HashSpirV(compSpv);
+            PipelineKey_t key{};
+            key.compHash = CPipelineCache::HashSpirV(compSpv);
             key.variants = PipelineVariant_Compute;
             key.pushConstantSize = 176;
             VkDescriptorSetLayout layouts[] = {m_CullSetLayout};
-            key.setLayoutHash = PipelineCache::HashLayouts(layouts, 1);
+            key.setLayoutHash = CPipelineCache::HashLayouts(layouts, 1);
 
-            m_CullPipeline = CreateScope<Pipeline>(m_Context);
+            m_CullPipeline = CreateScope<CPipeline>(m_Context);
             cache.GetCompute(key, [&](VkPipelineCache) -> VkPipeline {
                 m_CullPipeline->BuildCompute(compSpv, cfg);
                 return m_CullPipeline->GetHandle();
@@ -90,25 +90,25 @@ namespace Manro {
 
         // Mesh culling pipeline
         {
-            auto compSpv = VirtualFS::Get().ReadFile("shaders://mesh_cull.comp.spv");
+            auto compSpv = CVirtualFS::Get().ReadFile("shaders://mesh_cull.comp.spv");
             if (compSpv.empty()) {
-                LOG_ERROR("[Renderer] Mesh cull shader not found");
+                LOG_ERROR("[CRenderer] Mesh cull shader not found");
                 return;
             }
 
-            PipelineConfigParams cfg{};
+            PipelineConfigParams_t cfg{};
             cfg.computeEntryPoint = "main";
-            cfg.pushConstantSize = sizeof(MeshCullPushConstants);
+            cfg.pushConstantSize = sizeof(MeshCullPushConstants_t);
             cfg.descriptorSetLayouts = {m_MeshCullSetLayout};
 
-            PipelineKey key{};
-            key.compHash = PipelineCache::HashSpirV(compSpv);
+            PipelineKey_t key{};
+            key.compHash = CPipelineCache::HashSpirV(compSpv);
             key.variants = PipelineVariant_Compute;
-            key.pushConstantSize = sizeof(MeshCullPushConstants);
+            key.pushConstantSize = sizeof(MeshCullPushConstants_t);
             VkDescriptorSetLayout layouts[] = {m_MeshCullSetLayout};
-            key.setLayoutHash = PipelineCache::HashLayouts(layouts, 1);
+            key.setLayoutHash = CPipelineCache::HashLayouts(layouts, 1);
 
-            m_MeshCullPipeline = CreateScope<Pipeline>(m_Context);
+            m_MeshCullPipeline = CreateScope<CPipeline>(m_Context);
             cache.GetCompute(key, [&](VkPipelineCache) -> VkPipeline {
                 m_MeshCullPipeline->BuildCompute(compSpv, cfg);
                 return m_MeshCullPipeline->GetHandle();
@@ -116,9 +116,9 @@ namespace Manro {
         }
     }
 
-    void GpuCullDispatcher::Dispatch(const DispatchParams &params) {
+    void CGpuCullDispatcher::Dispatch(const DispatchParams_t &params) {
         VkCommandBuffer cb = params.cb;
-        FrameData &frame = params.frame;
+        FrameData_t &frame = params.frame;
 
         vkCmdFillBuffer(cb, frame.countBuffer->GetHandle(), 0, sizeof(u32), 0);
 
@@ -165,14 +165,14 @@ namespace Manro {
         }
     }
 
-    void GpuCullDispatcher::DispatchMeshCull(VkCommandBuffer cb, FrameData &frame,
-                                             u32 totalInstCount, const Mat4 &viewProj,
-                                             const Vec3 &cameraPosition, const RenderSettings &settings) {
+    void CGpuCullDispatcher::DispatchMeshCull(VkCommandBuffer cb, FrameData_t &frame,
+                                              u32 totalInstCount, const Mat4 &viewProj,
+                                              const Vec3 &cameraPosition, const RenderSettings_t &settings) {
         vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, m_MeshCullPipeline->GetHandle());
         vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE,
                                 m_MeshCullPipeline->GetLayout(), 0, 1, &frame.meshCullSet, 0, nullptr);
 
-        MeshCullPushConstants mcpc{};
+        MeshCullPushConstants_t mcpc{};
         Mat4 vp = viewProj;
         ExtractFrustumPlanes(vp, mcpc.planes);
         mcpc.instanceCount = totalInstCount;
@@ -181,7 +181,7 @@ namespace Manro {
         mcpc.enableFrustumCulling = settings.enableFrustumCulling ? 1u : 0u;
 
         vkCmdPushConstants(cb, m_MeshCullPipeline->GetLayout(),
-                           VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(MeshCullPushConstants), &mcpc);
+                           VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(MeshCullPushConstants_t), &mcpc);
 
         u32 groupCount = (mcpc.instanceCount + 63) / 64;
         vkCmdDispatch(cb, groupCount, 1, 1);
@@ -212,11 +212,11 @@ namespace Manro {
         vkCmdPipelineBarrier2(cb, &meshDep);
     }
 
-    void GpuCullDispatcher::DispatchShadowCull(VkCommandBuffer cb, FrameData &frame,
-                                               u32 totalInstCount, ShadowSystem &shadow,
-                                               const std::vector<LightData> &lights,
-                                               const Vec3 &cameraPosition, const RenderSettings &settings,
-                                               MeshManager &meshes) {
+    void CGpuCullDispatcher::DispatchShadowCull(VkCommandBuffer cb, FrameData_t &frame,
+                                                u32 totalInstCount, CShadowSystem &shadow,
+                                                const std::vector<LightData> &lights,
+                                                const Vec3 &cameraPosition, const RenderSettings_t &settings,
+                                                CMeshManager &meshes) {
         vkCmdFillBuffer(cb, frame.shadowCountBuffer->GetHandle(), 0, sizeof(u32), 0);
 
         VkBufferMemoryBarrier2 shadowFillBarrier{};
@@ -246,9 +246,9 @@ namespace Manro {
                     lightDir = Vec3(l.direction.x, l.direction.y, l.direction.z);
                     break;
                 }
-            Mat4 shadowVP = ShadowSystem::ComputeLightViewProj(lightDir);
+            Mat4 shadowVP = CShadowSystem::ComputeLightViewProj(lightDir);
 
-            MeshCullPushConstants shadowPc{};
+            MeshCullPushConstants_t shadowPc{};
             ExtractFrustumPlanes(shadowVP, shadowPc.planes);
             shadowPc.instanceCount = totalInstCount;
             shadowPc.cameraPos = Vec4(cameraPosition, 1.0f);
@@ -290,17 +290,17 @@ namespace Manro {
                           settings.shadows);
     }
 
-    void GpuCullDispatcher::DispatchLightTileCull(VkCommandBuffer cb, FrameData &frame,
-                                                  const Mat4 &viewMatrix, const Mat4 &projectionMatrix,
+    void CGpuCullDispatcher::DispatchLightTileCull(VkCommandBuffer cb, FrameData_t &frame,
+                                                   const Mat4 &viewMatrix, const Mat4 &projectionMatrix,
                                                   const std::vector<LightData> &lights,
                                                   VkExtent2D renderExtent,
                                                   u32 maxLightsPerTile, u32 maxTilesX, u32 maxTilesY, u32 tileSize,
-                                                  const RenderSettings &settings) {
+                                                   const RenderSettings_t &settings) {
         vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, m_CullPipeline->GetHandle());
         vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE,
                                 m_CullPipeline->GetLayout(), 0, 1, &frame.cullSet, 0, nullptr);
 
-        struct CullPushConstants {
+        struct CullPushConstants_t {
             Mat4 view;
             Mat4 proj;
             Vec4 screenTile;

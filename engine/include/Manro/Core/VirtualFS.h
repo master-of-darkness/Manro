@@ -8,9 +8,9 @@
 #include <mutex>
 
 namespace Manro {
-    class VirtualFS {
+    class CVirtualFS {
     public:
-        static VirtualFS &Get();
+        static CVirtualFS &Get();
 
         void Mount(std::string_view virtualPath, const u8 *data, size_t size);
 
@@ -29,15 +29,15 @@ namespace Manro {
         std::string ResolvePath(std::string_view path) const;
 
     private:
-        VirtualFS() = default;
+        CVirtualFS() = default;
 
-        struct Blob {
+        struct Blob_t {
             const u8 *data{nullptr};
             size_t size{0};
             std::vector<u8> ownedStorage;
         };
 
-        std::unordered_map<std::string, Blob> m_Blobs;
+        std::unordered_map<std::string, Blob_t> m_Blobs;
         std::string m_BaseDir;
         mutable std::mutex m_Mutex;
     };

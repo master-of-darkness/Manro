@@ -12,21 +12,21 @@
 #include <vector>
 
 namespace Manro {
-    class VulkanContext;
-    class Pipeline;
-    class PipelineCache;
-    class ShadowSystem;
-    class MeshManager;
+    class CVulkanContext;
+    class CPipeline;
+    class CPipelineCache;
+    class CShadowSystem;
+    class CMeshManager;
 
-    class GpuCullDispatcher {
+    class CGpuCullDispatcher {
     public:
-        explicit GpuCullDispatcher(VulkanContext &ctx);
+        explicit CGpuCullDispatcher(CVulkanContext &ctx);
 
         void Init();
 
         void Shutdown();
 
-        void BuildPipelines(PipelineCache &cache);
+        void BuildPipelines(CPipelineCache &cache);
 
         [[nodiscard]] VkDescriptorSetLayout GetCullSetLayout() const { return m_CullSetLayout; }
 
@@ -34,17 +34,17 @@ namespace Manro {
 
         void SetGpuProfileCtx(MnrGpuProfileCtx ctx) { m_GpuProfileCtx = ctx; }
 
-        struct DispatchParams {
+        struct DispatchParams_t {
             VkCommandBuffer cb;
-            FrameData &frame;
+            FrameData_t &frame;
             u32 totalInstCount;
             const Mat4 &viewMatrix;
             const Mat4 &projectionMatrix;
             const Vec3 &cameraPosition;
-            const RenderSettings &settings;
-            ShadowSystem &shadow;
+            const RenderSettings_t &settings;
+            CShadowSystem &shadow;
             const std::vector<LightData> &lights;
-            MeshManager &meshes;
+            CMeshManager &meshes;
             VkExtent2D renderExtent;
             u32 maxLightsPerTile;
             u32 maxTilesX;
@@ -52,30 +52,30 @@ namespace Manro {
             u32 tileSize;
         };
 
-        void Dispatch(const DispatchParams &params);
+        void Dispatch(const DispatchParams_t &params);
 
     private:
-        void DispatchMeshCull(VkCommandBuffer cb, FrameData &frame,
+        void DispatchMeshCull(VkCommandBuffer cb, FrameData_t &frame,
                               u32 totalInstCount, const Mat4 &viewProj,
-                              const Vec3 &cameraPosition, const RenderSettings &settings);
+                              const Vec3 &cameraPosition, const RenderSettings_t &settings);
 
-        void DispatchShadowCull(VkCommandBuffer cb, FrameData &frame,
-                                u32 totalInstCount, ShadowSystem &shadow,
+        void DispatchShadowCull(VkCommandBuffer cb, FrameData_t &frame,
+                                u32 totalInstCount, CShadowSystem &shadow,
                                 const std::vector<LightData> &lights,
-                                const Vec3 &cameraPosition, const RenderSettings &settings,
-                                MeshManager &meshes);
+                                const Vec3 &cameraPosition, const RenderSettings_t &settings,
+                                CMeshManager &meshes);
 
-        void DispatchLightTileCull(VkCommandBuffer cb, FrameData &frame,
+        void DispatchLightTileCull(VkCommandBuffer cb, FrameData_t &frame,
                                    const Mat4 &viewMatrix, const Mat4 &projectionMatrix,
                                    const std::vector<LightData> &lights,
                                    VkExtent2D renderExtent,
                                    u32 maxLightsPerTile, u32 maxTilesX, u32 maxTilesY, u32 tileSize,
-                                   const RenderSettings &settings);
+                                   const RenderSettings_t &settings);
 
-        VulkanContext &m_Context;
+        CVulkanContext &m_Context;
 
-        Scope<Pipeline> m_CullPipeline;
-        Scope<Pipeline> m_MeshCullPipeline;
+        Scope<CPipeline> m_CullPipeline;
+        Scope<CPipeline> m_MeshCullPipeline;
         VkDescriptorSetLayout m_CullSetLayout = VK_NULL_HANDLE;
         VkDescriptorSetLayout m_MeshCullSetLayout = VK_NULL_HANDLE;
 

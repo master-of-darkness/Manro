@@ -16,11 +16,11 @@
 #include <cmath>
 
 namespace Manro {
-    struct ShadowVertex {
+    struct ShadowVertex_t {
         float x, y, z;
     };
 
-    struct ShadowMeshInstance {
+    struct ShadowMeshInstance_t {
         float modelMatrix[4][4];
         float normalMatrix[3][4];
         u32 materialIndex;
@@ -33,7 +33,7 @@ namespace Manro {
         u32 _pad[3];
     };
 
-    struct ShadowDrawCommand {
+    struct ShadowDrawCommand_t {
         u32 indexCount;
         u32 instanceCount;
         u32 firstIndex;
@@ -41,7 +41,7 @@ namespace Manro {
         u32 firstInstance;
     };
 
-    struct ShadowMeshCullPush {
+    struct ShadowMeshCullPush_t {
         Vec4 planes[6];
         Vec4 cameraPos;
         u32 instanceCount;
@@ -50,21 +50,21 @@ namespace Manro {
         u32 _pad;
     };
 
-    ShadowSystem::ShadowSystem(VulkanContext &ctx)
+    CShadowSystem::CShadowSystem(CVulkanContext &ctx)
         : m_Context(ctx) {
     }
 
-    void ShadowSystem::Init(VkDescriptorPool pool, const ShadowSettings &s,
-                            VkDescriptorSetLayout pbrSetLayout) {
-        m_Enabled = s.enabled;
+    void CShadowSystem::Init(VkDescriptorPool pool, const ShadowSettings_t &s,
+                             VkDescriptorSetLayout pbrSetLayout) {
+        m_bEnabled = s.enabled;
         CreateResources(s);
         BuildMeshCullLayout(pool);
         BuildPipeline(pbrSetLayout);
     }
 
-    void ShadowSystem::Recreate(VkDescriptorPool pool, const ShadowSettings &s,
-                                VkDescriptorSetLayout pbrSetLayout,
-                                std::vector<VkDescriptorSet> &pbrSets) {
+    void CShadowSystem::Recreate(VkDescriptorPool pool, const ShadowSettings_t &s,
+                                 VkDescriptorSetLayout pbrSetLayout,
+                                 std::vector<VkDescriptorSet> &pbrSets) {
         vkDeviceWaitIdle(m_Context.GetDevice());
 
         if (m_ShadowSampler != VK_NULL_HANDLE) {
@@ -74,7 +74,7 @@ namespace Manro {
         DestroyImage(m_Context, m_ShadowMap);
         m_ShadowUniformBuffer.reset();
 
-        m_Enabled = s.enabled;
+        m_bEnabled = s.enabled;
         CreateResources(s);
 
         // rebind shadow map into every PBR descriptor set
@@ -82,7 +82,7 @@ namespace Manro {
             UpdatePbrDescriptorSetShadow(set);
     }
 
-    void ShadowSystem::Shutdown() {
+    void CShadowSystem::Shutdown() {
         VkDevice device = m_Context.GetDevice();
 
         m_ShadowPipeline.reset();
@@ -100,11 +100,11 @@ namespace Manro {
         }
     }
 
-    void ShadowSystem::CreateResources(const ShadowSettings &s) {
+    void CShadowSystem::CreateResources(const ShadowSettings_t &s) {
         const u32 shadowMapSize = static_cast<u32>(std::max(128, s.resolution));
 
         {
-            ImageCreateParams p{};
+            ImageCreateParams_t p{};
             p.width = shadowMapSize;
             p.height = shadowMapSize;
             p.format = VK_FORMAT_D32_SFLOAT;
@@ -147,9 +147,9 @@ namespace Manro {
                 throw std::runtime_error("Failed to create shadow sampler");
         }
 
-        m_ShadowUniformBuffer = CreateScope<Buffer>(
+        m_ShadowUniformBuffer = CreateScope<CBuffer>(
             m_Context,
-            sizeof(ShadowUniformData),
+            sizeof(ShadowUniformData_t),
             VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
             VMA_MEMORY_USAGE_CPU_TO_GPU);
 
@@ -160,7 +160,7 @@ namespace Manro {
         m_ShadowUniform.shadowsEnabled = s.enabled ? 1 : 0;
     }
 
-    void ShadowSystem::BuildMeshCullLayout(VkDescriptorPool /*pool*/) {
+    void CShadowSystem::BuildMeshCullLayout(VkDescriptorPool /*pool*/) {
         VkDescriptorSetLayoutBinding b[4];
         b[0] = {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr};
         b[1] = {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr};
@@ -175,26 +175,26 @@ namespace Manro {
             throw std::runtime_error("Failed to create shadow mesh cull descriptor set layout");
     }
 
-    void ShadowSystem::BuildPipeline(VkDescriptorSetLayout pbrSetLayout) {
-        auto vertSpv = VirtualFS::Get().ReadFile("shaders://shadow_depth.vert.spv");
+    void CShadowSystem::BuildPipeline(VkDescriptorSetLayout pbrSetLayout) {
+        auto vertSpv = CVirtualFS::Get().ReadFile("shaders://shadow_depth.vert.spv");
         if (vertSpv.empty()) {
-            LOG_ERROR("[ShadowSystem] Shadow depth shader not found");
+            LOG_ERROR("[CShadowSystem] Shadow depth shader not found");
             return;
         }
 
-        PipelineConfigParams cfg{};
+        PipelineConfigParams_t cfg{};
         cfg.vertexEntryPoint = "main";
         cfg.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
         cfg.msaaSamples = VK_SAMPLE_COUNT_1_BIT;
-        cfg.pushConstantSize = sizeof(ShadowPushConstants);
+        cfg.pushConstantSize = sizeof(ShadowPushConstants_t);
         cfg.pushConstantStages = VK_SHADER_STAGE_VERTEX_BIT;
         cfg.descriptorSetLayouts = {pbrSetLayout};
 
-        // Binding 0: Vertex, Binding 1: Instance (MeshInstance)
+        // Binding 0: Vertex_t, Binding 1: Instance (MeshInstance_t)
         cfg.vertexInputBindings.resize(2);
         cfg.vertexInputBindings[0] = {0, sizeof(float) * 12, VK_VERTEX_INPUT_RATE_VERTEX};
-        // Vertex: 3+3+2+4 floats = 48 bytes
-        cfg.vertexInputBindings[1] = {1, sizeof(ShadowMeshInstance), VK_VERTEX_INPUT_RATE_INSTANCE};
+        // Vertex_t: 3+3+2+4 floats = 48 bytes
+        cfg.vertexInputBindings[1] = {1, sizeof(ShadowMeshInstance_t), VK_VERTEX_INPUT_RATE_INSTANCE};
 
         cfg.vertexInputAttributes.resize(9);
         // position (binding 0, loc 0)
@@ -203,42 +203,42 @@ namespace Manro {
         cfg.vertexInputAttributes[1] = {1, 0, VK_FORMAT_R32G32B32_SFLOAT, 12};
         // modelMatrix rows (binding 1, loc 4-7)
         cfg.vertexInputAttributes[2] = {
-            4, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(ShadowMeshInstance, modelMatrix))
+            4, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(ShadowMeshInstance_t, modelMatrix))
         };
         cfg.vertexInputAttributes[3] = {
-            5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(ShadowMeshInstance, modelMatrix)) + 16
+            5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(ShadowMeshInstance_t, modelMatrix)) + 16
         };
         cfg.vertexInputAttributes[4] = {
-            6, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(ShadowMeshInstance, modelMatrix)) + 32
+            6, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(ShadowMeshInstance_t, modelMatrix)) + 32
         };
         cfg.vertexInputAttributes[5] = {
-            7, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(ShadowMeshInstance, modelMatrix)) + 48
+            7, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(ShadowMeshInstance_t, modelMatrix)) + 48
         };
         // normalMatrix rows (binding 1, loc 8-10)
         cfg.vertexInputAttributes[6] = {
-            8, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(ShadowMeshInstance, normalMatrix))
+            8, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(ShadowMeshInstance_t, normalMatrix))
         };
         cfg.vertexInputAttributes[7] = {
-            9, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(ShadowMeshInstance, normalMatrix)) + 16
+            9, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(ShadowMeshInstance_t, normalMatrix)) + 16
         };
         cfg.vertexInputAttributes[8] = {
-            10, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(ShadowMeshInstance, normalMatrix)) + 32
+            10, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<u32>(offsetof(ShadowMeshInstance_t, normalMatrix)) + 32
         };
 
-        m_ShadowPipeline = CreateScope<Pipeline>(m_Context);
+        m_ShadowPipeline = CreateScope<CPipeline>(m_Context);
         m_ShadowPipeline->BuildShadowDepth(vertSpv, cfg);
     }
 
-    void ShadowSystem::RenderPass(VkCommandBuffer cb,
-                                  VkDescriptorSet pbrSet,
-                                  VkBuffer instanceBuffer,
-                                  u32 totalInstCount,
-                                  VkBuffer indexBuffer,
-                                  VkBuffer vertexBuffer,
-                                  VkBuffer shadowIndirectBuffer,
-                                  VkBuffer shadowCountBuffer,
-                                  const std::vector<LightData> &pendingLights,
-                                  const ShadowSettings &s) {
+    void CShadowSystem::RenderPass(VkCommandBuffer cb,
+                                   VkDescriptorSet pbrSet,
+                                   VkBuffer instanceBuffer,
+                                   u32 totalInstCount,
+                                   VkBuffer indexBuffer,
+                                   VkBuffer vertexBuffer,
+                                   VkBuffer shadowIndirectBuffer,
+                                   VkBuffer shadowCountBuffer,
+                                   const std::vector<LightData> &pendingLights,
+                                   const ShadowSettings_t &s) {
         if (!s.enabled || !m_ShadowPipeline || totalInstCount == 0) return;
 
         MNR_GPU_ZONE(m_GpuProfileCtx, cb, "Shadow Map");
@@ -259,7 +259,7 @@ namespace Manro {
         m_ShadowUniform.normalBias = s.bias;
         m_ShadowUniform.softShadows = s.softShadows;
         m_ShadowUniform.shadowsEnabled = s.enabled ? 1 : 0;
-        m_ShadowUniformBuffer->LoadData(&m_ShadowUniform, sizeof(ShadowUniformData));
+        m_ShadowUniformBuffer->LoadData(&m_ShadowUniform, sizeof(ShadowUniformData_t));
 
         // Transition shadow map to attachment write
         {
@@ -310,7 +310,7 @@ namespace Manro {
         vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 m_ShadowPipeline->GetLayout(), 0, 1, &pbrSet, 0, nullptr);
 
-        ShadowPushConstants pc{};
+        ShadowPushConstants_t pc{};
         pc.lightViewProj = m_ShadowUniform.lightViewProj;
         vkCmdPushConstants(cb, m_ShadowPipeline->GetLayout(),
                            VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc), &pc);
@@ -323,7 +323,7 @@ namespace Manro {
         vkCmdDrawIndexedIndirectCount(cb,
                                       shadowIndirectBuffer, 0,
                                       shadowCountBuffer, 0,
-                                      totalInstCount, sizeof(ShadowDrawCommand));
+                                      totalInstCount, sizeof(ShadowDrawCommand_t));
 
         vkCmdEndRendering(cb);
 
@@ -349,7 +349,7 @@ namespace Manro {
         }
     }
 
-    void ShadowSystem::UpdatePbrDescriptorSetShadow(VkDescriptorSet pbrSet) const {
+    void CShadowSystem::UpdatePbrDescriptorSetShadow(VkDescriptorSet pbrSet) const {
         VkDescriptorImageInfo shadowImgI{};
         shadowImgI.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
         shadowImgI.imageView = m_ShadowMap.view;
@@ -357,7 +357,7 @@ namespace Manro {
         VkDescriptorImageInfo shadowSamplerI{};
         shadowSamplerI.sampler = m_ShadowSampler;
 
-        VkDescriptorBufferInfo shadowUboI{m_ShadowUniformBuffer->GetHandle(), 0, sizeof(ShadowUniformData)};
+        VkDescriptorBufferInfo shadowUboI{m_ShadowUniformBuffer->GetHandle(), 0, sizeof(ShadowUniformData_t)};
 
         VkWriteDescriptorSet writes[3]{};
         writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -384,7 +384,7 @@ namespace Manro {
         vkUpdateDescriptorSets(m_Context.GetDevice(), 3, writes, 0, nullptr);
     }
 
-    Mat4 ShadowSystem::ComputeLightViewProj(const Vec3 &lightDir) {
+    Mat4 CShadowSystem::ComputeLightViewProj(const Vec3 &lightDir) {
         constexpr float worldRadius = 3500.f;
         constexpr float depth = 10000.f;
 
@@ -403,15 +403,15 @@ namespace Manro {
         return proj * view;
     }
 
-    VkPipeline ShadowSystem::GetPipeline() const {
+    VkPipeline CShadowSystem::GetPipeline() const {
         return m_ShadowPipeline ? m_ShadowPipeline->GetHandle() : VK_NULL_HANDLE;
     }
 
-    VkPipelineLayout ShadowSystem::GetPipelineLayout() const {
+    VkPipelineLayout CShadowSystem::GetPipelineLayout() const {
         return m_ShadowPipeline ? m_ShadowPipeline->GetLayout() : VK_NULL_HANDLE;
     }
 
-    VkBuffer ShadowSystem::GetUniformBufferHandle() const {
+    VkBuffer CShadowSystem::GetUniformBufferHandle() const {
         return m_ShadowUniformBuffer ? m_ShadowUniformBuffer->GetHandle() : VK_NULL_HANDLE;
     }
 } // namespace Manro

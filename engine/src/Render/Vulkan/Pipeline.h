@@ -6,9 +6,9 @@
 #include <string>
 
 namespace Manro {
-    class VulkanContext;
+    class CVulkanContext;
 
-    struct PipelineConfigParams {
+    struct PipelineConfigParams_t {
         VkFormat colorAttachmentFormat{VK_FORMAT_UNDEFINED};
         VkFormat depthAttachmentFormat{VK_FORMAT_UNDEFINED};
 
@@ -34,21 +34,21 @@ namespace Manro {
         };
     };
 
-    class Pipeline {
+    class CPipeline {
     public:
-        explicit Pipeline(const VulkanContext &context);
+        explicit CPipeline(const CVulkanContext &context);
 
-        ~Pipeline();
+        ~CPipeline();
 
         void BuildGraphics(const std::vector<u8> &vertexSpv,
                            const std::vector<u8> &fragmentSpv,
-                           const PipelineConfigParams &config);
+                           const PipelineConfigParams_t &config);
 
         void BuildCompute(const std::vector<u8> &computeSpv,
-                          const PipelineConfigParams &config);
+                          const PipelineConfigParams_t &config);
 
         void BuildShadowDepth(const std::vector<u8> &vertexSpv,
-                              const PipelineConfigParams &config);
+                              const PipelineConfigParams_t &config);
 
         void Shutdown();
 
@@ -59,7 +59,7 @@ namespace Manro {
     private:
         VkShaderModule CreateShaderModule(const std::vector<u8> &spvCode);
 
-        const VulkanContext &m_Context;
+        const CVulkanContext &m_Context;
         VkPipeline m_Pipeline{VK_NULL_HANDLE};
         VkPipelineLayout m_PipelineLayout{VK_NULL_HANDLE};
     };

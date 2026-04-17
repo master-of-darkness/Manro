@@ -9,7 +9,7 @@
 #include <cmath>
 
 namespace Manro {
-    inline void BuildCullData(CullData &out, const LoadedMesh *mesh, const Mat4 &model, u32 instanceId) {
+    inline void BuildCullData(CullData_t &out, const LoadedMesh_t *mesh, const Mat4 &model, u32 instanceId) {
         Vec3 s0 = Vec3(model[0]), s1 = Vec3(model[1]), s2 = Vec3(model[2]);
         float l0 = glm::dot(s0, s0), l1 = glm::dot(s1, s1), l2 = glm::dot(s2, s2);
         Vec3 worldCenter = Vec3(model * Vec4(mesh->center, 1.f));

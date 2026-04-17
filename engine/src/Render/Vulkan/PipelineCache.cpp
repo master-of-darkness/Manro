@@ -6,7 +6,7 @@
 #include <vector>
 
 namespace Manro {
-    void PipelineCache::Init(VkDevice device, const std::string &diskPath) {
+    void CPipelineCache::Init(VkDevice device, const std::string &diskPath) {
         m_Device = device;
         m_DiskPath = diskPath;
 
@@ -23,15 +23,15 @@ namespace Manro {
                        static_cast<std::streamsize>(blob.size()));
                 ci.initialDataSize = blob.size();
                 ci.pInitialData = blob.data();
-                LOG_INFO("[PipelineCache] Loaded {} bytes from '{}'", blob.size(), diskPath);
+                LOG_INFO("[CPipelineCache] Loaded {} bytes from '{}'", blob.size(), diskPath);
             }
         }
 
         if (vkCreatePipelineCache(m_Device, &ci, nullptr, &m_Cache) != VK_SUCCESS)
-            throw std::runtime_error("[PipelineCache] vkCreatePipelineCache failed");
+            throw std::runtime_error("[CPipelineCache] vkCreatePipelineCache failed");
     }
 
-    void PipelineCache::Shutdown() {
+    void CPipelineCache::Shutdown() {
         m_Graphics.clear();
         m_Compute.clear();
 
@@ -43,7 +43,7 @@ namespace Manro {
         }
     }
 
-    VkPipeline PipelineCache::GetGraphics(const PipelineKey &key, GraphicsBuildFn buildFn) {
+    VkPipeline CPipelineCache::GetGraphics(const PipelineKey_t &key, GraphicsBuildFn buildFn) {
         auto it = m_Graphics.find(key);
         if (it != m_Graphics.end()) return it->second;
 
@@ -53,7 +53,7 @@ namespace Manro {
         return pso;
     }
 
-    VkPipeline PipelineCache::GetCompute(const PipelineKey &key, ComputeBuildFn buildFn) {
+    VkPipeline CPipelineCache::GetCompute(const PipelineKey_t &key, ComputeBuildFn buildFn) {
         auto it = m_Compute.find(key);
         if (it != m_Compute.end()) return it->second;
 
@@ -63,7 +63,7 @@ namespace Manro {
         return pso;
     }
 
-    void PipelineCache::Invalidate(const PipelineKey &key) {
+    void CPipelineCache::Invalidate(const PipelineKey_t &key) {
         auto git = m_Graphics.find(key);
         if (git != m_Graphics.end()) {
             vkDestroyPipeline(m_Device, git->second, nullptr);
@@ -76,18 +76,18 @@ namespace Manro {
         }
     }
 
-    void PipelineCache::InvalidateAll() {
+    void CPipelineCache::InvalidateAll() {
         for (auto &[k, pso]: m_Graphics) vkDestroyPipeline(m_Device, pso, nullptr);
         for (auto &[k, pso]: m_Compute) vkDestroyPipeline(m_Device, pso, nullptr);
         m_Graphics.clear();
         m_Compute.clear();
     }
 
-    u64 PipelineCache::HashSpirV(const std::vector<u8> &spv) {
+    u64 CPipelineCache::HashSpirV(const std::vector<u8> &spv) {
         return HashSpirV(reinterpret_cast<const u32 *>(spv.data()), spv.size() / 4);
     }
 
-    u64 PipelineCache::HashSpirV(const u32 *data, size_t wordCount) {
+    u64 CPipelineCache::HashSpirV(const u32 *data, size_t wordCount) {
         u64 hash = 14695981039346656037ull;
         const u8 *bytes = reinterpret_cast<const u8 *>(data);
         for (size_t i = 0; i < wordCount * 4; ++i) {
@@ -97,7 +97,7 @@ namespace Manro {
         return hash;
     }
 
-    u64 PipelineCache::HashLayouts(const VkDescriptorSetLayout *layouts, u32 count) {
+    u64 CPipelineCache::HashLayouts(const VkDescriptorSetLayout *layouts, u32 count) {
         u64 hash = 14695981039346656037ull;
         for (u32 i = 0; i < count; ++i) {
             u64 v = reinterpret_cast<u64>(layouts[i]);
@@ -110,7 +110,7 @@ namespace Manro {
         return hash;
     }
 
-    u64 PipelineCache::HashLayoutBindings(
+    u64 CPipelineCache::HashLayoutBindings(
         std::span<const VkDescriptorSetLayoutBinding> bindings) {
         u64 hash = 14695981039346656037ull;
         for (const auto &b: bindings) {
@@ -129,7 +129,7 @@ namespace Manro {
         return hash;
     }
 
-    void PipelineCache::SaveToDisk() const {
+    void CPipelineCache::SaveToDisk() const {
         if (m_DiskPath.empty() || !m_Cache) return;
 
         size_t dataSize = 0;
@@ -141,11 +141,11 @@ namespace Manro {
 
         std::ofstream f(m_DiskPath, std::ios::binary | std::ios::trunc);
         if (!f.is_open()) {
-            LOG_WARN("[PipelineCache] Could not write cache to '{}'", m_DiskPath);
+            LOG_WARN("[CPipelineCache] Could not write cache to '{}'", m_DiskPath);
             return;
         }
         f.write(reinterpret_cast<const char *>(blob.data()),
                 static_cast<std::streamsize>(dataSize));
-        LOG_INFO("[PipelineCache] Saved {} bytes to '{}'", dataSize, m_DiskPath);
+        LOG_INFO("[CPipelineCache] Saved {} bytes to '{}'", dataSize, m_DiskPath);
     }
 } // namespace Manro

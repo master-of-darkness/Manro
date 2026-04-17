@@ -11,48 +11,48 @@
 #include <memory>
 
 namespace Manro {
-    class JobHandle {
+    class CJobHandle {
     public:
-        JobHandle() = default;
+        CJobHandle() = default;
 
         bool IsValid() const { return static_cast<bool>(m_PendingJobs); }
 
     private:
-        friend class JobSystem;
+        friend class CJobSystem;
 
-        explicit JobHandle(std::shared_ptr<std::atomic<u32> > pendingJobs)
+        explicit CJobHandle(std::shared_ptr<std::atomic<u32> > pendingJobs)
             : m_PendingJobs(std::move(pendingJobs)) {
         }
 
         std::shared_ptr<std::atomic<u32> > m_PendingJobs;
     };
 
-    class JobSystem {
+    class CJobSystem {
     public:
-        explicit JobSystem(u32 numThreads = 0);
+        explicit CJobSystem(u32 numThreads = 0);
 
-        ~JobSystem();
+        ~CJobSystem();
 
-        JobSystem(const JobSystem &) = delete;
+        CJobSystem(const CJobSystem &) = delete;
 
-        JobSystem &operator=(const JobSystem &) = delete;
+        CJobSystem &operator=(const CJobSystem &) = delete;
 
-        JobHandle CreateHandle();
+        CJobHandle CreateHandle();
 
         void Execute(std::function<void()> job);
 
-        void Execute(JobHandle handle, std::function<void()> job);
+        void Execute(CJobHandle handle, std::function<void()> job);
 
         void Dispatch(u32 jobCount, const std::function<void(u32)> &job);
 
-        void Dispatch(JobHandle handle, u32 jobCount, const std::function<void(u32)> &job);
+        void Dispatch(CJobHandle handle, u32 jobCount, const std::function<void(u32)> &job);
 
-        void Wait(const JobHandle &handle);
+        void Wait(const CJobHandle &handle);
 
         void WaitAll();
 
     private:
-        struct JobEntry {
+        struct JobEntry_t {
             std::function<void()> work;
             std::shared_ptr<std::atomic<u32> > pendingJobs;
         };
@@ -60,7 +60,7 @@ namespace Manro {
         void WorkerThread();
 
         std::vector<std::thread> m_Threads;
-        std::queue<JobEntry> m_Jobs;
+        std::queue<JobEntry_t> m_Jobs;
 
         std::mutex m_Mutex;
         std::condition_variable m_WakeCondition;
@@ -68,6 +68,6 @@ namespace Manro {
 
         std::atomic<u32> m_JobsInFlight{0};
         std::atomic<bool> m_Running{false};
-        JobHandle m_GlobalHandle;
+        CJobHandle m_GlobalHandle;
     };
 } // namespace Manro
