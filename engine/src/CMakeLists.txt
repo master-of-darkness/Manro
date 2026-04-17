@@ -68,7 +68,7 @@ set(ENGINE_THIRD_PARTY_SOURCES
         ${MANRO_THIRD_PARTY_DIR}/imgui/backends/imgui_impl_vulkan.cpp
 )
 
-add_library(Engine STATIC
+add_library(Manro STATIC
         ${ENGINE_CORE_SOURCES}
         ${ENGINE_INPUT_SOURCES}
         ${ENGINE_RENDER_SOURCES}
@@ -80,9 +80,9 @@ add_library(Engine STATIC
 
 set_source_files_properties(${MANRO_MIKKTSPACE_C} PROPERTIES COMPILE_FLAGS "-Wno-unused-but-set-variable")
 
-add_dependencies(Engine PrecompileShaders EmbedShaders)
+add_dependencies(Manro PrecompileShaders EmbedShaders)
 
-target_include_directories(Engine SYSTEM PUBLIC
+target_include_directories(Manro SYSTEM PUBLIC
         ${MANRO_THIRD_PARTY_DIR}/vk-bootstrap/src
         ${MANRO_THIRD_PARTY_DIR}/imgui
         ${MANRO_THIRD_PARTY_DIR}/imgui/backends
@@ -92,38 +92,38 @@ target_include_directories(Engine SYSTEM PUBLIC
         ${MANRO_THIRD_PARTY_DIR}/VulkanMemoryAllocator/include
 )
 
-target_include_directories(Engine PUBLIC
+target_include_directories(Manro PUBLIC
         ${MANRO_PUBLIC_INCLUDE_DIR}
         ${GEN_DIR}
         ${SHADER_BIN_DIR}
         ${SHADER_SRC_DIR}
 )
 
-target_include_directories(Engine PRIVATE Render ${MANRO_THIRD_PARTY_DIR}/stb)
-target_compile_definitions(Engine PUBLIC VK_NO_PROTOTYPES)
+target_include_directories(Manro PRIVATE Render ${MANRO_THIRD_PARTY_DIR}/stb)
+target_compile_definitions(Manro PUBLIC VK_NO_PROTOTYPES)
 
-target_link_libraries(Engine PUBLIC
+target_link_libraries(Manro PUBLIC
         vk-bootstrap::vk-bootstrap volk::volk GPUOpen::VulkanMemoryAllocator
         glm::glm tinyobjloader Jolt spdlog::spdlog
         SDL3::SDL3-static SDL3_mixer::SDL3_mixer-static tinygltf
 )
 
 if (MANRO_ENABLE_PROFILING)
-    target_link_libraries(Engine PUBLIC TracyClient)
-    target_compile_definitions(Engine PUBLIC MANRO_PROFILING TRACY_VK_USE_SYMBOL_TABLE)
+    target_link_libraries(Manro PUBLIC TracyClient)
+    target_compile_definitions(Manro PUBLIC MANRO_PROFILING TRACY_VK_USE_SYMBOL_TABLE)
 endif ()
 
 if (WIN32)
-    target_link_libraries(Engine PRIVATE ws2_32 winmm)
+    target_link_libraries(Manro PRIVATE ws2_32 winmm)
 else ()
-    target_link_libraries(Engine PRIVATE m dl pthread)
+    target_link_libraries(Manro PRIVATE m dl pthread)
 endif ()
 
-target_compile_options(Engine PRIVATE
+target_compile_options(Manro PRIVATE
         -Wall -Wextra -Werror -Wno-unused-parameter -Wunused
         $<$<CONFIG:Release>:-O3 -DNDEBUG -fvisibility=hidden -fvisibility-inlines-hidden -ffunction-sections -fdata-sections>
 )
 
-target_link_options(Engine PUBLIC
+target_link_options(Manro PUBLIC
         $<$<CONFIG:Release>:-Wl$<$<NOT:$<PLATFORM_ID:Apple>>:-Wl>>
 )

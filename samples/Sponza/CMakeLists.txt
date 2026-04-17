@@ -11,4 +11,4 @@ target_compile_definitions(SponzaTest PRIVATE
         MANRO_ASSETS_DIR="${SPONZA_ASSETS_DIR}"
 )
 target_compile_options(SponzaTest PRIVATE ${ENGINE_FLAGS})
-target_link_libraries(SponzaTest PRIVATE Engine)
+target_link_libraries(SponzaTest PRIVATE Manro)

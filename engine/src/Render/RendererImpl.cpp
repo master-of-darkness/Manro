@@ -235,7 +235,7 @@ namespace Manro {
     RendererImpl::RendererImpl(IWindow &window, u32 width, u32 height,
                                const RenderSettings &settings,
                                const RendererConfig &config)
-        : m_Context("GameEngine", window),
+        : m_Context("ManroEngine", window),
           m_Textures(m_Context, m_BindlessAlloc), m_Meshes(new MeshManagerImpl(m_Context)),
           m_Swapchain(m_Context), m_RenderTargets(m_Context), m_Shadow(m_Context), m_Skybox(m_Context),
           m_CullDispatcher(m_Context),

@@ -11,7 +11,7 @@ if(WIN32)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(GameEngine VERSION 0.1 LANGUAGES C CXX)
+project(ManroEngine VERSION 0.1 LANGUAGES C CXX)
 
 if (NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     message(FATAL_ERROR "Project requires Clang. Detected: ${CMAKE_CXX_COMPILER_ID}")
