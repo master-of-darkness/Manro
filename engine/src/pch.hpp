@@ -9,7 +9,7 @@
 #include <volk.h>
 #include <vk_mem_alloc.h>
 
-// Math
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>

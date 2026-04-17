@@ -1,9 +1,9 @@
-#include <Manro/Platform/Input/SDL3InputBackend.h>
+#include <Manro/Platform/Input/InputBackend.h>
 #include <SDL3/SDL.h>
 #include <Manro/Core/Logger.h>
 
 namespace Manro {
-    Key SDL3InputBackend::SdlScancodeToKey(int sc) {
+    Key InputBackend::SdlScancodeToKey(int sc) {
         switch (static_cast<SDL_Scancode>(sc)) {
             case SDL_SCANCODE_W:
                 return Key::W;
@@ -70,7 +70,7 @@ namespace Manro {
         }
     }
 
-    void SDL3InputBackend::ProcessEvent(const PlatformEvent &platformEvent) {
+    void InputBackend::ProcessEvent(const PlatformEvent &platformEvent) {
         const SDL_Event &event = *static_cast<const SDL_Event *>(platformEvent.data);
         switch (event.type) {
             case SDL_EVENT_KEY_DOWN:
@@ -124,11 +124,11 @@ namespace Manro {
                 m_GamepadButtons &= ~(1u << event.gbutton.button);
                 break;
             case SDL_EVENT_GAMEPAD_ADDED:
-                LOG_INFO("[SDL3InputBackend] Gamepad connected (id {})", event.gdevice.which);
+                LOG_INFO("[InputBackend] Gamepad connected (id {})", event.gdevice.which);
                 SDL_OpenGamepad(event.gdevice.which);
                 break;
             case SDL_EVENT_GAMEPAD_REMOVED:
-                LOG_INFO("[SDL3InputBackend] Gamepad disconnected");
+                LOG_INFO("[InputBackend] Gamepad disconnected");
                 break;
 
             default:
@@ -136,28 +136,28 @@ namespace Manro {
         }
     }
 
-    bool SDL3InputBackend::IsKeyDown(Key k) const {
+    bool InputBackend::IsKeyDown(Key k) const {
         auto idx = static_cast<size_t>(k);
         return idx < m_KeyDown.size() && m_KeyDown[idx];
     }
 
-    bool SDL3InputBackend::IsMouseButtonDown(MouseButton button) const {
+    bool InputBackend::IsMouseButtonDown(MouseButton button) const {
         const auto idx = static_cast<size_t>(button);
         return idx < m_MouseButtons.size() && m_MouseButtons[idx];
     }
 
-    RawMouseDelta SDL3InputBackend::ConsumeMouseDelta() {
+    RawMouseDelta InputBackend::ConsumeMouseDelta() {
         RawMouseDelta d = m_MouseDelta;
         m_MouseDelta = {};
         return d;
     }
 
-    float SDL3InputBackend::GetGamepadAxis(int axis) const {
+    float InputBackend::GetGamepadAxis(int axis) const {
         if (axis < 0 || axis >= 6) return 0.f;
         return m_GamepadAxes[axis];
     }
 
-    bool SDL3InputBackend::IsGamepadButtonDown(int btn) const {
+    bool InputBackend::IsGamepadButtonDown(int btn) const {
         if (btn < 0 || btn >= 32) return false;
         return (m_GamepadButtons >> btn) & 1u;
     }

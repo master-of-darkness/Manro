@@ -50,8 +50,8 @@ set(ENGINE_PHYSICS_SOURCES
 
 set(ENGINE_PLATFORM_SOURCES
         Platform/Audio/AudioManager.cpp
-        Platform/Audio/SDL3AudioBackend.cpp
-        Platform/Input/SDL3InputBackend.cpp
+        Platform/Audio/AudioBackend.cpp
+        Platform/Input/InputBackend.cpp
         Platform/Window/Window.cpp
         Platform/Window/WindowManager.cpp
         Platform/PlatformContext.cpp

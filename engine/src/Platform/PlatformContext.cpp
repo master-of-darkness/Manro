@@ -1,6 +1,6 @@
 #include <Manro/Platform/PlatformContext.h>
-#include <Manro/Platform/Audio/SDL3AudioBackend.h>
-#include <Manro/Platform/Input/SDL3InputBackend.h>
+#include <Manro/Platform/Audio/AudioBackend.h>
+#include <Manro/Platform/Input/InputBackend.h>
 #include <Manro/Input/InputManager.h>
 #include <Manro/Platform/PlatformEvent.h>
 #include <Manro/Core/Logger.h>
@@ -14,7 +14,7 @@ namespace Manro {
             return;
         }
 
-        auto audioBackend = CreateScope<SDL3AudioBackend>();
+        auto audioBackend = CreateScope<AudioBackend>();
         if (!m_AudioManager.Initialize(std::move(audioBackend))) {
             LOG_WARN("[PlatformContext] Audio backend failed – continuing without audio.");
         }
@@ -26,7 +26,7 @@ namespace Manro {
         SDL_Quit();
     }
 
-    bool PlatformContext::PollEvents(InputManager *inputManager) {
+    bool PlatformContext::PollEvents(const InputManager *inputManager) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             bool passToImGui = true;

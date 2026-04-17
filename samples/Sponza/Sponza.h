@@ -4,7 +4,7 @@
 #include <Manro/Core/JobSystem.h>
 #include <Manro/Render/Model.h>
 #include <Manro/Input/InputManager.h>
-#include <Manro/Platform/Input/SDL3InputBackend.h>
+#include <Manro/Platform/Input/InputBackend.h>
 #include <chrono>
 #include <vector>
 #include "Manro/Render/Renderer.h"
@@ -97,7 +97,7 @@ private:
     Manro::Renderer *m_Renderer{nullptr};
 
     Manro::JobSystem m_LoadJobs;
-    Manro::SDL3InputBackend m_InputBackend;
+    Manro::InputBackend m_InputBackend;
     Manro::InputManager m_InputManager;
 
     Manro::Scope<Manro::Model> m_Model;

@@ -17,7 +17,7 @@ namespace Manro {
 
         PlatformContext &operator=(const PlatformContext &) = delete;
 
-        bool PollEvents(InputManager *inputManager = nullptr);
+        bool PollEvents(const InputManager *inputManager = nullptr);
 
         WindowManager &GetWindowManager() { return m_WindowManager; }
 

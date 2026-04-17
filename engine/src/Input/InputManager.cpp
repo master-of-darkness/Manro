@@ -1,9 +1,8 @@
 #include <Manro/Input/InputManager.h>
 #include <Manro/Interfaces/IInputBackend.h>
-#include <Manro/Platform/Input/SDL3InputBackend.h>
 
 namespace Manro {
-    UserCmd InputManager::Poll() {
+    UserCmd InputManager::Poll() const {
         UserCmd cmd{};
         if (m_ActionMap)
             m_ActionMap->BuildUserCmd(cmd);

@@ -18,7 +18,7 @@ namespace Manro {
 
         void SetBackend(IInputBackend *backend) { m_Backend = backend; }
 
-        UserCmd Poll();
+        UserCmd Poll() const;
 
         bool IsKeyDown(Key k) const;
 

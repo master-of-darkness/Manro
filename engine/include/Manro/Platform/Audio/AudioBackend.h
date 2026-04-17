@@ -9,11 +9,11 @@ struct MIX_Track;
 struct MIX_Mixer;
 
 namespace Manro {
-    class SDL3AudioBackend final : public IAudioBackend {
+    class AudioBackend final : public IAudioBackend {
     public:
-        SDL3AudioBackend() = default;
+        AudioBackend() = default;
 
-        ~SDL3AudioBackend() override { Shutdown(); }
+        ~AudioBackend() override { Shutdown(); }
 
         bool Initialize() override;
 

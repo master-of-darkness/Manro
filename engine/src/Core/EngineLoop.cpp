@@ -6,7 +6,7 @@
 #include <Manro/Platform/PlatformContext.h>
 #include <Manro/Render/Renderer.h>
 #include <Manro/Input/InputManager.h>
-#include <Manro/Platform/Input/SDL3InputBackend.h>
+#include <Manro/Platform/Input/InputBackend.h>
 #include <chrono>
 
 #include "Profiling.h"
@@ -26,6 +26,7 @@ namespace Manro {
 #endif
 
 #ifdef _WIN32
+        // windows shit
         timeBeginPeriod(1);
 #endif
 
@@ -41,13 +42,7 @@ namespace Manro {
 
         Renderer renderer(*win, winDesc.Width, winDesc.Height);
 
-        SDL3InputBackend fallbackInputBackend;
-        InputManager fallbackInputManager;
-        fallbackInputManager.SetBackend(&fallbackInputBackend);
-
         InputManager *inputManager = app.GetInputManager();
-        if (!inputManager)
-            inputManager = &fallbackInputManager;
 
         bool running = true;
         win->SetEventCallback([&](WindowEvent ev, u32 w, u32 h) {

@@ -108,8 +108,15 @@ include(FetchContent)
 set(SLANG_BINARY_VERSION "2026.4.2")
 set(SLANG_BINARY_URL "https://github.com/shader-slang/slang/releases/download/v${SLANG_BINARY_VERSION}/slang-${SLANG_BINARY_VERSION}-${SLANG_OS}-${SLANG_ARCH}.${SLANG_EXT}")
 
-FetchContent_Declare(slang_bin URL ${SLANG_BINARY_URL})
-FetchContent_MakeAvailable(slang_bin)
+FetchContent_Declare(slang_bin
+        URL ${SLANG_BINARY_URL}
+        DOWNLOAD_EXTRACT_TIMESTAMP ON
+        EXCLUDE_FROM_ALL
+)
+FetchContent_GetProperties(slang_bin)
+if(NOT slang_bin_POPULATED)
+    FetchContent_Populate(slang_bin)
+endif()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(shaders)

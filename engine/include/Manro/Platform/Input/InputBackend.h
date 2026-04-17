@@ -5,7 +5,7 @@
 #include <array>
 
 namespace Manro {
-    class SDL3InputBackend final : public IInputBackend {
+    class InputBackend final : public IInputBackend {
     public:
         void ProcessEvent(const PlatformEvent &event) override;
 
