@@ -1,7 +1,7 @@
 #include "InstanceBatcher.h"
-#include "MaterialSystem.h"
-#include "RenderMathUtils.h"
-#include "RendererTypes.h"
+#include "../Pipelines/MaterialSystem.h"
+#include "../Math/RenderMathUtils.h"
+#include "../Internal/ShaderTypes.h"
 
 #include <Manro/Render/MeshManager.h>
 #include <Manro/Render/Material/MaterialInstance.h>

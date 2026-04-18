@@ -2,7 +2,7 @@
 #include "../Vulkan/VulkanContext.h"
 #include "../Vulkan/Pipeline.h"
 #include "../Vulkan/Buffer.h"
-#include "../Texture/TextureManager.h"
+#include "../Resources/Texture/TextureManager.h"
 
 #include <Manro/Core/VirtualFS.h>
 #include <Manro/Core/Logger.h>

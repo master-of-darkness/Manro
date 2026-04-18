@@ -1,7 +1,7 @@
-#include "Internal/DrawSystem.h"
-#include "Vulkan/Buffer.h"
-#include "Vulkan/Pipeline.h"
-#include "Vulkan/VulkanContext.h"
+#include "DebugDrawSystem.h"
+#include "../Vulkan/Buffer.h"
+#include "../Vulkan/Pipeline.h"
+#include "../Vulkan/VulkanContext.h"
 
 #include <Manro/Core/VirtualFS.h>
 #include <Manro/Core/Logger.h>

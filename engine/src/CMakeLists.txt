@@ -13,29 +13,36 @@ set(ENGINE_INPUT_SOURCES
 )
 
 set(ENGINE_RENDER_SOURCES
-        Render/DrawSystem.cpp
-        Render/Material/Material.cpp
+        Render/Renderer.cpp
+        Render/RendererImpl.cpp
+
+        Render/Passes/DebugDrawSystem.cpp
+        Render/Passes/ShadowSystem.cpp
+        Render/Passes/SkyboxRenderer.cpp
+
+        Render/Pipelines/MaterialSystem.cpp
+        Render/Pipelines/PipelineManager.cpp
+
+        Render/Scene/GpuCullDispatcher.cpp
+        Render/Scene/InstanceBatcher.cpp
+        Render/Scene/SceneRenderer.cpp
+
+        Render/Targets/RenderTargetManager.cpp
+        Render/Targets/SwapchainManager.cpp
+
+        Render/Resources/MeshManager.cpp
+        Render/Resources/Model.cpp
+        Render/Resources/Material/Material.cpp
+        Render/Resources/Texture/TextureManager.cpp
+
         Render/Vulkan/VulkanContext.cpp
         Render/Vulkan/VulkanHelpers.cpp
         Render/Vulkan/Buffer.cpp
         Render/Vulkan/Pipeline.cpp
         Render/Vulkan/DescriptorAllocator.cpp
         Render/Vulkan/PipelineCache.cpp
-        Render/Renderer.cpp
-        Render/RendererImpl.cpp
-        Render/SceneRenderer.cpp
-        Render/Texture/TextureManager.cpp
-        Render/MeshManager.cpp
-        Render/Model.cpp
+
         Render/Overlay/Overlay.cpp
-        Render/Internal/SwapchainManager.cpp
-        Render/Internal/RenderTargetManager.cpp
-        Render/Internal/ShadowSystem.cpp
-        Render/Internal/SkyboxRenderer.cpp
-        Render/Internal/MaterialSystem.cpp
-        Render/Internal/InstanceBatcher.cpp
-        Render/Internal/GpuCullDispatcher.cpp
-        Render/Internal/PipelineManager.cpp
 )
 
 set(ENGINE_RESOURCE_SOURCES
@@ -125,7 +132,7 @@ target_precompile_headers(Manro PRIVATE
 
 target_compile_options(Manro PRIVATE
         -Wall -Wextra -Werror -Wno-unused-parameter -Wunused
-        $<$<CONFIG:Release>:-O3 -DNDEBUG -fvisibility=hidden -fvisibility-inlines-hidden -ffunction-sections -fdata-sections -flto=thin>
+        $<$<CONFIG:Release>:-O3 -DNDEBUG -fvisibility=hidden -fvisibility-inlines-hidden -ffunction-sections -fdata-sections -flto>
 )
 
 target_link_options(Manro PUBLIC

@@ -2,7 +2,7 @@
 
 #include <Manro/Core/Types.h>
 #include <Manro/Render/MeshManager.h>
-#include "RendererTypes.h"
+#include "../Internal/ShaderTypes.h"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_inverse.hpp>

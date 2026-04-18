@@ -2,7 +2,8 @@
 
 #include <Manro/Core/Types.h>
 #include <Manro/Render/Renderer.h>
-#include "RendererTypes.h"
+#include "../Internal/ShaderTypes.h"
+#include "../Internal/FrameData.h"
 
 #include <vector>
 

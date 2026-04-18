@@ -1,6 +1,6 @@
 #include "Material.h"
-#include "Vulkan/VulkanContext.h"
-#include "Vulkan/Pipeline.h"
+#include "../../Vulkan/VulkanContext.h"
+#include "../../Vulkan/Pipeline.h"
 
 namespace Manro {
     CMaterial::CMaterial(const CVulkanContext &ctx, Scope<CPipeline> pipeline, VkDescriptorSetLayout layout)

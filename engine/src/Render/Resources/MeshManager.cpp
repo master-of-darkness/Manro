@@ -1,7 +1,7 @@
-#include "Internal/MeshManagerInternal.h"
-#include "Vulkan/VulkanContext.h"
-#include "Vulkan/Buffer.h"
-#include "Vulkan/VulkanHelpers.h"
+#include "MeshManagerInternal.h"
+#include "../Vulkan/VulkanContext.h"
+#include "../Vulkan/Buffer.h"
+#include "../Vulkan/VulkanHelpers.h"
 
 #include <Manro/Core/Logger.h>
 #include <Manro/Render/MeshManager.h>

@@ -2,8 +2,8 @@
 #include "../Vulkan/VulkanContext.h"
 #include "../Vulkan/Pipeline.h"
 #include "../Vulkan/Buffer.h"
-#include "../Internal/MeshManagerInternal.h"
-#include "../Core/Profiling.h"
+#include "../Resources/MeshManagerInternal.h"
+#include "../../Core/Profiling.h"
 
 #include <Manro/Core/VirtualFS.h>
 #include <Manro/Core/Logger.h>

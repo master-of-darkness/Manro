@@ -4,9 +4,10 @@
 #include <Manro/Render/RenderSettings.h>
 #include <Manro/Render/Renderer.h>
 
-#include "RendererTypes.h"
-#include "RenderMathUtils.h"
-#include "../Core/Profiling.h"
+#include "../Internal/ShaderTypes.h"
+#include "../Internal/FrameData.h"
+#include "../Math/RenderMathUtils.h"
+#include "../../Core/Profiling.h"
 
 #include <volk.h>
 #include <vector>

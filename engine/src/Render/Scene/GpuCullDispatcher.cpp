@@ -1,10 +1,10 @@
 #include "GpuCullDispatcher.h"
-#include "ShadowSystem.h"
-#include "RenderMathUtils.h"
+#include "../Passes/ShadowSystem.h"
+#include "../Math/RenderMathUtils.h"
 #include "../Vulkan/VulkanContext.h"
 #include "../Vulkan/Pipeline.h"
 #include "../Vulkan/PipelineCache.h"
-#include "../Core/Profiling.h"
+#include "../../Core/Profiling.h"
 
 #include <Manro/Core/VirtualFS.h>
 #include <Manro/Core/Logger.h>

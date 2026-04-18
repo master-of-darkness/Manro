@@ -1,4 +1,4 @@
-#include "Internal/RendererInternal.h"
+#include "Internal/RendererBridge.h"
 
 #include <Manro/Render/Renderer.h>
 #include <Manro/Render/Material/Material.h>

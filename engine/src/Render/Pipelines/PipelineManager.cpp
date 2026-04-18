@@ -1,15 +1,15 @@
 #include "PipelineManager.h"
-#include "RendererTypes.h"
+#include "../Internal/ShaderTypes.h"
 #include "MaterialSystem.h"
-#include "GpuCullDispatcher.h"
-#include "ShadowSystem.h"
-#include "SkyboxRenderer.h"
-#include "RenderTargetManager.h"
+#include "../Scene/GpuCullDispatcher.h"
+#include "../Passes/ShadowSystem.h"
+#include "../Passes/SkyboxRenderer.h"
+#include "../Targets/RenderTargetManager.h"
 #include "../Vulkan/VulkanContext.h"
 #include "../Vulkan/Pipeline.h"
 #include "../Vulkan/Buffer.h"
-#include "../Material/Material.h"
-#include "../Texture/TextureManager.h"
+#include "../Resources/Material/Material.h"
+#include "../Resources/Texture/TextureManager.h"
 
 #include <Manro/Core/Logger.h>
 #include <Manro/Core/VirtualFS.h>

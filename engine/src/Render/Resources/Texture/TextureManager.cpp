@@ -1,6 +1,6 @@
-#include "Texture/TextureManager.h"
-#include "Vulkan/VulkanContext.h"
-#include "Vulkan/DescriptorAllocator.h"
+#include "TextureManager.h"
+#include "../../Vulkan/VulkanContext.h"
+#include "../../Vulkan/DescriptorAllocator.h"
 
 #include <Manro/Core/Logger.h>
 #include <algorithm>
