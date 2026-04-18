@@ -96,6 +96,11 @@ namespace Manro {
         ShadowUniformData_t m_ShadowUniform{};
         bool m_bEnabled{false};
 
+        // Caching
+        Vec3 m_LastLightDir{0.f};
+        bool m_bShadowMapValid{false};
+        u32 m_unFramesSinceShadowUpdate{0};
+
         Scope<CPipeline> m_ShadowPipeline;
         VkDescriptorSetLayout m_ShadowMeshCullSetLayout{VK_NULL_HANDLE};
 

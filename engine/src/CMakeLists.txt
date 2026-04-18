@@ -125,9 +125,10 @@ target_precompile_headers(Manro PRIVATE
 
 target_compile_options(Manro PRIVATE
         -Wall -Wextra -Werror -Wno-unused-parameter -Wunused
-        $<$<CONFIG:Release>:-O3 -DNDEBUG -fvisibility=hidden -fvisibility-inlines-hidden -ffunction-sections -fdata-sections>
+        $<$<CONFIG:Release>:-O3 -DNDEBUG -fvisibility=hidden -fvisibility-inlines-hidden -ffunction-sections -fdata-sections -flto=thin>
 )
 
 target_link_options(Manro PUBLIC
-        $<$<CONFIG:Release>:-Wl$<$<NOT:$<PLATFORM_ID:Apple>>:-Wl>>
+        $<$<CONFIG:Release>:-flto=thin>
+        $<$<AND:$<CONFIG:Release>,$<NOT:$<PLATFORM_ID:Apple>>>:-Wl,--gc-sections>
 )

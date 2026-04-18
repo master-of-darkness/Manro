@@ -104,8 +104,6 @@ void CSponza::OnRender(Manro::FrameContext_t &frame) {
     m_Window->CaptureMouse(m_bInputCaptured);
     m_Window->ShowCursor(!m_bInputCaptured);
 
-    if (!m_Model) LoadScene();
-
     const Manro::Mat4 view = m_Camera.View();
     const Manro::Mat4 proj = FlyCamera_t::Projection(kFov, m_Renderer->GetAspectRatio(), kNearZ, kFarZ);
 

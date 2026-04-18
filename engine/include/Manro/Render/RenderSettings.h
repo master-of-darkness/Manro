@@ -6,8 +6,8 @@ namespace Manro {
     enum class AntiAliasingMode : int {
         None = 0,
         MSAA,
-        FXAA,
-        TAA,
+        FXAA, // TODO
+        TAA, // TODO
         Count
     };
 
@@ -48,7 +48,7 @@ namespace Manro {
         float anisotropy = 16.0f;
     };
 
-    struct RayTracingSettings_t {
+    struct RayTracingSettings_t { // TODO
         bool enableReflections = false;
         bool enableTransparency = false;
         int maxBounces = 2;
@@ -59,7 +59,7 @@ namespace Manro {
         AntiAliasingMode aaMode = AntiAliasingMode::MSAA;
         MSAASampleCount msaaSamples = MSAASampleCount::MSAA_4X;
 
-        bool enableVSync = true;
+        bool enableVSync = false;
         bool enableFrustumCulling = true;
 
         float nearZ = 0.1f;

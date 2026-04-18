@@ -16,10 +16,6 @@
 #include <cmath>
 
 namespace Manro {
-    struct ShadowVertex_t {
-        float x, y, z;
-    };
-
     struct ShadowMeshInstance_t {
         float modelMatrix[4][4];
         float normalMatrix[3][4];
@@ -39,15 +35,6 @@ namespace Manro {
         u32 firstIndex;
         int vertexOffset;
         u32 firstInstance;
-    };
-
-    struct ShadowMeshCullPush_t {
-        Vec4 planes[6];
-        Vec4 cameraPos;
-        u32 instanceCount;
-        float maxDrawDistance;
-        u32 enableFrustumCulling;
-        u32 _pad;
     };
 
     CShadowSystem::CShadowSystem(CVulkanContext &ctx)
@@ -102,6 +89,11 @@ namespace Manro {
 
     void CShadowSystem::CreateResources(const ShadowSettings_t &s) {
         const u32 shadowMapSize = static_cast<u32>(std::max(128, s.resolution));
+
+        // Newly created shadow map has undefined contents
+        m_bShadowMapValid = false;
+        m_unFramesSinceShadowUpdate = 0;
+        m_LastLightDir = Vec3(0.f);
 
         {
             ImageCreateParams_t p{};
@@ -253,6 +245,20 @@ namespace Manro {
                 break;
             }
         }
+
+        constexpr u32 kForceRefreshFrames = 30;
+        const Vec3 normNew = glm::length(lightDir) > 1e-6f ? glm::normalize(lightDir) : Vec3(0.f, -1.f, 0.f);
+        const Vec3 normOld = glm::length(m_LastLightDir) > 1e-6f ? glm::normalize(m_LastLightDir) : Vec3(0.f, -1.f, 0.f);
+        const float cosDelta = glm::dot(normNew, normOld);
+        const bool lightStable = cosDelta > 0.9999999f; // 0.026 degrees
+        if (m_bShadowMapValid && lightStable &&
+            m_unFramesSinceShadowUpdate < kForceRefreshFrames) {
+            ++m_unFramesSinceShadowUpdate;
+            return;
+        }
+        m_LastLightDir = normNew;
+        m_unFramesSinceShadowUpdate = 0;
+        m_bShadowMapValid = true;
 
         m_ShadowUniform.lightViewProj = ComputeLightViewProj(lightDir);
         m_ShadowUniform.lightDir = Vec4(lightDir, s.bias);
