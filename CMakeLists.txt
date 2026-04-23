@@ -104,19 +104,34 @@ else()
     set(SLANG_EXT "tar.gz")
 endif()
 
+# Cache fetched binaries outside the build dir so no need to redownload it twice for debug/release
+set(FETCHCONTENT_BASE_DIR "${CMAKE_SOURCE_DIR}/.cache/fetchcontent"
+    CACHE PATH "Shared FetchContent cache" FORCE)
+
 include(FetchContent)
 set(SLANG_BINARY_VERSION "2026.4.2")
 set(SLANG_BINARY_URL "https://github.com/shader-slang/slang/releases/download/v${SLANG_BINARY_VERSION}/slang-${SLANG_BINARY_VERSION}-${SLANG_OS}-${SLANG_ARCH}.${SLANG_EXT}")
 
-FetchContent_Declare(slang_bin
-        URL ${SLANG_BINARY_URL}
-        DOWNLOAD_EXTRACT_TIMESTAMP ON
-        EXCLUDE_FROM_ALL
-)
-FetchContent_GetProperties(slang_bin)
-if(NOT slang_bin_POPULATED)
-    FetchContent_Populate(slang_bin)
+set(SLANG_BINARY_HASH "")
+if(SLANG_OS STREQUAL "linux" AND SLANG_ARCH STREQUAL "x86_64")
+    set(SLANG_BINARY_HASH "SHA256=c5346e743cd96a496e24d990a3f62146dccdcec48f4c3f042c097125c59b3ddd")
 endif()
+
+if(SLANG_BINARY_HASH)
+    FetchContent_Declare(slang_bin
+            URL ${SLANG_BINARY_URL}
+            URL_HASH ${SLANG_BINARY_HASH}
+            DOWNLOAD_EXTRACT_TIMESTAMP ON
+            EXCLUDE_FROM_ALL
+    )
+else()
+    FetchContent_Declare(slang_bin
+            URL ${SLANG_BINARY_URL}
+            DOWNLOAD_EXTRACT_TIMESTAMP ON
+            EXCLUDE_FROM_ALL
+    )
+endif()
+FetchContent_MakeAvailable(slang_bin)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(shaders)
