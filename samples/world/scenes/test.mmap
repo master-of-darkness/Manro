@@ -1,0 +1,45 @@
+{
+  "entities": [
+    {
+      "modelPath": "models/Sponza/Sponza.gltf",
+      "name": "Sponza",
+      "position": [
+        1.5560386180877686,
+        106.07894897460938,
+        -195.33851623535156
+      ],
+      "rotation": [
+        0.0,
+        -0.0,
+        0.0
+      ],
+      "scale": [
+        4.0,
+        4.0,
+        4.0
+      ]
+    },
+    {
+      "modelPath": "models/Sponza/Sponza.gltf",
+      "name": "Sponza2",
+      "position": [
+        -111.2952880859375,
+        138.89540100097656,
+        -161.01498413085938
+      ],
+      "rotation": [
+        0.0,
+        -0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    }
+  ],
+  "lights": [],
+  "skyboxPath": "skyboxes/cubemap_sky.png",
+  "version": 1
+}

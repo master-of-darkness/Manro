@@ -142,3 +142,8 @@ option(MANRO_BUILD_SAMPLES "Build sample applications" ON)
 if(MANRO_BUILD_SAMPLES)
     add_subdirectory("${MANRO_SAMPLES_ROOT}/Sponza")
 endif()
+
+option(MANRO_BUILD_EDITOR "Build the editor" ON)
+if(MANRO_BUILD_EDITOR)
+    add_subdirectory(tools/manro-edit)
+endif()

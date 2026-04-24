@@ -3,9 +3,11 @@
 #include <Manro/Interfaces/IApplication.h>
 #include <Manro/Core/JobSystem.h>
 #include <Manro/Render/Model.h>
+#include <Manro/Resource/Map.h>
 #include <Manro/Input/InputManager.h>
 #include <Manro/Platform/Input/InputBackend.h>
 #include <chrono>
+#include <unordered_map>
 #include <vector>
 #include "Manro/Render/Renderer.h"
 
@@ -100,7 +102,8 @@ private:
     Manro::CInputBackend m_InputBackend;
     Manro::CInputManager m_InputManager;
 
-    Manro::Scope<Manro::CModel> m_Model;
+    Manro::CMap m_Map;
+    std::unordered_map<std::string, Manro::Scope<Manro::CModel>> m_MapModels;
 
     FlyCamera_t m_Camera;
     bool m_bInputCaptured{true};

@@ -49,6 +49,9 @@ set(ENGINE_RESOURCE_SOURCES
         Resource/ModelLoader.cpp
         Resource/TextureLoader.cpp
         Resource/Primitives.cpp
+        Resource/RresMount.cpp
+        Resource/Map.cpp
+        Resource/Pack.cpp
 )
 
 set(ENGINE_PHYSICS_SOURCES
@@ -66,6 +69,7 @@ set(ENGINE_PLATFORM_SOURCES
 
 set(ENGINE_THIRD_PARTY_SOURCES
         ${MANRO_MIKKTSPACE_C}
+        ${MANRO_THIRD_PARTY_DIR}/rres/rres_impl.c
         ${MANRO_THIRD_PARTY_DIR}/imgui/imgui.cpp
         ${MANRO_THIRD_PARTY_DIR}/imgui/imgui_draw.cpp
         ${MANRO_THIRD_PARTY_DIR}/imgui/imgui_widgets.cpp
@@ -73,7 +77,11 @@ set(ENGINE_THIRD_PARTY_SOURCES
         ${MANRO_THIRD_PARTY_DIR}/imgui/imgui_demo.cpp
         ${MANRO_THIRD_PARTY_DIR}/imgui/backends/imgui_impl_sdl3.cpp
         ${MANRO_THIRD_PARTY_DIR}/imgui/backends/imgui_impl_vulkan.cpp
+        ${MANRO_THIRD_PARTY_DIR}/imguizmo/ImGuizmo.cpp
 )
+
+set_source_files_properties(${MANRO_THIRD_PARTY_DIR}/imguizmo/ImGuizmo.cpp
+        PROPERTIES COMPILE_FLAGS "-Wno-everything")
 
 add_library(Manro STATIC
         ${ENGINE_CORE_SOURCES}
@@ -86,6 +94,7 @@ add_library(Manro STATIC
 )
 
 set_source_files_properties(${MANRO_MIKKTSPACE_C} PROPERTIES COMPILE_FLAGS "-Wno-unused-but-set-variable")
+set_source_files_properties(${MANRO_THIRD_PARTY_DIR}/rres/rres_impl.c PROPERTIES COMPILE_FLAGS "-Wno-everything")
 
 add_dependencies(Manro PrecompileShaders EmbedShaders)
 
@@ -93,9 +102,12 @@ target_include_directories(Manro SYSTEM PUBLIC
         ${MANRO_THIRD_PARTY_DIR}/vk-bootstrap/src
         ${MANRO_THIRD_PARTY_DIR}/imgui
         ${MANRO_THIRD_PARTY_DIR}/imgui/backends
+        ${MANRO_THIRD_PARTY_DIR}/imguizmo
+        ${MANRO_THIRD_PARTY_DIR}/json
         ${MANRO_THIRD_PARTY_DIR}/tinyobjloader
         ${MANRO_THIRD_PARTY_DIR}/stb
         ${MANRO_THIRD_PARTY_DIR}/mikktspace
+        ${MANRO_THIRD_PARTY_DIR}/rres
         ${MANRO_THIRD_PARTY_DIR}/VulkanMemoryAllocator/include
 )
 

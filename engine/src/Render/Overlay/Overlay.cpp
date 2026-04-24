@@ -6,6 +6,7 @@
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
+#include <ImGuizmo.h>
 #include <SDL3/SDL.h>
 
 #include <imgui_vert_spv.h>
@@ -98,6 +99,7 @@ namespace Manro {
         ImGui_ImplVulkan_NewFrame();
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
+        ImGuizmo::BeginFrame(); // TODO: move this exaclty to editor as in release nobody needs gizmos control
     }
 
     void COverlay::DrawDebugger(u32 drawCalls, u32 triangles, u32 instances,

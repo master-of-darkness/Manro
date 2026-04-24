@@ -78,7 +78,8 @@ namespace Manro {
             const auto &state = *m_PbrPassState;
             VkRenderingAttachmentInfo colorAtt{};
             colorAtt.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-            colorAtt.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+            colorAtt.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            colorAtt.clearValue.color = {{0.05f, 0.05f, 0.07f, 1.f}};
             colorAtt.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
             if (state.msaaSamples != VK_SAMPLE_COUNT_1_BIT) {
                 colorAtt.imageView = state.msaaColorView;

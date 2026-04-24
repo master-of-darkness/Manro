@@ -2,16 +2,17 @@
 
 #include <Manro/Interfaces/IWindow.h>
 #include <Manro/Core/VirtualFS.h>
+#include <Manro/Resource/RresMount.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <Manro/Core/Logger.h>
 #include <imgui.h>
 #include <algorithm>
+#include <filesystem>
 #include <numeric>
 #include <cmath>
 #include <cstdio>
 #include <random>
 
-static constexpr auto kSponzaPath = "models/sponza/Sponza.gltf";
 static float kFov = 100.f;
 static constexpr float kNearZ = 1.f;
 static constexpr float kFarZ = 10000.f;
@@ -38,7 +39,17 @@ void CSponza::OnStartup(const Manro::InitContext_t &ctx) {
     m_Renderer = &ctx.CRenderer;
     m_Renderer->SetDebugUIEnabled(false);
 
-    Manro::CVirtualFS::Get().SetBaseDir(MANRO_ASSETS_DIR);
+    const auto worldDir =
+        (std::filesystem::path(MANRO_ASSETS_DIR) / "../../world")
+        .lexically_normal().string();
+    Manro::CVirtualFS::Get().SetBaseDir(worldDir);
+
+    const std::string rresPath = worldDir + "/scenes/test.rres";
+    if (std::filesystem::exists(rresPath)) {
+        LOG_INFO("[CSponza] Mounting archive {}", rresPath);
+        Manro::CRresMount::MountArchive(rresPath);
+    }
+
     m_InputManager.SetBackend(&m_InputBackend);
     m_BenchFrameTimes.reserve(30 * 500);
 
@@ -46,7 +57,7 @@ void CSponza::OnStartup(const Manro::InitContext_t &ctx) {
 }
 
 void CSponza::OnShutdown() {
-    m_Model.reset();
+    m_MapModels.clear();
 }
 
 bool CSponza::OnUpdate(const Manro::FrameContext_t &ctx, const Manro::UserCmd_t & /*cmd*/) {
@@ -135,6 +146,19 @@ void CSponza::OnRender(Manro::FrameContext_t &frame) {
     }
     m_Renderer->AddLight(sun);
 
+    for (const auto &l : m_Map.Lights()) {
+        Manro::LightData ld{};
+        ld.type = (l.type == 0) ? shaderio::eLightTypeDirectional
+                                 : shaderio::eLightTypePoint;
+        ld.position  = l.position;
+        ld.direction = glm::normalize(l.direction);
+        ld.color     = l.color;
+        ld.intensity = l.intensity;
+        if (l.type != 0)
+            ld.angularSizeOrInvRange = 1.f / std::max(l.range, 0.001f);
+        m_Renderer->AddLight(ld);
+    }
+
     const bool benchActive = (m_BenchState == BenchmarkState::Warmup ||
                               m_BenchState == BenchmarkState::Running);
     if (benchActive) {
@@ -155,15 +179,33 @@ void CSponza::OnRender(Manro::FrameContext_t &frame) {
 }
 
 void CSponza::LoadScene() {
-    auto models = Manro::CModel::Load({kSponzaPath}, *m_Renderer, *m_Jobs);
-
-    if (models.empty() || !models[0]) {
-        LOG_ERROR("[SponzaTest] Failed to load CSponza!");
-        return;
+    bool gotMap = m_Map.LoadFromVfs("map.mmap");
+    if (!gotMap) {
+        const std::string mmapPath =
+            Manro::CVirtualFS::Get().ResolvePath("scenes/test.mmap");
+        if (std::filesystem::exists(mmapPath))
+            gotMap = m_Map.LoadFromFile(mmapPath);
     }
-    m_Model = std::move(models[0]);
-    m_Renderer->DrawModelStatic(*m_Model,
-                                glm::scale(glm::mat4(1.f), glm::vec3(100.f)));
+
+    if (gotMap && !m_Map.Entities().empty()) {
+        LOG_INFO("[CSponza] Loaded map: {} entities, {} lights",
+                 m_Map.Entities().size(), m_Map.Lights().size());
+        for (const auto &e : m_Map.Entities()) {
+            if (e.modelPath.empty()) continue;
+            if (m_MapModels.count(e.modelPath)) continue;
+            auto loaded = Manro::CModel::Load({e.modelPath}, *m_Renderer, *m_Jobs);
+            if (!loaded.empty() && loaded[0])
+                m_MapModels.emplace(e.modelPath, std::move(loaded[0]));
+            else
+                LOG_ERROR("[CSponza] Map references missing model '{}'", e.modelPath);
+        }
+        for (const auto &e : m_Map.Entities()) {
+            auto it = m_MapModels.find(e.modelPath);
+            if (it == m_MapModels.end() || !it->second) continue;
+            m_Renderer->DrawModelStatic(*it->second,
+                                        Manro::CMap::ComposeEntityTransform(e));
+        }
+    }
 
     auto skyFaces = Manro::CTextureLoader::LoadCubemap("skyboxes/cubemap_sky.png");
     if (!skyFaces.empty()) {
