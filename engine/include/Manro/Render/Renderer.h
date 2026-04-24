@@ -7,7 +7,7 @@
 #include <Manro/Render/RenderSettings.h>
 #include <Manro/Resource/ModelLoader.h>
 #include <Manro/Resource/TextureLoader.h>
-#include <nvshaders/gltf_scene_io.h.slang>
+#include <Manro/Render/LightData.h>
 
 #include <string>
 #include <vector>
@@ -27,8 +27,6 @@ namespace Manro {
 
         void Reset() { drawCalls = triangleCount = instanceCount = lightCount = 0; }
     };
-
-    using LightData = shaderio::GltfLight;
 
     class CRenderer {
     public:

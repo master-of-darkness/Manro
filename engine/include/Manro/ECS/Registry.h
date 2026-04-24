@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Manro/ECS/Entity.h>
-#include <Manro/ECS/CComponentArray.h>
+#include <Manro/ECS/ComponentArray.h>
 #include <Manro/ECS/ComponentTypeId.h>
 #include <queue>
 #include <memory>

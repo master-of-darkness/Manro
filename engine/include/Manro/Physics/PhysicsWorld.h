@@ -9,6 +9,7 @@
 
 namespace Manro {
     class CRegistry;
+    struct JoltFactoryGuard;
 
     using BodySyncCallback = std::function<void(u32 entity, const Vec3 & pos, const Vec3 & vel)>;
 
@@ -117,6 +118,7 @@ namespace Manro {
         void DrawPhysics(class CRenderer &renderer) const;
 
     private:
+        std::unique_ptr<JoltFactoryGuard> m_FactoryGuard;
         struct Impl_t;
         std::unique_ptr<Impl_t> m_Impl;
 

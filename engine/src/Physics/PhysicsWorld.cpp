@@ -131,6 +131,15 @@ static inline JPH::BodyID fromHandle(Manro::PhysicsBodyHandle handle) { return J
 static inline JPH::BodyID fromHandle(Manro::u32 handle) { return JPH::BodyID(handle); }
 
 namespace Manro {
+    struct JoltFactoryGuard {
+        JoltFactoryGuard() { JPH::Factory::sInstance = new JPH::Factory(); }
+        ~JoltFactoryGuard() { delete JPH::Factory::sInstance; JPH::Factory::sInstance = nullptr; }
+        JoltFactoryGuard(const JoltFactoryGuard&) = delete;
+        JoltFactoryGuard& operator=(const JoltFactoryGuard&) = delete;
+    };
+}
+
+namespace Manro {
     namespace {
         static void ApplyDynamicBodyDesc(JPH::BodyCreationSettings &bcs, const CPhysicsWorld::DynamicBodyDesc_t &desc) {
             bcs.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
@@ -226,7 +235,7 @@ namespace Manro {
 #ifdef JPH_ENABLE_ASSERTS
         JPH::AssertFailed = JoltAssertFailed;
 #endif
-        JPH::Factory::sInstance = new JPH::Factory();
+        m_FactoryGuard = std::make_unique<JoltFactoryGuard>();
         JPH::RegisterTypes();
 
         m_Impl = std::make_unique<Impl_t>();
@@ -240,14 +249,13 @@ namespace Manro {
             MAX_BODIES, NUM_BODY_MUTEXES, MAX_BODY_PAIRS, MAX_CONTACT_CONSTRAINTS,
             m_Impl->bpLayerInterface, m_Impl->objVsBroadPhase, m_Impl->objLayerFilter);
 
-        m_Impl->physicsSystem->SetGravity(JPH::Vec3(0.f, -981.f, 0.f));
+        m_Impl->physicsSystem->SetGravity(JPH::Vec3(0.f, -9.81f, 0.f));
     }
 
     CPhysicsWorld::~CPhysicsWorld() {
         m_Impl.reset();
         JPH::UnregisterTypes();
-        delete JPH::Factory::sInstance;
-        JPH::Factory::sInstance = nullptr;
+        m_FactoryGuard.reset();
     }
 
     void CPhysicsWorld::Step(float deltaTime) {

@@ -41,6 +41,4 @@ namespace Manro {
         std::string m_BaseDir;
         mutable std::mutex m_Mutex;
     };
-
-    void RegisterEmbeddedShaders();
 } // namespace Manro

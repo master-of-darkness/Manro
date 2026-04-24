@@ -3,6 +3,7 @@
 #include <Manro/Core/Logger.h>
 #include <Manro/Core/JobSystem.h>
 #include <Manro/Core/VirtualFS.h>
+#include "EmbeddedShaders.h"
 #include <Manro/Platform/PlatformContext.h>
 #include <Manro/Render/Renderer.h>
 #include <Manro/Input/InputManager.h>
