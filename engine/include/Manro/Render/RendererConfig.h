@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Manro/Core/Types.h>
-// TODO: mutable in runtime
 namespace Manro {
     struct RendererConfig_t {
         u32 maxFramesInFlight = 3;

@@ -134,7 +134,7 @@ namespace Manro {
                 ImGui::SeparatorText("Shadows");
                 if (ImGui::Checkbox("Enable Shadows", &settings.shadows.enabled)) settingsChanged = true;
                 if (ImGui::SliderFloat("Shadow Bias", &settings.shadows.bias, 0.0f, 0.1f, "%.4f"))
-                    settingsChanged = true; // TODO: fix me
+                    settingsChanged = true;
 
                 ImGui::SeparatorText("Textures");
                 {
