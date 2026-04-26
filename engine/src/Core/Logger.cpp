@@ -5,11 +5,16 @@
 
 namespace Manro {
     static std::shared_ptr<spdlog::logger> s_CoreLogger;
+    static LogCallback s_LogCallback;
 
     void CLogger::Init() {
         spdlog::set_pattern("%^[%T] %n: %v%$");
         s_CoreLogger = spdlog::stdout_color_mt("Manro");
         s_CoreLogger->set_level(spdlog::level::trace);
+    }
+
+    void CLogger::SetCallback(LogCallback cb) {
+        s_LogCallback = std::move(cb);
     }
 
     void CLogger::Log(LogLevel level, std::string_view msg) {
@@ -26,5 +31,6 @@ namespace Manro {
             case LogLevel::Critical: s_CoreLogger->critical(msg);
                 break;
         }
+        if (s_LogCallback) s_LogCallback(level, msg);
     }
 } // namespace Manro

@@ -85,4 +85,6 @@ namespace Manro {
     void RendererImplDrawCross(const CRendererImpl &impl, const Vec3 &center, float size, u32 color, bool depthTest);
 
     void RendererImplDrawAxes(const CRendererImpl &impl, const Mat4 &transform, float size);
+
+    void *RendererImplGetSceneTextureId(CRendererImpl & impl);
 }

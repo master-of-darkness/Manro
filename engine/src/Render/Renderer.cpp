@@ -118,4 +118,6 @@ namespace Manro {
     void CRenderer::DrawAxes(const Mat4 &transform, float size) {
         RendererImplDrawAxes(*m_Impl, transform, size);
     }
+
+    void *CRenderer::GetSceneTextureId() { return RendererImplGetSceneTextureId(*m_Impl); }
 } // namespace Manro

@@ -1,16 +1,21 @@
 #pragma once
 
 #include <format>
+#include <functional>
 #include <string_view>
 
 namespace Manro {
     enum class LogLevel { Trace, Info, Warn, Error, Critical };
+
+    using LogCallback = std::function<void(LogLevel, std::string_view)>;
 
     class CLogger {
     public:
         static void Init();
 
         static void Log(LogLevel level, std::string_view msg);
+
+        static void SetCallback(LogCallback cb);
     };
 } // namespace Manro
 

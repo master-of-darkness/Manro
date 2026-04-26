@@ -2,6 +2,7 @@
 
 #include <Manro/Interfaces/IApplication.h>
 #include <Manro/Core/JobSystem.h>
+#include <Manro/Core/Logger.h>
 #include <Manro/Input/InputManager.h>
 #include <Manro/Platform/Input/InputBackend.h>
 #include <Manro/Render/Model.h>
@@ -66,6 +67,11 @@ namespace ManroEdit {
 
     enum class StartScreenChoice { None, OpenProject, NewProject, OpenMap, Quit };
 
+    struct LogEntry {
+        Manro::LogLevel level;
+        std::string message;
+    };
+
     class CEditor final : public Manro::IApplication {
     public:
         CEditor() = default;
@@ -94,9 +100,17 @@ namespace ManroEdit {
 
         static void DecomposeMatrix(const Manro::Mat4 &m, Manro::Vec3 &t, Manro::Vec3 &r, Manro::Vec3 &s);
 
+        void DrawDockSpace();
+
         void DrawMainMenuBar();
 
-        void DrawToolbar();
+        void DrawHorizontalToolbar();
+
+        void DrawVerticalToolbar();
+
+        void DrawSceneView();
+
+        void DrawConsole();
 
         void DrawOutliner();
 
@@ -154,6 +168,7 @@ namespace ManroEdit {
         bool m_bMouseLook = false;
         bool m_bPrevMouseLook = false;
         bool m_bWindowCaptured = false;
+        bool m_bSceneHovered = false;
 
         CMap m_Map;
         int m_SelectedEntity = -1;
@@ -163,9 +178,6 @@ namespace ManroEdit {
         bool m_bProjectOpen = false;
         std::string m_ProjectDir;
 
-        // model non-null -> loaded
-        // async non-null -> in flight
-        // both null -> failed
         struct CacheEntry {
             Manro::Scope<Manro::CModel> model;
             Manro::Scope<AsyncModelLoad> async;
@@ -193,6 +205,18 @@ namespace ManroEdit {
         float m_FovDeg = 70.f;
         float m_NearZ = 1.f;
         float m_FarZ = 20000.f;
+
+        bool m_bDockLayoutBuilt = false;
+
+        float m_SceneViewW = 800.f;
+        float m_SceneViewH = 600.f;
+
+        std::vector<LogEntry> m_LogEntries;
+        std::mutex m_LogMutex;
+        bool m_bLogAutoScroll = true;
+        bool m_bShowLogInfo = true;
+        bool m_bShowLogWarn = true;
+        bool m_bShowLogError = true;
 
         void SetStatus(std::string msg, float seconds = 3.f);
     };

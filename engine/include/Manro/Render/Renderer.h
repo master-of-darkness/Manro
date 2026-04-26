@@ -126,6 +126,8 @@ namespace Manro {
 
         void DrawAxes(const Mat4 &transform, float size = 50.f);
 
+        void *GetSceneTextureId();
+
     private:
         Scope<CRendererImpl> m_Impl;
     };

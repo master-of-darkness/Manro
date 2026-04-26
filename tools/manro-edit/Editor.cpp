@@ -7,6 +7,7 @@
 
 #include <SDL3/SDL_dialog.h>
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <ImGuizmo.h>
 
 #include <glm/gtc/type_ptr.hpp>
@@ -32,6 +33,13 @@ namespace ManroEdit {
             if (!mb) return;
             mb->Deliver(files && files[0] ? std::string(files[0]) : std::string{});
         }
+
+        constexpr const char *kDockSceneView = "Scene";
+        constexpr const char *kDockConsole = "Console";
+        constexpr const char *kDockOutliner = "Outliner";
+        constexpr const char *kDockInspector = "Inspector";
+        constexpr const char *kDockAssetBrowser = "Assets";
+        constexpr const char *kDockVertToolbar = "##vtoolbar";
     } // namespace
 
     Manro::WindowDesc_t CEditor::GetWindowDesc() const {
@@ -52,9 +60,17 @@ namespace ManroEdit {
         m_InputManager.SetBackend(&m_InputBackend);
 
         SetBuf(m_PackPathBuf, sizeof(m_PackPathBuf), "scenes/test.rres");
+
+        Manro::CLogger::SetCallback([this](Manro::LogLevel lvl, std::string_view msg) {
+            std::lock_guard lk(m_LogMutex);
+            if (m_LogEntries.size() > 2000)
+                m_LogEntries.erase(m_LogEntries.begin());
+            m_LogEntries.push_back(LogEntry{lvl, std::string(msg)});
+        });
     }
 
     void CEditor::OnShutdown() {
+        Manro::CLogger::SetCallback(nullptr);
         m_ModelCache.clear();
     }
 
@@ -70,11 +86,10 @@ namespace ManroEdit {
 
         DrainLoadQueue();
 
-        // Don't pump the camera while ImGui owns the mouse
         bool wantCapture = false;
         if (m_bProjectOpen) {
             const bool rmb = m_InputManager.IsMouseButtonDown(Manro::MouseButton::Right);
-            if (rmb && !m_bPrevMouseLook && !ImGui::GetIO().WantCaptureMouse)
+            if (rmb && !m_bPrevMouseLook && m_bSceneHovered)
                 m_bMouseLook = true;
             if (!rmb) m_bMouseLook = false;
             m_bPrevMouseLook = rmb;
@@ -95,8 +110,6 @@ namespace ManroEdit {
             m_InputManager.ConsumeMouseDelta();
         }
 
-        // Re-applying SDL relative-mouse-mode every frame eats events the
-        // imgui_impl_sdl3 backend depends on; only push when state flips
         if (wantCapture != m_bWindowCaptured) {
             m_Window->CaptureMouse(wantCapture);
             m_Window->ShowCursor(!wantCapture);
@@ -138,8 +151,6 @@ namespace ManroEdit {
             }
         }
 
-        // Map entities can move at edit time, so DrawModel not
-        // DrawModelStatic; the runtime promotes them to static draws
         if (m_bProjectOpen) {
             for (const auto &e: m_Map.Entities()) {
                 Manro::CModel *m = GetOrLoadModel(e.modelPath);
@@ -151,25 +162,18 @@ namespace ManroEdit {
         m_Renderer->BeginRendering();
         m_Renderer->RenderQueue();
 
-        const ImGuiViewport *vp = ImGui::GetMainViewport();
         ImGuizmo::SetOrthographic(false);
-        ImGuizmo::SetRect(vp->Pos.x, vp->Pos.y, vp->Size.x, vp->Size.y);
 
         if (!m_bProjectOpen) {
             DrawStartScreen();
         } else {
-            DrawMainMenuBar();
-            DrawToolbar();
-            DrawOutliner();
-            DrawInspector();
-            DrawAssetBrowser();
-            DrawPackDialog();
-            DrawGizmo();
+            DrawDockSpace();
         }
 
         DrawProgressOverlay();
 
         if (m_StatusTimer > 0.f && !m_StatusLine.empty()) {
+            const ImGuiViewport *vp = ImGui::GetMainViewport();
             ImGui::SetNextWindowPos({
                 vp->Pos.x + 10.f,
                 vp->Pos.y + vp->Size.y - 32.f
@@ -179,12 +183,563 @@ namespace ManroEdit {
                          ImGuiWindowFlags_NoDecoration |
                          ImGuiWindowFlags_NoInputs |
                          ImGuiWindowFlags_AlwaysAutoResize |
-                         ImGuiWindowFlags_NoSavedSettings);
+                         ImGuiWindowFlags_NoSavedSettings |
+                         ImGuiWindowFlags_NoDocking);
             ImGui::TextUnformatted(m_StatusLine.c_str());
             ImGui::End();
         }
 
         m_Renderer->EndRendering();
+    }
+
+    void CEditor::DrawDockSpace() {
+        DrawMainMenuBar();
+
+        const ImGuiViewport *vp = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(vp->WorkPos);
+        ImGui::SetNextWindowSize(vp->WorkSize);
+        ImGui::SetNextWindowViewport(vp->ID);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.f);
+
+        ImGui::Begin("##MainDock", nullptr,
+                     ImGuiWindowFlags_NoTitleBar |
+                     ImGuiWindowFlags_NoCollapse |
+                     ImGuiWindowFlags_NoResize |
+                     ImGuiWindowFlags_NoMove |
+                     ImGuiWindowFlags_NoBringToFrontOnFocus |
+                     ImGuiWindowFlags_NoNavFocus |
+                     ImGuiWindowFlags_NoDocking |
+                     ImGuiWindowFlags_MenuBar);
+        ImGui::PopStyleVar(3);
+
+        DrawHorizontalToolbar();
+
+        ImGuiID dockId = ImGui::GetID("EditorDockSpace");
+
+        if (!m_bDockLayoutBuilt) {
+            m_bDockLayoutBuilt = true;
+            ImGui::DockBuilderRemoveNode(dockId);
+            ImGui::DockBuilderAddNode(dockId, ImGuiDockNodeFlags_DockSpace);
+            ImGui::DockBuilderSetNodeSize(dockId, vp->WorkSize);
+
+            ImGuiID leftToolbar, afterToolbar;
+            ImGui::DockBuilderSplitNode(dockId, ImGuiDir_Left, 0.03f, &leftToolbar, &afterToolbar);
+
+            ImGuiID rightPanel, centerArea;
+            ImGui::DockBuilderSplitNode(afterToolbar, ImGuiDir_Right, 0.22f, &rightPanel, &centerArea);
+
+            ImGuiID sceneNode, consoleNode;
+            ImGui::DockBuilderSplitNode(centerArea, ImGuiDir_Down, 0.25f, &consoleNode, &sceneNode);
+
+            ImGuiID outlinerNode, inspectorNode;
+            ImGui::DockBuilderSplitNode(rightPanel, ImGuiDir_Down, 0.55f, &inspectorNode, &outlinerNode);
+
+            ImGui::DockBuilderDockWindow(kDockVertToolbar, leftToolbar);
+            ImGui::DockBuilderDockWindow(kDockSceneView, sceneNode);
+            ImGui::DockBuilderDockWindow(kDockConsole, consoleNode);
+            ImGui::DockBuilderDockWindow(kDockOutliner, outlinerNode);
+            ImGui::DockBuilderDockWindow(kDockInspector, inspectorNode);
+            ImGui::DockBuilderDockWindow(kDockAssetBrowser, consoleNode);
+
+            ImGuiDockNode *tbNode = ImGui::DockBuilderGetNode(leftToolbar);
+            if (tbNode) {
+                tbNode->LocalFlags |= static_cast<ImGuiDockNodeFlags>(
+                    static_cast<int>(ImGuiDockNodeFlags_NoTabBar) |
+                    static_cast<int>(ImGuiDockNodeFlags_NoResize));
+            }
+
+            ImGui::DockBuilderFinish(dockId);
+        }
+
+        ImGui::DockSpace(dockId, ImVec2(0, 0), ImGuiDockNodeFlags_PassthruCentralNode);
+        ImGui::End();
+
+        DrawVerticalToolbar();
+        DrawSceneView();
+        DrawConsole();
+        DrawOutliner();
+        DrawInspector();
+        DrawAssetBrowser();
+        DrawPackDialog();
+    }
+
+    void CEditor::DrawMainMenuBar() {
+        if (!ImGui::BeginMainMenuBar()) return;
+
+        if (ImGui::BeginMenu("File")) {
+            if (ImGui::MenuItem("New map")) NewMap();
+            if (ImGui::MenuItem("Open map..."))
+                RequestOpenFileDialog(DialogPurpose::OpenMap, m_ProjectDir,
+                                      "Manro maps", "mmap");
+            if (ImGui::MenuItem("Import Model..."))
+                RequestOpenFileDialog(DialogPurpose::ImportModel, {},
+                                      "3D models", "gltf;glb;obj");
+            ImGui::Separator();
+            if (ImGui::MenuItem("Save map", nullptr, false,
+                                !m_CurrentMapPath.empty())) {
+                if (SaveMap(m_CurrentMapPath))
+                    SetStatus("Saved " + m_CurrentMapPath);
+                else
+                    SetStatus("Save failed");
+            }
+            if (ImGui::MenuItem("Save map as..."))
+                RequestSaveFileDialog(DialogPurpose::SaveMap, m_ProjectDir,
+                                      "Manro maps", "mmap");
+            ImGui::Separator();
+            if (ImGui::MenuItem("Pack to .rres..."))
+                m_bShowPackDialog = true;
+            ImGui::Separator();
+            if (ImGui::MenuItem("Close project")) {
+                m_bProjectOpen = false;
+                m_ProjectDir.clear();
+                m_Map.Clear();
+                m_ModelCache.clear();
+            }
+            ImGui::EndMenu();
+        }
+
+        if (ImGui::BeginMenu("Add")) {
+            if (ImGui::MenuItem("Entity at origin")) {
+                MapEntity e;
+                e.name = "Entity_" + std::to_string(m_Map.Entities().size());
+                m_Map.Entities().push_back(e);
+                m_SelectedEntity = static_cast<int>(m_Map.Entities().size()) - 1;
+                m_SelectedLight = -1;
+            }
+            if (ImGui::MenuItem("Directional Light")) {
+                MapLight l;
+                l.name = "Light_" + std::to_string(m_Map.Lights().size());
+                l.type = 0;
+                m_Map.Lights().push_back(l);
+                m_SelectedLight = static_cast<int>(m_Map.Lights().size()) - 1;
+                m_SelectedEntity = -1;
+            }
+            if (ImGui::MenuItem("Point Light")) {
+                MapLight l;
+                l.name = "PointLight_" + std::to_string(m_Map.Lights().size());
+                l.type = 1;
+                l.position = m_Camera.Position;
+                m_Map.Lights().push_back(l);
+                m_SelectedLight = static_cast<int>(m_Map.Lights().size()) - 1;
+                m_SelectedEntity = -1;
+            }
+            ImGui::EndMenu();
+        }
+
+        ImGui::TextDisabled("|");
+        ImGui::TextDisabled("RMB = mouse look  |  W/E = translate/rotate gizmo");
+        ImGui::EndMainMenuBar();
+    }
+
+    void CEditor::DrawHorizontalToolbar() {
+        if (!ImGui::BeginMenuBar()) return;
+
+        const ImVec2 btnSize{0, 0};
+        if (ImGui::Button("New", btnSize)) NewMap();
+        if (ImGui::Button("Open", btnSize))
+            RequestOpenFileDialog(DialogPurpose::OpenMap, m_ProjectDir,
+                                  "Manro maps", "mmap");
+        if (ImGui::Button("Save", btnSize)) {
+            if (!m_CurrentMapPath.empty()) {
+                if (SaveMap(m_CurrentMapPath))
+                    SetStatus("Saved " + m_CurrentMapPath);
+                else
+                    SetStatus("Save failed");
+            }
+        }
+        ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
+        if (ImGui::Button("Import", btnSize))
+            RequestOpenFileDialog(DialogPurpose::ImportModel, {},
+                                  "3D models", "gltf;glb;obj");
+        if (ImGui::Button("Pack", btnSize))
+            m_bShowPackDialog = true;
+
+        ImGui::EndMenuBar();
+    }
+
+    void CEditor::DrawVerticalToolbar() {
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4, 4));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 6));
+        if (ImGui::Begin(kDockVertToolbar, nullptr,
+                         ImGuiWindowFlags_NoTitleBar |
+                         ImGuiWindowFlags_NoScrollbar)) {
+            const float w = ImGui::GetContentRegionAvail().x;
+            const ImVec2 sz{w, w};
+
+            bool sel;
+
+            sel = (m_GizmoOp == 0);
+            if (sel) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+            if (ImGui::Button("T", sz)) m_GizmoOp = 0;
+            if (sel) ImGui::PopStyleColor();
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Translate (W)");
+
+            sel = (m_GizmoOp == 1);
+            if (sel) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+            if (ImGui::Button("R", sz)) m_GizmoOp = 1;
+            if (sel) ImGui::PopStyleColor();
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Rotate (E)");
+
+            sel = (m_GizmoOp == 2);
+            if (sel) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+            if (ImGui::Button("S", sz)) m_GizmoOp = 2;
+            if (sel) ImGui::PopStyleColor();
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Scale");
+
+            ImGui::Separator();
+
+            bool snap = m_bSnap;
+            if (snap) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+            if (ImGui::Button("Sn", sz)) m_bSnap = !m_bSnap;
+            if (snap) ImGui::PopStyleColor();
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Snap");
+
+            ImGui::Separator();
+
+            sel = (m_GizmoMode == 0);
+            if (sel) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+            if (ImGui::Button("W", sz)) m_GizmoMode = 0;
+            if (sel) ImGui::PopStyleColor();
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("World Space");
+
+            sel = (m_GizmoMode == 1);
+            if (sel) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+            if (ImGui::Button("L", sz)) m_GizmoMode = 1;
+            if (sel) ImGui::PopStyleColor();
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Local Space");
+        }
+        ImGui::End();
+        ImGui::PopStyleVar(2);
+    }
+
+    void CEditor::DrawSceneView() {
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        bool open = ImGui::Begin(kDockSceneView);
+        m_bSceneHovered = open && ImGui::IsWindowHovered();
+        if (open) {
+            ImVec2 avail = ImGui::GetContentRegionAvail();
+            if (avail.x < 1.f) avail.x = 1.f;
+            if (avail.y < 1.f) avail.y = 1.f;
+            m_SceneViewW = avail.x;
+            m_SceneViewH = avail.y;
+
+            ImTextureID texId = reinterpret_cast<ImTextureID>(m_Renderer->GetSceneTextureId());
+            if (texId) {
+                ImGui::Image(texId, avail);
+                ImVec2 scenePos = ImGui::GetItemRectMin();
+                ImVec2 sceneSize = ImGui::GetItemRectSize();
+                ImGuizmo::SetRect(scenePos.x, scenePos.y, sceneSize.x, sceneSize.y);
+                ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList());
+                DrawGizmo();
+            }
+        }
+        ImGui::End();
+        ImGui::PopStyleVar();
+    }
+
+    void CEditor::DrawConsole() {
+        if (!ImGui::Begin(kDockConsole)) {
+            ImGui::End();
+            return;
+        }
+
+        if (ImGui::SmallButton("Clear")) {
+            std::lock_guard lk(m_LogMutex);
+            m_LogEntries.clear();
+        }
+        ImGui::SameLine();
+
+        ImGui::PushStyleColor(ImGuiCol_Button, m_bShowLogInfo
+                                                   ? ImVec4(0.2f, 0.5f, 0.2f, 1.f)
+                                                   : ImVec4(0.3f, 0.3f, 0.3f, 1.f));
+        if (ImGui::SmallButton("Info")) m_bShowLogInfo = !m_bShowLogInfo;
+        ImGui::PopStyleColor();
+        ImGui::SameLine();
+
+        ImGui::PushStyleColor(ImGuiCol_Button, m_bShowLogWarn
+                                                   ? ImVec4(0.6f, 0.5f, 0.1f, 1.f)
+                                                   : ImVec4(0.3f, 0.3f, 0.3f, 1.f));
+        if (ImGui::SmallButton("Warn")) m_bShowLogWarn = !m_bShowLogWarn;
+        ImGui::PopStyleColor();
+        ImGui::SameLine();
+
+        ImGui::PushStyleColor(ImGuiCol_Button, m_bShowLogError
+                                                   ? ImVec4(0.6f, 0.15f, 0.15f, 1.f)
+                                                   : ImVec4(0.3f, 0.3f, 0.3f, 1.f));
+        if (ImGui::SmallButton("Error")) m_bShowLogError = !m_bShowLogError;
+        ImGui::PopStyleColor();
+        ImGui::SameLine();
+
+        ImGui::Checkbox("Auto-scroll", &m_bLogAutoScroll);
+
+        ImGui::Separator();
+
+        ImGui::BeginChild("##logscroll", ImVec2(0, 0), false,
+                          ImGuiWindowFlags_HorizontalScrollbar);
+        {
+            std::lock_guard lk(m_LogMutex);
+            for (const auto &entry: m_LogEntries) {
+                bool show = false;
+                ImVec4 col;
+                switch (entry.level) {
+                    case Manro::LogLevel::Trace:
+                        show = m_bShowLogInfo;
+                        col = ImVec4(0.6f, 0.6f, 0.6f, 1.f);
+                        break;
+                    case Manro::LogLevel::Info:
+                        show = m_bShowLogInfo;
+                        col = ImVec4(0.8f, 0.8f, 0.8f, 1.f);
+                        break;
+                    case Manro::LogLevel::Warn:
+                        show = m_bShowLogWarn;
+                        col = ImVec4(1.f, 0.8f, 0.2f, 1.f);
+                        break;
+                    case Manro::LogLevel::Error:
+                    case Manro::LogLevel::Critical:
+                        show = m_bShowLogError;
+                        col = ImVec4(1.f, 0.3f, 0.3f, 1.f);
+                        break;
+                }
+                if (!show) continue;
+                ImGui::PushStyleColor(ImGuiCol_Text, col);
+                ImGui::TextUnformatted(entry.message.c_str());
+                ImGui::PopStyleColor();
+            }
+        }
+        if (m_bLogAutoScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY())
+            ImGui::SetScrollHereY(1.f);
+        ImGui::EndChild();
+
+        ImGui::End();
+    }
+
+    void CEditor::DrawOutliner() {
+        if (!ImGui::Begin(kDockOutliner)) {
+            ImGui::End();
+            return;
+        }
+
+        if (ImGui::TreeNodeEx("Entities",
+                              ImGuiTreeNodeFlags_DefaultOpen |
+                              ImGuiTreeNodeFlags_SpanAvailWidth)) {
+            auto &ents = m_Map.Entities();
+            for (int i = 0; i < (int) ents.size(); ++i) {
+                ImGui::PushID(i);
+                const bool sel = (m_SelectedEntity == i);
+                if (ImGui::Selectable(ents[i].name.c_str(), sel)) {
+                    m_SelectedEntity = i;
+                    m_SelectedLight = -1;
+                }
+                if (ImGui::BeginPopupContextItem("entctx")) {
+                    if (ImGui::MenuItem("Duplicate")) {
+                        MapEntity copy = ents[i];
+                        copy.name += "_copy";
+                        ents.push_back(copy);
+                    }
+                    if (ImGui::MenuItem("Delete")) {
+                        ents.erase(ents.begin() + i);
+                        if (m_SelectedEntity == i) m_SelectedEntity = -1;
+                        else if (m_SelectedEntity > i) --m_SelectedEntity;
+                        ImGui::EndPopup();
+                        ImGui::PopID();
+                        break;
+                    }
+                    ImGui::EndPopup();
+                }
+                ImGui::PopID();
+            }
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNodeEx("Lights",
+                              ImGuiTreeNodeFlags_DefaultOpen |
+                              ImGuiTreeNodeFlags_SpanAvailWidth)) {
+            auto &lights = m_Map.Lights();
+            for (int i = 0; i < (int) lights.size(); ++i) {
+                ImGui::PushID(10000 + i);
+                const bool sel = (m_SelectedLight == i);
+                if (ImGui::Selectable(lights[i].name.c_str(), sel)) {
+                    m_SelectedLight = i;
+                    m_SelectedEntity = -1;
+                }
+                if (ImGui::BeginPopupContextItem("lightctx")) {
+                    if (ImGui::MenuItem("Delete")) {
+                        lights.erase(lights.begin() + i);
+                        if (m_SelectedLight == i) m_SelectedLight = -1;
+                        else if (m_SelectedLight > i) --m_SelectedLight;
+                        ImGui::EndPopup();
+                        ImGui::PopID();
+                        break;
+                    }
+                    ImGui::EndPopup();
+                }
+                ImGui::PopID();
+            }
+            ImGui::TreePop();
+        }
+
+        if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)
+            && !ImGui::IsAnyItemHovered()) {
+            m_SelectedEntity = -1;
+            m_SelectedLight = -1;
+        }
+
+        ImGui::End();
+    }
+
+    void CEditor::DrawInspector() {
+        if (!ImGui::Begin(kDockInspector)) {
+            ImGui::End();
+            return;
+        }
+
+        if (m_SelectedEntity >= 0 &&
+            m_SelectedEntity < (int) m_Map.Entities().size()) {
+            MapEntity &e = m_Map.Entities()[m_SelectedEntity];
+
+            char nameBuf[256];
+            SetBuf(nameBuf, sizeof(nameBuf), e.name);
+            if (ImGui::InputText("Name", nameBuf, sizeof(nameBuf)))
+                e.name = nameBuf;
+
+            char modelBuf[512];
+            SetBuf(modelBuf, sizeof(modelBuf), e.modelPath);
+            if (ImGui::InputText("Model", modelBuf, sizeof(modelBuf))) {
+                e.modelPath = modelBuf;
+                m_ModelCache.erase(modelBuf);
+            }
+
+            ImGui::DragFloat3("Position", glm::value_ptr(e.position), 1.f);
+            ImGui::DragFloat3("Rotation", glm::value_ptr(e.rotation), 1.f);
+            ImGui::DragFloat3("Scale", glm::value_ptr(e.scale), 0.05f, 0.001f, 1000.f);
+        } else if (m_SelectedLight >= 0 &&
+                   m_SelectedLight < (int) m_Map.Lights().size()) {
+            MapLight &l = m_Map.Lights()[m_SelectedLight];
+
+            char nameBuf[256];
+            SetBuf(nameBuf, sizeof(nameBuf), l.name);
+            if (ImGui::InputText("Name", nameBuf, sizeof(nameBuf)))
+                l.name = nameBuf;
+
+            const char *types[] = {"Directional", "Point"};
+            ImGui::Combo("Type", &l.type, types, IM_ARRAYSIZE(types));
+            if (l.type == 1)
+                ImGui::DragFloat3("Position", glm::value_ptr(l.position), 1.f);
+            else
+                ImGui::DragFloat3("Direction", glm::value_ptr(l.direction), 0.05f);
+            ImGui::ColorEdit3("Color", glm::value_ptr(l.color));
+            ImGui::DragFloat("Intensity", &l.intensity, 0.05f, 0.f, 100.f);
+            if (l.type == 1)
+                ImGui::DragFloat("Range", &l.range, 1.f, 1.f, 50000.f);
+        } else {
+            ImGui::TextDisabled("Nothing selected");
+
+            ImGui::Separator();
+            ImGui::Text("Map Settings");
+
+            SetBuf(m_SkyboxPathBuf, sizeof(m_SkyboxPathBuf), m_Map.SkyboxPath());
+            if (ImGui::InputText("Skybox", m_SkyboxPathBuf, sizeof(m_SkyboxPathBuf),
+                                 ImGuiInputTextFlags_EnterReturnsTrue)) {
+                m_Map.SetSkyboxPath(m_SkyboxPathBuf);
+                ApplySkybox();
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Apply"))  {
+                m_Map.SetSkyboxPath(m_SkyboxPathBuf);
+                ApplySkybox();
+            }
+
+            ImGui::Separator();
+            ImGui::Text("Camera");
+            ImGui::DragFloat3("CamPos", glm::value_ptr(m_Camera.Position), 1.f);
+            ImGui::DragFloat("CamYaw", &m_Camera.Yaw, 1.f);
+            ImGui::DragFloat("CamPitch", &m_Camera.Pitch, 1.f);
+            ImGui::DragFloat("FoV", &m_FovDeg, 0.5f, 30.f, 120.f);
+
+            if (m_bSnap) {
+                ImGui::Separator();
+                ImGui::Text("Snap");
+                ImGui::DragFloat3("Values", m_Snap, 0.5f, 0.01f, 100.f);
+            }
+        }
+
+        ImGui::End();
+    }
+
+    void CEditor::DrawAssetBrowser() {
+        if (!ImGui::Begin(kDockAssetBrowser)) {
+            ImGui::End();
+            return;
+        }
+
+        ImGui::TextDisabled("Project: %s", m_ProjectDir.c_str());
+        ImGui::Separator();
+
+        if (ImGui::Button("Import External Model...", ImVec2{-1.f, 0.f}))
+            RequestOpenFileDialog(DialogPurpose::ImportModel, {},
+                                  "3D models", "gltf;glb;obj");
+        ImGui::Spacing();
+
+        ImGui::TextUnformatted("Project files:");
+        std::error_code ec;
+        if (fs::is_directory(m_ProjectDir, ec)) {
+            ImGui::BeginChild("##browser", ImVec2{0, 0}, true);
+            for (auto it = fs::recursive_directory_iterator(
+                     m_ProjectDir, fs::directory_options::skip_permission_denied, ec);
+                 it != fs::recursive_directory_iterator(); ++it) {
+                if (!it->is_regular_file()) continue;
+                const std::string ext = it->path().extension().string();
+                if (ext != ".gltf" && ext != ".glb" && ext != ".obj") continue;
+                std::string rel = fs::relative(it->path(), m_ProjectDir, ec).generic_string();
+                if (ImGui::Selectable(rel.c_str())) {
+                    MapEntity e;
+                    e.modelPath = rel;
+                    e.name = fs::path(rel).stem().string();
+                    if (e.name.empty()) e.name = "Entity";
+                    e.position = m_Camera.Position + m_Camera.Forward() * 200.f;
+                    m_Map.Entities().push_back(e);
+                    m_SelectedEntity = static_cast<int>(m_Map.Entities().size()) - 1;
+                    m_SelectedLight = -1;
+                }
+            }
+            ImGui::EndChild();
+        }
+        ImGui::End();
+    }
+
+    void CEditor::DrawGizmo() {
+        if (m_SelectedEntity < 0 ||
+            m_SelectedEntity >= (int) m_Map.Entities().size())
+            return;
+
+        MapEntity &e = m_Map.Entities()[m_SelectedEntity];
+
+        auto cacheIt = m_ModelCache.find(e.modelPath);
+        const bool failed = cacheIt != m_ModelCache.end() &&
+                            !cacheIt->second.model && !cacheIt->second.async;
+        if (failed) return;
+
+        Manro::Mat4 model = EntityMatrix(e);
+
+        const Manro::Mat4 view = m_Camera.View();
+        const Manro::Mat4 proj = FlyCamera_t::Projection(
+            m_FovDeg, m_Renderer->GetAspectRatio(), m_NearZ, m_FarZ);
+
+        ImGuizmo::OPERATION op = ImGuizmo::TRANSLATE;
+        if (m_GizmoOp == 1) op = ImGuizmo::ROTATE;
+        else if (m_GizmoOp == 2) op = ImGuizmo::SCALE;
+        const ImGuizmo::MODE mode = (m_GizmoMode == 0)
+                                        ? ImGuizmo::WORLD
+                                        : ImGuizmo::LOCAL;
+
+        const float *snap = m_bSnap ? m_Snap : nullptr;
+        if (ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(proj),
+                                 op, mode, glm::value_ptr(model),
+                                 nullptr, snap)) {
+            DecomposeMatrix(model, e.position, e.rotation, e.scale);
+        }
     }
 
     Manro::CModel *CEditor::GetOrLoadModel(const std::string &path) {
@@ -213,7 +768,6 @@ namespace ManroEdit {
     }
 
     void CEditor::DrainLoadQueue() {
-        // One Commit per frame keeps GPU upload spikes bounded on big maps
         for (auto &kv: m_ModelCache) {
             CacheEntry &ce = kv.second;
             if (!ce.async || !ce.async->done.load()) continue;
@@ -366,7 +920,8 @@ namespace ManroEdit {
                      ImGuiWindowFlags_NoCollapse |
                      ImGuiWindowFlags_NoResize |
                      ImGuiWindowFlags_NoMove |
-                     ImGuiWindowFlags_NoSavedSettings);
+                     ImGuiWindowFlags_NoSavedSettings |
+                     ImGuiWindowFlags_NoDocking);
 
         ImGui::TextWrapped(
             "Welcome to Editor!");
@@ -387,329 +942,12 @@ namespace ManroEdit {
         ImGui::End();
     }
 
-    void CEditor::DrawMainMenuBar() {
-        if (!ImGui::BeginMainMenuBar()) return;
-
-        if (ImGui::BeginMenu("File")) {
-            if (ImGui::MenuItem("New map")) NewMap();
-            if (ImGui::MenuItem("Open map..."))
-                RequestOpenFileDialog(DialogPurpose::OpenMap, m_ProjectDir,
-                                      "Manro maps", "mmap");
-            if (ImGui::MenuItem("Import Model..."))
-                RequestOpenFileDialog(DialogPurpose::ImportModel, {},
-                                      "3D models", "gltf;glb;obj");
-            ImGui::Separator();
-            if (ImGui::MenuItem("Save map", nullptr, false,
-                                !m_CurrentMapPath.empty())) {
-                if (SaveMap(m_CurrentMapPath))
-                    SetStatus("Saved " + m_CurrentMapPath);
-                else
-                    SetStatus("Save failed");
-            }
-            if (ImGui::MenuItem("Save map as..."))
-                RequestSaveFileDialog(DialogPurpose::SaveMap, m_ProjectDir,
-                                      "Manro maps", "mmap");
-            ImGui::Separator();
-            if (ImGui::MenuItem("Pack to .rres..."))
-                m_bShowPackDialog = true;
-            ImGui::Separator();
-            if (ImGui::MenuItem("Close project")) {
-                m_bProjectOpen = false;
-                m_ProjectDir.clear();
-                m_Map.Clear();
-                m_ModelCache.clear();
-            }
-            ImGui::EndMenu();
-        }
-
-        if (ImGui::BeginMenu("Add")) {
-            if (ImGui::MenuItem("Entity at origin")) {
-                MapEntity e;
-                e.name = "Entity_" + std::to_string(m_Map.Entities().size());
-                m_Map.Entities().push_back(e);
-                m_SelectedEntity = static_cast<int>(m_Map.Entities().size()) - 1;
-                m_SelectedLight = -1;
-            }
-            if (ImGui::MenuItem("Directional Light")) {
-                MapLight l;
-                l.name = "Light_" + std::to_string(m_Map.Lights().size());
-                l.type = 0;
-                m_Map.Lights().push_back(l);
-                m_SelectedLight = static_cast<int>(m_Map.Lights().size()) - 1;
-                m_SelectedEntity = -1;
-            }
-            if (ImGui::MenuItem("Point Light")) {
-                MapLight l;
-                l.name = "PointLight_" + std::to_string(m_Map.Lights().size());
-                l.type = 1;
-                l.position = m_Camera.Position;
-                m_Map.Lights().push_back(l);
-                m_SelectedLight = static_cast<int>(m_Map.Lights().size()) - 1;
-                m_SelectedEntity = -1;
-            }
-            ImGui::EndMenu();
-        }
-
-        ImGui::TextDisabled("|");
-        ImGui::TextDisabled("RMB = mouse look  |  W/E = translate/rotate gizmo");
-        ImGui::EndMainMenuBar();
-    }
-
-    void CEditor::DrawToolbar() {
-        ImGui::SetNextWindowPos({10.f, 30.f}, ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize({0.f, 0.f}, ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Toolbar", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-            const char *ops[] = {"Translate", "Rotate", "Scale"};
-            const char *modes[] = {"World", "Local"};
-            ImGui::SetNextItemWidth(110.f);
-            ImGui::Combo("Op", &m_GizmoOp, ops, IM_ARRAYSIZE(ops));
-            ImGui::SameLine();
-            ImGui::SetNextItemWidth(80.f);
-            ImGui::Combo("Space", &m_GizmoMode, modes, IM_ARRAYSIZE(modes));
-            ImGui::SameLine();
-            ImGui::Checkbox("Snap", &m_bSnap);
-            if (m_bSnap) {
-                ImGui::SameLine();
-                ImGui::SetNextItemWidth(160.f);
-                ImGui::InputFloat3("##snap", m_Snap, "%.2f");
-            }
-        }
-        ImGui::End();
-    }
-
-    void CEditor::DrawOutliner() {
-        ImGui::SetNextWindowPos({10.f, 100.f}, ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize({280.f, 360.f}, ImGuiCond_FirstUseEver);
-        if (!ImGui::Begin("Outliner")) {
-            ImGui::End();
-            return;
-        }
-
-        if (ImGui::TreeNodeEx("Entities",
-                              ImGuiTreeNodeFlags_DefaultOpen |
-                              ImGuiTreeNodeFlags_SpanAvailWidth)) {
-            auto &ents = m_Map.Entities();
-            for (int i = 0; i < (int) ents.size(); ++i) {
-                ImGui::PushID(i);
-                const bool sel = (m_SelectedEntity == i);
-                if (ImGui::Selectable(ents[i].name.c_str(), sel)) {
-                    m_SelectedEntity = i;
-                    m_SelectedLight = -1;
-                }
-                if (ImGui::BeginPopupContextItem("entctx")) {
-                    if (ImGui::MenuItem("Duplicate")) {
-                        MapEntity copy = ents[i];
-                        copy.name += "_copy";
-                        ents.push_back(copy);
-                    }
-                    if (ImGui::MenuItem("Delete")) {
-                        ents.erase(ents.begin() + i);
-                        if (m_SelectedEntity == i) m_SelectedEntity = -1;
-                        else if (m_SelectedEntity > i) --m_SelectedEntity;
-                        ImGui::EndPopup();
-                        ImGui::PopID();
-                        break;
-                    }
-                    ImGui::EndPopup();
-                }
-                ImGui::PopID();
-            }
-            ImGui::TreePop();
-        }
-
-        if (ImGui::TreeNodeEx("Lights",
-                              ImGuiTreeNodeFlags_DefaultOpen |
-                              ImGuiTreeNodeFlags_SpanAvailWidth)) {
-            auto &lights = m_Map.Lights();
-            for (int i = 0; i < (int) lights.size(); ++i) {
-                ImGui::PushID(10000 + i);
-                const bool sel = (m_SelectedLight == i);
-                if (ImGui::Selectable(lights[i].name.c_str(), sel)) {
-                    m_SelectedLight = i;
-                    m_SelectedEntity = -1;
-                }
-                if (ImGui::BeginPopupContextItem("lightctx")) {
-                    if (ImGui::MenuItem("Delete")) {
-                        lights.erase(lights.begin() + i);
-                        if (m_SelectedLight == i) m_SelectedLight = -1;
-                        else if (m_SelectedLight > i) --m_SelectedLight;
-                        ImGui::EndPopup();
-                        ImGui::PopID();
-                        break;
-                    }
-                    ImGui::EndPopup();
-                }
-                ImGui::PopID();
-            }
-            ImGui::TreePop();
-        }
-
-        if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)
-            && !ImGui::IsAnyItemHovered()) {
-            m_SelectedEntity = -1;
-            m_SelectedLight = -1;
-        }
-
-        ImGui::End();
-    }
-
-    void CEditor::DrawInspector() {
-        ImGui::SetNextWindowPos({10.f, 470.f}, ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize({340.f, 320.f}, ImGuiCond_FirstUseEver);
-        if (!ImGui::Begin("Inspector")) {
-            ImGui::End();
-            return;
-        }
-
-        if (m_SelectedEntity >= 0 &&
-            m_SelectedEntity < (int) m_Map.Entities().size()) {
-            MapEntity &e = m_Map.Entities()[m_SelectedEntity];
-
-            char nameBuf[256];
-            SetBuf(nameBuf, sizeof(nameBuf), e.name);
-            if (ImGui::InputText("Name", nameBuf, sizeof(nameBuf)))
-                e.name = nameBuf;
-
-            char modelBuf[512];
-            SetBuf(modelBuf, sizeof(modelBuf), e.modelPath);
-            if (ImGui::InputText("Model", modelBuf, sizeof(modelBuf))) {
-                e.modelPath = modelBuf;
-                m_ModelCache.erase(modelBuf);
-            }
-
-            ImGui::DragFloat3("Position", glm::value_ptr(e.position), 1.f);
-            ImGui::DragFloat3("Rotation", glm::value_ptr(e.rotation), 1.f);
-            ImGui::DragFloat3("Scale", glm::value_ptr(e.scale), 0.05f, 0.001f, 1000.f);
-        } else if (m_SelectedLight >= 0 &&
-                   m_SelectedLight < (int) m_Map.Lights().size()) {
-            MapLight &l = m_Map.Lights()[m_SelectedLight];
-
-            char nameBuf[256];
-            SetBuf(nameBuf, sizeof(nameBuf), l.name);
-            if (ImGui::InputText("Name", nameBuf, sizeof(nameBuf)))
-                l.name = nameBuf;
-
-            const char *types[] = {"Directional", "Point"};
-            ImGui::Combo("Type", &l.type, types, IM_ARRAYSIZE(types));
-            if (l.type == 1)
-                ImGui::DragFloat3("Position", glm::value_ptr(l.position), 1.f);
-            else
-                ImGui::DragFloat3("Direction", glm::value_ptr(l.direction), 0.05f);
-            ImGui::ColorEdit3("Color", glm::value_ptr(l.color));
-            ImGui::DragFloat("Intensity", &l.intensity, 0.05f, 0.f, 100.f);
-            if (l.type == 1)
-                ImGui::DragFloat("Range", &l.range, 1.f, 1.f, 50000.f);
-        } else {
-            ImGui::TextDisabled("Nothing selected");
-
-            ImGui::Separator();
-            ImGui::Text("Map Settings");
-
-            SetBuf(m_SkyboxPathBuf, sizeof(m_SkyboxPathBuf), m_Map.SkyboxPath());
-            if (ImGui::InputText("Skybox", m_SkyboxPathBuf, sizeof(m_SkyboxPathBuf),
-                                 ImGuiInputTextFlags_EnterReturnsTrue)) {
-                m_Map.SetSkyboxPath(m_SkyboxPathBuf);
-                ApplySkybox();
-            }
-            ImGui::SameLine();
-            if (ImGui::SmallButton("Apply"))  {
-                m_Map.SetSkyboxPath(m_SkyboxPathBuf);
-                ApplySkybox();
-            }
-
-            ImGui::Separator();
-            ImGui::Text("Camera");
-            ImGui::DragFloat3("CamPos", glm::value_ptr(m_Camera.Position), 1.f);
-            ImGui::DragFloat("CamYaw", &m_Camera.Yaw, 1.f);
-            ImGui::DragFloat("CamPitch", &m_Camera.Pitch, 1.f);
-            ImGui::DragFloat("FoV", &m_FovDeg, 0.5f, 30.f, 120.f);
-        }
-
-        ImGui::End();
-    }
-
-    void CEditor::DrawAssetBrowser() {
-        ImGui::SetNextWindowPos({1280.f, 30.f}, ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize({310.f, 400.f}, ImGuiCond_FirstUseEver);
-        if (!ImGui::Begin("Asset Browser")) {
-            ImGui::End();
-            return;
-        }
-
-        ImGui::TextDisabled("Project: %s", m_ProjectDir.c_str());
-        ImGui::Separator();
-
-        if (ImGui::Button("Import External Model...", ImVec2{-1.f, 0.f}))
-            RequestOpenFileDialog(DialogPurpose::ImportModel, {},
-                                  "3D models", "gltf;glb;obj");
-        ImGui::Spacing();
-
-        ImGui::TextUnformatted("Project files:");
-        std::error_code ec;
-        if (fs::is_directory(m_ProjectDir, ec)) {
-            ImGui::BeginChild("##browser", ImVec2{0, 0}, true);
-            for (auto it = fs::recursive_directory_iterator(
-                     m_ProjectDir, fs::directory_options::skip_permission_denied, ec);
-                 it != fs::recursive_directory_iterator(); ++it) {
-                if (!it->is_regular_file()) continue;
-                const std::string ext = it->path().extension().string();
-                if (ext != ".gltf" && ext != ".glb" && ext != ".obj") continue;
-                std::string rel = fs::relative(it->path(), m_ProjectDir, ec).generic_string();
-                if (ImGui::Selectable(rel.c_str())) {
-                    MapEntity e;
-                    e.modelPath = rel;
-                    e.name = fs::path(rel).stem().string();
-                    if (e.name.empty()) e.name = "Entity";
-                    e.position = m_Camera.Position + m_Camera.Forward() * 200.f;
-                    m_Map.Entities().push_back(e);
-                    m_SelectedEntity = static_cast<int>(m_Map.Entities().size()) - 1;
-                    m_SelectedLight = -1;
-                }
-            }
-            ImGui::EndChild();
-        }
-        ImGui::End();
-    }
-
-    void CEditor::DrawGizmo() {
-        if (m_SelectedEntity < 0 ||
-            m_SelectedEntity >= (int) m_Map.Entities().size())
-            return;
-
-        MapEntity &e = m_Map.Entities()[m_SelectedEntity];
-
-        // Skip the gizmo for failed loads
-        auto cacheIt = m_ModelCache.find(e.modelPath);
-        const bool failed = cacheIt != m_ModelCache.end() &&
-                            !cacheIt->second.model && !cacheIt->second.async;
-        if (failed) return;
-
-        Manro::Mat4 model = EntityMatrix(e);
-
-        const Manro::Mat4 view = m_Camera.View();
-        const Manro::Mat4 proj = FlyCamera_t::Projection(
-            m_FovDeg, m_Renderer->GetAspectRatio(), m_NearZ, m_FarZ);
-
-        ImGuizmo::OPERATION op = ImGuizmo::TRANSLATE;
-        if (m_GizmoOp == 1) op = ImGuizmo::ROTATE;
-        else if (m_GizmoOp == 2) op = ImGuizmo::SCALE;
-        const ImGuizmo::MODE mode = (m_GizmoMode == 0)
-                                        ? ImGuizmo::WORLD
-                                        : ImGuizmo::LOCAL;
-
-        const float *snap = m_bSnap ? m_Snap : nullptr;
-        if (ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(proj),
-                                 op, mode, glm::value_ptr(model),
-                                 nullptr, snap)) {
-            DecomposeMatrix(model, e.position, e.rotation, e.scale);
-        }
-    }
-
     void CEditor::DrawPackDialog() {
         if (!m_bShowPackDialog) return;
         ImGui::SetNextWindowSize({500.f, 0.f}, ImGuiCond_Appearing);
         if (!ImGui::Begin("Pack to .rres", &m_bShowPackDialog,
-                          ImGuiWindowFlags_AlwaysAutoResize)) {
+                          ImGuiWindowFlags_AlwaysAutoResize |
+                          ImGuiWindowFlags_NoDocking)) {
             ImGui::End();
             return;
         }
@@ -753,9 +991,9 @@ namespace ManroEdit {
                      ImGuiWindowFlags_NoDecoration |
                      ImGuiWindowFlags_AlwaysAutoResize |
                      ImGuiWindowFlags_NoSavedSettings |
-                     ImGuiWindowFlags_NoFocusOnAppearing);
+                     ImGuiWindowFlags_NoFocusOnAppearing |
+                     ImGuiWindowFlags_NoDocking);
 
-        // Prepare doesn't expose progress
         const float t = static_cast<float>(ImGui::GetTime());
         const float frac = 0.5f + 0.5f * std::sin(t * 3.f);
         ImGui::Text("Loading %d asset%s...", pending, pending == 1 ? "" : "s");

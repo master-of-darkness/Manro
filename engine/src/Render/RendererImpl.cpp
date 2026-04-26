@@ -18,6 +18,7 @@
 #include "Passes/DebugDrawSystem.h"
 #include "Overlay/Overlay.h"
 #include "Vulkan/VulkanContext.h"
+#include <imgui_impl_vulkan.h>
 #include "Vulkan/Buffer.h"
 #include "Vulkan/Pipeline.h"
 #include "Vulkan/DescriptorAllocator.h"
@@ -149,6 +150,8 @@ namespace Manro {
 
         void DrawAxes(const Mat4 &transform, float size) const;
 
+        void *GetSceneTextureId();
+
     private:
         void CreateCommandBuffers();
 
@@ -218,6 +221,9 @@ namespace Manro {
         VkExtent2D m_RenderExtent{};
 
         [[maybe_unused]] MnrGpuProfileCtx m_TracyGpuCtx{};
+
+        VkDescriptorSet m_SceneImGuiTex{VK_NULL_HANDLE};
+        bool m_bSceneTexDirty{true};
     };
 
     CRendererImpl::CRendererImpl(IWindow &window, u32 width, u32 height,
@@ -247,7 +253,7 @@ namespace Manro {
         m_PersistentAlloc.Init(device, 64);
         m_BindlessAlloc.Init(device);
         m_Textures.InitDefaults();
-        m_PipelineCache.Init(device, "manro_pipeline_cache.bin");
+        m_PipelineCache.Init(device);
         m_SceneRenderer = CreateScope<CSceneRenderer>();
 
         m_RenderTargets.Create(m_RenderExtent.width, m_RenderExtent.height,
@@ -410,6 +416,7 @@ namespace Manro {
             m_PipelineMgr.UpdateCompositeDescriptorSet(i, m_Frames[i], m_RenderTargets);
             m_Shadow.UpdatePbrDescriptorSetShadow(m_Frames[i].pbrSet);
         }
+        m_bSceneTexDirty = true;
         m_Swapchain.SetNeedsRecreate(false);
     }
 
@@ -941,6 +948,18 @@ namespace Manro {
         m_InstanceBatcher.InvalidateStaticUpload(m_Frames);
     }
 
+    void *CRendererImpl::GetSceneTextureId() {
+        if (m_bSceneTexDirty) {
+            if (m_SceneImGuiTex != VK_NULL_HANDLE)
+                ImGui_ImplVulkan_RemoveTexture(m_SceneImGuiTex);
+            m_SceneImGuiTex = ImGui_ImplVulkan_AddTexture(
+                m_RenderTargets.GetOffscreenView(),
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            m_bSceneTexDirty = false;
+        }
+        return static_cast<void *>(m_SceneImGuiTex);
+    }
+
     void CRendererImpl::CreateCommandBuffers() {
         const u32 frameCount = GetFrameCount();
         const u32 maxLights = GetMaxLights();
@@ -1159,6 +1178,8 @@ namespace Manro {
     }
 
     std::string RendererImplGetAdapterName(const CRendererImpl &impl) { return impl.GetAdapterName(); }
+
+    void *RendererImplGetSceneTextureId(CRendererImpl &impl) { return impl.GetSceneTextureId(); }
 
     void RendererImplDrawLine(const CRendererImpl &impl, const Vec3 &a, const Vec3 &b, u32 color, bool depthTest) {
         impl.DrawLine(a, b, color, depthTest);
