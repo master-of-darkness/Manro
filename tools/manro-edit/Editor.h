@@ -11,6 +11,8 @@
 #include "FlyCamera.h"
 #include "Map.h"
 
+struct ImFont;
+
 #include <atomic>
 #include <memory>
 #include <mutex>
@@ -60,7 +62,6 @@ namespace ManroEdit {
         OpenProject,
         NewProject,
         OpenMap,
-        SaveMap,
         ImportModel,
         PackRres,
     };
@@ -122,13 +123,23 @@ namespace ManroEdit {
 
         void DrawPackDialog();
 
+        void DrawNewScenePopup();
+
         void DrawProgressOverlay();
+
+        void DrawStatusBar();
 
         void DrawStartScreen();
 
         void OpenProject(const std::string &dir);
 
         void CreateNewProject(const std::string &dir);
+
+        void LoadProjectFile();
+
+        void SaveProjectFile() const;
+
+        void AddSceneToProject(const std::string &absPath);
 
         void NewMap();
 
@@ -174,9 +185,11 @@ namespace ManroEdit {
         int m_SelectedEntity = -1;
         int m_SelectedLight = -1;
         std::string m_CurrentMapPath;
+        bool m_bDirty = false;
 
         bool m_bProjectOpen = false;
         std::string m_ProjectDir;
+        std::vector<std::string> m_ProjectScenes;
 
         struct CacheEntry {
             Manro::Scope<Manro::CModel> model;
@@ -194,6 +207,8 @@ namespace ManroEdit {
         Manro::TextureHandle m_SkyboxHandle{};
 
         bool m_bShowPackDialog = false;
+        bool m_bShowNewScenePopup = false;
+        char m_NewSceneNameBuf[128]{};
         std::string m_StatusLine;
         float m_StatusTimer = 0.f;
 
@@ -211,6 +226,12 @@ namespace ManroEdit {
         float m_SceneViewW = 800.f;
         float m_SceneViewH = 600.f;
 
+        ImFont *m_FontUI = nullptr;
+        ImFont *m_FontBold = nullptr;
+        ImFont *m_FontToolbarIcon = nullptr;
+
+        char m_OutlinerFilter[64]{};
+
         std::vector<LogEntry> m_LogEntries;
         std::mutex m_LogMutex;
         bool m_bLogAutoScroll = true;
@@ -219,5 +240,9 @@ namespace ManroEdit {
         bool m_bShowLogError = true;
 
         void SetStatus(std::string msg, float seconds = 3.f);
+
+        void MarkDirty();
+
+        void UpdateWindowTitle();
     };
 } // namespace ManroEdit

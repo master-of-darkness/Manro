@@ -87,6 +87,8 @@ add_subdirectory("${MANRO_THIRD_PARTY_DIR}/tinygltf")
 add_subdirectory("${MANRO_THIRD_PARTY_DIR}/JoltPhysics/Build")
 add_subdirectory("${MANRO_THIRD_PARTY_DIR}/spdlog")
 
+find_package(Freetype REQUIRED)
+
 if(WIN32)
     set(SLANG_OS "windows")
     set(SLANG_ARCH "x86_64")

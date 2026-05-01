@@ -78,9 +78,12 @@ set(ENGINE_THIRD_PARTY_SOURCES
         ${MANRO_THIRD_PARTY_DIR}/imgui/backends/imgui_impl_sdl3.cpp
         ${MANRO_THIRD_PARTY_DIR}/imgui/backends/imgui_impl_vulkan.cpp
         ${MANRO_THIRD_PARTY_DIR}/imguizmo/ImGuizmo.cpp
+        ${MANRO_THIRD_PARTY_DIR}/imgui/misc/freetype/imgui_freetype.cpp
 )
 
 set_source_files_properties(${MANRO_THIRD_PARTY_DIR}/imguizmo/ImGuizmo.cpp
+        PROPERTIES COMPILE_FLAGS "-Wno-everything")
+set_source_files_properties(${MANRO_THIRD_PARTY_DIR}/imgui/misc/freetype/imgui_freetype.cpp
         PROPERTIES COMPILE_FLAGS "-Wno-everything")
 
 add_library(Manro STATIC
@@ -109,6 +112,7 @@ target_include_directories(Manro SYSTEM PUBLIC
         ${MANRO_THIRD_PARTY_DIR}/mikktspace
         ${MANRO_THIRD_PARTY_DIR}/rres
         ${MANRO_THIRD_PARTY_DIR}/VulkanMemoryAllocator/include
+        ${MANRO_THIRD_PARTY_DIR}/imgui/misc/freetype
 )
 
 target_include_directories(Manro PUBLIC
@@ -119,12 +123,13 @@ target_include_directories(Manro PUBLIC
 )
 
 target_include_directories(Manro PRIVATE Render ${MANRO_THIRD_PARTY_DIR}/stb)
-target_compile_definitions(Manro PUBLIC VK_NO_PROTOTYPES)
+target_compile_definitions(Manro PUBLIC VK_NO_PROTOTYPES IMGUI_ENABLE_FREETYPE)
 
 target_link_libraries(Manro PUBLIC
         vk-bootstrap::vk-bootstrap volk::volk GPUOpen::VulkanMemoryAllocator
         glm::glm tinyobjloader Jolt spdlog::spdlog
         SDL3::SDL3-static SDL3_mixer::SDL3_mixer-static tinygltf
+        Freetype::Freetype
 )
 
 if (MANRO_ENABLE_PROFILING)

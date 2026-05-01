@@ -88,6 +88,10 @@ namespace Manro {
             m_Skybox.SetTexture(cubemap, m_Textures, uboBuffers, skyboxSets);
         }
 
+        void WaitIdle() {
+            if (m_Context.GetDevice()) vkDeviceWaitIdle(m_Context.GetDevice());
+        }
+
         MeshHandle UploadMesh(const ModelData_t &data) { return m_Meshes.Upload(data); }
 
         TextureHandle UploadTexture(const TextureData_t &data) { return m_Textures.Upload(data); }
@@ -1209,5 +1213,9 @@ namespace Manro {
 
     void RendererImplDrawAxes(const CRendererImpl &impl, const Mat4 &transform, float size) {
         impl.DrawAxes(transform, size);
+    }
+
+    void RendererImplWaitIdle(CRendererImpl &impl) {
+        impl.WaitIdle();
     }
 } // namespace Manro

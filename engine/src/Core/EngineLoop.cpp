@@ -41,7 +41,7 @@ namespace Manro {
         WindowHandle wh = wm.AddWindow(winDesc);
         IWindow *win = wm.Get(wh);
 
-        CRenderer renderer(*win, winDesc.Width, winDesc.Height);
+        CRenderer renderer(*win, win->GetWidth(), win->GetHeight());
 
         CInputManager *inputManager = app.GetInputManager();
 

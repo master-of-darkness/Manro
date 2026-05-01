@@ -8,7 +8,7 @@ namespace Manro {
         m_unWidth = desc.Width;
         m_unHeight = desc.Height;
 
-        SDL_WindowFlags flags = SDL_WINDOW_VULKAN;
+        SDL_WindowFlags flags = SDL_WINDOW_VULKAN | SDL_WINDOW_HIGH_PIXEL_DENSITY;
         if (desc.Resizable) flags |= SDL_WINDOW_RESIZABLE;
         if (desc.Fullscreen) flags |= SDL_WINDOW_FULLSCREEN;
 
@@ -19,6 +19,13 @@ namespace Manro {
         if (!m_Handle) {
             LOG_ERROR("[Windowing] SDL_CreateWindow failed: {}", SDL_GetError());
             return false;
+        }
+
+        int pw = 0, ph = 0;
+        SDL_GetWindowSizeInPixels(static_cast<SDL_Window *>(m_Handle), &pw, &ph);
+        if (pw > 0 && ph > 0) {
+            m_unWidth = static_cast<u32>(pw);
+            m_unHeight = static_cast<u32>(ph);
         }
 
         m_bOpen = true;
@@ -82,6 +89,7 @@ namespace Manro {
                 m_Callback(WindowEvent::Close, 0, 0);
                 break;
             case SDL_EVENT_WINDOW_RESIZED:
+                break;
             case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
                 m_unWidth = data1;
                 m_unHeight = data2;

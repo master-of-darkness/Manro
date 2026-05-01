@@ -6,16 +6,23 @@
 #include <Manro/Resource/TextureLoader.h>
 
 #include <SDL3/SDL_dialog.h>
+#include <SDL3/SDL_video.h>
 #include <imgui.h>
 #include <imgui_internal.h>
+#include <imgui_freetype.h>
 #include <ImGuizmo.h>
 
+#include "IconsFontAwesome7.h"
+
 #include <glm/gtc/type_ptr.hpp>
+
+#include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 
 namespace fs = std::filesystem;
 
@@ -67,6 +74,43 @@ namespace ManroEdit {
                 m_LogEntries.erase(m_LogEntries.begin());
             m_LogEntries.push_back(LogEntry{lvl, std::string(msg)});
         });
+
+        const float dpiScale = SDL_GetWindowDisplayScale(
+            static_cast<SDL_Window *>(m_Window->GetNativeHandle()));
+        const float density = (dpiScale > 0.f) ? dpiScale : 1.f;
+
+        ImGuiIO &io = ImGui::GetIO();
+        io.Fonts->Clear();
+
+        static const ImWchar iconRanges[] = {ICON_MIN_FA7, ICON_MAX_16_FA7, 0};
+
+        ImFontConfig baseCfg;
+        baseCfg.FontLoaderFlags = ImGuiFreeTypeLoaderFlags_LightHinting;
+        baseCfg.RasterizerDensity = density;
+        m_FontUI = io.Fonts->AddFontFromFileTTF(
+            "assets/fonts/Roboto-Regular.ttf", 15.f, &baseCfg);
+
+        ImFontConfig iconCfg;
+        iconCfg.MergeMode = true;
+        iconCfg.GlyphMinAdvanceX = 15.f;
+        iconCfg.FontLoaderFlags = ImGuiFreeTypeLoaderFlags_LightHinting;
+        iconCfg.RasterizerDensity = density;
+        io.Fonts->AddFontFromFileTTF(
+            "assets/fonts/Font Awesome 7 Free-Solid-900.otf", 14.f, &iconCfg, iconRanges);
+
+        ImFontConfig boldCfg;
+        boldCfg.FontLoaderFlags = ImGuiFreeTypeLoaderFlags_LightHinting;
+        boldCfg.RasterizerDensity = density;
+        m_FontBold = io.Fonts->AddFontFromFileTTF(
+            "assets/fonts/Roboto-Bold.ttf", 15.f, &boldCfg);
+        io.Fonts->AddFontFromFileTTF(
+            "assets/fonts/Font Awesome 7 Free-Solid-900.otf", 14.f, &iconCfg, iconRanges);
+
+        ImFontConfig tbCfg;
+        tbCfg.FontLoaderFlags = ImGuiFreeTypeLoaderFlags_LightHinting;
+        tbCfg.RasterizerDensity = density;
+        m_FontToolbarIcon = io.Fonts->AddFontFromFileTTF(
+            "assets/fonts/Font Awesome 7 Free-Solid-900.otf", 20.f, &tbCfg, iconRanges);
     }
 
     void CEditor::OnShutdown() {
@@ -172,23 +216,6 @@ namespace ManroEdit {
 
         DrawProgressOverlay();
 
-        if (m_StatusTimer > 0.f && !m_StatusLine.empty()) {
-            const ImGuiViewport *vp = ImGui::GetMainViewport();
-            ImGui::SetNextWindowPos({
-                vp->Pos.x + 10.f,
-                vp->Pos.y + vp->Size.y - 32.f
-            });
-            ImGui::SetNextWindowBgAlpha(0.6f);
-            ImGui::Begin("##status", nullptr,
-                         ImGuiWindowFlags_NoDecoration |
-                         ImGuiWindowFlags_NoInputs |
-                         ImGuiWindowFlags_AlwaysAutoResize |
-                         ImGuiWindowFlags_NoSavedSettings |
-                         ImGuiWindowFlags_NoDocking);
-            ImGui::TextUnformatted(m_StatusLine.c_str());
-            ImGui::End();
-        }
-
         m_Renderer->EndRendering();
     }
 
@@ -196,8 +223,9 @@ namespace ManroEdit {
         DrawMainMenuBar();
 
         const ImGuiViewport *vp = ImGui::GetMainViewport();
+        const float statusBarH = 25.f;
         ImGui::SetNextWindowPos(vp->WorkPos);
-        ImGui::SetNextWindowSize(vp->WorkSize);
+        ImGui::SetNextWindowSize({vp->WorkSize.x, vp->WorkSize.y - statusBarH});
         ImGui::SetNextWindowViewport(vp->ID);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.f);
@@ -263,37 +291,40 @@ namespace ManroEdit {
         DrawInspector();
         DrawAssetBrowser();
         DrawPackDialog();
+        DrawNewScenePopup();
+        DrawStatusBar();
     }
 
     void CEditor::DrawMainMenuBar() {
         if (!ImGui::BeginMainMenuBar()) return;
 
         if (ImGui::BeginMenu("File")) {
-            if (ImGui::MenuItem("New map")) NewMap();
-            if (ImGui::MenuItem("Open map..."))
+            if (ImGui::MenuItem(ICON_FA7_FILE " New scene...")) {
+                m_NewSceneNameBuf[0] = '\0';
+                m_bShowNewScenePopup = true;
+            }
+            if (ImGui::MenuItem(ICON_FA7_FOLDER_OPEN " Open map..."))
                 RequestOpenFileDialog(DialogPurpose::OpenMap, m_ProjectDir,
                                       "Manro maps", "mmap");
-            if (ImGui::MenuItem("Import Model..."))
+            if (ImGui::MenuItem(ICON_FA7_FILE_IMPORT " Import Model..."))
                 RequestOpenFileDialog(DialogPurpose::ImportModel, {},
                                       "3D models", "gltf;glb;obj");
             ImGui::Separator();
-            if (ImGui::MenuItem("Save map", nullptr, false,
+            if (ImGui::MenuItem(ICON_FA7_FLOPPY_DISK " Save map", nullptr, false,
                                 !m_CurrentMapPath.empty())) {
                 if (SaveMap(m_CurrentMapPath))
                     SetStatus("Saved " + m_CurrentMapPath);
                 else
                     SetStatus("Save failed");
             }
-            if (ImGui::MenuItem("Save map as..."))
-                RequestSaveFileDialog(DialogPurpose::SaveMap, m_ProjectDir,
-                                      "Manro maps", "mmap");
             ImGui::Separator();
-            if (ImGui::MenuItem("Pack to .rres..."))
+            if (ImGui::MenuItem(ICON_FA7_BOX_ARCHIVE " Pack to .rres..."))
                 m_bShowPackDialog = true;
             ImGui::Separator();
-            if (ImGui::MenuItem("Close project")) {
+            if (ImGui::MenuItem(ICON_FA7_XMARK " Close project")) {
                 m_bProjectOpen = false;
                 m_ProjectDir.clear();
+                m_ProjectScenes.clear();
                 m_Map.Clear();
                 m_ModelCache.clear();
             }
@@ -301,22 +332,24 @@ namespace ManroEdit {
         }
 
         if (ImGui::BeginMenu("Add")) {
-            if (ImGui::MenuItem("Entity at origin")) {
+            if (ImGui::MenuItem(ICON_FA7_CUBE " Entity at origin")) {
                 MapEntity e;
                 e.name = "Entity_" + std::to_string(m_Map.Entities().size());
                 m_Map.Entities().push_back(e);
                 m_SelectedEntity = static_cast<int>(m_Map.Entities().size()) - 1;
                 m_SelectedLight = -1;
+                MarkDirty();
             }
-            if (ImGui::MenuItem("Directional Light")) {
+            if (ImGui::MenuItem(ICON_FA7_SUN " Directional Light")) {
                 MapLight l;
                 l.name = "Light_" + std::to_string(m_Map.Lights().size());
                 l.type = 0;
                 m_Map.Lights().push_back(l);
                 m_SelectedLight = static_cast<int>(m_Map.Lights().size()) - 1;
                 m_SelectedEntity = -1;
+                MarkDirty();
             }
-            if (ImGui::MenuItem("Point Light")) {
+            if (ImGui::MenuItem(ICON_FA7_LIGHTBULB " Point Light")) {
                 MapLight l;
                 l.name = "PointLight_" + std::to_string(m_Map.Lights().size());
                 l.type = 1;
@@ -324,43 +357,85 @@ namespace ManroEdit {
                 m_Map.Lights().push_back(l);
                 m_SelectedLight = static_cast<int>(m_Map.Lights().size()) - 1;
                 m_SelectedEntity = -1;
+                MarkDirty();
             }
             ImGui::EndMenu();
         }
 
-        ImGui::TextDisabled("|");
-        ImGui::TextDisabled("RMB = mouse look  |  W/E = translate/rotate gizmo");
         ImGui::EndMainMenuBar();
     }
 
     void CEditor::DrawHorizontalToolbar() {
         if (!ImGui::BeginMenuBar()) return;
 
-        const ImVec2 btnSize{0, 0};
-        if (ImGui::Button("New", btnSize)) NewMap();
-        if (ImGui::Button("Open", btnSize))
-            RequestOpenFileDialog(DialogPurpose::OpenMap, m_ProjectDir,
-                                  "Manro maps", "mmap");
-        if (ImGui::Button("Save", btnSize)) {
-            if (!m_CurrentMapPath.empty()) {
+        if (ImGui::BeginMenu(ICON_FA7_FILE " Scene")) {
+            if (ImGui::MenuItem(ICON_FA7_FILE " New scene...")) {
+                m_NewSceneNameBuf[0] = '\0';
+                m_bShowNewScenePopup = true;
+            }
+            if (ImGui::MenuItem(ICON_FA7_FOLDER_OPEN " Open scene..."))
+                RequestOpenFileDialog(DialogPurpose::OpenMap, m_ProjectDir,
+                                      "Manro maps", "mmap");
+            ImGui::Separator();
+            if (ImGui::MenuItem(ICON_FA7_FLOPPY_DISK " Save",
+                                nullptr, false, !m_CurrentMapPath.empty())) {
                 if (SaveMap(m_CurrentMapPath))
                     SetStatus("Saved " + m_CurrentMapPath);
                 else
                     SetStatus("Save failed");
             }
+            ImGui::EndMenu();
         }
+
+        if (ImGui::BeginMenu(ICON_FA7_FILE_IMPORT " Assets")) {
+            if (ImGui::MenuItem(ICON_FA7_FILE_IMPORT " Import model..."))
+                RequestOpenFileDialog(DialogPurpose::ImportModel, {},
+                                      "3D models", "gltf;glb;obj");
+            ImGui::EndMenu();
+        }
+
+        if (ImGui::BeginMenu(ICON_FA7_BOX_ARCHIVE " Export")) {
+            if (ImGui::MenuItem(ICON_FA7_BOX_ARCHIVE " Pack to .rres..."))
+                m_bShowPackDialog = true;
+            ImGui::EndMenu();
+        }
+
         ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
-        if (ImGui::Button("Import", btnSize))
-            RequestOpenFileDialog(DialogPurpose::ImportModel, {},
-                                  "3D models", "gltf;glb;obj");
-        if (ImGui::Button("Pack", btnSize))
-            m_bShowPackDialog = true;
+
+        // Scene switcher
+        if (!m_ProjectScenes.empty()) {
+            int currentIdx = -1;
+            for (int i = 0; i < (int) m_ProjectScenes.size(); ++i) {
+                if ((fs::path(m_ProjectDir) / m_ProjectScenes[i]).generic_string() == m_CurrentMapPath)
+                    currentIdx = i;
+            }
+            std::string fallbackName = m_CurrentMapPath.empty()
+                                           ? "(unsaved)"
+                                           : fs::path(m_CurrentMapPath).filename().string();
+            const char *preview = currentIdx >= 0
+                                      ? m_ProjectScenes[currentIdx].c_str()
+                                      : fallbackName.c_str();
+
+            ImGui::SetNextItemWidth(220.f);
+            if (ImGui::BeginCombo(ICON_FA7_MAP "##scenes", preview)) {
+                for (int i = 0; i < (int) m_ProjectScenes.size(); ++i) {
+                    const bool sel = (i == currentIdx);
+                    if (ImGui::Selectable(m_ProjectScenes[i].c_str(), sel)) {
+                        const std::string absPath = (fs::path(m_ProjectDir) / m_ProjectScenes[i]).string();
+                        OpenMap(absPath);
+                    }
+                    if (sel) ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Switch scene");
+        }
 
         ImGui::EndMenuBar();
     }
 
     void CEditor::DrawVerticalToolbar() {
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4, 4));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4, 8));
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 6));
         if (ImGui::Begin(kDockVertToolbar, nullptr,
                          ImGuiWindowFlags_NoTitleBar |
@@ -368,47 +443,30 @@ namespace ManroEdit {
             const float w = ImGui::GetContentRegionAvail().x;
             const ImVec2 sz{w, w};
 
-            bool sel;
+            if (m_FontToolbarIcon) ImGui::PushFont(m_FontToolbarIcon);
 
-            sel = (m_GizmoOp == 0);
-            if (sel) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-            if (ImGui::Button("T", sz)) m_GizmoOp = 0;
-            if (sel) ImGui::PopStyleColor();
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Translate (W)");
+            auto ToolBtn = [&](const char *icon, bool active, const char *tooltip) {
+                if (active) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+                bool clicked = ImGui::Button(icon, sz);
+                if (active) ImGui::PopStyleColor();
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tooltip);
+                return clicked;
+            };
 
-            sel = (m_GizmoOp == 1);
-            if (sel) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-            if (ImGui::Button("R", sz)) m_GizmoOp = 1;
-            if (sel) ImGui::PopStyleColor();
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Rotate (E)");
-
-            sel = (m_GizmoOp == 2);
-            if (sel) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-            if (ImGui::Button("S", sz)) m_GizmoOp = 2;
-            if (sel) ImGui::PopStyleColor();
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Scale");
+            if (ToolBtn(ICON_FA7_ARROWS_UP_DOWN_LEFT_RIGHT, m_GizmoOp == 0, "Translate (W)")) m_GizmoOp = 0;
+            if (ToolBtn(ICON_FA7_ROTATE, m_GizmoOp == 1, "Rotate (E)")) m_GizmoOp = 1;
+            if (ToolBtn(ICON_FA7_UP_RIGHT_AND_DOWN_LEFT_FROM_CENTER, m_GizmoOp == 2, "Scale")) m_GizmoOp = 2;
 
             ImGui::Separator();
 
-            bool snap = m_bSnap;
-            if (snap) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-            if (ImGui::Button("Sn", sz)) m_bSnap = !m_bSnap;
-            if (snap) ImGui::PopStyleColor();
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Snap");
+            if (ToolBtn(ICON_FA7_MAGNET, m_bSnap, "Snap")) m_bSnap = !m_bSnap;
 
             ImGui::Separator();
 
-            sel = (m_GizmoMode == 0);
-            if (sel) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-            if (ImGui::Button("W", sz)) m_GizmoMode = 0;
-            if (sel) ImGui::PopStyleColor();
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("World Space");
+            if (ToolBtn(ICON_FA7_GLOBE, m_GizmoMode == 0, "World Space")) m_GizmoMode = 0;
+            if (ToolBtn(ICON_FA7_CUBE, m_GizmoMode == 1, "Local Space")) m_GizmoMode = 1;
 
-            sel = (m_GizmoMode == 1);
-            if (sel) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-            if (ImGui::Button("L", sz)) m_GizmoMode = 1;
-            if (sel) ImGui::PopStyleColor();
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Local Space");
+            if (m_FontToolbarIcon) ImGui::PopFont();
         }
         ImGui::End();
         ImGui::PopStyleVar(2);
@@ -452,24 +510,33 @@ namespace ManroEdit {
         ImGui::SameLine();
 
         ImGui::PushStyleColor(ImGuiCol_Button, m_bShowLogInfo
-                                                   ? ImVec4(0.2f, 0.5f, 0.2f, 1.f)
-                                                   : ImVec4(0.3f, 0.3f, 0.3f, 1.f));
+                                                   ? ImVec4(0.15f, 0.55f, 0.15f, 1.f)
+                                                   : ImVec4(0.80f, 0.80f, 0.78f, 1.f));
+        ImGui::PushStyleColor(ImGuiCol_Text, m_bShowLogInfo
+                                                 ? ImVec4(1.f, 1.f, 1.f, 1.f)
+                                                 : ImVec4(0.40f, 0.40f, 0.40f, 1.f));
         if (ImGui::SmallButton("Info")) m_bShowLogInfo = !m_bShowLogInfo;
-        ImGui::PopStyleColor();
+        ImGui::PopStyleColor(2);
         ImGui::SameLine();
 
         ImGui::PushStyleColor(ImGuiCol_Button, m_bShowLogWarn
-                                                   ? ImVec4(0.6f, 0.5f, 0.1f, 1.f)
-                                                   : ImVec4(0.3f, 0.3f, 0.3f, 1.f));
+                                                   ? ImVec4(0.75f, 0.55f, 0.05f, 1.f)
+                                                   : ImVec4(0.80f, 0.80f, 0.78f, 1.f));
+        ImGui::PushStyleColor(ImGuiCol_Text, m_bShowLogWarn
+                                                 ? ImVec4(1.f, 1.f, 1.f, 1.f)
+                                                 : ImVec4(0.40f, 0.40f, 0.40f, 1.f));
         if (ImGui::SmallButton("Warn")) m_bShowLogWarn = !m_bShowLogWarn;
-        ImGui::PopStyleColor();
+        ImGui::PopStyleColor(2);
         ImGui::SameLine();
 
         ImGui::PushStyleColor(ImGuiCol_Button, m_bShowLogError
-                                                   ? ImVec4(0.6f, 0.15f, 0.15f, 1.f)
-                                                   : ImVec4(0.3f, 0.3f, 0.3f, 1.f));
+                                                   ? ImVec4(0.70f, 0.12f, 0.12f, 1.f)
+                                                   : ImVec4(0.80f, 0.80f, 0.78f, 1.f));
+        ImGui::PushStyleColor(ImGuiCol_Text, m_bShowLogError
+                                                 ? ImVec4(1.f, 1.f, 1.f, 1.f)
+                                                 : ImVec4(0.40f, 0.40f, 0.40f, 1.f));
         if (ImGui::SmallButton("Error")) m_bShowLogError = !m_bShowLogError;
-        ImGui::PopStyleColor();
+        ImGui::PopStyleColor(2);
         ImGui::SameLine();
 
         ImGui::Checkbox("Auto-scroll", &m_bLogAutoScroll);
@@ -486,20 +553,20 @@ namespace ManroEdit {
                 switch (entry.level) {
                     case Manro::LogLevel::Trace:
                         show = m_bShowLogInfo;
-                        col = ImVec4(0.6f, 0.6f, 0.6f, 1.f);
+                        col = ImVec4(0.45f, 0.45f, 0.45f, 1.f);
                         break;
                     case Manro::LogLevel::Info:
                         show = m_bShowLogInfo;
-                        col = ImVec4(0.8f, 0.8f, 0.8f, 1.f);
+                        col = ImVec4(0.10f, 0.10f, 0.10f, 1.f);
                         break;
                     case Manro::LogLevel::Warn:
                         show = m_bShowLogWarn;
-                        col = ImVec4(1.f, 0.8f, 0.2f, 1.f);
+                        col = ImVec4(0.70f, 0.50f, 0.00f, 1.f);
                         break;
                     case Manro::LogLevel::Error:
                     case Manro::LogLevel::Critical:
                         show = m_bShowLogError;
-                        col = ImVec4(1.f, 0.3f, 0.3f, 1.f);
+                        col = ImVec4(0.75f, 0.10f, 0.10f, 1.f);
                         break;
                 }
                 if (!show) continue;
@@ -515,17 +582,34 @@ namespace ManroEdit {
         ImGui::End();
     }
 
+    static bool MatchesFilter(const std::string &name, const char *filter) {
+        if (!filter[0]) return true;
+        std::string lower = name;
+        std::string pat = filter;
+        for (auto &c: lower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        for (auto &c: pat) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return lower.find(pat) != std::string::npos;
+    }
+
     void CEditor::DrawOutliner() {
         if (!ImGui::Begin(kDockOutliner)) {
             ImGui::End();
             return;
         }
 
-        if (ImGui::TreeNodeEx("Entities",
+        ImGui::InputTextWithHint("##Filter", ICON_FA7_MAGNIFYING_GLASS " Search...",
+                                 m_OutlinerFilter, sizeof(m_OutlinerFilter));
+        ImGui::Separator();
+
+        char entHeader[64];
+        std::snprintf(entHeader, sizeof(entHeader), ICON_FA7_CUBE " Entities [%d]",
+                      (int) m_Map.Entities().size());
+        if (ImGui::TreeNodeEx(entHeader,
                               ImGuiTreeNodeFlags_DefaultOpen |
                               ImGuiTreeNodeFlags_SpanAvailWidth)) {
             auto &ents = m_Map.Entities();
             for (int i = 0; i < (int) ents.size(); ++i) {
+                if (!MatchesFilter(ents[i].name, m_OutlinerFilter)) continue;
                 ImGui::PushID(i);
                 const bool sel = (m_SelectedEntity == i);
                 if (ImGui::Selectable(ents[i].name.c_str(), sel)) {
@@ -533,15 +617,17 @@ namespace ManroEdit {
                     m_SelectedLight = -1;
                 }
                 if (ImGui::BeginPopupContextItem("entctx")) {
-                    if (ImGui::MenuItem("Duplicate")) {
+                    if (ImGui::MenuItem(ICON_FA7_CLONE " Duplicate")) {
                         MapEntity copy = ents[i];
                         copy.name += "_copy";
                         ents.push_back(copy);
+                        MarkDirty();
                     }
-                    if (ImGui::MenuItem("Delete")) {
+                    if (ImGui::MenuItem(ICON_FA7_TRASH_CAN " Delete")) {
                         ents.erase(ents.begin() + i);
                         if (m_SelectedEntity == i) m_SelectedEntity = -1;
                         else if (m_SelectedEntity > i) --m_SelectedEntity;
+                        MarkDirty();
                         ImGui::EndPopup();
                         ImGui::PopID();
                         break;
@@ -553,11 +639,15 @@ namespace ManroEdit {
             ImGui::TreePop();
         }
 
-        if (ImGui::TreeNodeEx("Lights",
+        char lightHeader[64];
+        std::snprintf(lightHeader, sizeof(lightHeader), ICON_FA7_LIGHTBULB " Lights [%d]",
+                      (int) m_Map.Lights().size());
+        if (ImGui::TreeNodeEx(lightHeader,
                               ImGuiTreeNodeFlags_DefaultOpen |
                               ImGuiTreeNodeFlags_SpanAvailWidth)) {
             auto &lights = m_Map.Lights();
             for (int i = 0; i < (int) lights.size(); ++i) {
+                if (!MatchesFilter(lights[i].name, m_OutlinerFilter)) continue;
                 ImGui::PushID(10000 + i);
                 const bool sel = (m_SelectedLight == i);
                 if (ImGui::Selectable(lights[i].name.c_str(), sel)) {
@@ -565,10 +655,11 @@ namespace ManroEdit {
                     m_SelectedEntity = -1;
                 }
                 if (ImGui::BeginPopupContextItem("lightctx")) {
-                    if (ImGui::MenuItem("Delete")) {
+                    if (ImGui::MenuItem(ICON_FA7_TRASH_CAN " Delete")) {
                         lights.erase(lights.begin() + i);
                         if (m_SelectedLight == i) m_SelectedLight = -1;
                         else if (m_SelectedLight > i) --m_SelectedLight;
+                        MarkDirty();
                         ImGui::EndPopup();
                         ImGui::PopID();
                         break;
@@ -599,68 +690,89 @@ namespace ManroEdit {
             m_SelectedEntity < (int) m_Map.Entities().size()) {
             MapEntity &e = m_Map.Entities()[m_SelectedEntity];
 
+            if (m_FontBold) ImGui::PushFont(m_FontBold);
+            ImGui::Text(ICON_FA7_CUBE " Entity");
+            if (m_FontBold) ImGui::PopFont();
+            ImGui::Separator();
+
             char nameBuf[256];
             SetBuf(nameBuf, sizeof(nameBuf), e.name);
-            if (ImGui::InputText("Name", nameBuf, sizeof(nameBuf)))
+            if (ImGui::InputText("Name", nameBuf, sizeof(nameBuf))) {
                 e.name = nameBuf;
+                MarkDirty();
+            }
 
             char modelBuf[512];
             SetBuf(modelBuf, sizeof(modelBuf), e.modelPath);
             if (ImGui::InputText("Model", modelBuf, sizeof(modelBuf))) {
                 e.modelPath = modelBuf;
                 m_ModelCache.erase(modelBuf);
+                MarkDirty();
             }
 
-            ImGui::DragFloat3("Position", glm::value_ptr(e.position), 1.f);
-            ImGui::DragFloat3("Rotation", glm::value_ptr(e.rotation), 1.f);
-            ImGui::DragFloat3("Scale", glm::value_ptr(e.scale), 0.05f, 0.001f, 1000.f);
+            if (ImGui::DragFloat3("Position", glm::value_ptr(e.position), 1.f)) MarkDirty();
+            if (ImGui::DragFloat3("Rotation", glm::value_ptr(e.rotation), 1.f)) MarkDirty();
+            if (ImGui::DragFloat3("Scale", glm::value_ptr(e.scale), 0.05f, 0.001f, 1000.f)) MarkDirty();
         } else if (m_SelectedLight >= 0 &&
                    m_SelectedLight < (int) m_Map.Lights().size()) {
             MapLight &l = m_Map.Lights()[m_SelectedLight];
 
+            if (m_FontBold) ImGui::PushFont(m_FontBold);
+            ImGui::Text(ICON_FA7_LIGHTBULB " Light");
+            if (m_FontBold) ImGui::PopFont();
+            ImGui::Separator();
+
             char nameBuf[256];
             SetBuf(nameBuf, sizeof(nameBuf), l.name);
-            if (ImGui::InputText("Name", nameBuf, sizeof(nameBuf)))
+            if (ImGui::InputText("Name", nameBuf, sizeof(nameBuf))) {
                 l.name = nameBuf;
+                MarkDirty();
+            }
 
             const char *types[] = {"Directional", "Point"};
-            ImGui::Combo("Type", &l.type, types, IM_ARRAYSIZE(types));
+            if (ImGui::Combo("Type", &l.type, types, IM_ARRAYSIZE(types))) MarkDirty();
+            if (l.type == 1) {
+                if (ImGui::DragFloat3("Position", glm::value_ptr(l.position), 1.f)) MarkDirty();
+            } else {
+                if (ImGui::DragFloat3("Direction", glm::value_ptr(l.direction), 0.05f)) MarkDirty();
+            }
+            if (ImGui::ColorEdit3("Color", glm::value_ptr(l.color))) MarkDirty();
+            if (ImGui::DragFloat("Intensity", &l.intensity, 0.05f, 0.f, 100.f)) MarkDirty();
             if (l.type == 1)
-                ImGui::DragFloat3("Position", glm::value_ptr(l.position), 1.f);
-            else
-                ImGui::DragFloat3("Direction", glm::value_ptr(l.direction), 0.05f);
-            ImGui::ColorEdit3("Color", glm::value_ptr(l.color));
-            ImGui::DragFloat("Intensity", &l.intensity, 0.05f, 0.f, 100.f);
-            if (l.type == 1)
-                ImGui::DragFloat("Range", &l.range, 1.f, 1.f, 50000.f);
+                if (ImGui::DragFloat("Range", &l.range, 1.f, 1.f, 50000.f)) MarkDirty();
         } else {
-            ImGui::TextDisabled("Nothing selected");
-
+            if (m_FontBold) ImGui::PushFont(m_FontBold);
+            ImGui::Text(ICON_FA7_GLOBE " World Settings");
+            if (m_FontBold) ImGui::PopFont();
             ImGui::Separator();
-            ImGui::Text("Map Settings");
 
-            SetBuf(m_SkyboxPathBuf, sizeof(m_SkyboxPathBuf), m_Map.SkyboxPath());
-            if (ImGui::InputText("Skybox", m_SkyboxPathBuf, sizeof(m_SkyboxPathBuf),
-                                 ImGuiInputTextFlags_EnterReturnsTrue)) {
-                m_Map.SetSkyboxPath(m_SkyboxPathBuf);
-                ApplySkybox();
+            if (ImGui::CollapsingHeader(ICON_FA7_MOUNTAIN_SUN " Environment",
+                                        ImGuiTreeNodeFlags_DefaultOpen)) {
+                SetBuf(m_SkyboxPathBuf, sizeof(m_SkyboxPathBuf), m_Map.SkyboxPath());
+                if (ImGui::InputText("Skybox", m_SkyboxPathBuf, sizeof(m_SkyboxPathBuf),
+                                     ImGuiInputTextFlags_EnterReturnsTrue)) {
+                    m_Map.SetSkyboxPath(m_SkyboxPathBuf);
+                    ApplySkybox();
+                    MarkDirty();
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Apply")) {
+                    m_Map.SetSkyboxPath(m_SkyboxPathBuf);
+                    ApplySkybox();
+                    MarkDirty();
+                }
             }
-            ImGui::SameLine();
-            if (ImGui::SmallButton("Apply"))  {
-                m_Map.SetSkyboxPath(m_SkyboxPathBuf);
-                ApplySkybox();
+
+            if (ImGui::CollapsingHeader(ICON_FA7_CAMERA " Editor Camera",
+                                        ImGuiTreeNodeFlags_DefaultOpen)) {
+                ImGui::DragFloat3("Position", glm::value_ptr(m_Camera.Position), 1.f);
+                ImGui::DragFloat("Yaw", &m_Camera.Yaw, 1.f);
+                ImGui::DragFloat("Pitch", &m_Camera.Pitch, 1.f);
+                ImGui::DragFloat("FoV", &m_FovDeg, 0.5f, 30.f, 120.f);
             }
 
-            ImGui::Separator();
-            ImGui::Text("Camera");
-            ImGui::DragFloat3("CamPos", glm::value_ptr(m_Camera.Position), 1.f);
-            ImGui::DragFloat("CamYaw", &m_Camera.Yaw, 1.f);
-            ImGui::DragFloat("CamPitch", &m_Camera.Pitch, 1.f);
-            ImGui::DragFloat("FoV", &m_FovDeg, 0.5f, 30.f, 120.f);
-
-            if (m_bSnap) {
-                ImGui::Separator();
-                ImGui::Text("Snap");
+            if (m_bSnap && ImGui::CollapsingHeader(ICON_FA7_MAGNET " Snap",
+                                                   ImGuiTreeNodeFlags_DefaultOpen)) {
                 ImGui::DragFloat3("Values", m_Snap, 0.5f, 0.01f, 100.f);
             }
         }
@@ -702,6 +814,7 @@ namespace ManroEdit {
                     m_Map.Entities().push_back(e);
                     m_SelectedEntity = static_cast<int>(m_Map.Entities().size()) - 1;
                     m_SelectedLight = -1;
+                    MarkDirty();
                 }
             }
             ImGui::EndChild();
@@ -739,6 +852,7 @@ namespace ManroEdit {
                                  op, mode, glm::value_ptr(model),
                                  nullptr, snap)) {
             DecomposeMatrix(model, e.position, e.rotation, e.scale);
+            MarkDirty();
         }
     }
 
@@ -857,10 +971,6 @@ namespace ManroEdit {
                 break;
             case DialogPurpose::OpenMap: OpenMap(path);
                 break;
-            case DialogPurpose::SaveMap:
-                if (SaveMap(path)) SetStatus("Saved " + path);
-                else SetStatus("Save failed");
-                break;
             case DialogPurpose::ImportModel: {
                 std::string relPath = ImportModelIntoProject(path);
                 if (relPath.empty()) {
@@ -875,6 +985,7 @@ namespace ManroEdit {
                 m_Map.Entities().push_back(e);
                 m_SelectedEntity = static_cast<int>(m_Map.Entities().size()) - 1;
                 m_SelectedLight = -1;
+                MarkDirty();
                 SetStatus("Imported " + relPath);
                 break;
             }
@@ -882,6 +993,37 @@ namespace ManroEdit {
                 break;
             default: break;
         }
+    }
+
+    void CEditor::LoadProjectFile() {
+        m_ProjectScenes.clear();
+        const fs::path projFile = fs::path(m_ProjectDir) / "project.mproj";
+        std::ifstream f(projFile);
+        if (!f.is_open()) return;
+        try {
+            nlohmann::json j = nlohmann::json::parse(f);
+            for (const auto &s: j.value("scenes", nlohmann::json::array()))
+                m_ProjectScenes.push_back(s.get<std::string>());
+        } catch (...) {
+        }
+    }
+
+    void CEditor::SaveProjectFile() const {
+        const fs::path projFile = fs::path(m_ProjectDir) / "project.mproj";
+        nlohmann::json j;
+        j["scenes"] = m_ProjectScenes;
+        std::ofstream f(projFile);
+        if (f.is_open()) f << j.dump(2);
+    }
+
+    void CEditor::AddSceneToProject(const std::string &absPath) {
+        std::error_code ec;
+        const std::string rel = fs::relative(absPath, m_ProjectDir, ec).generic_string();
+        const std::string key = (!ec && !rel.empty()) ? rel : absPath;
+        for (const auto &s: m_ProjectScenes)
+            if (s == key) return;
+        m_ProjectScenes.push_back(key);
+        SaveProjectFile();
     }
 
     void CEditor::OpenProject(const std::string &dir) {
@@ -892,10 +1034,15 @@ namespace ManroEdit {
         m_ProjectDir = dir;
         Manro::CVirtualFS::Get().SetBaseDir(dir);
         m_bProjectOpen = true;
+        LoadProjectFile();
 
-        const fs::path autoMap = fs::path(dir) / "scenes" / "test.mmap";
-        if (fs::exists(autoMap)) OpenMap(autoMap.string());
-        else NewMap();
+        if (!m_ProjectScenes.empty()) {
+            OpenMap((fs::path(m_ProjectDir) / m_ProjectScenes[0]).string());
+        } else {
+            const fs::path autoMap = fs::path(dir) / "scenes" / "test.mmap";
+            if (fs::exists(autoMap)) OpenMap(autoMap.string());
+            else NewMap();
+        }
         SetStatus("Project: " + dir);
     }
 
@@ -906,8 +1053,13 @@ namespace ManroEdit {
             SetStatus("New project failed: " + ec.message());
             return;
         }
-        OpenProject(dir);
-        SaveMap((fs::path(dir) / "scenes" / "test.mmap").string());
+        m_ProjectDir = dir;
+        Manro::CVirtualFS::Get().SetBaseDir(dir);
+        m_bProjectOpen = true;
+        m_ProjectScenes.clear();
+        NewMap();
+        SaveMap((fs::path(dir) / "scenes" / "default.mmap").string());
+        SetStatus("Project: " + dir);
     }
 
     void CEditor::DrawStartScreen() {
@@ -940,6 +1092,47 @@ namespace ManroEdit {
                                   "Manro maps", "mmap");
 
         ImGui::End();
+    }
+
+    void CEditor::DrawNewScenePopup() {
+        if (m_bShowNewScenePopup) {
+            ImGui::OpenPopup("New Scene");
+            m_bShowNewScenePopup = false;
+        }
+
+        const ImGuiViewport *vp = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(
+            {vp->Pos.x + vp->Size.x * 0.5f, vp->Pos.y + vp->Size.y * 0.5f},
+            ImGuiCond_Appearing, {0.5f, 0.5f});
+        ImGui::SetNextWindowSize({320.f, 0.f}, ImGuiCond_Appearing);
+
+        if (ImGui::BeginPopupModal("New Scene", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextUnformatted("Scene name:");
+            bool confirm = ImGui::InputText("##name", m_NewSceneNameBuf,
+                                            sizeof(m_NewSceneNameBuf),
+                                            ImGuiInputTextFlags_EnterReturnsTrue);
+            ImGui::SetItemDefaultFocus();
+
+            const bool nameOk = m_NewSceneNameBuf[0] != '\0';
+            if (!nameOk) ImGui::BeginDisabled();
+            if (ImGui::Button("Create", {120.f, 0.f}) || (confirm && nameOk)) {
+                const std::string path =
+                (fs::path(m_ProjectDir) / "scenes" /
+                 (std::string(m_NewSceneNameBuf) + ".mmap")).string();
+                NewMap();
+                if (SaveMap(path))
+                    SetStatus("Created " + std::string(m_NewSceneNameBuf));
+                else
+                    SetStatus("Save failed");
+                ImGui::CloseCurrentPopup();
+            }
+            if (!nameOk) ImGui::EndDisabled();
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel", {120.f, 0.f}))
+                ImGui::CloseCurrentPopup();
+
+            ImGui::EndPopup();
+        }
     }
 
     void CEditor::DrawPackDialog() {
@@ -1002,13 +1195,45 @@ namespace ManroEdit {
         ImGui::End();
     }
 
+    void CEditor::DrawStatusBar() {
+        const ImGuiViewport *vp = ImGui::GetMainViewport();
+        const float barH = 25.f;
+        ImGui::SetNextWindowPos({vp->Pos.x, vp->Pos.y + vp->Size.y - barH});
+        ImGui::SetNextWindowSize({vp->Size.x, barH});
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 4));
+        ImGui::Begin("##StatusBar", nullptr,
+                     ImGuiWindowFlags_NoDecoration |
+                     ImGuiWindowFlags_NoInputs |
+                     ImGuiWindowFlags_NoDocking |
+                     ImGuiWindowFlags_NoSavedSettings |
+                     ImGuiWindowFlags_NoBringToFrontOnFocus);
+
+        ImGui::Text("Manro Editor  " ICON_FA7_GAUGE_HIGH "  %.0f FPS  " ICON_FA7_CUBES "  %zu objects",
+                    ImGui::GetIO().Framerate, m_Map.Entities().size());
+
+        if (m_StatusTimer > 0.f && !m_StatusLine.empty()) {
+            ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::CalcTextSize(m_StatusLine.c_str()).x - 16.f);
+            float alpha = std::min(m_StatusTimer, 1.f);
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.17f, 0.34f, 0.59f, alpha));
+            ImGui::TextUnformatted(m_StatusLine.c_str());
+            ImGui::PopStyleColor();
+        }
+
+        ImGui::End();
+        ImGui::PopStyleVar();
+    }
+
     void CEditor::NewMap() {
+        m_Renderer->WaitIdle();
         m_Map.Clear();
         m_SelectedEntity = -1;
         m_SelectedLight = -1;
         m_CurrentMapPath.clear();
         m_ModelCache.clear();
         m_LoadedSkyboxPath.clear();
+        m_bDirty = false;
+        UpdateWindowTitle();
         SetStatus("New map");
     }
 
@@ -1017,6 +1242,7 @@ namespace ManroEdit {
             SetStatus("Open failed: " + path);
             return;
         }
+        m_Renderer->WaitIdle();
         m_CurrentMapPath = path;
         m_SelectedEntity = -1;
         m_SelectedLight = -1;
@@ -1032,7 +1258,10 @@ namespace ManroEdit {
             Manro::CVirtualFS::Get().SetBaseDir(root);
             m_bProjectOpen = true;
         }
+        if (m_bProjectOpen) AddSceneToProject(path);
         ApplySkybox();
+        m_bDirty = false;
+        UpdateWindowTitle();
         SetStatus("Loaded " + path);
     }
 
@@ -1041,6 +1270,9 @@ namespace ManroEdit {
         fs::create_directories(fs::path(path).parent_path(), ec);
         if (!m_Map.SaveToFile(path)) return false;
         m_CurrentMapPath = path;
+        m_bDirty = false;
+        UpdateWindowTitle();
+        if (m_bProjectOpen) AddSceneToProject(path);
         return true;
     }
 
@@ -1105,5 +1337,21 @@ namespace ManroEdit {
     void CEditor::SetStatus(std::string msg, float seconds) {
         m_StatusLine = std::move(msg);
         m_StatusTimer = seconds;
+    }
+
+    void CEditor::MarkDirty() {
+        if (!m_bDirty) {
+            m_bDirty = true;
+            UpdateWindowTitle();
+        }
+    }
+
+    void CEditor::UpdateWindowTitle() {
+        std::string title = "Manro Map Editor";
+        if (!m_CurrentMapPath.empty()) {
+            title += " - " + fs::path(m_CurrentMapPath).filename().string();
+        }
+        if (m_bDirty) title += " *";
+        m_Window->SetTitle(title);
     }
 } // namespace ManroEdit

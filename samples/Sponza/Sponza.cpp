@@ -40,8 +40,8 @@ void CSponza::OnStartup(const Manro::InitContext_t &ctx) {
     m_Renderer->SetDebugUIEnabled(false);
 
     const auto worldDir =
-        (std::filesystem::path(MANRO_ASSETS_DIR) / "../../world")
-        .lexically_normal().string();
+            (std::filesystem::path(MANRO_ASSETS_DIR) / "../../world")
+            .lexically_normal().string();
     Manro::CVirtualFS::Get().SetBaseDir(worldDir);
 
     const std::string rresPath = worldDir + "/scenes/test.rres";
@@ -146,13 +146,14 @@ void CSponza::OnRender(Manro::FrameContext_t &frame) {
     }
     m_Renderer->AddLight(sun);
 
-    for (const auto &l : m_Map.Lights()) {
+    for (const auto &l: m_Map.Lights()) {
         Manro::LightData ld{};
-        ld.type = (l.type == 0) ? shaderio::eLightTypeDirectional
-                                 : shaderio::eLightTypePoint;
-        ld.position  = l.position;
+        ld.type = (l.type == 0)
+                      ? shaderio::eLightTypeDirectional
+                      : shaderio::eLightTypePoint;
+        ld.position = l.position;
         ld.direction = glm::normalize(l.direction);
-        ld.color     = l.color;
+        ld.color = l.color;
         ld.intensity = l.intensity;
         if (l.type != 0)
             ld.angularSizeOrInvRange = 1.f / std::max(l.range, 0.001f);
@@ -179,18 +180,15 @@ void CSponza::OnRender(Manro::FrameContext_t &frame) {
 }
 
 void CSponza::LoadScene() {
-    bool gotMap = m_Map.LoadFromVfs("map.mmap");
-    if (!gotMap) {
-        const std::string mmapPath =
-            Manro::CVirtualFS::Get().ResolvePath("scenes/test.mmap");
-        if (std::filesystem::exists(mmapPath))
-            gotMap = m_Map.LoadFromFile(mmapPath);
-    }
+    bool gotMap;
+    const std::string mmapPath = Manro::CVirtualFS::Get().ResolvePath("scenes/slop.mmap");
+    if (std::filesystem::exists(mmapPath))
+        gotMap = m_Map.LoadFromFile(mmapPath);
 
     if (gotMap && !m_Map.Entities().empty()) {
         LOG_INFO("[CSponza] Loaded map: {} entities, {} lights",
                  m_Map.Entities().size(), m_Map.Lights().size());
-        for (const auto &e : m_Map.Entities()) {
+        for (const auto &e: m_Map.Entities()) {
             if (e.modelPath.empty()) continue;
             if (m_MapModels.count(e.modelPath)) continue;
             auto loaded = Manro::CModel::Load({e.modelPath}, *m_Renderer, *m_Jobs);
@@ -199,7 +197,7 @@ void CSponza::LoadScene() {
             else
                 LOG_ERROR("[CSponza] Map references missing model '{}'", e.modelPath);
         }
-        for (const auto &e : m_Map.Entities()) {
+        for (const auto &e: m_Map.Entities()) {
             auto it = m_MapModels.find(e.modelPath);
             if (it == m_MapModels.end() || !it->second) continue;
             m_Renderer->DrawModelStatic(*it->second,
@@ -477,7 +475,7 @@ void CSponza::StartBenchmark() {
 
     m_flPathT = 0.f;
     m_flPathSpeed = static_cast<float>(kWaypointCount - 1) /
-                  static_cast<float>(m_nBenchDuration);
+                    static_cast<float>(m_nBenchDuration);
 
     m_BenchState = BenchmarkState::Warmup;
     m_flBenchElapsed = 0.f;
@@ -590,8 +588,8 @@ void CSponza::AdvanceBenchCamera(float dt) {
 }
 
 Manro::Vec3 CSponza::CatmullRomPos(const BenchWaypoint_t &p0, const BenchWaypoint_t &p1,
-                                  const BenchWaypoint_t &p2, const BenchWaypoint_t &p3,
-                                  float t) {
+                                   const BenchWaypoint_t &p2, const BenchWaypoint_t &p3,
+                                   float t) {
     const float t2 = t * t, t3 = t2 * t;
     const Manro::Vec3 a = -0.5f * p0.position + 1.5f * p1.position - 1.5f * p2.position + 0.5f * p3.position;
     const Manro::Vec3 b = p0.position - 2.5f * p1.position + 2.f * p2.position - 0.5f * p3.position;

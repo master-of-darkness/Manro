@@ -128,6 +128,8 @@ namespace Manro {
 
         void *GetSceneTextureId();
 
+        void WaitIdle();
+
     private:
         Scope<CRendererImpl> m_Impl;
     };

@@ -120,4 +120,6 @@ namespace Manro {
     }
 
     void *CRenderer::GetSceneTextureId() { return RendererImplGetSceneTextureId(*m_Impl); }
+
+    void CRenderer::WaitIdle() { RendererImplWaitIdle(*m_Impl); }
 } // namespace Manro
