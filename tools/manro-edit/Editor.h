@@ -221,6 +221,8 @@ namespace ManroEdit {
         float m_NearZ = 1.f;
         float m_FarZ = 20000.f;
 
+        float m_flDpiScale = 1.0f;
+
         bool m_bDockLayoutBuilt = false;
 
         float m_SceneViewW = 800.f;

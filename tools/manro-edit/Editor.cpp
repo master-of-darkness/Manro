@@ -78,6 +78,13 @@ namespace ManroEdit {
         const float dpiScale = SDL_GetWindowDisplayScale(
             static_cast<SDL_Window *>(m_Window->GetNativeHandle()));
         const float density = (dpiScale > 0.f) ? dpiScale : 1.f;
+        m_flDpiScale = density;
+
+        if (m_flDpiScale > 1.0f) {
+            auto settings = m_Renderer->GetSettings();
+            settings.resolutionScale = 1.0f / m_flDpiScale;
+            m_Renderer->SetSettings(settings);
+        }
 
         ImGuiIO &io = ImGui::GetIO();
         io.Fonts->Clear();
@@ -775,6 +782,17 @@ namespace ManroEdit {
                                                    ImGuiTreeNodeFlags_DefaultOpen)) {
                 ImGui::DragFloat3("Values", m_Snap, 0.5f, 0.01f, 100.f);
             }
+
+            if (ImGui::CollapsingHeader(ICON_FA7_SLIDERS " Render",
+                                        ImGuiTreeNodeFlags_DefaultOpen)) {
+                auto settings = m_Renderer->GetSettings();
+                if (ImGui::SliderFloat("Resolution Scale", &settings.resolutionScale, 0.25f, 2.0f, "%.2f"))
+                    m_Renderer->SetSettings(settings);
+
+                const unsigned effW = static_cast<unsigned>(m_Window->GetWidth() * settings.resolutionScale);
+                const unsigned effH = static_cast<unsigned>(m_Window->GetHeight() * settings.resolutionScale);
+                ImGui::TextDisabled("Effective: %u x %u", effW, effH);
+            }
         }
 
         ImGui::End();
@@ -1031,6 +1049,23 @@ namespace ManroEdit {
             SetStatus("Not a directory: " + dir);
             return;
         }
+
+        const bool hasProjFile = fs::exists(fs::path(dir) / "project.mproj");
+        bool hasMmap = false;
+        if (!hasProjFile) {
+            const fs::path scenesDir = fs::path(dir) / "scenes";
+            if (fs::is_directory(scenesDir)) {
+                for (const auto &entry : fs::directory_iterator(scenesDir)) {
+                    if (entry.path().extension() == ".mmap") { hasMmap = true; break; }
+                }
+            }
+        }
+
+        if (!hasProjFile && !hasMmap) {
+            SetStatus("Not a project: missing project.mproj and no .mmap in scenes/");
+            return;
+        }
+
         m_ProjectDir = dir;
         Manro::CVirtualFS::Get().SetBaseDir(dir);
         m_bProjectOpen = true;
@@ -1039,9 +1074,17 @@ namespace ManroEdit {
         if (!m_ProjectScenes.empty()) {
             OpenMap((fs::path(m_ProjectDir) / m_ProjectScenes[0]).string());
         } else {
-            const fs::path autoMap = fs::path(dir) / "scenes" / "test.mmap";
-            if (fs::exists(autoMap)) OpenMap(autoMap.string());
-            else NewMap();
+            const fs::path scenesDir = fs::path(dir) / "scenes";
+            if (fs::is_directory(scenesDir)) {
+                for (const auto &entry : fs::directory_iterator(scenesDir)) {
+                    if (entry.path().extension() == ".mmap") {
+                        OpenMap(entry.path().string());
+                        SetStatus("Project: " + dir);
+                        return;
+                    }
+                }
+            }
+            NewMap();
         }
         SetStatus("Project: " + dir);
     }

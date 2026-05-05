@@ -1,5 +1,6 @@
 {
   "scenes": [
-    "scenes/default.mmap"
+    "scenes/default.mmap",
+    "scenes/test.mmap"
   ]
 }

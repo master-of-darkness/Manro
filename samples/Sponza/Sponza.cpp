@@ -180,8 +180,8 @@ void CSponza::OnRender(Manro::FrameContext_t &frame) {
 }
 
 void CSponza::LoadScene() {
-    bool gotMap;
-    const std::string mmapPath = Manro::CVirtualFS::Get().ResolvePath("scenes/slop.mmap");
+    bool gotMap = false;
+    const std::string mmapPath = Manro::CVirtualFS::Get().ResolvePath("scenes/test.mmap");
     if (std::filesystem::exists(mmapPath))
         gotMap = m_Map.LoadFromFile(mmapPath);
 
@@ -549,7 +549,7 @@ void CSponza::FinishBenchmark() {
     std::vector<float> sorted = m_BenchFrameTimes;
     std::ranges::sort(sorted);
     auto pct = [&](float p) -> float {
-        const size_t i = static_cast<size_t>(p * static_cast<float>(sorted.size() - 1));
+        const auto i = static_cast<size_t>(p * static_cast<float>(sorted.size() - 1));
         return sorted[std::min(i, sorted.size() - 1)];
     };
     r.p1FrameMs = pct(0.99f);
