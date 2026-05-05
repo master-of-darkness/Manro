@@ -19,6 +19,8 @@ namespace Manro {
 
         WindowHandle AddWindow(const WindowDesc_t &desc);
 
+        WindowHandle AddWindowFromExisting(IWindow *window);
+
         void DestroyWindow(WindowHandle handle);
 
         void ShutdownAll();

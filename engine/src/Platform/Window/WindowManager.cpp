@@ -24,6 +24,22 @@ namespace Manro {
         return handle;
     }
 
+    WindowHandle CWindowManager::AddWindowFromExisting(IWindow *window) {
+        WindowHandle handle = m_nNextHandle++;
+
+        u32 platformId = static_cast<CWindow *>(window)->GetPlatformWindowID();
+        m_PlatformIdToHandle[platformId] = handle;
+
+        // We store raw pointer and explicitly release it on shutdown without deleting it
+        m_Windows.emplace(handle, Scope<IWindow>(window));
+
+        if (m_PrimaryHandle == kInvalidWindow)
+            m_PrimaryHandle = handle;
+
+        LOG_INFO("[CWindowManager] CWindow {} registered from factory (platform id {})", handle, platformId);
+        return handle;
+    }
+
     void CWindowManager::DestroyWindow(WindowHandle handle) {
         auto it = m_Windows.find(handle);
         if (it == m_Windows.end()) return;
@@ -31,7 +47,8 @@ namespace Manro {
         u32 platformId = static_cast<CWindow *>(it->second.get())->GetPlatformWindowID();
         m_PlatformIdToHandle.erase(platformId);
 
-        it->second->Shutdown();
+        // Don't call shutdown here, the global loop does it
+        it->second.release();
         m_Windows.erase(it);
 
         if (m_PrimaryHandle == handle) {
@@ -44,8 +61,9 @@ namespace Manro {
     }
 
     void CWindowManager::ShutdownAll() {
-        for (auto &[handle, window]: m_Windows)
-            window->Shutdown();
+        for (auto &[handle, window]: m_Windows) {
+            window.release(); // release ownership before map is cleared
+        }
         m_Windows.clear();
         m_PlatformIdToHandle.clear();
         m_PrimaryHandle = kInvalidWindow;

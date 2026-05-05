@@ -1,15 +1,25 @@
 #pragma once
 
 #include <Manro/Interfaces/IWindow.h>
+#include <string>
 
 namespace Manro {
+    extern WindowDesc_t g_InitialWindowDesc;
+
     class CWindow final : public IWindow {
     public:
         CWindow() = default;
 
         ~CWindow() override { Shutdown(); }
 
-        bool Initialize(const WindowDesc_t &desc) override;
+        bool Connect(void * (*factory)(const char *, int *)) override { return true; }
+
+        void Disconnect() override {
+        }
+
+        InitReturnVal_t Init() override;
+
+        bool Initialize(const WindowDesc_t &desc);
 
         void Shutdown() override;
 

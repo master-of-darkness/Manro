@@ -2,6 +2,7 @@ set(MANRO_MIKKTSPACE_C "${MANRO_THIRD_PARTY_DIR}/mikktspace/mikktspace.c")
 
 set(ENGINE_CORE_SOURCES
         Core/EngineLoop.cpp
+        Core/InterfaceReg.cpp
         Core/Logger.cpp
         Core/JobSystem.cpp
         Core/VirtualFS.cpp

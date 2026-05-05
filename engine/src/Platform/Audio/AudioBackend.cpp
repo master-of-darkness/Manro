@@ -1,27 +1,28 @@
 #include <Manro/Platform/Audio/AudioBackend.h>
+#include <Manro/Core/InterfaceReg.h>
 #include <Manro/Core/Logger.h>
 #include <algorithm>
 #include <ranges>
 #include <SDL3_mixer/SDL_mixer.h>
 
 namespace Manro {
-    bool CAudioBackend::Initialize() {
-        if (m_bInitialized) return true;
+    InitReturnVal_t CAudioBackend::Init() {
+        if (m_bInitialized) return INIT_OK;
 
         if (!MIX_Init()) {
             LOG_ERROR("[Audio] MIX_Init failed: {}", SDL_GetError());
-            return false;
+            return INIT_FAILED;
         }
 
         m_pMixer = MIX_CreateMixerDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, nullptr);
         if (!m_pMixer) {
             LOG_ERROR("[Audio] MIX_CreateMixerDevice failed: {}", SDL_GetError());
             MIX_Quit();
-            return false;
+            return INIT_FAILED;
         }
 
         m_bInitialized = true;
-        return true;
+        return INIT_OK;
     }
 
     void CAudioBackend::Shutdown() {
@@ -186,5 +187,10 @@ namespace Manro {
         if (m_pMusicTrack) {
             MIX_SetTrackGain(m_pMusicTrack, std::clamp(volume, 0.f, 1.f));
         }
+    }
+
+    EXPOSE_SINGLE_INTERFACE(CAudioBackend, IAudioBackend, "IAUDIOBACKEND_001")
+
+    void ForceLinkAudioBackend() {
     }
 } // namespace Manro

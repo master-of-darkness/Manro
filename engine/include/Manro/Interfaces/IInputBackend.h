@@ -1,11 +1,11 @@
 #pragma once
 
 #include <Manro/Input/InputAction.h>
-#include <Manro/Interfaces/Interface.h>
+#include <Manro/Interfaces/IAppSystem.h>
 #include <Manro/Platform/PlatformEvent.h>
 
 namespace Manro {
-    class IInputBackend : public Interface {
+    class IInputBackend : public IAppSystem {
     public:
         ~IInputBackend() override = default;
 

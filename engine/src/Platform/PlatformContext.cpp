@@ -3,20 +3,34 @@
 #include <Manro/Platform/Input/InputBackend.h>
 #include <Manro/Input/InputManager.h>
 #include <Manro/Platform/PlatformEvent.h>
+#include <Manro/Core/InterfaceReg.h>
 #include <Manro/Core/Logger.h>
 #include <SDL3/SDL.h>
 #include <imgui_impl_sdl3.h>
 
 namespace Manro {
+    extern void ForceLinkAudioBackend();
+
+    extern void ForceLinkInputBackend();
+
+    extern void ForceLinkWindow();
+
     CPlatformContext::CPlatformContext() {
+        ForceLinkAudioBackend();
+        ForceLinkInputBackend();
+        ForceLinkWindow();
+
         if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) {
             LOG_ERROR("[CPlatformContext] SDL_Init failed: {}", SDL_GetError());
             return;
         }
 
-        auto audioBackend = CreateScope<CAudioBackend>();
-        if (!m_AudioManager.Initialize(std::move(audioBackend))) {
-            LOG_WARN("[CPlatformContext] Audio backend failed – continuing without audio.");
+        int dummy;
+        auto *audioBackend = static_cast<CAudioBackend *>(Sys_GetFactory("IAUDIOBACKEND_001", &dummy));
+        if (audioBackend) {
+            m_AudioManager.Initialize(Scope<IAudioBackend>(audioBackend));
+        } else {
+            LOG_WARN("[CPlatformContext] Audio backend failed to get from factory.");
         }
     }
 

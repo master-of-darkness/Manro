@@ -8,6 +8,8 @@
 #include <Manro/Render/Renderer.h>
 #include <Manro/Input/InputManager.h>
 #include <Manro/Platform/Input/InputBackend.h>
+#include <Manro/Platform/Window/Window.h>
+#include <Manro/Core/InterfaceReg.h>
 #include <chrono>
 
 #include "Profiling.h"
@@ -32,14 +34,36 @@ namespace Manro {
 #endif
 
         CJobSystem jobs;
+
+        // Initialize systems via IAppSystem
+        for (CInterfaceReg *pCur = GetInterfaceRegs(); pCur; pCur = pCur->m_pNext) {
+            auto *system = static_cast<IAppSystem *>(pCur->m_CreateFn());
+            if (system) {
+                system->Connect(Sys_GetFactory);
+            }
+        }
+
+        g_InitialWindowDesc = app.GetWindowDesc();
+
+        for (CInterfaceReg *pCur = GetInterfaceRegs(); pCur; pCur = pCur->m_pNext) {
+            auto *system = static_cast<IAppSystem *>(pCur->m_CreateFn());
+            if (system) {
+                system->Init();
+            }
+        }
+
         CPlatformContext platform;
 
         RegisterEmbeddedShaders();
 
         auto winDesc = app.GetWindowDesc();
         auto &wm = platform.GetWindowManager();
-        WindowHandle wh = wm.AddWindow(winDesc);
-        IWindow *win = wm.Get(wh);
+
+        int dummy;
+        IWindow *win = static_cast<IWindow *>(Sys_GetFactory("IWINDOW_001", &dummy));
+
+        // Setup WindowHandle in WindowManager
+        [[maybe_unused]] WindowHandle wh = wm.AddWindowFromExisting(win);
 
         CRenderer renderer(*win, win->GetWidth(), win->GetHeight());
 
@@ -93,6 +117,20 @@ namespace Manro {
         }
 
         app.OnShutdown();
+
+        // Shutdown interfaces in reverse order
+        for (CInterfaceReg *pCur = GetInterfaceRegs(); pCur; pCur = pCur->m_pNext) {
+            auto *system = static_cast<IAppSystem *>(pCur->m_CreateFn());
+            if (system) {
+                system->Shutdown();
+            }
+        }
+        for (CInterfaceReg *pCur = GetInterfaceRegs(); pCur; pCur = pCur->m_pNext) {
+            auto *system = static_cast<IAppSystem *>(pCur->m_CreateFn());
+            if (system) {
+                system->Disconnect();
+            }
+        }
 
 #ifdef _WIN32
         timeEndPeriod(1);

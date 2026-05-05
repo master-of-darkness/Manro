@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Manro/Core/Types.h>
-#include <Manro/Interfaces/Interface.h>
+#include <Manro/Interfaces/IAppSystem.h>
 #include <functional>
 #include <string>
 
@@ -23,13 +23,9 @@ namespace Manro {
         bool Fullscreen = false;
     };
 
-    class IWindow : public Interface {
+    class IWindow : public IAppSystem {
     public:
         ~IWindow() override = default;
-
-        virtual bool Initialize(const WindowDesc_t &desc) = 0;
-
-        virtual void Shutdown() = 0;
 
         virtual void SetTitle(const std::string &title) = 0;
 

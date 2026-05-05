@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Manro/Core/Types.h>
-#include <Manro/Interfaces/Interface.h>
+#include <Manro/Interfaces/IAppSystem.h>
 
 namespace Manro {
     class CRenderer;
@@ -31,9 +31,19 @@ namespace Manro {
         const FrameContext_t &Frame;
     };
 
-    class IApplication : public Interface {
+    class IApplication : public IAppSystem {
     public:
         ~IApplication() override = default;
+
+        bool Connect(void * (*factory)(const char *, int *)) override { return true; }
+
+        void Disconnect() override {
+        }
+
+        InitReturnVal_t Init() override { return INIT_OK; }
+
+        void Shutdown() override {
+        }
 
         virtual void OnStartup(const InitContext_t &ctx) = 0;
 

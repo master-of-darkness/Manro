@@ -10,11 +10,6 @@ namespace Manro {
         }
 
         m_Backend = std::move(backend);
-        if (!m_Backend->Initialize()) {
-            LOG_ERROR("[Audio] Backend initialization failed.");
-            m_Backend.reset();
-            return false;
-        }
 
         m_bInitialized = true;
         return true;
@@ -22,8 +17,7 @@ namespace Manro {
 
     void CAudioManager::Shutdown() {
         if (!m_bInitialized) return;
-        m_Backend->Shutdown();
-        m_Backend.reset();
+        m_Backend.release(); // release ownership so we don't double free
         m_bInitialized = false;
     }
 

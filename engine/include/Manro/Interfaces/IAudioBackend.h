@@ -2,17 +2,13 @@
 
 #include <Manro/Core/Handles.h>
 #include <Manro/Core/Types.h>
-#include <Manro/Interfaces/Interface.h>
+#include <Manro/Interfaces/IAppSystem.h>
 #include <string>
 
 namespace Manro {
-    class IAudioBackend : public Interface {
+    class IAudioBackend : public IAppSystem {
     public:
         ~IAudioBackend() override = default;
-
-        virtual bool Initialize() = 0;
-
-        virtual void Shutdown() = 0;
 
         virtual SoundHandle LoadSound(const std::string &filepath) = 0;
 
