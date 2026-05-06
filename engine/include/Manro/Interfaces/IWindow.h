@@ -27,6 +27,8 @@ namespace Manro {
     public:
         ~IWindow() override = default;
 
+        virtual bool Initialize(const WindowDesc_t &desc) = 0;
+
         virtual void SetTitle(const std::string &title) = 0;
 
         virtual void Resize(u32 width, u32 height) = 0;

@@ -15,11 +15,6 @@ namespace Manro {
 
         ~CAudioBackend() override { Shutdown(); }
 
-        bool Connect(void * (*factory)(const char *, int *)) override { return true; }
-
-        void Disconnect() override {
-        }
-
         InitReturnVal_t Init() override;
 
         void Shutdown() override;

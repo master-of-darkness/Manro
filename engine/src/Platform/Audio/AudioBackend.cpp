@@ -1,5 +1,4 @@
 #include <Manro/Platform/Audio/AudioBackend.h>
-#include <Manro/Core/InterfaceReg.h>
 #include <Manro/Core/Logger.h>
 #include <algorithm>
 #include <ranges>
@@ -187,10 +186,5 @@ namespace Manro {
         if (m_pMusicTrack) {
             MIX_SetTrackGain(m_pMusicTrack, std::clamp(volume, 0.f, 1.f));
         }
-    }
-
-    EXPOSE_SINGLE_INTERFACE(CAudioBackend, IAudioBackend, "IAUDIOBACKEND_001")
-
-    void ForceLinkAudioBackend() {
     }
 } // namespace Manro

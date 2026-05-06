@@ -9,6 +9,8 @@ namespace Manro {
 
     class CPlatformContext {
     public:
+        // Initializes SDL and constructs the audio backend. Window creation is
+        // performed via GetWindowManager().AddWindow(...) by the caller.
         CPlatformContext();
 
         ~CPlatformContext();

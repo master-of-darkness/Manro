@@ -10,12 +10,14 @@ namespace Manro {
     public:
         virtual ~IAppSystem() = default;
 
-        virtual bool Connect(void * (*factory)(const char *, int *)) = 0;
+        virtual bool Connect() { return true; }
 
-        virtual void Disconnect() = 0;
+        virtual void Disconnect() {
+        }
 
-        virtual InitReturnVal_t Init() = 0;
+        virtual InitReturnVal_t Init() { return INIT_OK; }
 
-        virtual void Shutdown() = 0;
+        virtual void Shutdown() {
+        }
     };
 }

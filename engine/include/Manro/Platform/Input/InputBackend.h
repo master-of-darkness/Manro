@@ -11,16 +11,6 @@ namespace Manro {
 
         ~CInputBackend() override = default;
 
-        bool Connect(void * (*factory)(const char *, int *)) override { return true; }
-
-        void Disconnect() override {
-        }
-
-        InitReturnVal_t Init() override { return INIT_OK; }
-
-        void Shutdown() override {
-        }
-
         void ProcessEvent(const PlatformEvent_t &event) override;
 
         bool IsKeyDown(Key k) const override;

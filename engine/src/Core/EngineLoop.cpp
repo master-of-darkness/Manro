@@ -5,11 +5,10 @@
 #include <Manro/Core/VirtualFS.h>
 #include "EmbeddedShaders.h"
 #include <Manro/Platform/PlatformContext.h>
+#include <Manro/Platform/Window/Window.h>
 #include <Manro/Render/Renderer.h>
 #include <Manro/Input/InputManager.h>
 #include <Manro/Platform/Input/InputBackend.h>
-#include <Manro/Platform/Window/Window.h>
-#include <Manro/Core/InterfaceReg.h>
 #include <chrono>
 
 #include "Profiling.h"
@@ -34,36 +33,23 @@ namespace Manro {
 #endif
 
         CJobSystem jobs;
-
-        // Initialize systems via IAppSystem
-        for (CInterfaceReg *pCur = GetInterfaceRegs(); pCur; pCur = pCur->m_pNext) {
-            auto *system = static_cast<IAppSystem *>(pCur->m_CreateFn());
-            if (system) {
-                system->Connect(Sys_GetFactory);
-            }
-        }
-
-        g_InitialWindowDesc = app.GetWindowDesc();
-
-        for (CInterfaceReg *pCur = GetInterfaceRegs(); pCur; pCur = pCur->m_pNext) {
-            auto *system = static_cast<IAppSystem *>(pCur->m_CreateFn());
-            if (system) {
-                system->Init();
-            }
-        }
-
         CPlatformContext platform;
-
         RegisterEmbeddedShaders();
 
+        // Window
         auto winDesc = app.GetWindowDesc();
-        auto &wm = platform.GetWindowManager();
+        WindowHandle wh = platform.GetWindowManager().AddWindow(winDesc);
+        IWindow *win = platform.GetWindowManager().Get(wh);
+        if (!win) {
+            LOG_ERROR("[CEngineLoop] Window creation failed.");
+            return;
+        }
 
-        int dummy;
-        IWindow *win = static_cast<IWindow *>(Sys_GetFactory("IWINDOW_001", &dummy));
-
-        // Setup WindowHandle in WindowManager
-        [[maybe_unused]] WindowHandle wh = wm.AddWindowFromExisting(win);
+        // App init lifecycle (no factory, just direct call).
+        if (!app.Connect() || app.Init() != INIT_OK) {
+            LOG_ERROR("[CEngineLoop] Application init failed.");
+            return;
+        }
 
         CRenderer renderer(*win, win->GetWidth(), win->GetHeight());
 
@@ -97,7 +83,7 @@ namespace Manro {
                 if (!platform.PollEvents(inputManager)) break;
             }
 
-            UserCmd_t cmd = inputManager->Poll();
+            UserCmd_t cmd = inputManager ? inputManager->Poll() : UserCmd_t{};
             FrameContext_t fctx{dt, totalTime, frameIndex++};
 
             {
@@ -117,20 +103,8 @@ namespace Manro {
         }
 
         app.OnShutdown();
-
-        // Shutdown interfaces in reverse order
-        for (CInterfaceReg *pCur = GetInterfaceRegs(); pCur; pCur = pCur->m_pNext) {
-            auto *system = static_cast<IAppSystem *>(pCur->m_CreateFn());
-            if (system) {
-                system->Shutdown();
-            }
-        }
-        for (CInterfaceReg *pCur = GetInterfaceRegs(); pCur; pCur = pCur->m_pNext) {
-            auto *system = static_cast<IAppSystem *>(pCur->m_CreateFn());
-            if (system) {
-                system->Disconnect();
-            }
-        }
+        app.Shutdown();
+        app.Disconnect();
 
 #ifdef _WIN32
         timeEndPeriod(1);

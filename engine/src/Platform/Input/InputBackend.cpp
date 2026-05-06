@@ -1,5 +1,4 @@
 #include <Manro/Platform/Input/InputBackend.h>
-#include <Manro/Core/InterfaceReg.h>
 #include <SDL3/SDL.h>
 #include <Manro/Core/Logger.h>
 
@@ -161,10 +160,5 @@ namespace Manro {
     bool CInputBackend::IsGamepadButtonDown(int btn) const {
         if (btn < 0 || btn >= 32) return false;
         return (m_unGamepadButtons >> btn) & 1u;
-    }
-
-    EXPOSE_SINGLE_INTERFACE(CInputBackend, IInputBackend, "IINPUTBACKEND_001")
-
-    void ForceLinkInputBackend() {
     }
 } // namespace Manro

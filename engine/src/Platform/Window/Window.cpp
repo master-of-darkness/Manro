@@ -1,16 +1,8 @@
 #include <Manro/Platform/Window/Window.h>
-#include <Manro/Core/InterfaceReg.h>
 #include <Manro/Core/Logger.h>
 #include <SDL3/SDL.h>
 
 namespace Manro {
-    WindowDesc_t g_InitialWindowDesc;
-
-    InitReturnVal_t CWindow::Init() {
-        if (!Initialize(g_InitialWindowDesc)) return INIT_FAILED;
-        return INIT_OK;
-    }
-
     bool CWindow::Initialize(const WindowDesc_t &desc) {
         m_Title = desc.Title;
         m_unWidth = desc.Width;
@@ -118,10 +110,5 @@ namespace Manro {
             default:
                 break;
         }
-    }
-
-    EXPOSE_SINGLE_INTERFACE(CWindow, IWindow, "IWINDOW_001")
-
-    void ForceLinkWindow() {
     }
 } // namespace Manro

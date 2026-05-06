@@ -35,16 +35,6 @@ namespace Manro {
     public:
         ~IApplication() override = default;
 
-        bool Connect(void * (*factory)(const char *, int *)) override { return true; }
-
-        void Disconnect() override {
-        }
-
-        InitReturnVal_t Init() override { return INIT_OK; }
-
-        void Shutdown() override {
-        }
-
         virtual void OnStartup(const InitContext_t &ctx) = 0;
 
         virtual void OnShutdown() = 0;

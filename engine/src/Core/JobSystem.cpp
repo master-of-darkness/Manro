@@ -10,7 +10,7 @@ namespace Manro {
         }
 
         m_GlobalHandle = CreateHandle();
-        m_Running = true;
+        m_Running.store(true, std::memory_order_release);
 
         for (u32 i = 0; i < numThreads; ++i) {
             m_Threads.emplace_back(&CJobSystem::WorkerThread, this);
@@ -18,7 +18,10 @@ namespace Manro {
     }
 
     CJobSystem::~CJobSystem() {
-        m_Running = false;
+        {
+            std::scoped_lock lock(m_Mutex);
+            m_Running.store(false, std::memory_order_release);
+        }
         m_WakeCondition.notify_all();
 
         for (auto &thread: m_Threads) {
@@ -38,16 +41,17 @@ namespace Manro {
     }
 
     void CJobSystem::Execute(CJobHandle handle, std::function<void()> job) {
-        if (!m_Running) return;
+        if (!m_Running.load(std::memory_order_acquire)) return;
         if (!handle.IsValid()) {
             handle = m_GlobalHandle;
         }
 
+        handle.m_PendingJobs->fetch_add(1, std::memory_order_relaxed);
+
         {
             std::scoped_lock lock(m_Mutex);
-            handle.m_PendingJobs->fetch_add(1, std::memory_order_relaxed);
             m_Jobs.push(JobEntry_t{std::move(job), handle.m_PendingJobs});
-            ++m_JobsInFlight;
+            m_JobsInFlight.fetch_add(1, std::memory_order_relaxed);
         }
         m_WakeCondition.notify_one();
     }
@@ -67,12 +71,10 @@ namespace Manro {
     void CJobSystem::Wait(const CJobHandle &handle) {
         if (!handle.IsValid()) return;
 
-        while (handle.m_PendingJobs->load(std::memory_order_acquire) > 0) {
-            std::unique_lock<std::mutex> lock(m_Mutex);
-            m_WakeMain.wait(lock, [&handle]() {
-                return handle.m_PendingJobs->load(std::memory_order_acquire) == 0;
-            });
-        }
+        std::unique_lock<std::mutex> lock(m_Mutex);
+        m_WakeMain.wait(lock, [&handle]() {
+            return handle.m_PendingJobs->load(std::memory_order_acquire) == 0;
+        });
     }
 
     void CJobSystem::WaitAll() {
@@ -81,16 +83,16 @@ namespace Manro {
 
     void CJobSystem::WorkerThread() {
         MNR_PROFILE_THREAD("Worker");
-        while (m_Running) {
+        for (;;) {
             JobEntry_t job;
 
             {
                 std::unique_lock<std::mutex> lock(m_Mutex);
                 m_WakeCondition.wait(lock, [this]() {
-                    return !m_Jobs.empty() || !m_Running;
+                    return !m_Jobs.empty() || !m_Running.load(std::memory_order_acquire);
                 });
 
-                if (!m_Running && m_Jobs.empty()) {
+                if (m_Jobs.empty()) {
                     return;
                 }
 
@@ -101,12 +103,16 @@ namespace Manro {
             if (job.work) {
                 MNR_PROFILE_SCOPE("Job");
                 job.work();
-                job.pendingJobs->fetch_sub(1, std::memory_order_release);
-                m_JobsInFlight--;
-                if (m_JobsInFlight == 0 || job.pendingJobs->load(std::memory_order_acquire) == 0) {
-                    m_WakeMain.notify_all();
-                }
             }
+
+            {
+                std::scoped_lock lock(m_Mutex);
+                if (job.pendingJobs) {
+                    job.pendingJobs->fetch_sub(1, std::memory_order_acq_rel);
+                }
+                m_JobsInFlight.fetch_sub(1, std::memory_order_acq_rel);
+            }
+            m_WakeMain.notify_all();
         }
     }
 } // namespace Manro
