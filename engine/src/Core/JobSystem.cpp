@@ -51,7 +51,6 @@ namespace Manro {
         {
             std::scoped_lock lock(m_Mutex);
             m_Jobs.push(JobEntry_t{std::move(job), handle.m_PendingJobs});
-            m_JobsInFlight.fetch_add(1, std::memory_order_relaxed);
         }
         m_WakeCondition.notify_one();
     }
@@ -110,7 +109,6 @@ namespace Manro {
                 if (job.pendingJobs) {
                     job.pendingJobs->fetch_sub(1, std::memory_order_acq_rel);
                 }
-                m_JobsInFlight.fetch_sub(1, std::memory_order_acq_rel);
             }
             m_WakeMain.notify_all();
         }

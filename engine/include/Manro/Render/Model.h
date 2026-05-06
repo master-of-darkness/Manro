@@ -13,6 +13,8 @@ namespace Manro {
 
     class CJobSystem;
 
+    class CVirtualFS;
+
     struct ModelSubMesh_t {
         MeshHandle meshId;
         Scope<CMaterialInstance> material;
@@ -30,13 +32,15 @@ namespace Manro {
 
         ~CModel() = default;
 
-        static PreparedAssets_t Prepare(const std::vector<std::string> &paths, CJobSystem &jobs);
+        static PreparedAssets_t Prepare(const std::vector<std::string> &paths,
+                                        CJobSystem &jobs, CVirtualFS &vfs);
 
         static std::vector<Scope<CModel> > CommitPrepared(PreparedAssets_t prepared, CRenderer &renderer);
 
         static std::vector<Scope<CModel> > Load(const std::vector<std::string> &paths,
                                                 CRenderer &renderer,
-                                                CJobSystem &jobs);
+                                                CJobSystem &jobs,
+                                                CVirtualFS &vfs);
 
         void AddSubMesh(MeshHandle meshId, Scope<CMaterialInstance> material) {
             m_SubMeshes.push_back({meshId, std::move(material)});

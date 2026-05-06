@@ -13,13 +13,15 @@ namespace Manro {
     };
 
     class CJobSystem;
+    class CVirtualFS;
 
     class CTextureLoader {
     public:
-        static std::vector<TextureData_t> Load(const std::vector<std::string> &filepaths, CJobSystem &jobs);
+        static std::vector<TextureData_t> Load(const std::vector<std::string> &filepaths,
+                                               CJobSystem &jobs, CVirtualFS &vfs);
 
-        static TextureData_t LoadOne(const std::string &filepath);
+        static TextureData_t LoadOne(const std::string &filepath, CVirtualFS &vfs);
 
-        static std::vector<TextureData_t> LoadCubemap(const std::string &filepath);
+        static std::vector<TextureData_t> LoadCubemap(const std::string &filepath, CVirtualFS &vfs);
     };
 } // namespace Manro

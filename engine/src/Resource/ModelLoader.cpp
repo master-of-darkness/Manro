@@ -40,7 +40,8 @@ namespace Manro {
 
     class CVirtualFSMaterialReader : public tinyobj::MaterialReader {
     public:
-        explicit CVirtualFSMaterialReader(std::string baseDir) : m_BaseDir(std::move(baseDir)) {
+        CVirtualFSMaterialReader(std::string baseDir, CVirtualFS &vfs)
+            : m_BaseDir(std::move(baseDir)), m_Vfs(vfs) {
         }
 
         bool operator()(const std::string &matId,
@@ -48,8 +49,7 @@ namespace Manro {
                         std::map<std::string, int> *matMap, std::string *warn,
                         std::string *err) override {
             std::string filepath = m_BaseDir + matId;
-            auto &vfs = CVirtualFS::Get();
-            std::vector<u8> data = vfs.ReadFile(filepath);
+            std::vector<u8> data = m_Vfs.ReadFile(filepath);
             if (data.empty()) {
                 if (err) (*err) += "Failed to load material file: " + filepath + "\n";
                 return false;
@@ -63,11 +63,12 @@ namespace Manro {
 
     private:
         std::string m_BaseDir;
+        CVirtualFS &m_Vfs;
     };
 
-    // tinygltf CVirtualFS callbacks
+    // tinygltf CVirtualFS callbacks. user_data points to a CVirtualFS instance
     static bool VfsFileExists(const std::string &abs_filename, void *user_data) {
-        return CVirtualFS::Get().FileExists(abs_filename);
+        return static_cast<CVirtualFS *>(user_data)->FileExists(abs_filename);
     }
 
     static std::string VfsExpandFilePath(const std::string &filepath, void *user_data) {
@@ -76,7 +77,7 @@ namespace Manro {
 
     static bool VfsReadWholeFile(std::vector<unsigned char> *out, std::string *err,
                                  const std::string &filepath, void *user_data) {
-        auto data = CVirtualFS::Get().ReadFile(filepath);
+        auto data = static_cast<CVirtualFS *>(user_data)->ReadFile(filepath);
         if (data.empty()) {
             if (err) *err = "Failed to read file: " + filepath;
             return false;
@@ -92,15 +93,8 @@ namespace Manro {
 
     static bool VfsGetFileSizeInBytes(size_t *filesize_out, std::string *err,
                                       const std::string &abs_filename,
-                                      void *userdata
-    ) {
-        return
-
-                CVirtualFS::Get()
-
-                .
-                GetFileSize(abs_filename, *filesize_out
-                );
+                                      void *userdata) {
+        return static_cast<CVirtualFS *>(userdata)->GetFileSize(abs_filename, *filesize_out);
     }
 
     // MikkTSpace interface
@@ -204,7 +198,7 @@ namespace Manro {
         return tail == ext;
     }
 
-    static void LoadObj(const std::string &filepath, std::vector<SubMeshData_t> &out) {
+    static void LoadObj(const std::string &filepath, CVirtualFS &vfs, std::vector<SubMeshData_t> &out) {
         tinyobj::attrib_t attrib;
         std::vector<tinyobj::shape_t> shapes;
         std::vector<tinyobj::material_t> materials;
@@ -215,12 +209,12 @@ namespace Manro {
         if (slash != std::string::npos)
             baseDir = filepath.substr(0, slash + 1);
 
-        std::vector<u8> objData = CVirtualFS::Get().ReadFile(filepath);
+        std::vector<u8> objData = vfs.ReadFile(filepath);
         if (objData.empty()) return;
         std::string objContent(reinterpret_cast<const char *>(objData.data()), objData.size());
         std::stringstream ss(objContent);
 
-        CVirtualFSMaterialReader matReader(baseDir);
+        CVirtualFSMaterialReader matReader(baseDir, vfs);
         bool ok = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, &ss, &matReader);
 
         if (!ok) {
@@ -495,13 +489,13 @@ namespace Manro {
         }
     }
 
-    static void LoadGltf(const std::string &filepath, std::vector<SubMeshData_t> &out) {
+    static void LoadGltf(const std::string &filepath, CVirtualFS &vfs, std::vector<SubMeshData_t> &out) {
         std::string baseDir;
         auto slash = filepath.find_last_of("/\\");
         if (slash != std::string::npos)
             baseDir = filepath.substr(0, slash + 1);
 
-        auto fileData = CVirtualFS::Get().ReadFile(filepath);
+        auto fileData = vfs.ReadFile(filepath);
         if (fileData.empty()) return;
 
         tinygltf::Model model;
@@ -514,7 +508,7 @@ namespace Manro {
         callbacks.ReadWholeFile = VfsReadWholeFile;
         callbacks.WriteWholeFile = VfsWriteWholeFile;
         callbacks.GetFileSizeInBytes = VfsGetFileSizeInBytes;
-        callbacks.user_data = nullptr;
+        callbacks.user_data = &vfs;
         loader.SetFsCallbacks(callbacks);
 
         loader.SetImageLoader(nullptr, nullptr);
@@ -543,10 +537,10 @@ namespace Manro {
                 if (img.mimeType == "image/jpeg") ext = ".jpg";
                 std::string virtualPath = "memory://" + filepath + "/image_" + std::to_string(i) + ext;
 
-                if (!CVirtualFS::Get().FileExists(virtualPath)) {
+                if (!vfs.FileExists(virtualPath)) {
                     std::vector<u8> data(buf.data.begin() + bv.byteOffset,
                                          buf.data.begin() + bv.byteOffset + bv.byteLength);
-                    CVirtualFS::Get().MountOwned(virtualPath, std::move(data));
+                    vfs.MountOwned(virtualPath, std::move(data));
                     LOG_INFO("[CModelLoader] Mounted embedded GLB texture: {}", virtualPath);
                 }
             }
@@ -560,34 +554,35 @@ namespace Manro {
 
 
     std::vector<std::vector<SubMeshData_t> >
-    CModelLoader::LoadSubMeshes(const std::vector<std::string> &filepaths, CJobSystem &jobs) {
+    CModelLoader::LoadSubMeshes(const std::vector<std::string> &filepaths, CJobSystem &jobs, CVirtualFS &vfs) {
         std::vector<std::vector<SubMeshData_t> > allResults(filepaths.size());
         const CJobHandle handle = jobs.CreateHandle();
 
         for (size_t i = 0; i < filepaths.size(); ++i) {
-            jobs.Execute(handle, [&filepaths, &allResults, i]() {
-                allResults[i] = LoadSubMeshes(filepaths[i]);
+            jobs.Execute(handle, [&filepaths, &allResults, &vfs, i]() {
+                allResults[i] = LoadSubMeshes(filepaths[i], vfs);
             });
         }
         jobs.Wait(handle);
         return allResults;
     }
 
-    std::vector<SubMeshData_t> CModelLoader::LoadSubMeshes(const std::string &filepath) {
+    std::vector<SubMeshData_t> CModelLoader::LoadSubMeshes(const std::string &filepath, CVirtualFS &vfs) {
         MNR_PROFILE_SCOPE("LoadModel");
         std::vector<SubMeshData_t> result;
         if (HasExtension(filepath, ".obj")) {
-            LoadObj(filepath, result);
+            LoadObj(filepath, vfs, result);
         } else if (HasExtension(filepath, ".gltf") || HasExtension(filepath, ".glb")) {
-            LoadGltf(filepath, result);
+            LoadGltf(filepath, vfs, result);
         } else {
             LOG_ERROR("[CModelLoader] Unsupported extension: {}", filepath);
         }
         return result;
     }
 
-    std::vector<ModelData_t> CModelLoader::Load(const std::vector<std::string> &filepaths, CJobSystem &jobs) {
-        auto subMeshes = LoadSubMeshes(filepaths, jobs);
+    std::vector<ModelData_t> CModelLoader::Load(const std::vector<std::string> &filepaths,
+                                                CJobSystem &jobs, CVirtualFS &vfs) {
+        auto subMeshes = LoadSubMeshes(filepaths, jobs, vfs);
         std::vector<ModelData_t> results(filepaths.size());
 
         for (size_t i = 0; i < filepaths.size(); ++i) {

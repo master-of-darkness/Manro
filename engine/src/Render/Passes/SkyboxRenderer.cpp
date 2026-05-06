@@ -9,8 +9,8 @@
 #include <stdexcept>
 
 namespace Manro {
-    CSkyboxRenderer::CSkyboxRenderer(CVulkanContext &ctx)
-        : m_Context(ctx) {
+    CSkyboxRenderer::CSkyboxRenderer(CVulkanContext &ctx, CVirtualFS &vfs)
+        : m_Context(ctx), m_Vfs(vfs) {
     }
 
     void CSkyboxRenderer::Init(VkDescriptorPool pool, u32 frameCount,
@@ -65,8 +65,8 @@ namespace Manro {
 
     void CSkyboxRenderer::BuildPipeline(VkFormat colorFmt, VkFormat depthFmt,
                                         VkSampleCountFlagBits samples) {
-        auto vertSpv = CVirtualFS::Get().ReadFile("shaders://skybox.vert.spv");
-        auto fragSpv = CVirtualFS::Get().ReadFile("shaders://skybox.frag.spv");
+        auto vertSpv = m_Vfs.ReadFile("shaders://skybox.vert.spv");
+        auto fragSpv = m_Vfs.ReadFile("shaders://skybox.frag.spv");
         if (vertSpv.empty() || fragSpv.empty()) {
             LOG_ERROR("[CSkyboxRenderer] Skybox shaders not found");
             return;

@@ -224,8 +224,7 @@ namespace Manro {
         return tail == ext;
     }
 
-    static bool LoadIndividual(const std::string &filepath, TextureData_t &out) {
-        auto &vfs = CVirtualFS::Get();
+    static bool LoadIndividual(const std::string &filepath, CVirtualFS &vfs, TextureData_t &out) {
         std::vector<u8> fileData = vfs.ReadFile(filepath);
         if (fileData.empty()) {
             return false;
@@ -261,13 +260,14 @@ namespace Manro {
         return true;
     }
 
-    std::vector<TextureData_t> CTextureLoader::Load(const std::vector<std::string> &filepaths, CJobSystem &jobs) {
+    std::vector<TextureData_t> CTextureLoader::Load(const std::vector<std::string> &filepaths,
+                                                    CJobSystem &jobs, CVirtualFS &vfs) {
         std::vector<TextureData_t> results(filepaths.size());
         const CJobHandle handle = jobs.CreateHandle();
 
         for (size_t i = 0; i < filepaths.size(); ++i) {
-            jobs.Execute(handle, [&filepaths, &results, i]() {
-                LoadIndividual(filepaths[i], results[i]);
+            jobs.Execute(handle, [&filepaths, &results, &vfs, i]() {
+                LoadIndividual(filepaths[i], vfs, results[i]);
             });
         }
         jobs.Wait(handle);
@@ -275,16 +275,16 @@ namespace Manro {
         return results;
     }
 
-    TextureData_t CTextureLoader::LoadOne(const std::string &filepath) {
+    TextureData_t CTextureLoader::LoadOne(const std::string &filepath, CVirtualFS &vfs) {
         MNR_PROFILE_SCOPE("LoadTexture");
         TextureData_t result;
-        LoadIndividual(filepath, result);
+        LoadIndividual(filepath, vfs, result);
         return result;
     }
 
-    std::vector<TextureData_t> CTextureLoader::LoadCubemap(const std::string &filepath) {
+    std::vector<TextureData_t> CTextureLoader::LoadCubemap(const std::string &filepath, CVirtualFS &vfs) {
         TextureData_t rawData;
-        if (!LoadIndividual(filepath, rawData)) {
+        if (!LoadIndividual(filepath, vfs, rawData)) {
             return {};
         }
 

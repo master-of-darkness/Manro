@@ -18,10 +18,11 @@ namespace Manro {
     class CGpuCullDispatcher;
     class CMaterialSystem;
     class CMaterial;
+    class CVirtualFS;
 
     class CPipelineManager {
     public:
-        explicit CPipelineManager(CVulkanContext &ctx);
+        CPipelineManager(CVulkanContext &ctx, CVirtualFS &vfs);
 
         void CreateDescriptorLayouts();
 
@@ -65,6 +66,7 @@ namespace Manro {
 
     private:
         CVulkanContext &m_Context;
+        CVirtualFS &m_Vfs;
 
         VkDescriptorPool m_DescriptorPool = VK_NULL_HANDLE;
         VkDescriptorSetLayout m_PbrSetLayout = VK_NULL_HANDLE;

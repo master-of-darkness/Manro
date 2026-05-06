@@ -27,7 +27,7 @@ namespace Manro {
         }
     } // anon namespace
 
-    bool CRresMount::MountArchive(std::string_view archivePath,
+    bool CRresMount::MountArchive(CVirtualFS &vfs, std::string_view archivePath,
                                   std::string_view virtualPrefix) {
         const std::string pathStr(archivePath);
 
@@ -88,7 +88,7 @@ namespace Manro {
             std::memcpy(bytes.data(), chunk.data.raw, size);
 
             std::string virtualPath = JoinVirtualPath(virtualPrefix, entry.fileName);
-            CVirtualFS::Get().MountOwned(virtualPath, std::move(bytes));
+            vfs.MountOwned(virtualPath, std::move(bytes));
 
             {
                 std::lock_guard<std::mutex> lock(g_MountMutex);

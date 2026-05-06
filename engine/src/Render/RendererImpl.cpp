@@ -38,7 +38,7 @@
 namespace Manro {
     class CRendererImpl final {
     public:
-        CRendererImpl(IWindow &window, u32 width, u32 height, const RenderSettings_t &settings,
+        CRendererImpl(IWindow &window, CVirtualFS &vfs, u32 width, u32 height, const RenderSettings_t &settings,
                       const RendererConfig_t &config = RendererConfig_t::Default());
 
         ~CRendererImpl();
@@ -199,6 +199,7 @@ namespace Manro {
 
         CGpuCullDispatcher m_CullDispatcher;
         CPipelineManager m_PipelineMgr;
+        CVirtualFS &m_Vfs;
 
         std::vector<FrameData_t> m_Frames;
         u32 m_unCurrentFrame = 0;
@@ -230,14 +231,15 @@ namespace Manro {
         bool m_bSceneTexDirty{true};
     };
 
-    CRendererImpl::CRendererImpl(IWindow &window, u32 width, u32 height,
+    CRendererImpl::CRendererImpl(IWindow &window, CVirtualFS &vfs, u32 width, u32 height,
                                  const RenderSettings_t &settings,
                                  const RendererConfig_t &config)
         : m_Context("ManroEngine", window),
           m_Textures(m_Context, m_BindlessAlloc), m_Meshes(new MeshManagerImpl_t(m_Context)),
-          m_Swapchain(m_Context), m_RenderTargets(m_Context), m_Shadow(m_Context), m_Skybox(m_Context),
-          m_CullDispatcher(m_Context),
-          m_PipelineMgr(m_Context),
+          m_Swapchain(m_Context), m_RenderTargets(m_Context), m_Shadow(m_Context, vfs), m_Skybox(m_Context, vfs),
+          m_CullDispatcher(m_Context, vfs),
+          m_PipelineMgr(m_Context, vfs),
+          m_Vfs(vfs),
           m_MaterialSystem(m_Context),
           m_Settings(settings), m_Config(config) {
         NormalizeRenderSettings(m_Settings, m_Context.GetMaxUsableSampleCount());
@@ -278,7 +280,7 @@ namespace Manro {
         m_PipelineMgr.BuildCompositePipeline(m_Swapchain.GetFormat());
         m_CullDispatcher.BuildPipelines(m_PipelineCache);
 
-        m_DrawSystem = CreateScope<CDrawSystem>(m_Context);
+        m_DrawSystem = CreateScope<CDrawSystem>(m_Context, m_Vfs);
         m_DrawSystem->Init(m_RenderTargets.GetOffscreenFormat(),
                            m_RenderTargets.GetDepthFormat(),
                            ToVulkanSampleCount(m_Settings.msaaSamples));
@@ -1100,18 +1102,18 @@ namespace Manro {
         DrawLine(origin, origin + axisZ, 0xFFFF0000u, true);
     }
 
-    Scope<CRendererImpl> CreateRendererImpl(IWindow &window, u32 width, u32 height,
+    Scope<CRendererImpl> CreateRendererImpl(IWindow &window, CVirtualFS &vfs, u32 width, u32 height,
                                             const RenderSettings_t &settings, const RendererConfig_t &config) {
-        return CreateScope<CRendererImpl>(window, width, height, settings, config);
+        return CreateScope<CRendererImpl>(window, vfs, width, height, settings, config);
     }
 
-    CRenderer::CRenderer(IWindow &window, u32 width, u32 height, const RenderSettings_t &settings)
-        : CRenderer(window, width, height, settings, RendererConfig_t::Default()) {
+    CRenderer::CRenderer(IWindow &window, CVirtualFS &vfs, u32 width, u32 height, const RenderSettings_t &settings)
+        : CRenderer(window, vfs, width, height, settings, RendererConfig_t::Default()) {
     }
 
-    CRenderer::CRenderer(IWindow &window, u32 width, u32 height, const RenderSettings_t &settings,
+    CRenderer::CRenderer(IWindow &window, CVirtualFS &vfs, u32 width, u32 height, const RenderSettings_t &settings,
                          const RendererConfig_t &config)
-        : m_Impl(CreateRendererImpl(window, width, height, settings, config)) {
+        : m_Impl(CreateRendererImpl(window, vfs, width, height, settings, config)) {
     }
 
     CRenderer::~CRenderer() = default;

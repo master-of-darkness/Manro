@@ -62,6 +62,7 @@ namespace ManroEdit {
         m_Window = &ctx.CWindow;
         m_Jobs = &ctx.Jobs;
         m_Renderer = &ctx.CRenderer;
+        m_Vfs = &ctx.Vfs;
 
         m_Renderer->SetDebugUIEnabled(false);
         m_InputManager.SetBackend(&m_InputBackend);
@@ -887,7 +888,7 @@ namespace ManroEdit {
 
         m_Jobs->Execute([raw, this]() {
             try {
-                raw->prepared = Manro::CModel::Prepare({raw->virtualPath}, *m_Jobs);
+                raw->prepared = Manro::CModel::Prepare({raw->virtualPath}, *m_Jobs, *m_Vfs);
                 raw->success.store(!raw->prepared.subMeshes.empty());
             } catch (const std::exception &ex) {
                 LOG_ERROR("[Editor] Prepare threw for {}: {}", raw->virtualPath, ex.what());
@@ -1067,7 +1068,7 @@ namespace ManroEdit {
         }
 
         m_ProjectDir = dir;
-        Manro::CVirtualFS::Get().SetBaseDir(dir);
+        m_Vfs->SetBaseDir(dir);
         m_bProjectOpen = true;
         LoadProjectFile();
 
@@ -1097,7 +1098,7 @@ namespace ManroEdit {
             return;
         }
         m_ProjectDir = dir;
-        Manro::CVirtualFS::Get().SetBaseDir(dir);
+        m_Vfs->SetBaseDir(dir);
         m_bProjectOpen = true;
         m_ProjectScenes.clear();
         NewMap();
@@ -1298,7 +1299,7 @@ namespace ManroEdit {
                         ? parent.string()
                         : fs::path(path).parent_path().string();
             m_ProjectDir = root;
-            Manro::CVirtualFS::Get().SetBaseDir(root);
+            m_Vfs->SetBaseDir(root);
             m_bProjectOpen = true;
         }
         if (m_bProjectOpen) AddSceneToProject(path);
@@ -1335,7 +1336,7 @@ namespace ManroEdit {
         const std::string &path = m_Map.SkyboxPath();
         if (path.empty() || path == m_LoadedSkyboxPath) return;
 
-        auto faces = Manro::CTextureLoader::LoadCubemap(path);
+        auto faces = Manro::CTextureLoader::LoadCubemap(path, *m_Vfs);
         if (faces.empty()) {
             LOG_ERROR("[Editor] Failed to load skybox: {}", path);
             SetStatus("Skybox load failed: " + path);

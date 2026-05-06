@@ -171,6 +171,7 @@ namespace ManroEdit {
         Manro::IWindow *m_Window = nullptr;
         Manro::CJobSystem *m_Jobs = nullptr;
         Manro::CRenderer *m_Renderer = nullptr;
+        Manro::CVirtualFS *m_Vfs = nullptr;
 
         Manro::CInputBackend m_InputBackend;
         Manro::CInputManager m_InputManager;

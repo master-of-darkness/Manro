@@ -10,10 +10,11 @@ namespace Manro {
     class CPipeline;
     class CBuffer;
     class CTextureManager;
+    class CVirtualFS;
 
     class CSkyboxRenderer {
     public:
-        explicit CSkyboxRenderer(CVulkanContext &ctx);
+        CSkyboxRenderer(CVulkanContext &ctx, CVirtualFS &vfs);
 
         ~CSkyboxRenderer() = default;
 
@@ -52,6 +53,7 @@ namespace Manro {
         void BuildPipeline(VkFormat colorFmt, VkFormat depthFmt, VkSampleCountFlagBits samples);
 
         CVulkanContext &m_Context;
+        CVirtualFS &m_Vfs;
 
         Scope<CPipeline> m_SkyboxPipeline;
         Scope<CBuffer> m_SkyboxVertexBuffer;

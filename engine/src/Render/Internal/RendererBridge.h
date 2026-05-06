@@ -3,7 +3,9 @@
 #include <Manro/Render/Renderer.h>
 
 namespace Manro {
-    Scope<CRendererImpl> CreateRendererImpl(IWindow &window, u32 width, u32 height,
+    class CVirtualFS;
+
+    Scope<CRendererImpl> CreateRendererImpl(IWindow &window, CVirtualFS &vfs, u32 width, u32 height,
                                             const RenderSettings_t &settings, const RendererConfig_t &config);
 
     bool RendererImplBeginFrame(CRendererImpl & impl);

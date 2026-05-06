@@ -37,17 +37,18 @@ void CSponza::OnStartup(const Manro::InitContext_t &ctx) {
     m_Window = &ctx.CWindow;
     m_Jobs = &ctx.Jobs;
     m_Renderer = &ctx.CRenderer;
+    m_Vfs = &ctx.Vfs;
     m_Renderer->SetDebugUIEnabled(false);
 
     const auto worldDir =
             (std::filesystem::path(MANRO_ASSETS_DIR) / "../../world")
             .lexically_normal().string();
-    Manro::CVirtualFS::Get().SetBaseDir(worldDir);
+    m_Vfs->SetBaseDir(worldDir);
 
     const std::string rresPath = worldDir + "/scenes/test.rres";
     if (std::filesystem::exists(rresPath)) {
         LOG_INFO("[CSponza] Mounting archive {}", rresPath);
-        Manro::CRresMount::MountArchive(rresPath);
+        Manro::CRresMount::MountArchive(*m_Vfs, rresPath);
     }
 
     m_InputManager.SetBackend(&m_InputBackend);
@@ -181,7 +182,7 @@ void CSponza::OnRender(Manro::FrameContext_t &frame) {
 
 void CSponza::LoadScene() {
     bool gotMap = false;
-    const std::string mmapPath = Manro::CVirtualFS::Get().ResolvePath("scenes/test.mmap");
+    const std::string mmapPath = m_Vfs->ResolvePath("scenes/test.mmap");
     if (std::filesystem::exists(mmapPath))
         gotMap = m_Map.LoadFromFile(mmapPath);
 
@@ -191,7 +192,7 @@ void CSponza::LoadScene() {
         for (const auto &e: m_Map.Entities()) {
             if (e.modelPath.empty()) continue;
             if (m_MapModels.count(e.modelPath)) continue;
-            auto loaded = Manro::CModel::Load({e.modelPath}, *m_Renderer, *m_Jobs);
+            auto loaded = Manro::CModel::Load({e.modelPath}, *m_Renderer, *m_Jobs, *m_Vfs);
             if (!loaded.empty() && loaded[0])
                 m_MapModels.emplace(e.modelPath, std::move(loaded[0]));
             else
@@ -205,7 +206,7 @@ void CSponza::LoadScene() {
         }
     }
 
-    auto skyFaces = Manro::CTextureLoader::LoadCubemap("skyboxes/cubemap_sky.png");
+    auto skyFaces = Manro::CTextureLoader::LoadCubemap("skyboxes/cubemap_sky.png", *m_Vfs);
     if (!skyFaces.empty()) {
         auto h = m_Renderer->UploadCubemap(skyFaces);
         m_Renderer->SetSkybox(h);

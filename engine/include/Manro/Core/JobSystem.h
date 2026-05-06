@@ -66,7 +66,6 @@ namespace Manro {
         std::condition_variable m_WakeCondition;
         std::condition_variable m_WakeMain;
 
-        std::atomic<u32> m_JobsInFlight{0};
         std::atomic<bool> m_Running{false};
         CJobHandle m_GlobalHandle;
     };

@@ -7,6 +7,7 @@ namespace Manro {
     class CVulkanContext;
     class CBuffer;
     class CPipeline;
+    class CVirtualFS;
 
     struct DrawLineCmd_t {
         Vec3 start;
@@ -61,7 +62,7 @@ namespace Manro {
 
     class CDrawSystem {
     public:
-        explicit CDrawSystem(const CVulkanContext &context);
+        explicit CDrawSystem(const CVulkanContext &context, CVirtualFS &vfs);
 
         ~CDrawSystem();
 
@@ -102,6 +103,7 @@ namespace Manro {
         void CreateRenderPipelines(VkFormat colorFormat, VkFormat depthFormat, VkSampleCountFlagBits msaaSamples);
 
         const CVulkanContext &m_Context;
+        CVirtualFS &m_Vfs;
 
         static constexpr u32 kMaxLines = 65536;
         static constexpr u32 kMaxBoxes = 8192;

@@ -34,7 +34,8 @@ namespace Manro {
 
         CJobSystem jobs;
         CPlatformContext platform;
-        RegisterEmbeddedShaders();
+        CVirtualFS vfs;
+        RegisterEmbeddedShaders(vfs);
 
         // Window
         auto winDesc = app.GetWindowDesc();
@@ -51,7 +52,7 @@ namespace Manro {
             return;
         }
 
-        CRenderer renderer(*win, win->GetWidth(), win->GetHeight());
+        CRenderer renderer(*win, vfs, win->GetWidth(), win->GetHeight());
 
         CInputManager *inputManager = app.GetInputManager();
 
@@ -61,7 +62,7 @@ namespace Manro {
             if (ev == WindowEvent::Resized) renderer.OnResize(w, h);
         });
 
-        InitContext_t ictx{*win, jobs, renderer};
+        InitContext_t ictx{*win, jobs, renderer, vfs};
         app.OnStartup(ictx);
 
         using Clock = std::chrono::steady_clock;

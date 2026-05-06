@@ -6,6 +6,8 @@
 #include <vector>
 
 namespace Manro {
+    class CVirtualFS;
+
     struct MapEntity_t {
         std::string name;
         std::string modelPath; // VFS path
@@ -45,7 +47,7 @@ namespace Manro {
 
         bool SaveToFile(const std::filesystem::path &path) const;
 
-        bool LoadFromVfs(const std::string &vfsPath);
+        bool LoadFromVfs(const std::string &vfsPath, CVirtualFS &vfs);
 
         // Returns empty string on success, error message otherwise. TODO: rework this dumb logic
         std::string PackToRres(const std::filesystem::path &outputRres,

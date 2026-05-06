@@ -18,6 +18,7 @@ namespace Manro {
     class CMeshManager;
     class CModel;
     class CRendererImpl;
+    class CVirtualFS;
 
     struct FrameStats_t {
         u32 drawCalls = 0;
@@ -31,11 +32,11 @@ namespace Manro {
     class CRenderer {
     public:
         /// Constructor with default RendererConfig_t
-        CRenderer(IWindow &window, u32 width, u32 height,
+        CRenderer(IWindow &window, CVirtualFS &vfs, u32 width, u32 height,
                   const RenderSettings_t &settings = {});
 
         /// Constructor with custom RendererConfig_t
-        CRenderer(IWindow &window, u32 width, u32 height,
+        CRenderer(IWindow &window, CVirtualFS &vfs, u32 width, u32 height,
                   const RenderSettings_t &settings,
                   const RendererConfig_t &config);
 

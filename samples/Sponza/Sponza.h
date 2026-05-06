@@ -15,6 +15,8 @@ namespace Manro {
     class CRenderer;
 
     class CJobSystem;
+
+    class CVirtualFS;
 }
 
 struct FlyCamera_t {
@@ -97,6 +99,7 @@ private:
     Manro::IWindow *m_Window{nullptr};
     Manro::CJobSystem *m_Jobs{nullptr};
     Manro::CRenderer *m_Renderer{nullptr};
+    Manro::CVirtualFS *m_Vfs{nullptr};
 
     Manro::CJobSystem m_LoadJobs;
     Manro::CInputBackend m_InputBackend;

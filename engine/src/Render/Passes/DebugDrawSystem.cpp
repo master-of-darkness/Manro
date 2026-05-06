@@ -8,8 +8,8 @@
 #include <volk.h>
 
 namespace Manro {
-    CDrawSystem::CDrawSystem(const CVulkanContext &context)
-        : m_Context(context) {
+    CDrawSystem::CDrawSystem(const CVulkanContext &context, CVirtualFS &vfs)
+        : m_Context(context), m_Vfs(vfs) {
     }
 
     CDrawSystem::~CDrawSystem() {
@@ -198,7 +198,7 @@ namespace Manro {
         vkUpdateDescriptorSets(device, 10, writes, 0, nullptr);
 
         // Load compute shader
-        auto compSpv = CVirtualFS::Get().ReadFile("shaders://line_expand.comp.spv");
+        auto compSpv = m_Vfs.ReadFile("shaders://line_expand.comp.spv");
         if (compSpv.empty()) {
             LOG_ERROR("[CDrawSystem] Failed to load line_expand compute shader");
             return;
@@ -215,8 +215,8 @@ namespace Manro {
 
     void CDrawSystem::CreateRenderPipelines(VkFormat colorFormat, VkFormat depthFormat,
                                             VkSampleCountFlagBits msaaSamples) {
-        auto vertSpv = CVirtualFS::Get().ReadFile("shaders://gizmo.vert.spv");
-        auto fragSpv = CVirtualFS::Get().ReadFile("shaders://gizmo.frag.spv");
+        auto vertSpv = m_Vfs.ReadFile("shaders://gizmo.vert.spv");
+        auto fragSpv = m_Vfs.ReadFile("shaders://gizmo.frag.spv");
         if (vertSpv.empty() || fragSpv.empty()) {
             LOG_ERROR("[CDrawSystem] Gizmo shaders not found");
             return;

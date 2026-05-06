@@ -10,6 +10,8 @@ namespace Manro {
 
     class CInputManager;
 
+    class CVirtualFS;
+
     class IWindow;
 
     struct UserCmd_t;
@@ -24,6 +26,7 @@ namespace Manro {
         IWindow &CWindow;
         CJobSystem &Jobs;
         CRenderer &CRenderer;
+        CVirtualFS &Vfs;
     };
 
     struct RenderContext_t {

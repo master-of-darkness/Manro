@@ -11,8 +11,8 @@
 #include <Manro/Render/MeshManager.h>
 
 namespace Manro {
-    CGpuCullDispatcher::CGpuCullDispatcher(CVulkanContext &ctx)
-        : m_Context(ctx) {
+    CGpuCullDispatcher::CGpuCullDispatcher(CVulkanContext &ctx, CVirtualFS &vfs)
+        : m_Context(ctx), m_Vfs(vfs) {
     }
 
     void CGpuCullDispatcher::Init() {
@@ -63,7 +63,7 @@ namespace Manro {
     void CGpuCullDispatcher::BuildPipelines(CPipelineCache &cache) {
         // Light tile culling pipeline
         {
-            auto compSpv = CVirtualFS::Get().ReadFile("shaders://forward_plus_cull.comp.spv");
+            auto compSpv = m_Vfs.ReadFile("shaders://forward_plus_cull.comp.spv");
             if (compSpv.empty()) {
                 LOG_ERROR("[CRenderer] Cull shader not found");
                 return;
@@ -90,7 +90,7 @@ namespace Manro {
 
         // Mesh culling pipeline
         {
-            auto compSpv = CVirtualFS::Get().ReadFile("shaders://mesh_cull.comp.spv");
+            auto compSpv = m_Vfs.ReadFile("shaders://mesh_cull.comp.spv");
             if (compSpv.empty()) {
                 LOG_ERROR("[CRenderer] Mesh cull shader not found");
                 return;

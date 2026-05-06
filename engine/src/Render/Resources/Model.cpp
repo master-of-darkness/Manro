@@ -8,9 +8,10 @@
 #include <set>
 
 namespace Manro {
-    CModel::PreparedAssets_t CModel::Prepare(const std::vector<std::string> &paths, CJobSystem &jobs) {
+    CModel::PreparedAssets_t CModel::Prepare(const std::vector<std::string> &paths,
+                                             CJobSystem &jobs, CVirtualFS &vfs) {
         PreparedAssets_t prepared;
-        prepared.subMeshes = CModelLoader::LoadSubMeshes(paths, jobs);
+        prepared.subMeshes = CModelLoader::LoadSubMeshes(paths, jobs, vfs);
         std::set<std::string> uniqueTexturePaths;
         for (const auto &modelSubMeshes: prepared.subMeshes) {
             for (const auto &sm: modelSubMeshes) {
@@ -24,7 +25,7 @@ namespace Manro {
         }
 
         prepared.texturePaths.assign(uniqueTexturePaths.begin(), uniqueTexturePaths.end());
-        prepared.textures = CTextureLoader::Load(prepared.texturePaths, jobs);
+        prepared.textures = CTextureLoader::Load(prepared.texturePaths, jobs, vfs);
         return prepared;
     }
 
@@ -86,8 +87,9 @@ namespace Manro {
 
     std::vector<Scope<CModel> > CModel::Load(const std::vector<std::string> &paths,
                                              CRenderer &renderer,
-                                             CJobSystem &jobs) {
-        auto prepared = Prepare(paths, jobs);
+                                             CJobSystem &jobs,
+                                             CVirtualFS &vfs) {
+        auto prepared = Prepare(paths, jobs, vfs);
         auto results = CommitPrepared(std::move(prepared), renderer);
         LOG_INFO("[CModel] Load of {} models completed", paths.size());
         return results;

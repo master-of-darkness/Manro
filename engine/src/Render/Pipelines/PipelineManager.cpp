@@ -19,8 +19,8 @@
 #include <stdexcept>
 
 namespace Manro {
-    CPipelineManager::CPipelineManager(CVulkanContext &ctx)
-        : m_Context(ctx) {
+    CPipelineManager::CPipelineManager(CVulkanContext &ctx, CVirtualFS &vfs)
+        : m_Context(ctx), m_Vfs(vfs) {
     }
 
     void CPipelineManager::CreateDescriptorLayouts() {
@@ -127,9 +127,9 @@ namespace Manro {
     void CPipelineManager::BuildPbrPipeline(const CRenderTargetManager &rt,
                                             const CTextureManager &tex,
                                             const RenderSettings_t &settings) {
-        auto vertSpv = CVirtualFS::Get().ReadFile("shaders://pbr.vert.spv");
-        auto fragSpv = CVirtualFS::Get().ReadFile("shaders://pbr.frag.spv");
-        auto zPrepassFragSpv = CVirtualFS::Get().ReadFile("shaders://pbr_zprepass.frag.spv");
+        auto vertSpv = m_Vfs.ReadFile("shaders://pbr.vert.spv");
+        auto fragSpv = m_Vfs.ReadFile("shaders://pbr.frag.spv");
+        auto zPrepassFragSpv = m_Vfs.ReadFile("shaders://pbr_zprepass.frag.spv");
         if (vertSpv.empty() || fragSpv.empty()) {
             LOG_ERROR("[CRenderer] PBR shaders not found");
             return;
@@ -216,8 +216,8 @@ namespace Manro {
     }
 
     void CPipelineManager::BuildCompositePipeline(VkFormat swapchainFormat) {
-        auto vertSpv = CVirtualFS::Get().ReadFile("shaders://composite.vert.spv");
-        auto fragSpv = CVirtualFS::Get().ReadFile("shaders://composite.frag.spv");
+        auto vertSpv = m_Vfs.ReadFile("shaders://composite.vert.spv");
+        auto fragSpv = m_Vfs.ReadFile("shaders://composite.frag.spv");
         if (vertSpv.empty() || fragSpv.empty()) {
             LOG_ERROR("[CRenderer] Composite shaders not found");
             return;

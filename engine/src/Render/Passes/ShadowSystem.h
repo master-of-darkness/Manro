@@ -12,6 +12,7 @@ namespace Manro {
     class CPipeline;
     class CBuffer;
     class CMeshManager;
+    class CVirtualFS;
 
     struct ShadowUniformData_t {
         Mat4 lightViewProj;
@@ -34,7 +35,7 @@ namespace Manro {
 
     class CShadowSystem {
     public:
-        explicit CShadowSystem(CVulkanContext &ctx);
+        CShadowSystem(CVulkanContext &ctx, CVirtualFS &vfs);
 
         ~CShadowSystem() = default;
 
@@ -89,6 +90,7 @@ namespace Manro {
         void BuildMeshCullLayout(VkDescriptorPool pool);
 
         CVulkanContext &m_Context;
+        CVirtualFS &m_Vfs;
 
         AllocatedImage_t m_ShadowMap{};
         VkSampler m_ShadowSampler{VK_NULL_HANDLE};

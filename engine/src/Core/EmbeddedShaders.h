@@ -1,5 +1,7 @@
 #pragma once
 
 namespace Manro {
-    void RegisterEmbeddedShaders();
+    class CVirtualFS;
+
+    void RegisterEmbeddedShaders(CVirtualFS &vfs);
 } // namespace Manro

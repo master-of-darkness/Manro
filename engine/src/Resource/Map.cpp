@@ -110,8 +110,8 @@ namespace Manro {
         return Deserialize(ss.str());
     }
 
-    bool CMap::LoadFromVfs(const std::string &vfsPath) {
-        auto bytes = CVirtualFS::Get().ReadFile(vfsPath);
+    bool CMap::LoadFromVfs(const std::string &vfsPath, CVirtualFS &vfs) {
+        auto bytes = vfs.ReadFile(vfsPath);
         if (bytes.empty()) return false;
         std::string text(reinterpret_cast<const char *>(bytes.data()),
                          bytes.size());

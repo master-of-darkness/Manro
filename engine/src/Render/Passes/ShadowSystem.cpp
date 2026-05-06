@@ -37,8 +37,8 @@ namespace Manro {
         u32 firstInstance;
     };
 
-    CShadowSystem::CShadowSystem(CVulkanContext &ctx)
-        : m_Context(ctx) {
+    CShadowSystem::CShadowSystem(CVulkanContext &ctx, CVirtualFS &vfs)
+        : m_Context(ctx), m_Vfs(vfs) {
     }
 
     void CShadowSystem::Init(VkDescriptorPool pool, const ShadowSettings_t &s,
@@ -168,7 +168,7 @@ namespace Manro {
     }
 
     void CShadowSystem::BuildPipeline(VkDescriptorSetLayout pbrSetLayout) {
-        auto vertSpv = CVirtualFS::Get().ReadFile("shaders://shadow_depth.vert.spv");
+        auto vertSpv = m_Vfs.ReadFile("shaders://shadow_depth.vert.spv");
         if (vertSpv.empty()) {
             LOG_ERROR("[CShadowSystem] Shadow depth shader not found");
             return;

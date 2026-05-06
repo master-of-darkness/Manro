@@ -44,15 +44,17 @@ namespace Manro {
     };
 
     class CJobSystem;
+    class CVirtualFS;
 
     class CModelLoader {
     public:
-        static std::vector<ModelData_t> Load(const std::vector<std::string> &filepaths, CJobSystem &jobs);
+        static std::vector<ModelData_t> Load(const std::vector<std::string> &filepaths,
+                                             CJobSystem &jobs, CVirtualFS &vfs);
 
         static std::vector<std::vector<SubMeshData_t> > LoadSubMeshes(const std::vector<std::string> &filepaths,
-                                                                      CJobSystem &jobs);
+                                                                      CJobSystem &jobs, CVirtualFS &vfs);
 
-        static std::vector<SubMeshData_t> LoadSubMeshes(const std::string &filepath);
+        static std::vector<SubMeshData_t> LoadSubMeshes(const std::string &filepath, CVirtualFS &vfs);
 
         static std::string NormalisePath(const std::string &p);
     };

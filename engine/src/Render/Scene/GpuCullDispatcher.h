@@ -18,10 +18,11 @@ namespace Manro {
     class CPipelineCache;
     class CShadowSystem;
     class CMeshManager;
+    class CVirtualFS;
 
     class CGpuCullDispatcher {
     public:
-        explicit CGpuCullDispatcher(CVulkanContext &ctx);
+        CGpuCullDispatcher(CVulkanContext &ctx, CVirtualFS &vfs);
 
         void Init();
 
@@ -74,6 +75,7 @@ namespace Manro {
                                    const RenderSettings_t &settings);
 
         CVulkanContext &m_Context;
+        CVirtualFS &m_Vfs;
 
         Scope<CPipeline> m_CullPipeline;
         Scope<CPipeline> m_MeshCullPipeline;
