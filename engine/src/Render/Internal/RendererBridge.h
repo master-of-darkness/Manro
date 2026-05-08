@@ -10,6 +10,10 @@ namespace Manro {
 
     bool RendererImplBeginFrame(CRendererImpl & impl);
 
+    bool RendererImplBeginFramePace(CRendererImpl & impl);
+
+    void RendererImplBeginFrameRecord(CRendererImpl & impl);
+
     void RendererImplBeginRendering(CRendererImpl & impl);
 
     void RendererImplRenderQueue(CRendererImpl & impl);

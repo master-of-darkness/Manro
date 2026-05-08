@@ -9,6 +9,10 @@
 
 namespace Manro {
     CPlatformContext::CPlatformContext() {
+        // Reduce compositor side buffering on Linux for lower input latency
+        SDL_SetHint(SDL_HINT_VIDEO_DOUBLE_BUFFER, "1");
+        SDL_SetHint("SDL_VIDEO_WAYLAND_PREFER_LIBDECOR", "0");
+
         if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) {
             LOG_ERROR("[CPlatformContext] SDL_Init failed: {}", SDL_GetError());
             return;

@@ -79,10 +79,16 @@ namespace Manro {
 
             MNR_PROFILE_VALUE("Frame Time (ms)", static_cast<f64>(dt * 1000.f));
 
+            bool frameReady = renderer.BeginFramePace();
+
             {
                 MNR_PROFILE_SCOPE("PollEvents");
                 if (!platform.PollEvents(inputManager)) break;
             }
+
+            if (!frameReady) continue;
+
+            renderer.BeginFrameRecord();
 
             UserCmd_t cmd = inputManager ? inputManager->Poll() : UserCmd_t{};
             FrameContext_t fctx{dt, totalTime, frameIndex++};
@@ -91,8 +97,6 @@ namespace Manro {
                 MNR_PROFILE_SCOPE("Update");
                 if (!app.OnUpdate(fctx, cmd)) break;
             }
-
-            if (!renderer.BeginFrame()) continue;
 
             {
                 MNR_PROFILE_SCOPE("Render");

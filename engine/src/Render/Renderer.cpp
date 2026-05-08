@@ -11,6 +11,10 @@
 namespace Manro {
     bool CRenderer::BeginFrame() { return RendererImplBeginFrame(*m_Impl); }
 
+    bool CRenderer::BeginFramePace() { return RendererImplBeginFramePace(*m_Impl); }
+
+    void CRenderer::BeginFrameRecord() { RendererImplBeginFrameRecord(*m_Impl); }
+
     void CRenderer::BeginRendering() { RendererImplBeginRendering(*m_Impl); }
 
     void CRenderer::RenderQueue() { RendererImplRenderQueue(*m_Impl); }

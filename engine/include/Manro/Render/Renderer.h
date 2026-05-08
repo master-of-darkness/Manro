@@ -48,6 +48,10 @@ namespace Manro {
 
         bool BeginFrame();
 
+        bool BeginFramePace();
+
+        void BeginFrameRecord();
+
         void BeginRendering();
 
         void RenderQueue();

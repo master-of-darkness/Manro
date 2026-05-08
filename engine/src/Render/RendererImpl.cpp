@@ -45,6 +45,10 @@ namespace Manro {
 
         bool BeginFrame();
 
+        bool BeginFramePace();
+
+        void BeginFrameRecord();
+
         void BeginRendering();
 
         void RenderQueue();
@@ -492,6 +496,12 @@ namespace Manro {
     }
 
     bool CRendererImpl::BeginFrame() {
+        if (!BeginFramePace()) return false;
+        BeginFrameRecord();
+        return true;
+    }
+
+    bool CRendererImpl::BeginFramePace() {
         MNR_PROFILE_FUNCTION();
 
         // Handle recreate before acquiring a new swapchain image.
@@ -515,13 +525,7 @@ namespace Manro {
             }
         }
 
-        {
-            MNR_PROFILE_SCOPE("TextureUploads");
-            m_Textures.FlushPendingUploads();
-        }
-
         VkDevice device = m_Context.GetDevice();
-        FrameData_t &frame = m_Frames[m_unCurrentFrame];
 
         {
             MNR_PROFILE_SCOPE("WaitForFence");
@@ -544,6 +548,19 @@ namespace Manro {
                 return false;
             }
         }
+        return true;
+    }
+
+    void CRendererImpl::BeginFrameRecord() {
+        MNR_PROFILE_FUNCTION();
+
+        {
+            MNR_PROFILE_SCOPE("TextureUploads");
+            m_Textures.FlushPendingUploads();
+        }
+
+        VkDevice device = m_Context.GetDevice();
+        FrameData_t &frame = m_Frames[m_unCurrentFrame];
 
         {
             MNR_PROFILE_SCOPE("ResetCommandPool");
@@ -603,8 +620,6 @@ namespace Manro {
         if (frame.commandBuffer == VK_NULL_HANDLE) {
             throw std::runtime_error("Command buffer is not available");
         }
-
-        return true;
     }
 
     void CRendererImpl::UploadLights(u32 frameIndex) {
@@ -1119,6 +1134,8 @@ namespace Manro {
     CRenderer::~CRenderer() = default;
 
     bool RendererImplBeginFrame(CRendererImpl &impl) { return impl.BeginFrame(); }
+    bool RendererImplBeginFramePace(CRendererImpl &impl) { return impl.BeginFramePace(); }
+    void RendererImplBeginFrameRecord(CRendererImpl &impl) { impl.BeginFrameRecord(); }
     void RendererImplBeginRendering(CRendererImpl &impl) { impl.BeginRendering(); }
     void RendererImplRenderQueue(CRendererImpl &impl) { impl.RenderQueue(); }
     void RendererImplEndRendering(CRendererImpl &impl) { impl.EndRendering(); }
