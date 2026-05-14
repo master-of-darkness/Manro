@@ -669,7 +669,7 @@ namespace Manro {
 
 
         {
-            VkImageMemoryBarrier2 b[2]{};
+            VkImageMemoryBarrier2 b[3]{};
             b[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
             b[0].srcStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
             b[0].srcAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
@@ -686,6 +686,31 @@ namespace Manro {
                 b[1].image = m_RenderTargets.GetMsaaImage();
                 b[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
                 barrierCount = 2;
+            }
+
+            const VkImageLayout depthOldLayout = m_RenderTargets.GetDepthLayout();
+            if (m_RenderTargets.GetDepthImage() != VK_NULL_HANDLE &&
+                depthOldLayout != VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+                VkImageMemoryBarrier2 depthBarrier{};
+                depthBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+                depthBarrier.srcStageMask = (depthOldLayout == VK_IMAGE_LAYOUT_UNDEFINED)
+                                                ? VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT
+                                                : (VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
+                                                   VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT);
+                depthBarrier.srcAccessMask = (depthOldLayout == VK_IMAGE_LAYOUT_UNDEFINED)
+                                                 ? 0
+                                                 : (VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                                                    VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
+                depthBarrier.dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
+                                            VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+                depthBarrier.dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                                             VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+                depthBarrier.oldLayout = depthOldLayout;
+                depthBarrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+                depthBarrier.image = m_RenderTargets.GetDepthImage();
+                depthBarrier.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
+                b[barrierCount++] = depthBarrier;
+                m_RenderTargets.SetDepthLayout(VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
             }
 
             VkDependencyInfo dep{};

@@ -28,7 +28,10 @@ namespace Manro {
         VkFormat GetOffscreenFormat() const { return m_OffscreenFormat; }
         VkFormat GetDepthFormat() const { return m_DepthFormat; }
         VkImage GetOffscreenImage() const { return m_OffscreenColor.image; }
+        VkImage GetDepthImage() const { return m_DepthImage.image; }
         VkImage GetMsaaImage() const { return m_MsaaColorImage.image; }
+        VkImageLayout GetDepthLayout() const { return m_DepthLayout; }
+        void SetDepthLayout(VkImageLayout layout) { m_DepthLayout = layout; }
 
     private:
         void CreateOffscreen(u32 w, u32 h);
@@ -47,6 +50,7 @@ namespace Manro {
 
         VkFormat m_OffscreenFormat{VK_FORMAT_R16G16B16A16_SFLOAT};
         VkFormat m_DepthFormat{VK_FORMAT_D32_SFLOAT};
+        VkImageLayout m_DepthLayout{VK_IMAGE_LAYOUT_UNDEFINED};
 
         VkSampleCountFlagBits m_LastSamples{VK_SAMPLE_COUNT_1_BIT};
     };

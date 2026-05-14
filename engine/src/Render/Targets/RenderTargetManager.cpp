@@ -27,6 +27,7 @@ namespace Manro {
         DestroyImage(m_Context, m_OffscreenColor);
         DestroyImage(m_Context, m_MsaaColorImage);
         DestroyImage(m_Context, m_DepthImage);
+        m_DepthLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     }
 
     void CRenderTargetManager::CreateOffscreen(u32 w, u32 h) {
@@ -77,6 +78,7 @@ namespace Manro {
         p.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
         p.samples = samples;
         m_DepthImage = CreateImage(m_Context, p, VK_IMAGE_ASPECT_DEPTH_BIT);
+        m_DepthLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     }
 
     void CRenderTargetManager::CreateMsaaColor(u32 w, u32 h, VkSampleCountFlagBits samples) {

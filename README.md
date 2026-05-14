@@ -17,9 +17,13 @@ The engine is designed with a focus on rendering through the Vulkan API.
 ### Prerequisites
 
 - Clang compiler
-- Windows or Ubuntu (tested on 25.10)
+- Windows or Ubuntu (tested on 25.10 and 26.04)
 - CMake
 - Vulkan SDK (1.4+)
+
+> [!NOTE]  
+> It's not tested under X11 but the enngine uses SDL3 so it should work.
+
 ## Building
 
 To build the project, use `CMakeLists.txt` in root.
