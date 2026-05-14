@@ -288,18 +288,63 @@ namespace Manro {
             return {};
         }
 
+        struct FaceCoord {
+            int col, row;
+        };
+
+        constexpr FaceCoord kCoordsCross4x3[6] = {
+            {2, 1}, // +X
+            {0, 1}, // -X
+            {1, 0}, // +Y
+            {1, 2}, // -Y
+            {1, 1}, // +Z
+            {3, 1} // -Z
+        };
+        constexpr FaceCoord kCoordsCross3x4[6] = {
+            {2, 1}, // +X
+            {0, 1}, // -X
+            {1, 0}, // +Y
+            {1, 2}, // -Y
+            {1, 1}, // +Z
+            {1, 3} // -Z
+        };
+        constexpr FaceCoord kCoordsStrip6x1[6] = {
+            {0, 0}, // +X
+            {1, 0}, // -X
+            {2, 0}, // +Y
+            {3, 0}, // -Y
+            {4, 0}, // +Z
+            {5, 0} // -Z
+        };
+        constexpr FaceCoord kCoordsStrip1x6[6] = {
+            {0, 0}, // +X
+            {0, 1}, // -X
+            {0, 2}, // +Y
+            {0, 3}, // -Y
+            {0, 4}, // +Z
+            {0, 5} // -Z
+        };
+
+        const FaceCoord *coords = nullptr;
         std::vector<TextureData_t> faces(6);
         int faceSize = 0;
 
-        if (rawData.width == rawData.height * 4 / 3) {
-            faceSize = rawData.height / 3;
-        } else if (rawData.height == rawData.width * 4 / 3) {
-            // TODO:
-            // ... (3x4)
-        } else if (rawData.width == rawData.height * 6) {
-            // ... (6x1)
-        } else if (rawData.height == rawData.width * 6) {
-            // ... (1x6)
+        if (rawData.width % 4 == 0 && rawData.height % 3 == 0 &&
+            rawData.width / 4 == rawData.height / 3) {
+            faceSize = rawData.width / 4;
+            coords = kCoordsCross4x3;
+        } else if (rawData.width % 3 == 0 && rawData.height % 4 == 0 &&
+                   rawData.width / 3 == rawData.height / 4) {
+            faceSize = rawData.width / 3;
+            coords = kCoordsCross3x4;
+        } else if (rawData.width % 6 == 0 && rawData.height > 0 &&
+                   rawData.width / 6 == rawData.height) {
+            faceSize = rawData.height;
+            coords = kCoordsStrip6x1;
+        } else if (rawData.height % 6 == 0 && rawData.width > 0 &&
+                   rawData.height / 6 == rawData.width) {
+            faceSize = rawData.width;
+            coords = kCoordsStrip1x6;
         } else {
             LOG_ERROR("[CTextureLoader] Unsupported cubemap layout for {}: {}x{}", filepath, rawData.width,
                       rawData.height);
@@ -307,16 +352,6 @@ namespace Manro {
         }
 
         for (int i = 0; i < 6; ++i) {
-            const struct FaceCoord {
-                int col, row;
-            } coords[6] = {
-                {2, 1}, // +X
-                {0, 1}, // -X
-                {1, 0}, // +Y
-                {1, 2}, // -Y
-                {1, 1}, // +Z
-                {3, 1} // -Z
-            };
             faces[i].width = faceSize;
             faces[i].height = faceSize;
             faces[i].channels = 4;
@@ -324,6 +359,11 @@ namespace Manro {
 
             int startX = coords[i].col * faceSize;
             int startY = coords[i].row * faceSize;
+            if (startX + faceSize > rawData.width || startY + faceSize > rawData.height) {
+                LOG_ERROR("[CTextureLoader] Invalid cubemap face {} layout for {} ({}x{})",
+                          i, filepath, rawData.width, rawData.height);
+                return {};
+            }
 
             for (int y = 0; y < faceSize; ++y) {
                 const u8 *src = &rawData.pixels[((startY + y) * rawData.width + startX) * 4];
