@@ -27,6 +27,7 @@ namespace Manro {
         VkDescriptorSet compositeSet = VK_NULL_HANDLE;
         VkDescriptorSet shadowMeshCullSet = VK_NULL_HANDLE;
         VkDescriptorSet skyboxSet = VK_NULL_HANDLE;
+        VkDescriptorSet autoExposureSet = VK_NULL_HANDLE;
 
         bool staticUploaded = false;
     };

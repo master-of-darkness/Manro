@@ -74,13 +74,17 @@ namespace Manro {
         }
 
         {
-            VkDescriptorSetLayoutBinding b{
+            VkDescriptorSetLayoutBinding b[2]{};
+            b[0] = {
                 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr
+            };
+            b[1] = {
+                1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr
             };
             VkDescriptorSetLayoutCreateInfo ci{};
             ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-            ci.bindingCount = 1;
-            ci.pBindings = &b;
+            ci.bindingCount = 2;
+            ci.pBindings = b;
             if (vkCreateDescriptorSetLayout(m_Context.GetDevice(), &ci, nullptr, &m_CompositeSetLayout) != VK_SUCCESS)
                 throw std::runtime_error("Failed to create composite descriptor set layout");
         }
@@ -338,20 +342,35 @@ namespace Manro {
     }
 
     void CPipelineManager::UpdateCompositeDescriptorSet(u32 fi, FrameData_t &frame,
-                                                        const CRenderTargetManager &rt) {
+                                                        const CRenderTargetManager &rt,
+                                                        VkBuffer autoExposureLuminanceBuffer) {
+        (void) fi;
         VkDescriptorImageInfo imgI{};
         imgI.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         imgI.imageView = rt.GetOffscreenView();
         imgI.sampler = rt.GetOffscreenSampler();
 
-        VkWriteDescriptorSet w{};
-        w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        w.dstSet = frame.compositeSet;
-        w.dstBinding = 0;
-        w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        w.descriptorCount = 1;
-        w.pImageInfo = &imgI;
-        vkUpdateDescriptorSets(m_Context.GetDevice(), 1, &w, 0, nullptr);
+        VkDescriptorBufferInfo luminanceI{};
+        luminanceI.buffer = autoExposureLuminanceBuffer;
+        luminanceI.offset = 0;
+        luminanceI.range = sizeof(float);
+
+        VkWriteDescriptorSet w[2]{};
+        w[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        w[0].dstSet = frame.compositeSet;
+        w[0].dstBinding = 0;
+        w[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        w[0].descriptorCount = 1;
+        w[0].pImageInfo = &imgI;
+
+        w[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        w[1].dstSet = frame.compositeSet;
+        w[1].dstBinding = 1;
+        w[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        w[1].descriptorCount = 1;
+        w[1].pBufferInfo = &luminanceI;
+
+        vkUpdateDescriptorSets(m_Context.GetDevice(), 2, w, 0, nullptr);
     }
 
     void CPipelineManager::UpdateSkyboxDescriptorSet(u32 fi, FrameData_t &frame,

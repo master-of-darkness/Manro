@@ -38,7 +38,7 @@ void CSponza::OnStartup(const Manro::InitContext_t &ctx) {
     m_Jobs = &ctx.Jobs;
     m_Renderer = &ctx.CRenderer;
     m_Vfs = &ctx.Vfs;
-    m_Renderer->SetDebugUIEnabled(false);
+    m_Renderer->SetDebugUIEnabled(true);
 
     const auto worldDir =
             (std::filesystem::path(MANRO_ASSETS_DIR) / "../../world")
@@ -73,14 +73,19 @@ bool CSponza::OnUpdate(const Manro::FrameContext_t &ctx, const Manro::UserCmd_t 
     }
 
     const bool ctrlDown = m_InputManager.IsKeyDown(Manro::Key::LeftCtrl);
+    const bool f1Down = m_InputManager.IsKeyDown(Manro::Key::F1);
     const bool f11Down = m_InputManager.IsKeyDown(Manro::Key::F11);
 
     if (ctrlDown && !m_bCtrlWasDown) m_bInputCaptured = !m_bInputCaptured;
+    if (f1Down && !m_bF1WasDown) {
+        m_Renderer->SetDebugUIEnabled(!m_Renderer->IsDebugUIEnabled());
+    }
     if (f11Down && !m_bF11WasDown) {
         m_Window->ToggleFullscreen();
         m_bF11WasDown = !m_bF11WasDown;
     }
     m_bCtrlWasDown = ctrlDown;
+    m_bF1WasDown = f1Down;
     m_bF11WasDown = f11Down;
 
     if (m_InputManager.IsKeyDown(Manro::Key::Escape)) {
@@ -216,99 +221,27 @@ void CSponza::LoadScene() {
 
 void CSponza::DrawGui(const float dt) {
     const float fps = dt > 0.f ? 1.f / dt : 0.f;
-    const float msdt = dt * 1000.f;
     const bool benchActive = (m_BenchState == BenchmarkState::Warmup ||
                               m_BenchState == BenchmarkState::Running);
 
     ImGui::SetNextWindowPos({10, 10}, ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize({320, 0}, ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize({360, 0}, ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowBgAlpha(0.88f);
 
-    if (ImGui::Begin("Manro Profiler")) {
-        if (ImGui::CollapsingHeader("Performance", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::Text("FPS        %.1f", fps);
-            ImGui::Text("Frame      %.3f ms", msdt);
-            float tmp[kHistoryLen];
-            for (int i = 0; i < kHistoryLen; ++i)
-                tmp[i] = m_flFrameTimeHistory[(m_nFrameTimeOffset + i) % kHistoryLen];
-            char overlay[32];
-            snprintf(overlay, sizeof(overlay), "%.2f ms", msdt);
-            ImGui::PlotLines("##ft", tmp, kHistoryLen, 0, overlay, 0.f, 33.3f, {0, 60});
-        }
-
-        if (ImGui::CollapsingHeader("Rendering", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::Text("Draw calls  %u", m_LastStats.drawCalls);
-            ImGui::Text("Triangles   %u", m_LastStats.triangleCount);
-            ImGui::Text("Instances   %u", m_LastStats.instanceCount);
-            ImGui::Text("Lights      %u", m_LastStats.lightCount);
-        }
-
-        if (ImGui::CollapsingHeader("Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
-            Manro::RenderSettings_t settings = m_Renderer->GetSettings();
-            bool changed = false;
-
-            if (ImGui::SliderFloat("Resolution Scale", &settings.resolutionScale, 0.1f, 2.0f)) changed = true;
-            if (ImGui::Checkbox("VSync", &settings.enableVSync)) changed = true;
-            if (ImGui::Checkbox("Frustum Culling", &settings.enableFrustumCulling)) changed = true;
-
-            if (ImGui::TreeNode("Camera")) {
-                if (ImGui::DragFloat("Near Z", &settings.nearZ, 0.01f, 0.001f, 10.f)) changed = true;
-                if (ImGui::DragFloat("Far Z", &settings.farZ, 10.f, 100.f, 100000.f)) changed = true;
-                if (ImGui::SliderFloat("FoV", &kFov, 50.f, 120.f)) {
-                }
-                ImGui::TreePop();
-            }
-
-            if (ImGui::TreeNode("Environment & Sun")) {
-                ImGui::Checkbox("Animate Day Cycle", &s_AnimateSun);
-                ImGui::SliderFloat("Time", &s_TimeOfDay, 0.f, 24.f, "%.1f h");
-                ImGui::SliderFloat("Day Speed", &s_DaySpeed, 0.f, 5.f);
-                ImGui::Separator();
-                if (ImGui::SliderFloat("IBL Intensity", &settings.lighting.iblIntensity, 0.f, 5.f)) changed = true;
-                if (ImGui::SliderFloat("Gamma", &settings.lighting.gamma, 1.f, 3.f)) changed = true;
-                if (ImGui::Checkbox("AO Enabled", &settings.lighting.enableAmbientOcclusion)) changed = true;
-                if (settings.lighting.enableAmbientOcclusion) {
-                    if (ImGui::SliderFloat("AO Intensity", &settings.lighting.aoIntensity, 0.f, 2.f)) changed = true;
-                    if (ImGui::SliderFloat("AO Radius", &settings.lighting.aoRadius, 0.01f, 2.f))changed = true;
-                }
-                ImGui::TreePop();
-            }
-
-            if (ImGui::TreeNode("Shadows")) {
-                if (ImGui::Checkbox("Enabled##Shadows", &settings.shadows.enabled)) changed = true;
-                if (ImGui::DragInt("Resolution", &settings.shadows.resolution, 128, 128, 4096)) changed = true;
-                if (ImGui::SliderFloat("Bias", &settings.shadows.bias, 0.f, 0.05f, "%.4f")) changed = true;
-                if (ImGui::SliderFloat("Slope Bias", &settings.shadows.slopeBias, 0.f, 0.5f)) changed = true;
-                if (ImGui::SliderFloat("Softness", &settings.shadows.softShadows, 0.f, 5.f)) changed = true;
-                ImGui::TreePop();
-            }
-
-            if (ImGui::TreeNode("Post-Processing")) {
-                auto &tm = settings.postProcess.tonemapping;
-                if (ImGui::SliderFloat("Exposure", &tm.exposure, 0.f, 10.f)) changed = true;
-                if (ImGui::SliderFloat("Contrast", &tm.contrast, 0.f, 3.f)) changed = true;
-                if (ImGui::SliderFloat("Saturation", &tm.saturation, 0.f, 3.f)) changed = true;
-                const char *methods[] = {"Filmic", "Uncharted2", "Clip", "ACES", "AgX", "KhronosPBR"};
-                if (ImGui::Combo("Method", &tm.method, methods, IM_ARRAYSIZE(methods))) changed = true;
-                ImGui::TreePop();
-            }
-
-            if (changed) m_Renderer->SetSettings(settings);
-        }
-
-        if (ImGui::CollapsingHeader("GPU")) {
-            Manro::u64 used, budget;
-            m_Renderer->GetVramStats(used, budget);
-            const float usedMB = static_cast<float>(used) / (1024.f * 1024.f);
-            const float budgetMB = static_cast<float>(budget) / (1024.f * 1024.f);
-            ImGui::Text("VRAM  %.1f / %.1f MB", usedMB, budgetMB);
-            ImGui::ProgressBar(usedMB / std::max(budgetMB, 1.f), {-FLT_MIN, 0});
-
-            ImGui::TextDisabled("%s", m_Renderer->GetAdapterName().c_str());
+    if (ImGui::Begin("Benchmark Menu")) {
+        bool showProfiler = m_Renderer->IsDebugUIEnabled();
+        if (ImGui::Checkbox("Engine profiler overlay", &showProfiler)) {
+            m_Renderer->SetDebugUIEnabled(showProfiler);
         }
 
         ImGui::Separator();
-        ImGui::Spacing();
+        if (ImGui::CollapsingHeader("Scene Controls", ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::SliderFloat("FoV", &kFov, 50.f, 120.f);
+            ImGui::Checkbox("Animate Day Cycle", &s_AnimateSun);
+            ImGui::SliderFloat("Time", &s_TimeOfDay, 0.f, 24.f, "%.1f h");
+            ImGui::SliderFloat("Day Speed", &s_DaySpeed, 0.f, 5.f);
+        }
+        ImGui::Separator();
 
         if (benchActive) {
             if (m_BenchState == BenchmarkState::Warmup) {
@@ -326,10 +259,22 @@ void CSponza::DrawGui(const float dt) {
                             m_flBenchElapsed, m_nBenchDuration,
                             static_cast<Manro::u32>(m_BenchFrameTimes.size()), fps);
             }
+            if (ImGui::Button("Cancel Benchmark", {-FLT_MIN, 0})) {
+                m_BenchState = BenchmarkState::Idle;
+                m_BenchFrameTimes.clear();
+                m_Camera.Position = m_SavedCamPos;
+                m_Camera.Yaw = m_flSavedCamYaw;
+                m_Camera.Pitch = m_flSavedCamPitch;
+                m_bInputCaptured = true;
+            }
             ImGui::TextDisabled("Press Escape to cancel");
         } else {
-            if (ImGui::Button("Run Benchmark", {-FLT_MIN, 0}))
+            if (ImGui::Button("Run Benchmark", {-FLT_MIN, 0})) {
+                StartBenchmark();
+            }
+            if (ImGui::Button("Open Benchmark Details", {-FLT_MIN, 0})) {
                 m_bShowBenchWindow = true;
+            }
             if (m_BenchState == BenchmarkState::Done)
                 ImGui::TextColored({0.4f, 1.f, 0.4f, 1.f},
                                    "%.1f avg FPS  |  %.2f ms avg",
@@ -337,7 +282,7 @@ void CSponza::DrawGui(const float dt) {
         }
 
         ImGui::Spacing();
-        if (!benchActive) ImGui::TextDisabled("Left Ctrl  toggle cursor");
+        ImGui::TextDisabled("F1 toggle engine overlay  |  Left Ctrl toggle cursor");
     }
     ImGui::End();
 
@@ -347,7 +292,7 @@ void CSponza::DrawGui(const float dt) {
     ImGui::SetNextWindowSize({460, 0}, ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowBgAlpha(0.92f);
 
-    if (!ImGui::Begin("Benchmark", &m_bShowBenchWindow)) {
+    if (!ImGui::Begin("Benchmark Details", &m_bShowBenchWindow)) {
         ImGui::End();
         return;
     }
@@ -470,6 +415,7 @@ void CSponza::DrawGui(const float dt) {
 }
 
 void CSponza::StartBenchmark() {
+    m_bShowBenchWindow = true;
     m_SavedCamPos = m_Camera.Position;
     m_flSavedCamYaw = m_Camera.Yaw;
     m_flSavedCamPitch = m_Camera.Pitch;

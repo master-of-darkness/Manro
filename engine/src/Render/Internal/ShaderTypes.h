@@ -157,6 +157,22 @@ namespace Manro {
 
         settings.postProcess.bloomIntensity = std::max(settings.postProcess.bloomIntensity, 0.0f);
         settings.postProcess.bloomThreshold = std::max(settings.postProcess.bloomThreshold, 0.0f);
+        settings.postProcess.tonemapping.autoExposure = settings.postProcess.tonemapping.autoExposure ? 1 : 0;
+        settings.postProcess.tonemapping.autoExposureSpeed = std::max(
+            0.0f, settings.postProcess.tonemapping.autoExposureSpeed);
+        settings.postProcess.tonemapping.evMinValue = std::clamp(settings.postProcess.tonemapping.evMinValue, -16.0f,
+                                                                 32.0f);
+        settings.postProcess.tonemapping.evMaxValue = std::clamp(settings.postProcess.tonemapping.evMaxValue, -16.0f,
+                                                                 32.0f);
+        if (settings.postProcess.tonemapping.evMaxValue <= settings.postProcess.tonemapping.evMinValue) {
+            settings.postProcess.tonemapping.evMaxValue = settings.postProcess.tonemapping.evMinValue + 0.01f;
+        }
+        settings.postProcess.tonemapping.enableCenterMetering =
+                settings.postProcess.tonemapping.enableCenterMetering ? 1u : 0u;
+        settings.postProcess.tonemapping.centerMeteringSize =
+                std::clamp(settings.postProcess.tonemapping.centerMeteringSize, 0.01f, 1.0f);
+        settings.postProcess.tonemapping.averageMode = settings.postProcess.tonemapping.averageMode ? 1u : 0u;
+        settings.postProcess.tonemapping.exposure = std::max(0.001f, settings.postProcess.tonemapping.exposure);
 
         settings.rayTracing.maxBounces = std::clamp(settings.rayTracing.maxBounces, 1, 8);
     }

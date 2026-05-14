@@ -247,6 +247,35 @@ namespace Manro {
                 if (ImGui::SliderFloat("Exposure", &settings.postProcess.tonemapping.exposure, 0.1f,
                                        10.0f))
                     settingsChanged = true;
+                bool autoExposure = settings.postProcess.tonemapping.autoExposure == 1;
+                if (ImGui::Checkbox("Auto Exposure", &autoExposure)) {
+                    settings.postProcess.tonemapping.autoExposure = autoExposure ? 1 : 0;
+                    settingsChanged = true;
+                }
+                if (settings.postProcess.tonemapping.autoExposure == 1) {
+                    if (ImGui::SliderFloat("AE Speed", &settings.postProcess.tonemapping.autoExposureSpeed, 0.01f,
+                                           20.0f))
+                        settingsChanged = true;
+                    if (ImGui::SliderFloat("AE EV Min", &settings.postProcess.tonemapping.evMinValue, -16.0f, 16.0f))
+                        settingsChanged = true;
+                    if (ImGui::SliderFloat("AE EV Max", &settings.postProcess.tonemapping.evMaxValue, -16.0f, 32.0f))
+                        settingsChanged = true;
+                    bool centerMetering = settings.postProcess.tonemapping.enableCenterMetering != 0;
+                    if (ImGui::Checkbox("AE Center Metering", &centerMetering)) {
+                        settings.postProcess.tonemapping.enableCenterMetering = centerMetering ? 1u : 0u;
+                        settingsChanged = true;
+                    }
+                    if (centerMetering &&
+                        ImGui::SliderFloat("AE Center Size", &settings.postProcess.tonemapping.centerMeteringSize,
+                                           0.01f,
+                                           1.0f))
+                        settingsChanged = true;
+                    int averageMode = settings.postProcess.tonemapping.averageMode ? 1 : 0;
+                    if (ImGui::Combo("AE Average Mode", &averageMode, "Mean\0Median\0")) {
+                        settings.postProcess.tonemapping.averageMode = averageMode ? 1u : 0u;
+                        settingsChanged = true;
+                    }
+                }
             }
         }
         ImGui::End();

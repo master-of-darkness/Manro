@@ -43,7 +43,8 @@ namespace Manro {
                                     CSkyboxRenderer &skybox);
 
         void UpdateCompositeDescriptorSet(u32 fi, FrameData_t &frame,
-                                          const CRenderTargetManager &rt);
+                                          const CRenderTargetManager &rt,
+                                          VkBuffer autoExposureLuminanceBuffer);
 
         void UpdateSkyboxDescriptorSet(u32 fi, FrameData_t &frame,
                                        CSkyboxRenderer &skybox,

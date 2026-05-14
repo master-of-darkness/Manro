@@ -23,9 +23,10 @@
 #include "Vulkan/Pipeline.h"
 #include "Vulkan/DescriptorAllocator.h"
 #include "Vulkan/PipelineCache.h"
+#include "../Core/Profiling.h"
 
 #include <Manro/Core/Logger.h>
-#include <../Core/Profiling.h>
+#include <Manro/Core/VirtualFS.h>
 #include <Manro/Render/MeshManager.h>
 #include <Manro/Render/Material/MaterialInstance.h>
 #include <Manro/Render/Model.h>
@@ -33,7 +34,7 @@
 #include <VkBootstrap.h>
 #include <stdexcept>
 #include <algorithm>
-
+#include <array>
 
 namespace Manro {
     class CRendererImpl final {
@@ -163,6 +164,14 @@ namespace Manro {
     private:
         void CreateCommandBuffers();
 
+        void InitAutoExposure();
+
+        void ShutdownAutoExposure();
+
+        void UpdateAutoExposureDescriptorSet(FrameData_t &frame);
+
+        void DispatchAutoExposure(VkCommandBuffer cb, FrameData_t &frame);
+
         void RecreateSwapchain();
 
         void UploadLights(u32 frameIndex);
@@ -204,6 +213,13 @@ namespace Manro {
         CGpuCullDispatcher m_CullDispatcher;
         CPipelineManager m_PipelineMgr;
         CVirtualFS &m_Vfs;
+
+        VkDescriptorSetLayout m_AutoExposureSetLayout{VK_NULL_HANDLE};
+        VkDescriptorPool m_AutoExposureDescriptorPool{VK_NULL_HANDLE};
+        Scope<CPipeline> m_HistogramPipeline;
+        Scope<CPipeline> m_AutoExposurePipeline;
+        Scope<CBuffer> m_AutoExposureHistogramBuffer;
+        Scope<CBuffer> m_AutoExposureLuminanceBuffer;
 
         std::vector<FrameData_t> m_Frames;
         u32 m_unCurrentFrame = 0;
@@ -283,6 +299,7 @@ namespace Manro {
         m_PipelineMgr.BuildPbrPipeline(m_RenderTargets, m_Textures, m_Settings);
         m_PipelineMgr.BuildCompositePipeline(m_Swapchain.GetFormat());
         m_CullDispatcher.BuildPipelines(m_PipelineCache);
+        InitAutoExposure();
 
         m_DrawSystem = CreateScope<CDrawSystem>(m_Context, m_Vfs);
         m_DrawSystem->Init(m_RenderTargets.GetOffscreenFormat(),
@@ -337,6 +354,7 @@ namespace Manro {
         m_Overlay.reset();
 
         m_CullDispatcher.Shutdown();
+        ShutdownAutoExposure();
 
         m_Shadow.Shutdown();
         m_Skybox.Shutdown();
@@ -396,6 +414,201 @@ namespace Manro {
         return CreateScope<CMaterialInstance>(material);
     }
 
+    void CRendererImpl::InitAutoExposure() {
+        VkDescriptorSetLayoutBinding bindings[4]{};
+        bindings[0] = {0, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr};
+        bindings[1] = {1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr};
+        bindings[2] = {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr};
+        bindings[3] = {3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr};
+
+        VkDescriptorSetLayoutCreateInfo layoutInfo{};
+        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        layoutInfo.bindingCount = 4;
+        layoutInfo.pBindings = bindings;
+        if (vkCreateDescriptorSetLayout(m_Context.GetDevice(), &layoutInfo, nullptr, &m_AutoExposureSetLayout) !=
+            VK_SUCCESS) {
+            throw std::runtime_error("Failed to create auto-exposure descriptor set layout");
+        }
+
+        VkDescriptorPoolSize sizes[3]{};
+        sizes[0] = {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, GetFrameCount()};
+        sizes[1] = {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, GetFrameCount()};
+        sizes[2] = {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, GetFrameCount() * 2};
+        VkDescriptorPoolCreateInfo poolInfo{};
+        poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        poolInfo.poolSizeCount = 3;
+        poolInfo.pPoolSizes = sizes;
+        poolInfo.maxSets = GetFrameCount();
+        if (vkCreateDescriptorPool(m_Context.GetDevice(), &poolInfo, nullptr, &m_AutoExposureDescriptorPool) !=
+            VK_SUCCESS) {
+            throw std::runtime_error("Failed to create auto-exposure descriptor pool");
+        }
+
+        m_AutoExposureHistogramBuffer = CreateScope<CBuffer>(
+            m_Context, sizeof(u32) * 256,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+        m_AutoExposureLuminanceBuffer = CreateScope<CBuffer>(
+            m_Context, sizeof(float),
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+        std::array<u32, 256> zeroHistogram{};
+        m_AutoExposureHistogramBuffer->LoadData(zeroHistogram.data(), sizeof(zeroHistogram));
+        const float initialLuminance = 1.0f;
+        m_AutoExposureLuminanceBuffer->LoadData(&initialLuminance, sizeof(initialLuminance));
+
+        auto histogramSpv = m_Vfs.ReadFile("shaders://tonemapper_histogram.comp.spv");
+        auto autoExposureSpv = m_Vfs.ReadFile("shaders://tonemapper_autoexposure.comp.spv");
+        if (histogramSpv.empty() || autoExposureSpv.empty()) {
+            LOG_WARN("[CRenderer] Auto-exposure shaders not found. Feature disabled.");
+            return;
+        }
+
+        PipelineConfigParams_t histogramCfg{};
+        histogramCfg.computeEntryPoint = "main";
+        histogramCfg.pushConstantSize = sizeof(TonemapperData_t);
+        histogramCfg.pushConstantStages = VK_SHADER_STAGE_COMPUTE_BIT;
+        histogramCfg.descriptorSetLayouts = {m_AutoExposureSetLayout};
+
+        m_HistogramPipeline = CreateScope<CPipeline>(m_Context);
+        m_HistogramPipeline->BuildCompute(histogramSpv, histogramCfg);
+
+        PipelineConfigParams_t autoExposureCfg = histogramCfg;
+        autoExposureCfg.computeEntryPoint = "main";
+
+        m_AutoExposurePipeline = CreateScope<CPipeline>(m_Context);
+        m_AutoExposurePipeline->BuildCompute(autoExposureSpv, autoExposureCfg);
+    }
+
+    void CRendererImpl::ShutdownAutoExposure() {
+        m_AutoExposurePipeline.reset();
+        m_HistogramPipeline.reset();
+        m_AutoExposureLuminanceBuffer.reset();
+        m_AutoExposureHistogramBuffer.reset();
+
+        if (m_AutoExposureDescriptorPool != VK_NULL_HANDLE) {
+            vkDestroyDescriptorPool(m_Context.GetDevice(), m_AutoExposureDescriptorPool, nullptr);
+            m_AutoExposureDescriptorPool = VK_NULL_HANDLE;
+        }
+        if (m_AutoExposureSetLayout != VK_NULL_HANDLE) {
+            vkDestroyDescriptorSetLayout(m_Context.GetDevice(), m_AutoExposureSetLayout, nullptr);
+            m_AutoExposureSetLayout = VK_NULL_HANDLE;
+        }
+    }
+
+    void CRendererImpl::UpdateAutoExposureDescriptorSet(FrameData_t &frame) {
+        if (frame.autoExposureSet == VK_NULL_HANDLE ||
+            !m_AutoExposureHistogramBuffer || !m_AutoExposureLuminanceBuffer) {
+            return;
+        }
+
+        VkDescriptorImageInfo inColorI{};
+        inColorI.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+        inColorI.imageView = m_RenderTargets.GetOffscreenView();
+
+        VkDescriptorImageInfo outImageI{};
+        outImageI.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+        outImageI.imageView = m_RenderTargets.GetOffscreenView();
+
+        VkDescriptorBufferInfo histogramI{};
+        histogramI.buffer = m_AutoExposureHistogramBuffer->GetHandle();
+        histogramI.offset = 0;
+        histogramI.range = VK_WHOLE_SIZE;
+
+        VkDescriptorBufferInfo luminanceI{};
+        luminanceI.buffer = m_AutoExposureLuminanceBuffer->GetHandle();
+        luminanceI.offset = 0;
+        luminanceI.range = VK_WHOLE_SIZE;
+
+        VkWriteDescriptorSet writes[4]{};
+        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[0].dstSet = frame.autoExposureSet;
+        writes[0].dstBinding = 0;
+        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+        writes[0].descriptorCount = 1;
+        writes[0].pImageInfo = &inColorI;
+
+        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[1].dstSet = frame.autoExposureSet;
+        writes[1].dstBinding = 1;
+        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        writes[1].descriptorCount = 1;
+        writes[1].pImageInfo = &outImageI;
+
+        writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[2].dstSet = frame.autoExposureSet;
+        writes[2].dstBinding = 2;
+        writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        writes[2].descriptorCount = 1;
+        writes[2].pBufferInfo = &histogramI;
+
+        writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[3].dstSet = frame.autoExposureSet;
+        writes[3].dstBinding = 3;
+        writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        writes[3].descriptorCount = 1;
+        writes[3].pBufferInfo = &luminanceI;
+
+        vkUpdateDescriptorSets(m_Context.GetDevice(), 4, writes, 0, nullptr);
+    }
+
+    void CRendererImpl::DispatchAutoExposure(VkCommandBuffer cb, FrameData_t &frame) {
+        if (m_Settings.postProcess.tonemapping.autoExposure != 1 ||
+            !m_HistogramPipeline || !m_AutoExposurePipeline ||
+            !m_AutoExposureHistogramBuffer || !m_AutoExposureLuminanceBuffer ||
+            frame.autoExposureSet == VK_NULL_HANDLE) {
+            return;
+        }
+
+        TonemapperData_t tm = m_Settings.postProcess.tonemapping;
+        tm.inputMatrix = SlangFloat3x3_t(glm::mat3(tm.exposure));
+
+        vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE,
+                                m_HistogramPipeline->GetLayout(), 0, 1, &frame.autoExposureSet, 0, nullptr);
+        vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, m_HistogramPipeline->GetHandle());
+        vkCmdPushConstants(cb, m_HistogramPipeline->GetLayout(),
+                           VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(TonemapperData_t), &tm);
+        const u32 groupsX = (m_RenderExtent.width + 15) / 16;
+        const u32 groupsY = (m_RenderExtent.height + 15) / 16;
+        vkCmdDispatch(cb, groupsX, groupsY, 1);
+
+        VkBufferMemoryBarrier2 histogramBarrier{};
+        histogramBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+        histogramBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        histogramBarrier.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+        histogramBarrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        histogramBarrier.dstAccessMask = VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+        histogramBarrier.buffer = m_AutoExposureHistogramBuffer->GetHandle();
+        histogramBarrier.offset = 0;
+        histogramBarrier.size = VK_WHOLE_SIZE;
+        VkDependencyInfo histogramDep{};
+        histogramDep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        histogramDep.bufferMemoryBarrierCount = 1;
+        histogramDep.pBufferMemoryBarriers = &histogramBarrier;
+        vkCmdPipelineBarrier2(cb, &histogramDep);
+
+        vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE,
+                                m_AutoExposurePipeline->GetLayout(), 0, 1, &frame.autoExposureSet, 0, nullptr);
+        vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, m_AutoExposurePipeline->GetHandle());
+        vkCmdPushConstants(cb, m_AutoExposurePipeline->GetLayout(),
+                           VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(TonemapperData_t), &tm);
+        vkCmdDispatch(cb, 1, 1, 1);
+
+        VkBufferMemoryBarrier2 luminanceBarrier{};
+        luminanceBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+        luminanceBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        luminanceBarrier.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+        luminanceBarrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+        luminanceBarrier.dstAccessMask = VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
+        luminanceBarrier.buffer = m_AutoExposureLuminanceBuffer->GetHandle();
+        luminanceBarrier.offset = 0;
+        luminanceBarrier.size = VK_WHOLE_SIZE;
+        VkDependencyInfo luminanceDep{};
+        luminanceDep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        luminanceDep.bufferMemoryBarrierCount = 1;
+        luminanceDep.pBufferMemoryBarriers = &luminanceBarrier;
+        vkCmdPipelineBarrier2(cb, &luminanceDep);
+    }
+
     void CRendererImpl::RecreateSwapchain() {
         const u32 w = m_unPendingWidth;
         const u32 h = m_unPendingHeight;
@@ -423,7 +636,10 @@ namespace Manro {
         }
 
         for (u32 i = 0; i < GetFrameCount(); ++i) {
-            m_PipelineMgr.UpdateCompositeDescriptorSet(i, m_Frames[i], m_RenderTargets);
+            m_PipelineMgr.UpdateCompositeDescriptorSet(
+                i, m_Frames[i], m_RenderTargets,
+                m_AutoExposureLuminanceBuffer->GetHandle());
+            UpdateAutoExposureDescriptorSet(m_Frames[i]);
             m_Shadow.UpdatePbrDescriptorSetShadow(m_Frames[i].pbrSet);
         }
         m_bSceneTexDirty = true;
@@ -888,14 +1104,45 @@ namespace Manro {
         VkCommandBuffer cb = frame.commandBuffer;
         VkExtent2D ext{m_Swapchain.GetExtent().width, m_Swapchain.GetExtent().height};
 
+        const bool runAutoExposure =
+                m_Settings.postProcess.tonemapping.autoExposure == 1 &&
+                m_HistogramPipeline && m_AutoExposurePipeline &&
+                m_AutoExposureHistogramBuffer && m_AutoExposureLuminanceBuffer &&
+                frame.autoExposureSet != VK_NULL_HANDLE;
         {
             VkImageMemoryBarrier2 b{};
             b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
             b.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
             b.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+            b.dstStageMask = runAutoExposure
+                                 ? VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
+                                 : VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+            b.dstAccessMask = runAutoExposure
+                                  ? (VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT)
+                                  : VK_ACCESS_2_SHADER_READ_BIT;
+            b.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            b.newLayout = runAutoExposure
+                              ? VK_IMAGE_LAYOUT_GENERAL
+                              : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            b.image = m_RenderTargets.GetOffscreenImage();
+            b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            VkDependencyInfo dep{};
+            dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+            dep.imageMemoryBarrierCount = 1;
+            dep.pImageMemoryBarriers = &b;
+            vkCmdPipelineBarrier2(cb, &dep);
+        }
+
+        if (runAutoExposure) {
+            DispatchAutoExposure(cb, frame);
+
+            VkImageMemoryBarrier2 b{};
+            b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+            b.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+            b.srcAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT;
             b.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
             b.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
-            b.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            b.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
             b.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             b.image = m_RenderTargets.GetOffscreenImage();
             b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
@@ -1087,9 +1334,22 @@ namespace Manro {
 
             m_PipelineMgr.AllocateFrameDescriptorSets(f, m_CullDispatcher, m_Shadow, m_Skybox);
 
+            if (m_AutoExposureSetLayout != VK_NULL_HANDLE && m_AutoExposureDescriptorPool != VK_NULL_HANDLE) {
+                VkDescriptorSetAllocateInfo autoDsAI{};
+                autoDsAI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+                autoDsAI.descriptorPool = m_AutoExposureDescriptorPool;
+                autoDsAI.descriptorSetCount = 1;
+                autoDsAI.pSetLayouts = &m_AutoExposureSetLayout;
+                if (vkAllocateDescriptorSets(m_Context.GetDevice(), &autoDsAI, &f.autoExposureSet) != VK_SUCCESS) {
+                    throw std::runtime_error("Failed to allocate auto-exposure descriptor set");
+                }
+            }
 
-            m_PipelineMgr.UpdateCompositeDescriptorSet(i, f, m_RenderTargets);
+            m_PipelineMgr.UpdateCompositeDescriptorSet(
+                i, f, m_RenderTargets,
+                m_AutoExposureLuminanceBuffer->GetHandle());
             m_PipelineMgr.UpdatePbrDescriptorSet(i, f, m_MaterialSystem, m_Textures, m_Shadow, m_Skybox);
+            UpdateAutoExposureDescriptorSet(f);
         }
     }
 

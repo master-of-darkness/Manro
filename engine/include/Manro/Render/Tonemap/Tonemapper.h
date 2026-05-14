@@ -56,7 +56,7 @@ namespace Manro {
         float warmColor[3] = {1.0f, 1.0f, 1.0f};
         float splitBalance = 0.0f;
 
-        // Auto-Exposure TODO: make it work
+        // Auto-Exposure
         int autoExposure = 0;
         float autoExposureSpeed = 5.0f;
         float evMinValue = -5.0f;

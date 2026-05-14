@@ -111,6 +111,7 @@ private:
     FlyCamera_t m_Camera;
     bool m_bInputCaptured{true};
     bool m_bCtrlWasDown{false};
+    bool m_bF1WasDown{false};
     bool m_bF11WasDown{false};
 
     float m_flAccumulatedTime{0.f};

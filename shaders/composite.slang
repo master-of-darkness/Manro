@@ -11,6 +11,7 @@ struct CompositePushConstants {
 
 layout(push_constant) ConstantBuffer<CompositePushConstants> pc;
 layout(binding = 0) Sampler2D sceneColor;
+layout(binding = 1) StructuredBuffer<float> autoExposureLuminance;
 
 struct VSOutput {
     float4 position : SV_Position;
@@ -33,6 +34,12 @@ float4 PSMain(VSOutput input) : SV_Target {
     if (pc.bloomEnabled != 0) {
         float3 bloom = max(hdrColor - pc.bloomThreshold.xxx, 0.0) * pc.bloomIntensity;
         hdrColor += bloom;
+    }
+
+    if (pc.tm.autoExposure == 1) {
+        const float middleGrey = 0.18f;
+        const float targetLuminance = max(0.001f, autoExposureLuminance[0]);
+        hdrColor *= middleGrey / targetLuminance;
     }
     
     float2 pixel = input.uv * pc.imageSize;

@@ -35,7 +35,7 @@ namespace Manro {
         p.width = w;
         p.height = h;
         p.format = m_OffscreenFormat;
-        p.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        p.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT;
         p.samples = VK_SAMPLE_COUNT_1_BIT;
         m_OffscreenColor = CreateImage(m_Context, p);
 
