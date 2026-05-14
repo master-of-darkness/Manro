@@ -11,8 +11,18 @@ namespace Manro {
         Escape, Tab, Enter,
         F1, F2, F3, F4, F11,
         Up, Down, Left, Right,
+        Num0,
+        B, C, F, G, H, I, J, K, L, M, N, O, P, R, T, U, V, X, Y, Z,
+        Minus, Equals, LeftBracket, RightBracket,
+        Backslash, Semicolon, Apostrophe, Grave, Comma, Period, Slash,
+        Backspace, CapsLock,
+        RightShift, RightCtrl, LeftAlt, RightAlt, LeftSuper, RightSuper, Menu,
+        Insert, Delete, Home, End, PageUp, PageDown, PrintScreen, ScrollLock, Pause,
+        F5, F6, F7, F8, F9, F10, F12, F13, F14, F15, F16, F17, F18, F19, F20, F21, F22, F23, F24,
+        Numpad0, Numpad1, Numpad2, Numpad3, Numpad4, Numpad5, Numpad6, Numpad7, Numpad8, Numpad9,
+        NumpadDecimal, NumpadDivide, NumpadMultiply, NumpadMinus, NumpadPlus, NumpadEnter, NumpadEquals,
         _Count
-    }; // TODO: Add all keys
+    };
 
     enum class MouseButton : u8 {
         Left = 0, Right, Middle, _Count
