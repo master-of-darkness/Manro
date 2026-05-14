@@ -80,8 +80,10 @@ namespace Manro {
         void SetCameraPosition(const Vec3 &pos) { m_CameraPosition = pos; }
 
         void SetSkybox(TextureHandle cubemap) {
-            if (cubemap == kInvalidTexture)
-                LOG_ERROR("[CRenderer] SetSkybox called with invalid texture!");
+            if (cubemap == kInvalidTexture) {
+                m_Skybox.ClearTexture();
+                return;
+            }
             std::vector<VkBuffer> uboBuffers;
             std::vector<VkDescriptorSet> skyboxSets;
             uboBuffers.reserve(m_Frames.size());
@@ -994,6 +996,7 @@ namespace Manro {
     void CRendererImpl::RenderQueue() {
         MNR_PROFILE_FUNCTION();
         FrameData_t &frame = m_Frames[m_unCurrentFrame];
+        VkCommandBuffer cb = frame.commandBuffer;
 
         u32 instanceCount = m_InstanceBatcher.GetTotalInstanceCount();
         auto *indexBuffer = m_Meshes.GetIndexBuffer();
@@ -1065,8 +1068,30 @@ namespace Manro {
         }
 
         if (m_SceneRenderer) {
-            MNR_GPU_ZONE(m_TracyGpuCtx, frame.commandBuffer, "Scene Passes");
-            m_SceneRenderer->Flush(frame.commandBuffer);
+            MNR_GPU_ZONE(m_TracyGpuCtx, cb, "Scene Passes");
+            m_SceneRenderer->Flush(cb);
+        }
+
+        if (!hasMeshes && !hasSkybox && m_RenderTargets.GetOffscreenView() != VK_NULL_HANDLE) {
+            MNR_GPU_ZONE(m_TracyGpuCtx, cb, "Clear Empty Scene");
+
+            VkRenderingAttachmentInfo colorAtt{};
+            colorAtt.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+            colorAtt.imageView = m_RenderTargets.GetOffscreenView();
+            colorAtt.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            colorAtt.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            colorAtt.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+            colorAtt.clearValue.color = {{0.05f, 0.05f, 0.07f, 1.f}};
+
+            VkRenderingInfo ri{};
+            ri.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+            ri.renderArea.extent = m_RenderExtent;
+            ri.layerCount = 1;
+            ri.colorAttachmentCount = 1;
+            ri.pColorAttachments = &colorAtt;
+
+            vkCmdBeginRendering(cb, &ri);
+            vkCmdEndRendering(cb);
         }
     }
 

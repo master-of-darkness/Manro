@@ -143,7 +143,7 @@ namespace ManroEdit {
 
         void NewMap();
 
-        void OpenMap(const std::string &path);
+        bool OpenMap(const std::string &path);
 
         bool SaveMap(const std::string &path);
 

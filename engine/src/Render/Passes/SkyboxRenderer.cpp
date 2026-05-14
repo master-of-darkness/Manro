@@ -104,6 +104,10 @@ namespace Manro {
         }
     }
 
+    void CSkyboxRenderer::ClearTexture() {
+        m_SkyboxTexture = kInvalidTexture;
+    }
+
     void CSkyboxRenderer::UpdateDescriptorSet(u32 /*fi*/, VkDescriptorSet set,
                                               VkBuffer uboBuffer, CTextureManager &textures) {
         VkDescriptorBufferInfo uboI{uboBuffer, 0, VK_WHOLE_SIZE};

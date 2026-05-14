@@ -330,11 +330,20 @@ namespace ManroEdit {
                 m_bShowPackDialog = true;
             ImGui::Separator();
             if (ImGui::MenuItem(ICON_FA7_XMARK " Close project")) {
+                m_Renderer->WaitIdle();
                 m_bProjectOpen = false;
                 m_ProjectDir.clear();
                 m_ProjectScenes.clear();
                 m_Map.Clear();
+                m_SelectedEntity = -1;
+                m_SelectedLight = -1;
+                m_CurrentMapPath.clear();
                 m_ModelCache.clear();
+                m_Renderer->SetSkybox(Manro::kInvalidTexture);
+                m_SkyboxHandle = Manro::kInvalidTexture;
+                m_LoadedSkyboxPath.clear();
+                m_bDirty = false;
+                UpdateWindowTitle();
             }
             ImGui::EndMenu();
         }
@@ -1067,26 +1076,51 @@ namespace ManroEdit {
             return;
         }
 
+        m_Renderer->WaitIdle();
+        m_Map.Clear();
+        m_SelectedEntity = -1;
+        m_SelectedLight = -1;
+        m_CurrentMapPath.clear();
+        m_ModelCache.clear();
+        m_LoadedSkyboxPath.clear();
+        m_bDirty = false;
+
         m_ProjectDir = dir;
         m_Vfs->SetBaseDir(dir);
         m_bProjectOpen = true;
         LoadProjectFile();
+        UpdateWindowTitle();
 
-        if (!m_ProjectScenes.empty()) {
-            OpenMap((fs::path(m_ProjectDir) / m_ProjectScenes[0]).string());
-        } else {
+        bool openedScene = false;
+        for (const auto &scene : m_ProjectScenes) {
+            const fs::path scenePath = fs::path(m_ProjectDir) / scene;
+            if (!fs::is_regular_file(scenePath)) continue;
+            if (OpenMap(scenePath.string())) {
+                openedScene = true;
+                break;
+            }
+        }
+
+        if (!openedScene) {
             const fs::path scenesDir = fs::path(dir) / "scenes";
             if (fs::is_directory(scenesDir)) {
+                std::vector<fs::path> scenePaths;
                 for (const auto &entry : fs::directory_iterator(scenesDir)) {
-                    if (entry.path().extension() == ".mmap") {
-                        OpenMap(entry.path().string());
-                        SetStatus("Project: " + dir);
-                        return;
+                    if (entry.is_regular_file() && entry.path().extension() == ".mmap")
+                        scenePaths.push_back(entry.path());
+                }
+                std::sort(scenePaths.begin(), scenePaths.end());
+
+                for (const auto &scenePath : scenePaths) {
+                    if (OpenMap(scenePath.string())) {
+                        openedScene = true;
+                        break;
                     }
                 }
             }
-            NewMap();
         }
+
+        if (!openedScene) NewMap();
         SetStatus("Project: " + dir);
     }
 
@@ -1275,16 +1309,18 @@ namespace ManroEdit {
         m_SelectedLight = -1;
         m_CurrentMapPath.clear();
         m_ModelCache.clear();
+        m_Renderer->SetSkybox(Manro::kInvalidTexture);
+        m_SkyboxHandle = Manro::kInvalidTexture;
         m_LoadedSkyboxPath.clear();
         m_bDirty = false;
         UpdateWindowTitle();
         SetStatus("New map");
     }
 
-    void CEditor::OpenMap(const std::string &path) {
+    bool CEditor::OpenMap(const std::string &path) {
         if (!m_Map.LoadFromFile(path)) {
             SetStatus("Open failed: " + path);
-            return;
+            return false;
         }
         m_Renderer->WaitIdle();
         m_CurrentMapPath = path;
@@ -1307,6 +1343,7 @@ namespace ManroEdit {
         m_bDirty = false;
         UpdateWindowTitle();
         SetStatus("Loaded " + path);
+        return true;
     }
 
     bool CEditor::SaveMap(const std::string &path) {
@@ -1334,7 +1371,13 @@ namespace ManroEdit {
 
     void CEditor::ApplySkybox() {
         const std::string &path = m_Map.SkyboxPath();
-        if (path.empty() || path == m_LoadedSkyboxPath) return;
+        if (path.empty()) {
+            m_Renderer->SetSkybox(Manro::kInvalidTexture);
+            m_SkyboxHandle = Manro::kInvalidTexture;
+            m_LoadedSkyboxPath.clear();
+            return;
+        }
+        if (path == m_LoadedSkyboxPath) return;
 
         auto faces = Manro::CTextureLoader::LoadCubemap(path, *m_Vfs);
         if (faces.empty()) {

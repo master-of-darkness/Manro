@@ -31,6 +31,8 @@ namespace Manro {
                         const std::vector<VkBuffer> &uboBuffers,
                         const std::vector<VkDescriptorSet> &skyboxSets);
 
+        void ClearTexture();
+
         void UpdateDescriptorSet(u32 fi, VkDescriptorSet set,
                                  VkBuffer uboBuffer, CTextureManager &textures);
 
