@@ -31,11 +31,11 @@ namespace Manro {
         }
     }
 
-    void CPerFrameAllocator::Reset() {
+    void CPerFrameAllocator::Reset() const {
         vkResetDescriptorPool(m_Device, m_Pool, 0);
     }
 
-    VkDescriptorSet CPerFrameAllocator::Allocate(VkDescriptorSetLayout layout) {
+    VkDescriptorSet CPerFrameAllocator::Allocate(const VkDescriptorSetLayout layout) const {
         VkDescriptorSetAllocateInfo ai{};
         ai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
         ai.descriptorPool = m_Pool;
@@ -45,14 +45,14 @@ namespace Manro {
         VkDescriptorSet set = VK_NULL_HANDLE;
         VkResult result = vkAllocateDescriptorSets(m_Device, &ai, &set);
         if (result != VK_SUCCESS) {
-            LOG_ERROR("[CPerFrameAllocator] vkAllocateDescriptorSets failed: {}", (int) result);
+            LOG_ERROR("[CPerFrameAllocator] vkAllocateDescriptorSets failed: {}", static_cast<int>(result));
             return VK_NULL_HANDLE;
         }
         return set;
     }
 
-    void CPersistentAllocator::Init(VkDevice device, u32 initialPoolSets,
-                                    const PoolSizeRatio_t *ratios, u32 ratioCount) {
+    void CPersistentAllocator::Init(const VkDevice device, const u32 initialPoolSets,
+                                    const PoolSizeRatio_t *ratios, const u32 ratioCount) {
         m_Device = device;
         m_unSetsPerPool = initialPoolSets;
         m_Ratios.assign(ratios, ratios + ratioCount);
@@ -66,7 +66,7 @@ namespace Manro {
         m_Current = VK_NULL_HANDLE;
     }
 
-    VkDescriptorSet CPersistentAllocator::Allocate(VkDescriptorSetLayout layout) {
+    VkDescriptorSet CPersistentAllocator::Allocate(const VkDescriptorSetLayout layout) {
         VkDescriptorSetAllocateInfo ai{};
         ai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
         ai.descriptorPool = m_Current;
@@ -84,13 +84,13 @@ namespace Manro {
         }
 
         if (result != VK_SUCCESS) {
-            LOG_ERROR("[CPersistentAllocator] vkAllocateDescriptorSets failed: {}", (int) result);
+            LOG_ERROR("[CPersistentAllocator] vkAllocateDescriptorSets failed: {}", static_cast<int>(result));
             return VK_NULL_HANDLE;
         }
         return set;
     }
 
-    void CPersistentAllocator::Free(VkDescriptorSet set) {
+    void CPersistentAllocator::Free(const VkDescriptorSet set) const {
         vkFreeDescriptorSets(m_Device, m_Current, 1, &set);
     }
 
@@ -192,7 +192,7 @@ namespace Manro {
         m_Set = VK_NULL_HANDLE;
     }
 
-    void CBindlessAllocator::UpdateSlot(u32 index, VkImageView view, VkImageLayout layout) {
+    void CBindlessAllocator::UpdateSlot(const u32 index, const VkImageView view, const VkImageLayout layout) const {
         VkDescriptorImageInfo imgInfo{};
         imgInfo.imageView = view;
         imgInfo.imageLayout = layout;

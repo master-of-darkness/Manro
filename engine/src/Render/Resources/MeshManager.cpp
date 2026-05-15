@@ -27,7 +27,7 @@ namespace Manro {
 
     CMeshManager::~CMeshManager() = default;
 
-    MeshHandle CMeshManager::Upload(const ModelData_t &data) {
+    MeshHandle CMeshManager::Upload(const ModelData_t &data) const {
         if (data.vertices.empty() || data.indices.empty()) return kInvalidMesh;
 
         if (m_Impl->CurrentVertexOffset + data.vertices.size() > MeshManagerImpl_t::kMaxVertices ||

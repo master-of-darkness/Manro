@@ -112,10 +112,10 @@ namespace Manro {
             return {};
         }
 
-        size_t fileSize = (size_t) file.tellg();
+        const size_t fileSize = file.tellg();
         std::vector<u8> buffer(fileSize);
         file.seekg(0);
-        file.read((char *) buffer.data(), fileSize);
+        file.read(reinterpret_cast<char *>(buffer.data()), fileSize);
         file.close();
 
         return buffer;

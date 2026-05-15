@@ -11,11 +11,11 @@ namespace Manro {
 
         ~CBuffer();
 
-        void *Map();
+        void *Map() const;
 
-        void Unmap();
+        void Unmap() const;
 
-        void LoadData(const void *data, size_t size, size_t offset = 0);
+        void LoadData(const void *data, size_t size, size_t offset = 0) const;
 
         VkBuffer GetHandle() const { return m_Buffer; }
 

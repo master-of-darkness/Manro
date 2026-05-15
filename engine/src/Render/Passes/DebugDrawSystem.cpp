@@ -260,7 +260,7 @@ namespace Manro {
         m_unNoDepthVertexCount = 0;
     }
 
-    void CDrawSystem::DispatchExpand(VkCommandBuffer cmd) {
+    void CDrawSystem::DispatchExpand(VkCommandBuffer cmd) const {
         if (m_unLineCount == 0 && m_unBoxCount == 0 && m_unSphereCount == 0 &&
             m_unFrustumCount == 0 && m_unCrossCount == 0) {
             return;
@@ -291,7 +291,7 @@ namespace Manro {
             u32 sphereCount;
             u32 frustumCount;
             u32 crossCount;
-        } pushConstants;
+        } pushConstants{};
         pushConstants.lineCount = m_unLineCount;
         pushConstants.boxCount = m_unBoxCount;
         pushConstants.sphereCount = m_unSphereCount;
@@ -320,7 +320,7 @@ namespace Manro {
                           VkImageView resolveColorTarget,
                           VkImageView depthTarget,
                           u32 width, u32 height,
-                          bool useMsaaResolve) {
+                           bool useMsaaResolve) const {
         if (m_unLineCount == 0 && m_unBoxCount == 0 && m_unSphereCount == 0 &&
             m_unFrustumCount == 0 && m_unCrossCount == 0) {
             return;
@@ -408,7 +408,7 @@ namespace Manro {
         u32 &vertexCount = depthTest ? m_unDepthVertexCount : m_unNoDepthVertexCount;
         if (vertexCount + 2 > kMaxVertices) return;
 
-        DrawLineCmd_t cmd;
+        DrawLineCmd_t cmd{};
         cmd.start = a;
         cmd.end = b;
         cmd.color = color;
@@ -425,7 +425,7 @@ namespace Manro {
         u32 &vertexCount = depthTest ? m_unDepthVertexCount : m_unNoDepthVertexCount;
         if (vertexCount + 24 > kMaxVertices) return;
 
-        DrawBoxCmd_t cmd;
+        DrawBoxCmd_t cmd{};
         cmd.center = center;
         cmd.halfExtents = halfExtents;
         cmd.transform = transform;
@@ -442,7 +442,7 @@ namespace Manro {
         u32 &vertexCount = depthTest ? m_unDepthVertexCount : m_unNoDepthVertexCount;
         if (vertexCount + 48 > kMaxVertices) return;
 
-        DrawSphereCmd_t cmd;
+        DrawSphereCmd_t cmd{};
         cmd.center = center;
         cmd.radius = radius;
         cmd.color = color;
@@ -460,7 +460,7 @@ namespace Manro {
         u32 &vertexCount = depthTest ? m_unDepthVertexCount : m_unNoDepthVertexCount;
         if (vertexCount + 24 > kMaxVertices) return;
 
-        DrawFrustumCmd_t cmd;
+        DrawFrustumCmd_t cmd{};
         cmd.invViewProj = invViewProj;
         cmd.color = color;
         cmd.depthTest = depthTest ? 1u : 0u;
@@ -477,7 +477,7 @@ namespace Manro {
         u32 &vertexCount = depthTest ? m_unDepthVertexCount : m_unNoDepthVertexCount;
         if (vertexCount + 6 > kMaxVertices) return;
 
-        DrawCrossCmd_t cmd;
+        DrawCrossCmd_t cmd{};
         cmd.center = center;
         cmd.size = size;
         cmd.color = color;

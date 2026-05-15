@@ -36,24 +36,24 @@ namespace Manro {
 
         void BuildCompositePipeline(VkFormat swapchainFormat);
 
-        void UpdatePbrDescriptorSet(u32 fi, FrameData_t &frame,
+        void UpdatePbrDescriptorSet(u32 fi, const FrameData_t &frame,
                                     const CMaterialSystem &matSys,
-                                    CTextureManager &tex,
+                                    const CTextureManager &tex,
                                     const CShadowSystem &shadow,
-                                    CSkyboxRenderer &skybox);
+                                    const CSkyboxRenderer &skybox) const;
 
-        void UpdateCompositeDescriptorSet(u32 fi, FrameData_t &frame,
+        void UpdateCompositeDescriptorSet(u32 fi, const FrameData_t &frame,
                                           const CRenderTargetManager &rt,
-                                          VkBuffer autoExposureLuminanceBuffer);
+                                          VkBuffer autoExposureLuminanceBuffer) const;
 
-        void UpdateSkyboxDescriptorSet(u32 fi, FrameData_t &frame,
-                                       CSkyboxRenderer &skybox,
-                                       CTextureManager &tex);
+        static void UpdateSkyboxDescriptorSet(u32 fi, const FrameData_t &frame,
+                                              const CSkyboxRenderer &skybox,
+                                              const CTextureManager &tex);
 
         void AllocateFrameDescriptorSets(FrameData_t &frame,
                                          const CGpuCullDispatcher &cull,
                                          const CShadowSystem &shadow,
-                                         const CSkyboxRenderer &skybox);
+                                         const CSkyboxRenderer &skybox) const;
 
         [[nodiscard]] VkDescriptorPool GetDescriptorPool() const { return m_DescriptorPool; }
         [[nodiscard]] VkDescriptorSetLayout GetPbrSetLayout() const { return m_PbrSetLayout; }

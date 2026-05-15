@@ -42,11 +42,11 @@ namespace Manro {
 
     void RendererImplSetSkybox(CRendererImpl &impl, TextureHandle cubemap);
 
-    MeshHandle RendererImplUploadMesh(CRendererImpl &impl, const ModelData_t &data);
+    MeshHandle RendererImplUploadMesh(const CRendererImpl &impl, const ModelData_t &data);
 
-    TextureHandle RendererImplUploadTexture(CRendererImpl &impl, const TextureData_t &data);
+    TextureHandle RendererImplUploadTexture(const CRendererImpl &impl, const TextureData_t &data);
 
-    TextureHandle RendererImplUploadCubemap(CRendererImpl &impl, const std::vector<TextureData_t> &faces);
+    TextureHandle RendererImplUploadCubemap(const CRendererImpl &impl, const std::vector<TextureData_t> &faces);
 
     Ref<CMaterial> RendererImplGetDefaultMaterial(const CRendererImpl &impl);
 
@@ -94,5 +94,5 @@ namespace Manro {
 
     void *RendererImplGetSceneTextureId(CRendererImpl & impl);
 
-    void RendererImplWaitIdle(CRendererImpl & impl);
+    void RendererImplWaitIdle(const CRendererImpl &impl);
 }

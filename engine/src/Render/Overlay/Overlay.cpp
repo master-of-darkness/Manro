@@ -50,7 +50,7 @@ namespace Manro {
         ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         ci.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
         ci.maxSets = 1000 * IM_ARRAYSIZE(sizes);
-        ci.poolSizeCount = (u32) IM_ARRAYSIZE(sizes);
+        ci.poolSizeCount = static_cast<u32>(IM_ARRAYSIZE(sizes));
         ci.pPoolSizes = sizes;
         if (vkCreateDescriptorPool(m_Context->GetDevice(), &ci, nullptr, &m_Pool) != VK_SUCCESS)
             LOG_ERROR("[COverlay] Failed to create descriptor pool");

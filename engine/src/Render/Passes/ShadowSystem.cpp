@@ -2,12 +2,10 @@
 #include "../Vulkan/VulkanContext.h"
 #include "../Vulkan/Pipeline.h"
 #include "../Vulkan/Buffer.h"
-#include "../Resources/MeshManagerInternal.h"
 #include "../../Core/Profiling.h"
 
 #include <Manro/Core/VirtualFS.h>
 #include <Manro/Core/Logger.h>
-#include <Manro/Render/MeshManager.h>
 
 #include <nvshaders/gltf_scene_io.h.slang>
 #include <glm/gtc/matrix_transform.hpp>
@@ -51,7 +49,7 @@ namespace Manro {
 
     void CShadowSystem::Recreate(VkDescriptorPool pool, const ShadowSettings_t &s,
                                  VkDescriptorSetLayout pbrSetLayout,
-                                 std::vector<VkDescriptorSet> &pbrSets) {
+                                 const std::vector<VkDescriptorSet> &pbrSets) {
         vkDeviceWaitIdle(m_Context.GetDevice());
 
         if (m_ShadowSampler != VK_NULL_HANDLE) {

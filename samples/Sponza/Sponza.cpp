@@ -196,7 +196,7 @@ void CSponza::LoadScene() {
                  m_Map.Entities().size(), m_Map.Lights().size());
         for (const auto &e: m_Map.Entities()) {
             if (e.modelPath.empty()) continue;
-            if (m_MapModels.count(e.modelPath)) continue;
+            if (m_MapModels.contains(e.modelPath)) continue;
             auto loaded = Manro::CModel::Load({e.modelPath}, *m_Renderer, *m_Jobs, *m_Vfs);
             if (!loaded.empty() && loaded[0])
                 m_MapModels.emplace(e.modelPath, std::move(loaded[0]));
@@ -437,10 +437,10 @@ void CSponza::StartBenchmark() {
 
     m_BenchLights.clear();
     std::mt19937 rng(0xBEEF1234);
-    std::uniform_real_distribution<float> rx(-1200.f, 1200.f);
-    std::uniform_real_distribution<float> ry(50.f, 400.f);
-    std::uniform_real_distribution<float> rz(-500.f, 500.f);
-    std::uniform_real_distribution<float> rc(0.3f, 1.f);
+    std::uniform_real_distribution rx(-1200.f, 1200.f);
+    std::uniform_real_distribution ry(50.f, 400.f);
+    std::uniform_real_distribution rz(-500.f, 500.f);
+    std::uniform_real_distribution rc(0.3f, 1.f);
     for (int i = 0; i < m_nBenchLightCount; ++i) {
         Manro::LightData l{};
         l.type = shaderio::eLightTypePoint;
@@ -573,7 +573,7 @@ void FlyCamera_t::Update(const Manro::CInputManager &input, float dt) {
 
     const Manro::Vec3 fwd = Forward();
     const Manro::Vec3 right = glm::normalize(glm::cross(fwd, Manro::Vec3{0, 1, 0}));
-    const Manro::Vec3 up = {0, 1, 0};
+    constexpr Manro::Vec3 up = {0, 1, 0};
     const float speed = input.IsKeyDown(K::LeftShift) ? SprintSpeed : NormalSpeed;
 
     Manro::Vec3 move{0};

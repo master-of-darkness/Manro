@@ -241,11 +241,11 @@ namespace Manro {
         m_CompositePipeline->BuildGraphics(vertSpv, fragSpv, cfg);
     }
 
-    void CPipelineManager::UpdatePbrDescriptorSet(u32 fi, FrameData_t &frame,
+    void CPipelineManager::UpdatePbrDescriptorSet(u32 fi, const FrameData_t &frame,
                                                   const CMaterialSystem &matSys,
-                                                  CTextureManager &tex,
+                                                  const CTextureManager &tex,
                                                   const CShadowSystem &shadow,
-                                                  CSkyboxRenderer &skybox) {
+                                                  const CSkyboxRenderer &skybox) const {
         VkDescriptorBufferInfo uboI{frame.uboBuffer->GetHandle(), 0, sizeof(UniformBufferObject_t)};
         VkDescriptorBufferInfo lightI{frame.lightBuffer->GetHandle(), 0, VK_WHOLE_SIZE};
         VkDescriptorBufferInfo tileHI{frame.tileHeaderBuffer->GetHandle(), 0, VK_WHOLE_SIZE};
@@ -341,9 +341,9 @@ namespace Manro {
         UpdateSkyboxDescriptorSet(fi, frame, skybox, tex);
     }
 
-    void CPipelineManager::UpdateCompositeDescriptorSet(u32 fi, FrameData_t &frame,
+    void CPipelineManager::UpdateCompositeDescriptorSet(u32 fi, const FrameData_t &frame,
                                                         const CRenderTargetManager &rt,
-                                                        VkBuffer autoExposureLuminanceBuffer) {
+                                                        VkBuffer autoExposureLuminanceBuffer) const {
         (void) fi;
         VkDescriptorImageInfo imgI{};
         imgI.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -373,9 +373,9 @@ namespace Manro {
         vkUpdateDescriptorSets(m_Context.GetDevice(), 2, w, 0, nullptr);
     }
 
-    void CPipelineManager::UpdateSkyboxDescriptorSet(u32 fi, FrameData_t &frame,
-                                                     CSkyboxRenderer &skybox,
-                                                     CTextureManager &tex) {
+    void CPipelineManager::UpdateSkyboxDescriptorSet(u32 fi, const FrameData_t &frame,
+                                                     const CSkyboxRenderer &skybox,
+                                                     const CTextureManager &tex) {
         if (skybox.GetTexture() == kInvalidTexture) return;
         skybox.UpdateDescriptorSet(fi, frame.skyboxSet,
                                    frame.uboBuffer->GetHandle(), tex);
@@ -384,7 +384,7 @@ namespace Manro {
     void CPipelineManager::AllocateFrameDescriptorSets(FrameData_t &frame,
                                                        const CGpuCullDispatcher &cull,
                                                        const CShadowSystem &shadow,
-                                                       const CSkyboxRenderer &skybox) {
+                                                       const CSkyboxRenderer &skybox) const {
         VkDescriptorSetLayout layouts[5] = {
             m_PbrSetLayout, m_CompositeSetLayout,
             cull.GetCullSetLayout(), cull.GetMeshCullSetLayout(),

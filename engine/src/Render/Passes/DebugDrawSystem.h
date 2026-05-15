@@ -76,14 +76,14 @@ namespace Manro {
 
         void BeginFrame();
 
-        void DispatchExpand(VkCommandBuffer cmd);
+        void DispatchExpand(VkCommandBuffer cmd) const;
 
         void Draw(VkCommandBuffer cmd, const Mat4 &viewProj,
                   VkImageView colorTarget,
                   VkImageView resolveColorTarget,
                   VkImageView depthTarget,
                   u32 width, u32 height,
-                  bool useMsaaResolve);
+                  bool useMsaaResolve) const;
 
         void SubmitLine(const Vec3 &a, const Vec3 &b, u32 color, bool depthTest);
 

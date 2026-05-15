@@ -224,7 +224,7 @@ namespace Manro {
         return tail == ext;
     }
 
-    static bool LoadIndividual(const std::string &filepath, CVirtualFS &vfs, TextureData_t &out) {
+    static bool LoadIndividual(const std::string &filepath, const CVirtualFS &vfs, TextureData_t &out) {
         std::vector<u8> fileData = vfs.ReadFile(filepath);
         if (fileData.empty()) {
             return false;
@@ -275,14 +275,14 @@ namespace Manro {
         return results;
     }
 
-    TextureData_t CTextureLoader::LoadOne(const std::string &filepath, CVirtualFS &vfs) {
+    TextureData_t CTextureLoader::LoadOne(const std::string &filepath, const CVirtualFS &vfs) {
         MNR_PROFILE_SCOPE("LoadTexture");
         TextureData_t result;
         LoadIndividual(filepath, vfs, result);
         return result;
     }
 
-    std::vector<TextureData_t> CTextureLoader::LoadCubemap(const std::string &filepath, CVirtualFS &vfs) {
+    std::vector<TextureData_t> CTextureLoader::LoadCubemap(const std::string &filepath, const CVirtualFS &vfs) {
         TextureData_t rawData;
         if (!LoadIndividual(filepath, vfs, rawData)) {
             return {};

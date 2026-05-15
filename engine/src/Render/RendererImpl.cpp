@@ -95,15 +95,17 @@ namespace Manro {
             m_Skybox.SetTexture(cubemap, m_Textures, uboBuffers, skyboxSets);
         }
 
-        void WaitIdle() {
+        void WaitIdle() const {
             if (m_Context.GetDevice()) vkDeviceWaitIdle(m_Context.GetDevice());
         }
 
-        MeshHandle UploadMesh(const ModelData_t &data) { return m_Meshes.Upload(data); }
+        MeshHandle UploadMesh(const ModelData_t &data) const { return m_Meshes.Upload(data); }
 
-        TextureHandle UploadTexture(const TextureData_t &data) { return m_Textures.Upload(data); }
+        TextureHandle UploadTexture(const TextureData_t &data) const { return m_Textures.Upload(data); }
 
-        TextureHandle UploadCubemap(const std::vector<TextureData_t> &faces) { return m_Textures.UploadCubemap(faces); }
+        TextureHandle UploadCubemap(const std::vector<TextureData_t> &faces) const {
+            return m_Textures.UploadCubemap(faces);
+        }
 
         Ref<CMaterial> GetDefaultMaterial() const { return m_PipelineMgr.GetDefaultMaterial(); }
 
@@ -170,9 +172,9 @@ namespace Manro {
 
         void ShutdownAutoExposure();
 
-        void UpdateAutoExposureDescriptorSet(FrameData_t &frame);
+        void UpdateAutoExposureDescriptorSet(const FrameData_t &frame) const;
 
-        void DispatchAutoExposure(VkCommandBuffer cb, FrameData_t &frame);
+        void DispatchAutoExposure(VkCommandBuffer cb, FrameData_t &frame) const;
 
         void RecreateSwapchain();
 
@@ -224,6 +226,8 @@ namespace Manro {
         Scope<CBuffer> m_AutoExposureLuminanceBuffer;
 
         std::vector<FrameData_t> m_Frames;
+        std::vector<VkBuffer> m_SkyboxUboBuffers;
+        std::vector<VkDescriptorSet> m_SkyboxDescriptorSets;
         u32 m_unCurrentFrame = 0;
         u32 m_unCurrentImageIndex = 0;
 
@@ -455,7 +459,7 @@ namespace Manro {
 
         std::array<u32, 256> zeroHistogram{};
         m_AutoExposureHistogramBuffer->LoadData(zeroHistogram.data(), sizeof(zeroHistogram));
-        const float initialLuminance = 1.0f;
+        constexpr float initialLuminance = 1.0f;
         m_AutoExposureLuminanceBuffer->LoadData(&initialLuminance, sizeof(initialLuminance));
 
         auto histogramSpv = m_Vfs.ReadFile("shaders://tonemapper_histogram.comp.spv");
@@ -497,7 +501,7 @@ namespace Manro {
         }
     }
 
-    void CRendererImpl::UpdateAutoExposureDescriptorSet(FrameData_t &frame) {
+    void CRendererImpl::UpdateAutoExposureDescriptorSet(const FrameData_t &frame) const {
         if (frame.autoExposureSet == VK_NULL_HANDLE ||
             !m_AutoExposureHistogramBuffer || !m_AutoExposureLuminanceBuffer) {
             return;
@@ -553,7 +557,7 @@ namespace Manro {
         vkUpdateDescriptorSets(m_Context.GetDevice(), 4, writes, 0, nullptr);
     }
 
-    void CRendererImpl::DispatchAutoExposure(VkCommandBuffer cb, FrameData_t &frame) {
+    void CRendererImpl::DispatchAutoExposure(VkCommandBuffer cb, FrameData_t &frame) const {
         if (m_Settings.postProcess.tonemapping.autoExposure != 1 ||
             !m_HistogramPipeline || !m_AutoExposurePipeline ||
             !m_AutoExposureHistogramBuffer || !m_AutoExposureLuminanceBuffer ||
@@ -1286,6 +1290,10 @@ namespace Manro {
         const u32 maxLightsPerTile = GetMaxLightsPerTile();
 
         m_Frames.resize(frameCount);
+        m_SkyboxUboBuffers.clear();
+        m_SkyboxDescriptorSets.clear();
+        m_SkyboxUboBuffers.reserve(frameCount);
+        m_SkyboxDescriptorSets.reserve(frameCount);
 
         for (u32 i = 0; i < frameCount; ++i) {
             FrameData_t &f = m_Frames[i];
@@ -1375,6 +1383,8 @@ namespace Manro {
                 m_AutoExposureLuminanceBuffer->GetHandle());
             m_PipelineMgr.UpdatePbrDescriptorSet(i, f, m_MaterialSystem, m_Textures, m_Shadow, m_Skybox);
             UpdateAutoExposureDescriptorSet(f);
+            m_SkyboxUboBuffers.push_back(f.uboBuffer->GetHandle());
+            m_SkyboxDescriptorSets.push_back(f.skyboxSet);
         }
     }
 
@@ -1478,13 +1488,15 @@ namespace Manro {
 
     void RendererImplSetCameraPosition(CRendererImpl &impl, const Vec3 &pos) { impl.SetCameraPosition(pos); }
     void RendererImplSetSkybox(CRendererImpl &impl, TextureHandle cubemap) { impl.SetSkybox(cubemap); }
-    MeshHandle RendererImplUploadMesh(CRendererImpl &impl, const ModelData_t &data) { return impl.UploadMesh(data); }
+    MeshHandle RendererImplUploadMesh(const CRendererImpl &impl, const ModelData_t &data) { return impl.
+            UploadMesh(data);
+    }
 
-    TextureHandle RendererImplUploadTexture(CRendererImpl &impl, const TextureData_t &data) {
+    TextureHandle RendererImplUploadTexture(const CRendererImpl &impl, const TextureData_t &data) {
         return impl.UploadTexture(data);
     }
 
-    TextureHandle RendererImplUploadCubemap(CRendererImpl &impl, const std::vector<TextureData_t> &faces) {
+    TextureHandle RendererImplUploadCubemap(const CRendererImpl &impl, const std::vector<TextureData_t> &faces) {
         return impl.UploadCubemap(faces);
     }
 
@@ -1544,7 +1556,7 @@ namespace Manro {
         impl.DrawAxes(transform, size);
     }
 
-    void RendererImplWaitIdle(CRendererImpl &impl) {
+    void RendererImplWaitIdle(const CRendererImpl &impl) {
         impl.WaitIdle();
     }
 } // namespace Manro

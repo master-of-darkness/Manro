@@ -1,3 +1,4 @@
+#include <ranges>
 #include <Manro/Platform/Window/WindowManager.h>
 #include <Manro/Platform/Window/Window.h>
 #include <Manro/Core/Logger.h>
@@ -12,7 +13,7 @@ namespace Manro {
 
         WindowHandle handle = m_nNextHandle++;
 
-        u32 platformId = static_cast<CWindow *>(window.get())->GetPlatformWindowID();
+        u32 platformId = window.get()->GetPlatformWindowID();
         m_PlatformIdToHandle[platformId] = handle;
 
         m_Windows.emplace(handle, std::move(window));
@@ -27,7 +28,7 @@ namespace Manro {
     WindowHandle CWindowManager::AddWindowFromExisting(IWindow *window) {
         WindowHandle handle = m_nNextHandle++;
 
-        u32 platformId = static_cast<CWindow *>(window)->GetPlatformWindowID();
+        u32 platformId = dynamic_cast<CWindow *>(window)->GetPlatformWindowID();
         m_PlatformIdToHandle[platformId] = handle;
 
         // We store raw pointer and explicitly release it on shutdown without deleting it
@@ -44,7 +45,7 @@ namespace Manro {
         auto it = m_Windows.find(handle);
         if (it == m_Windows.end()) return;
 
-        u32 platformId = static_cast<CWindow *>(it->second.get())->GetPlatformWindowID();
+        u32 platformId = dynamic_cast<CWindow *>(it->second.get())->GetPlatformWindowID();
         m_PlatformIdToHandle.erase(platformId);
 
         // Don't call shutdown here, the global loop does it
@@ -61,7 +62,7 @@ namespace Manro {
     }
 
     void CWindowManager::ShutdownAll() {
-        for (auto &[handle, window]: m_Windows) {
+        for (auto &window: m_Windows | std::views::values) {
             window.release(); // release ownership before map is cleared
         }
         m_Windows.clear();
@@ -80,7 +81,7 @@ namespace Manro {
     }
 
     bool CWindowManager::IsValid(WindowHandle handle) const {
-        return m_Windows.count(handle) > 0;
+        return m_Windows.contains(handle);
     }
 
     IWindow *CWindowManager::GetPrimary() {
@@ -95,6 +96,6 @@ namespace Manro {
         IWindow *window = Get(it->second);
         if (!window) return;
 
-        static_cast<CWindow *>(window)->OnPlatformWindowEvent(eventType, data1, data2);
+        dynamic_cast<CWindow *>(window)->OnPlatformWindowEvent(eventType, data1, data2);
     }
 } // namespace Manro

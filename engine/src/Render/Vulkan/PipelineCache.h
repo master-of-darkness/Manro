@@ -67,9 +67,9 @@ namespace Manro {
 
         void Shutdown();
 
-        VkPipeline GetGraphics(const PipelineKey_t &key, GraphicsBuildFn buildFn);
+        VkPipeline GetGraphics(const PipelineKey_t &key, const GraphicsBuildFn &buildFn);
 
-        VkPipeline GetCompute(const PipelineKey_t &key, ComputeBuildFn buildFn);
+        VkPipeline GetCompute(const PipelineKey_t &key, const ComputeBuildFn &buildFn);
 
         void Invalidate(const PipelineKey_t &key);
 
@@ -90,7 +90,7 @@ namespace Manro {
 
         void SaveToDisk() const;
 
-        u64 HashLayoutBindings(std::span<const VkDescriptorSetLayoutBinding> bindings);
+        static u64 HashLayoutBindings(std::span<const VkDescriptorSetLayoutBinding> bindings);
 
         void InvalidateAll();
     };

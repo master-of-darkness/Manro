@@ -33,17 +33,17 @@ namespace Manro {
         }
     }
 
-    void *CBuffer::Map() {
+    void *CBuffer::Map() const {
         void *data;
         vmaMapMemory(m_Context.GetAllocator(), m_Allocation, &data);
         return data;
     }
 
-    void CBuffer::Unmap() {
+    void CBuffer::Unmap() const {
         vmaUnmapMemory(m_Context.GetAllocator(), m_Allocation);
     }
 
-    void CBuffer::LoadData(const void *data, size_t size, size_t offset) {
+    void CBuffer::LoadData(const void *data, const size_t size, const size_t offset) const {
         void *mappedData;
 
         if (m_AllocationInfo.pMappedData) {

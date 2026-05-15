@@ -9,7 +9,7 @@ namespace Manro {
         : m_Context(ctx) {
     }
 
-    void CRenderTargetManager::Create(u32 width, u32 height, VkSampleCountFlagBits samples) {
+    void CRenderTargetManager::Create(const u32 width, const u32 height, const VkSampleCountFlagBits samples) {
         m_LastSamples = samples;
         CreateOffscreen(width, height);
         CreateDepth(width, height, samples);

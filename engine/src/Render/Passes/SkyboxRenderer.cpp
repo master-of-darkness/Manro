@@ -91,7 +91,7 @@ namespace Manro {
         m_SkyboxPipeline->BuildGraphics(vertSpv, fragSpv, cfg);
     }
 
-    void CSkyboxRenderer::SetTexture(TextureHandle h, CTextureManager &textures,
+    void CSkyboxRenderer::SetTexture(TextureHandle h, const CTextureManager &textures,
                                      const std::vector<VkBuffer> &uboBuffers,
                                     const std::vector<VkDescriptorSet> &skyboxSets) {
         if (h == kInvalidTexture)
@@ -109,7 +109,7 @@ namespace Manro {
     }
 
     void CSkyboxRenderer::UpdateDescriptorSet(u32 /*fi*/, VkDescriptorSet set,
-                                              VkBuffer uboBuffer, CTextureManager &textures) {
+                                              VkBuffer uboBuffer, const CTextureManager &textures) const {
         VkDescriptorBufferInfo uboI{uboBuffer, 0, VK_WHOLE_SIZE};
 
         VkDescriptorImageInfo skyI{};

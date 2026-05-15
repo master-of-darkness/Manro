@@ -20,21 +20,21 @@ namespace Manro {
 
         CTextureManager &operator=(const CTextureManager &) = delete;
 
-        void InitDefaults();
+        void InitDefaults() const;
 
-        TextureHandle Upload(const TextureData_t &data);
+        TextureHandle Upload(const TextureData_t &data) const;
 
-        TextureHandle Upload(const u8 *pixels, int width, int height);
+        TextureHandle Upload(const u8 *pixels, int width, int height) const;
 
-        TextureHandle UploadCubemap(const std::vector<TextureData_t> &faces);
+        TextureHandle UploadCubemap(const std::vector<TextureData_t> &faces) const;
 
-        void FlushPendingUploads();
+        void FlushPendingUploads() const;
 
         VkImageView GetView(TextureHandle handle) const;
 
         VkSampler GetSampler() const;
 
-        void SetAnisotropy(float maxAnisotropy);
+        void SetAnisotropy(float maxAnisotropy) const;
 
         TextureHandle GetWhiteTextureId() const;
 

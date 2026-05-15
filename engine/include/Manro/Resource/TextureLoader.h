@@ -20,8 +20,8 @@ namespace Manro {
         static std::vector<TextureData_t> Load(const std::vector<std::string> &filepaths,
                                                CJobSystem &jobs, CVirtualFS &vfs);
 
-        static TextureData_t LoadOne(const std::string &filepath, CVirtualFS &vfs);
+        static TextureData_t LoadOne(const std::string &filepath, const CVirtualFS &vfs);
 
-        static std::vector<TextureData_t> LoadCubemap(const std::string &filepath, CVirtualFS &vfs);
+        static std::vector<TextureData_t> LoadCubemap(const std::string &filepath, const CVirtualFS &vfs);
     };
 } // namespace Manro

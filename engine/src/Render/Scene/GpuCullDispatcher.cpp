@@ -116,7 +116,7 @@ namespace Manro {
         }
     }
 
-    void CGpuCullDispatcher::Dispatch(const DispatchParams_t &params) {
+    void CGpuCullDispatcher::Dispatch(const DispatchParams_t &params) const {
         VkCommandBuffer cb = params.cb;
         FrameData_t &frame = params.frame;
 
@@ -165,9 +165,9 @@ namespace Manro {
         }
     }
 
-    void CGpuCullDispatcher::DispatchMeshCull(VkCommandBuffer cb, FrameData_t &frame,
-                                              u32 totalInstCount, const Mat4 &viewProj,
-                                              const Vec3 &cameraPosition, const RenderSettings_t &settings) {
+    void CGpuCullDispatcher::DispatchMeshCull(VkCommandBuffer cb, const FrameData_t &frame,
+                                              const u32 totalInstCount, const Mat4 &viewProj,
+                                              const Vec3 &cameraPosition, const RenderSettings_t &settings) const {
         vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, m_MeshCullPipeline->GetHandle());
         vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE,
                                 m_MeshCullPipeline->GetLayout(), 0, 1, &frame.meshCullSet, 0, nullptr);
@@ -216,7 +216,7 @@ namespace Manro {
                                                 u32 totalInstCount, CShadowSystem &shadow,
                                                 const std::vector<LightData> &lights,
                                                 const Vec3 &cameraPosition, const RenderSettings_t &settings,
-                                                CMeshManager &meshes) {
+                                                CMeshManager &meshes) const {
         vkCmdFillBuffer(cb, frame.shadowCountBuffer->GetHandle(), 0, sizeof(u32), 0);
 
         VkBufferMemoryBarrier2 shadowFillBarrier{};
@@ -290,12 +290,12 @@ namespace Manro {
                           settings.shadows);
     }
 
-    void CGpuCullDispatcher::DispatchLightTileCull(VkCommandBuffer cb, FrameData_t &frame,
+    void CGpuCullDispatcher::DispatchLightTileCull(VkCommandBuffer cb, const FrameData_t &frame,
                                                    const Mat4 &viewMatrix, const Mat4 &projectionMatrix,
                                                   const std::vector<LightData> &lights,
                                                   VkExtent2D renderExtent,
                                                   u32 maxLightsPerTile, u32 maxTilesX, u32 maxTilesY, u32 tileSize,
-                                                   const RenderSettings_t &settings) {
+                                                   const RenderSettings_t &settings) const {
         vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, m_CullPipeline->GetHandle());
         vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE,
                                 m_CullPipeline->GetLayout(), 0, 1, &frame.cullSet, 0, nullptr);

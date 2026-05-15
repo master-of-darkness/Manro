@@ -54,25 +54,25 @@ namespace Manro {
             u32 tileSize;
         };
 
-        void Dispatch(const DispatchParams_t &params);
+        void Dispatch(const DispatchParams_t &params) const;
 
     private:
-        void DispatchMeshCull(VkCommandBuffer cb, FrameData_t &frame,
+        void DispatchMeshCull(VkCommandBuffer cb, const FrameData_t &frame,
                               u32 totalInstCount, const Mat4 &viewProj,
-                              const Vec3 &cameraPosition, const RenderSettings_t &settings);
+                              const Vec3 &cameraPosition, const RenderSettings_t &settings) const;
 
         void DispatchShadowCull(VkCommandBuffer cb, FrameData_t &frame,
                                 u32 totalInstCount, CShadowSystem &shadow,
                                 const std::vector<LightData> &lights,
                                 const Vec3 &cameraPosition, const RenderSettings_t &settings,
-                                CMeshManager &meshes);
+                                CMeshManager &meshes) const;
 
-        void DispatchLightTileCull(VkCommandBuffer cb, FrameData_t &frame,
+        void DispatchLightTileCull(VkCommandBuffer cb, const FrameData_t &frame,
                                    const Mat4 &viewMatrix, const Mat4 &projectionMatrix,
                                    const std::vector<LightData> &lights,
                                    VkExtent2D renderExtent,
                                    u32 maxLightsPerTile, u32 maxTilesX, u32 maxTilesY, u32 tileSize,
-                                   const RenderSettings_t &settings);
+                                   const RenderSettings_t &settings) const;
 
         CVulkanContext &m_Context;
         CVirtualFS &m_Vfs;

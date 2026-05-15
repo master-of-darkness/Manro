@@ -50,7 +50,7 @@ namespace Manro {
 
         bool SaveToFile(const std::filesystem::path &path) const;
 
-        bool LoadFromVfs(const std::string &vfsPath, CVirtualFS &vfs);
+        bool LoadFromVfs(const std::string &vfsPath, const CVirtualFS &vfs);
 
         Pack::PackResult PackToRres(const std::filesystem::path &outputRres,
                                     const std::filesystem::path &projectDir) const;

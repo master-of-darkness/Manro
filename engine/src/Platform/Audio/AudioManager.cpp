@@ -21,28 +21,28 @@ namespace Manro {
         m_bInitialized = false;
     }
 
-    SoundHandle CAudioManager::LoadSound(const std::string &filepath) {
+    SoundHandle CAudioManager::LoadSound(const std::string &filepath) const {
         if (!m_bInitialized) return kInvalidSound;
         return m_Backend->LoadSound(filepath);
     }
 
-    void CAudioManager::UnloadSound(SoundHandle handle) {
+    void CAudioManager::UnloadSound(SoundHandle handle) const {
         if (m_bInitialized) m_Backend->UnloadSound(handle);
     }
 
-    void CAudioManager::Play(SoundHandle handle, bool loop) {
+    void CAudioManager::Play(SoundHandle handle, bool loop) const {
         if (m_bInitialized) m_Backend->Play(handle, loop);
     }
 
-    void CAudioManager::Stop(SoundHandle handle) {
+    void CAudioManager::Stop(SoundHandle handle) const {
         if (m_bInitialized) m_Backend->Stop(handle);
     }
 
-    void CAudioManager::Pause(SoundHandle handle) {
+    void CAudioManager::Pause(SoundHandle handle) const {
         if (m_bInitialized) m_Backend->Pause(handle);
     }
 
-    void CAudioManager::Resume(SoundHandle handle) {
+    void CAudioManager::Resume(SoundHandle handle) const {
         if (m_bInitialized) m_Backend->Resume(handle);
     }
 
@@ -51,31 +51,31 @@ namespace Manro {
         return m_Backend->IsPlaying(handle);
     }
 
-    void CAudioManager::SetVolume(SoundHandle handle, f32 volume) {
+    void CAudioManager::SetVolume(SoundHandle handle, f32 volume) const {
         if (m_bInitialized) m_Backend->SetVolume(handle, volume);
     }
 
-    void CAudioManager::SetMasterVolume(f32 volume) {
+    void CAudioManager::SetMasterVolume(f32 volume) const {
         if (m_bInitialized) m_Backend->SetMasterVolume(volume);
     }
 
-    void CAudioManager::PlayMusic(const std::string &filepath, bool loop) {
+    void CAudioManager::PlayMusic(const std::string &filepath, bool loop) const {
         if (m_bInitialized) m_Backend->PlayMusic(filepath, loop);
     }
 
-    void CAudioManager::StopMusic() {
+    void CAudioManager::StopMusic() const {
         if (m_bInitialized) m_Backend->StopMusic();
     }
 
-    void CAudioManager::PauseMusic() {
+    void CAudioManager::PauseMusic() const {
         if (m_bInitialized) m_Backend->PauseMusic();
     }
 
-    void CAudioManager::ResumeMusic() {
+    void CAudioManager::ResumeMusic() const {
         if (m_bInitialized) m_Backend->ResumeMusic();
     }
 
-    void CAudioManager::SetMusicVolume(f32 volume) {
+    void CAudioManager::SetMusicVolume(f32 volume) const {
         if (m_bInitialized) m_Backend->SetMusicVolume(volume);
     }
 } // namespace Manro

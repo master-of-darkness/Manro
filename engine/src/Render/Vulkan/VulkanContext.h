@@ -11,7 +11,7 @@ namespace Manro {
 
     class CVulkanContext {
     public:
-        CVulkanContext(const char *appName, IWindow &window);
+        CVulkanContext(const char *appName, const IWindow &window);
 
         ~CVulkanContext();
 
@@ -52,7 +52,7 @@ namespace Manro {
     private:
         void CreateInstance(const char *appName);
 
-        void CreateSurface(IWindow &window);
+        void CreateSurface(const IWindow &window);
 
         void PickPhysicalDevice();
 

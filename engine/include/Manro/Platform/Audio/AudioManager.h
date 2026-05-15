@@ -20,33 +20,33 @@ namespace Manro {
 
         void Shutdown();
 
-        SoundHandle LoadSound(const std::string &filepath);
+        SoundHandle LoadSound(const std::string &filepath) const;
 
-        void UnloadSound(SoundHandle handle);
+        void UnloadSound(SoundHandle handle) const;
 
-        void Play(SoundHandle handle, bool loop = false);
+        void Play(SoundHandle handle, bool loop = false) const;
 
-        void Stop(SoundHandle handle);
+        void Stop(SoundHandle handle) const;
 
-        void Pause(SoundHandle handle);
+        void Pause(SoundHandle handle) const;
 
-        void Resume(SoundHandle handle);
+        void Resume(SoundHandle handle) const;
 
         bool IsPlaying(SoundHandle handle) const;
 
-        void SetVolume(SoundHandle handle, f32 volume);
+        void SetVolume(SoundHandle handle, f32 volume) const;
 
-        void SetMasterVolume(f32 volume);
+        void SetMasterVolume(f32 volume) const;
 
-        void PlayMusic(const std::string &filepath, bool loop = true);
+        void PlayMusic(const std::string &filepath, bool loop = true) const;
 
-        void StopMusic();
+        void StopMusic() const;
 
-        void PauseMusic();
+        void PauseMusic() const;
 
-        void ResumeMusic();
+        void ResumeMusic() const;
 
-        void SetMusicVolume(f32 volume);
+        void SetMusicVolume(f32 volume) const;
 
     private:
         Scope<IAudioBackend> m_Backend;

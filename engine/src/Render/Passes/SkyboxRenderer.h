@@ -27,14 +27,14 @@ namespace Manro {
 
         void RebuildPipeline(VkFormat colorFmt, VkFormat depthFmt, VkSampleCountFlagBits samples);
 
-        void SetTexture(TextureHandle h, CTextureManager &textures,
+        void SetTexture(TextureHandle h, const CTextureManager &textures,
                         const std::vector<VkBuffer> &uboBuffers,
                         const std::vector<VkDescriptorSet> &skyboxSets);
 
         void ClearTexture();
 
         void UpdateDescriptorSet(u32 fi, VkDescriptorSet set,
-                                 VkBuffer uboBuffer, CTextureManager &textures);
+                                 VkBuffer uboBuffer, const CTextureManager &textures) const;
 
         void Shutdown();
 

@@ -12,14 +12,12 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #define TINYGLTF_NO_INCLUDE_STB_IMAGE
 
-#include <stb_image.h>
-
 #ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-literal-operator"
 #pragma clang diagnostic ignored "-Wmissing-field-initializers"
 #endif
-
+#include "stb_image.h"
 #include <tiny_gltf.h>
 
 #ifdef __clang__
@@ -33,7 +31,6 @@
 #include <filesystem>
 
 #include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/type_ptr.hpp>
 
 namespace Manro {
     using Mat3 = glm::mat3;
@@ -104,7 +101,7 @@ namespace Manro {
     };
 
     static int MikkGetNumFaces(const SMikkTSpaceContext *context) {
-        MikkContext_t *ctx = static_cast<MikkContext_t *>(context->m_pUserData);
+        auto ctx = static_cast<MikkContext_t *>(context->m_pUserData);
         return static_cast<int>(ctx->indices->size() / 3);
     }
 
@@ -113,7 +110,7 @@ namespace Manro {
     }
 
     static void MikkGetPosition(const SMikkTSpaceContext *context, float fvPosOut[], const int iFace, const int iVert) {
-        MikkContext_t *ctx = static_cast<MikkContext_t *>(context->m_pUserData);
+        auto ctx = static_cast<MikkContext_t *>(context->m_pUserData);
         u32 index = (*ctx->indices)[iFace * 3 + iVert];
         const Vec3 &pos = (*ctx->vertices)[index].position;
         fvPosOut[0] = pos.x;
@@ -122,7 +119,7 @@ namespace Manro {
     }
 
     static void MikkGetNormal(const SMikkTSpaceContext *context, float fvNormOut[], const int iFace, const int iVert) {
-        MikkContext_t *ctx = static_cast<MikkContext_t *>(context->m_pUserData);
+        auto ctx = static_cast<MikkContext_t *>(context->m_pUserData);
         u32 index = (*ctx->indices)[iFace * 3 + iVert];
         const Vec3 &norm = (*ctx->vertices)[index].normal;
         fvNormOut[0] = norm.x;
@@ -132,7 +129,7 @@ namespace Manro {
 
     static void MikkGetTexCoord(const SMikkTSpaceContext *context, float fvTexcOut[], const int iFace,
                                 const int iVert) {
-        MikkContext_t *ctx = static_cast<MikkContext_t *>(context->m_pUserData);
+        auto ctx = static_cast<MikkContext_t *>(context->m_pUserData);
         u32 index = (*ctx->indices)[iFace * 3 + iVert];
         const Vec2 &uv = (*ctx->vertices)[index].uv;
         fvTexcOut[0] = uv.x;
@@ -142,7 +139,7 @@ namespace Manro {
     static void
     MikkSetTSpaceBasic(const SMikkTSpaceContext *context, const float fvTangent[], const float fSign, const int iFace,
                        const int iVert) {
-        MikkContext_t *ctx = static_cast<MikkContext_t *>(context->m_pUserData);
+        auto ctx = static_cast<MikkContext_t *>(context->m_pUserData);
         u32 index = (*ctx->indices)[iFace * 3 + iVert];
         Vertex_t &v = (*ctx->vertices)[index];
         v.tangent = {fvTangent[0], fvTangent[1], fvTangent[2], fSign};
@@ -352,7 +349,7 @@ namespace Manro {
                     const tinygltf::Accessor &accessor = model.accessors[primitive.attributes.at("POSITION")];
                     const tinygltf::BufferView &bufferView = model.bufferViews[accessor.bufferView];
                     const tinygltf::Buffer &buffer = model.buffers[bufferView.buffer];
-                    const float *positions = reinterpret_cast<const float *>(&buffer.data[
+                    const auto *positions = reinterpret_cast<const float *>(&buffer.data[
                         bufferView.byteOffset + accessor.byteOffset]);
 
                     smd.vertices.resize(accessor.count);
@@ -368,7 +365,7 @@ namespace Manro {
                     const tinygltf::Accessor &accessor = model.accessors[primitive.attributes.at("NORMAL")];
                     const tinygltf::BufferView &bufferView = model.bufferViews[accessor.bufferView];
                     const tinygltf::Buffer &buffer = model.buffers[bufferView.buffer];
-                    const float *normals = reinterpret_cast<const float *>(&buffer.data[
+                    const auto *normals = reinterpret_cast<const float *>(&buffer.data[
                         bufferView.byteOffset + accessor.byteOffset]);
 
                     Mat3 normalMatrix = glm::transpose(glm::inverse(Mat3(nodeTransform)));
@@ -385,7 +382,7 @@ namespace Manro {
                     const tinygltf::Accessor &accessor = model.accessors[primitive.attributes.at("TEXCOORD_0")];
                     const tinygltf::BufferView &bufferView = model.bufferViews[accessor.bufferView];
                     const tinygltf::Buffer &buffer = model.buffers[bufferView.buffer];
-                    const float *uvs = reinterpret_cast<const float *>(&buffer.data[bufferView.byteOffset + accessor.
+                    const auto *uvs = reinterpret_cast<const float *>(&buffer.data[bufferView.byteOffset + accessor.
                         byteOffset]);
 
                     for (size_t i = 0; i < accessor.count; ++i) {

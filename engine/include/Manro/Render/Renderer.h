@@ -46,57 +46,57 @@ namespace Manro {
 
         CRenderer &operator=(const CRenderer &) = delete;
 
-        bool BeginFrame();
+        bool BeginFrame() const;
 
-        bool BeginFramePace();
+        bool BeginFramePace() const;
 
-        void BeginFrameRecord();
+        void BeginFrameRecord() const;
 
-        void BeginRendering();
+        void BeginRendering() const;
 
-        void RenderQueue();
+        void RenderQueue() const;
 
-        void EndRendering();
+        void EndRendering() const;
 
-        void EndFrameAndPresent();
+        void EndFrameAndPresent() const;
 
-        void DrawMesh(MeshHandle mesh, CMaterialInstance &mat, const Mat4 &model);
+        void DrawMesh(MeshHandle mesh, CMaterialInstance &mat, const Mat4 &model) const;
 
-        void DrawMeshStatic(MeshHandle mesh, CMaterialInstance &mat, const Mat4 &model);
+        void DrawMeshStatic(MeshHandle mesh, CMaterialInstance &mat, const Mat4 &model) const;
 
-        void ClearStaticDraws();
+        void ClearStaticDraws() const;
 
-        void DrawModel(const CModel &model, const Mat4 &transform);
+        void DrawModel(const CModel &model, const Mat4 &transform) const;
 
-        void DrawModelStatic(const CModel &model, const Mat4 &transform);
+        void DrawModelStatic(const CModel &model, const Mat4 &transform) const;
 
-        void AddLight(const LightData &light);
+        void AddLight(const LightData &light) const;
 
-        void ClearLights();
+        void ClearLights() const;
 
-        void SetViewProjection(const Mat4 &view, const Mat4 &proj);
+        void SetViewProjection(const Mat4 &view, const Mat4 &proj) const;
 
-        void SetCameraPosition(const Vec3 &pos);
+        void SetCameraPosition(const Vec3 &pos) const;
 
-        void SetSkybox(TextureHandle cubemap);
+        void SetSkybox(TextureHandle cubemap) const;
 
-        MeshHandle UploadMesh(const ModelData_t &data);
+        MeshHandle UploadMesh(const ModelData_t &data) const;
 
-        TextureHandle UploadTexture(const TextureData_t &data);
+        TextureHandle UploadTexture(const TextureData_t &data) const;
 
-        TextureHandle UploadCubemap(const std::vector<TextureData_t> &faces);
+        TextureHandle UploadCubemap(const std::vector<TextureData_t> &faces) const;
 
         Ref<CMaterial> GetDefaultMaterial() const;
 
-        Scope<CMaterialInstance> CreateMaterialInstance(Ref<CMaterial> mat);
+        Scope<CMaterialInstance> CreateMaterialInstance(const Ref<CMaterial> &mat) const;
 
-        void OnResize(u32 width, u32 height);
+        void OnResize(u32 width, u32 height) const;
 
         float GetAspectRatio() const;
 
-        CMeshManager &GetMeshes();
+        CMeshManager &GetMeshes() const;
 
-        void SetSettings(const RenderSettings_t &settings);
+        void SetSettings(const RenderSettings_t &settings) const;
 
         const RenderSettings_t &GetSettings() const;
 
@@ -107,7 +107,7 @@ namespace Manro {
 
         const FrameStats_t &GetLastFrameStats() const;
 
-        void SetDebugUIEnabled(bool enabled);
+        void SetDebugUIEnabled(bool enabled) const;
 
         bool IsDebugUIEnabled() const;
 
@@ -115,25 +115,25 @@ namespace Manro {
 
         std::string GetAdapterName() const;
 
-        void DrawLine(const Vec3 &a, const Vec3 &b, u32 color, bool depthTest = true);
+        void DrawLine(const Vec3 &a, const Vec3 &b, u32 color, bool depthTest = true) const;
 
-        void DrawAABB(const Vec3 &min, const Vec3 &max, u32 color, bool depthTest = true);
+        void DrawAABB(const Vec3 &min, const Vec3 &max, u32 color, bool depthTest = true) const;
 
         void DrawBox(const Vec3 &center, const Vec3 &half, const Mat4 &transform,
-                     u32 color, bool depthTest = true);
+                     u32 color, bool depthTest = true) const;
 
         void DrawSphere(const Vec3 &center, float radius, u32 color,
-                        int segments = 8, bool depthTest = true);
+                        int segments = 8, bool depthTest = true) const;
 
-        void DrawFrustum(const Mat4 &invViewProj, u32 color, bool depthTest = true);
+        void DrawFrustum(const Mat4 &invViewProj, u32 color, bool depthTest = true) const;
 
-        void DrawCross(const Vec3 &center, float size, u32 color, bool depthTest = true);
+        void DrawCross(const Vec3 &center, float size, u32 color, bool depthTest = true) const;
 
-        void DrawAxes(const Mat4 &transform, float size = 50.f);
+        void DrawAxes(const Mat4 &transform, float size = 50.f) const;
 
-        void *GetSceneTextureId();
+        void *GetSceneTextureId() const;
 
-        void WaitIdle();
+        void WaitIdle() const;
 
     private:
         Scope<CRendererImpl> m_Impl;

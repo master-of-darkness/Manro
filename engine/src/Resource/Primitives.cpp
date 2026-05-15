@@ -16,7 +16,7 @@ namespace Manro {
         ModelData_t data;
         const float h = size * 0.5f;
 
-        const std::array<CubeFace_t, 6> faces{
+        constexpr std::array<CubeFace_t, 6> faces{
             {
                 {{0.f, 0.f, 1.f}, {1.f, 0.f, 0.f}, {0.f, 1.f, 0.f}},
                 {{0.f, 0.f, -1.f}, {-1.f, 0.f, 0.f}, {0.f, 1.f, 0.f}},
@@ -24,15 +24,6 @@ namespace Manro {
                 {{1.f, 0.f, 0.f}, {0.f, 0.f, -1.f}, {0.f, 1.f, 0.f}},
                 {{0.f, 1.f, 0.f}, {1.f, 0.f, 0.f}, {0.f, 0.f, -1.f}},
                 {{0.f, -1.f, 0.f}, {1.f, 0.f, 0.f}, {0.f, 0.f, 1.f}},
-            }
-        };
-
-        const std::array<Vec2, 4> uvs{
-            {
-                {0.f, 0.f},
-                {1.f, 0.f},
-                {1.f, 1.f},
-                {0.f, 1.f},
             }
         };
 
@@ -55,6 +46,14 @@ namespace Manro {
             };
 
             for (size_t i = 0; i < positions.size(); ++i) {
+                constexpr std::array<Vec2, 4> uvs{
+                    {
+                        {0.f, 0.f},
+                        {1.f, 0.f},
+                        {1.f, 1.f},
+                        {0.f, 1.f},
+                    }
+                };
                 Vertex_t vert{};
                 vert.position = positions[i];
                 vert.normal = face.normal;

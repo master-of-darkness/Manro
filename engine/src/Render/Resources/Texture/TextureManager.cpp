@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <ranges>
 #include <stdexcept>
 #include <unordered_map>
 #include <volk.h>
@@ -149,7 +150,7 @@ namespace Manro {
         SetAnisotropy(16.0f);
     }
 
-    void CTextureManager::SetAnisotropy(float maxAnisotropy) {
+    void CTextureManager::SetAnisotropy(float maxAnisotropy) const {
         VkPhysicalDeviceProperties props{};
         vkGetPhysicalDeviceProperties(m_Impl->context.GetPhysicalDevice(), &props);
 
@@ -199,9 +200,9 @@ namespace Manro {
         m_Impl->currentAnisotropy = si.maxAnisotropy;
     }
 
-    void CTextureManager::InitDefaults() {
+    void CTextureManager::InitDefaults() const {
         if (m_Impl->whiteTextureId != kInvalidTexture) return;
-        const u8 pixels[4] = {255, 0, 255, 255};
+        constexpr u8 pixels[4] = {255, 0, 255, 255};
         m_Impl->whiteTextureId = Upload(pixels, 1, 1);
     }
 
@@ -211,9 +212,9 @@ namespace Manro {
         }
         m_Impl->DestroyPendingStagingBuffers();
 
-        for (auto &[id, tex]: m_Impl->textures) {
-            if (tex.view) vkDestroyImageView(m_Impl->context.GetDevice(), tex.view, nullptr);
-            if (tex.image) vmaDestroyImage(m_Impl->context.GetAllocator(), tex.image, tex.allocation);
+        for (auto &[image, view, allocation]: m_Impl->textures | std::views::values) {
+            if (view) vkDestroyImageView(m_Impl->context.GetDevice(), view, nullptr);
+            if (image) vmaDestroyImage(m_Impl->context.GetAllocator(), image, allocation);
         }
         m_Impl->textures.clear();
 
@@ -242,19 +243,19 @@ namespace Manro {
         return m_Impl->whiteTextureId;
     }
 
-    void CTextureManager::FlushPendingUploads() {
+    void CTextureManager::FlushPendingUploads() const {
         if (!m_Impl->FlushPendingUploads()) {
             throw std::runtime_error("[CTextureManager] Failed to flush pending uploads");
         }
     }
 
-    TextureHandle CTextureManager::Upload(const TextureData_t &data) {
+    TextureHandle CTextureManager::Upload(const TextureData_t &data) const {
         if (data.pixels.empty() || data.width <= 0 || data.height <= 0)
             return kInvalidTexture;
         return Upload(data.pixels.data(), data.width, data.height);
     }
 
-    TextureHandle CTextureManager::UploadCubemap(const std::vector<TextureData_t> &faces) {
+    TextureHandle CTextureManager::UploadCubemap(const std::vector<TextureData_t> &faces) const {
         if (faces.size() != 6) {
             LOG_ERROR("[CTextureManager] Cubemap must have exactly 6 faces");
             return kInvalidTexture;
@@ -385,7 +386,7 @@ namespace Manro {
         return id;
     }
 
-    TextureHandle CTextureManager::Upload(const u8 *pixels, int width, int height) {
+    TextureHandle CTextureManager::Upload(const u8 *pixels, int width, int height) const {
         VkDeviceSize imageSize = static_cast<VkDeviceSize>(width) * height * 4;
 
         const u32 mipLevels = static_cast<u32>(

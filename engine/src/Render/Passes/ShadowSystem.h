@@ -50,7 +50,7 @@ namespace Manro {
 
         void Recreate(VkDescriptorPool pool, const ShadowSettings_t &s,
                       VkDescriptorSetLayout pbrSetLayout,
-                      std::vector<VkDescriptorSet> &pbrSets);
+                      const std::vector<VkDescriptorSet> &pbrSets);
 
         void Shutdown();
 

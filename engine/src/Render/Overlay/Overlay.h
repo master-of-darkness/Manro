@@ -4,7 +4,6 @@
 #include <volk.h>
 #include <Manro/Interfaces/IWindow.h>
 #include <Manro/Render/RenderSettings.h>
-#include <vector>
 #include <string>
 
 namespace Manro {

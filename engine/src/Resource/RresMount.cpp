@@ -13,7 +13,7 @@ namespace Manro {
         std::mutex g_MountMutex;
         std::vector<std::string> g_MountedPaths;
 
-        std::string JoinVirtualPath(std::string_view prefix, const char *entry) {
+        std::string JoinVirtualPath(const std::string_view prefix, const char *entry) {
             std::string result;
             result.reserve(prefix.size() + std::strlen(entry) + 1);
             result.append(prefix);
@@ -27,8 +27,8 @@ namespace Manro {
         }
     } // anon namespace
 
-    bool CRresMount::MountArchive(CVirtualFS &vfs, std::string_view archivePath,
-                                  std::string_view virtualPrefix) {
+    bool CRresMount::MountArchive(CVirtualFS &vfs, const std::string_view archivePath,
+                                  const std::string_view virtualPrefix) {
         const std::string pathStr(archivePath);
 
         // Read the central directory to discover (id, filename) pairs

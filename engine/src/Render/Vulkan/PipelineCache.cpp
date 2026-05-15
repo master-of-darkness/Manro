@@ -2,6 +2,7 @@
 
 #include <Manro/Core/Logger.h>
 #include <fstream>
+#include <ranges>
 #include <stdexcept>
 #include <vector>
 
@@ -17,7 +18,7 @@ namespace Manro {
         if (!diskPath.empty()) {
             std::ifstream f(diskPath, std::ios::binary | std::ios::ate);
             if (f.is_open()) {
-                blob.resize(static_cast<size_t>(f.tellg()));
+                blob.resize(f.tellg());
                 f.seekg(0);
                 f.read(reinterpret_cast<char *>(blob.data()),
                        static_cast<std::streamsize>(blob.size()));
@@ -43,7 +44,7 @@ namespace Manro {
         }
     }
 
-    VkPipeline CPipelineCache::GetGraphics(const PipelineKey_t &key, GraphicsBuildFn buildFn) {
+    VkPipeline CPipelineCache::GetGraphics(const PipelineKey_t &key, const GraphicsBuildFn &buildFn) {
         auto it = m_Graphics.find(key);
         if (it != m_Graphics.end()) return it->second;
 
@@ -53,7 +54,7 @@ namespace Manro {
         return pso;
     }
 
-    VkPipeline CPipelineCache::GetCompute(const PipelineKey_t &key, ComputeBuildFn buildFn) {
+    VkPipeline CPipelineCache::GetCompute(const PipelineKey_t &key, const ComputeBuildFn &buildFn) {
         auto it = m_Compute.find(key);
         if (it != m_Compute.end()) return it->second;
 
@@ -77,8 +78,8 @@ namespace Manro {
     }
 
     void CPipelineCache::InvalidateAll() {
-        for (auto &[k, pso]: m_Graphics) vkDestroyPipeline(m_Device, pso, nullptr);
-        for (auto &[k, pso]: m_Compute) vkDestroyPipeline(m_Device, pso, nullptr);
+        for (const auto &pso: m_Graphics | std::views::values) vkDestroyPipeline(m_Device, pso, nullptr);
+        for (const auto &pso: m_Compute | std::views::values) vkDestroyPipeline(m_Device, pso, nullptr);
         m_Graphics.clear();
         m_Compute.clear();
     }

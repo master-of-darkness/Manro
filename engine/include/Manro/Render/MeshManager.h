@@ -27,7 +27,7 @@ namespace Manro {
 
         CMeshManager &operator=(const CMeshManager &) = delete;
 
-        MeshHandle Upload(const ModelData_t &data);
+        MeshHandle Upload(const ModelData_t &data) const;
 
         const LoadedMesh_t *Get(MeshHandle handle) const;
 
