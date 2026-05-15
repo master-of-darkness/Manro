@@ -3,6 +3,7 @@
 #include <Manro/Core/Logger.h>
 #include <Manro/Core/VirtualFS.h>
 #include <Manro/Interfaces/IWindow.h>
+#include <Manro/Resource/Pack.h>
 #include <Manro/Resource/TextureLoader.h>
 
 #include <SDL3/SDL_dialog.h>
@@ -1287,7 +1288,7 @@ namespace ManroEdit {
                      ImGuiWindowFlags_NoSavedSettings |
                      ImGuiWindowFlags_NoBringToFrontOnFocus);
 
-        ImGui::Text("Manro Editor  " ICON_FA7_GAUGE_HIGH "  %.0f FPS  " ICON_FA7_CUBES "  %zu objects",
+        ImGui::Text(ICON_FA7_GAUGE_HIGH "  %.0f FPS  " ICON_FA7_CUBES "  %zu objects",
                     ImGui::GetIO().Framerate, m_Map.Entities().size());
 
         if (m_StatusTimer > 0.f && !m_StatusLine.empty()) {
@@ -1361,9 +1362,9 @@ namespace ManroEdit {
         const fs::path outAbs = fs::path(outRres).is_absolute()
                                     ? fs::path(outRres)
                                     : fs::path(m_ProjectDir) / outRres;
-        const std::string err = m_Map.PackToRres(outAbs, m_ProjectDir);
-        if (!err.empty()) {
-            outError = err;
+        const auto res = m_Map.PackToRres(outAbs, m_ProjectDir);
+        if (!res.ok) {
+            outError = res.error;
             return false;
         }
         return true;

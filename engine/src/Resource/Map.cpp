@@ -127,10 +127,11 @@ namespace Manro {
         return m;
     }
 
-    std::string CMap::PackToRres(const fs::path &outputRres,
-                                 const fs::path &projectDir) const {
+    Pack::PackResult CMap::PackToRres(const fs::path &outputRres,
+                                      const fs::path &projectDir) const {
+        Pack::PackResult res{};
         if (projectDir.empty() || !fs::is_directory(projectDir))
-            return "project dir does not exist: " + projectDir.string();
+            return {false, 0, 0, "project dir does not exist: " + projectDir.string()};
 
         LOG_INFO("[CMap::PackToRres] {} entities, project={}, out={}",
                  m_Entities.size(), projectDir.string(), outputRres.string());
@@ -142,10 +143,10 @@ namespace Manro {
                                         .time_since_epoch().count())));
         std::error_code ec;
         fs::create_directories(stage, ec);
-        if (ec) return "create temp: " + ec.message();
+        if (ec) return {false, 0, 0, "create temp: " + ec.message()};
 
         if (!SaveToFile(stage / "map.mmap"))
-            return "write map.mmap";
+            return {false, 0, 0, "write map.mmap"};
 
         std::unordered_set<std::string> copiedDirs;
         size_t copiedFiles = 0;
@@ -160,14 +161,14 @@ namespace Manro {
             const fs::path src = raw.is_absolute() ? raw : projectDir / raw;
             if (!fs::is_regular_file(src, ec)) {
                 fs::remove_all(stage, ec);
-                return "model not found: " + src.string();
+                return {false, 0, 0, "model not found: " + src.string()};
             }
 
             fs::path rel = fs::relative(src, projectDir, ec);
             if (ec || rel.empty() || rel.native().rfind("..", 0) == 0) {
                 fs::remove_all(stage, ec);
-                return "model lives outside project root, can't pack: "
-                       + src.string();
+                return {false, 0, 0,
+                        "model lives outside project root, can't pack: " + src.string()};
             }
 
             const fs::path srcDir = src.parent_path();
@@ -208,11 +209,11 @@ namespace Manro {
         LOG_INFO("[CMap::PackToRres] staged {} files across {} dir(s)",
                  copiedFiles, copiedDirs.size());
 
-        const auto res = Pack::PackDirectory(stage, outputRres, {});
+        res = Pack::PackDirectory(stage, outputRres, {});
         fs::remove_all(stage, ec);
-        if (!res.ok) return res.error;
+        if (!res.ok) return res;
         LOG_INFO("[CMap::PackToRres] wrote {} ({} entries)",
                  outputRres.string(), res.entryCount);
-        return {};
+        return res;
     }
 } // namespace Manro

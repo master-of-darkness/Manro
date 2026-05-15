@@ -7,6 +7,9 @@
 
 namespace Manro {
     class CVirtualFS;
+    namespace Pack {
+        struct PackResult;
+    }
 
     struct MapEntity_t {
         std::string name;
@@ -49,9 +52,8 @@ namespace Manro {
 
         bool LoadFromVfs(const std::string &vfsPath, CVirtualFS &vfs);
 
-        // Returns empty string on success, error message otherwise. TODO: rework this dumb logic
-        std::string PackToRres(const std::filesystem::path &outputRres,
-                               const std::filesystem::path &projectDir) const;
+        Pack::PackResult PackToRres(const std::filesystem::path &outputRres,
+                                    const std::filesystem::path &projectDir) const;
 
         // Matches ImGuizmo::RecomposeMatrixFromComponents
         static Mat4 ComposeEntityTransform(const MapEntity_t &e);
