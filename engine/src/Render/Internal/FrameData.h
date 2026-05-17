@@ -29,6 +29,7 @@ namespace Manro {
         VkDescriptorSet skyboxSet = VK_NULL_HANDLE;
         VkDescriptorSet autoExposureSet = VK_NULL_HANDLE;
 
-        bool staticUploaded = false;
+        u32 staticUploadedGeneration = 0;
+        u32 lightUploadedGeneration = 0;
     };
 } // namespace Manro

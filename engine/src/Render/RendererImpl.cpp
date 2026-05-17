@@ -255,6 +255,7 @@ namespace Manro {
 
         VkDescriptorSet m_SceneImGuiTex{VK_NULL_HANDLE};
         bool m_bSceneTexDirty{true};
+        u32 m_unLightGeneration{0};
     };
 
     CRendererImpl::CRendererImpl(IWindow &window, CVirtualFS &vfs, u32 width, u32 height,
@@ -378,12 +379,17 @@ namespace Manro {
     }
 
     void CRendererImpl::AddLight(const LightData &light) {
-        if (m_PendingLights.size() < GetMaxLights())
+        if (m_PendingLights.size() < GetMaxLights()) {
             m_PendingLights.push_back(light);
+            ++m_unLightGeneration;
+        }
     }
 
     void CRendererImpl::ClearLights() {
-        m_PendingLights.clear();
+        if (!m_PendingLights.empty()) {
+            m_PendingLights.clear();
+            ++m_unLightGeneration;
+        }
     }
 
     void CRendererImpl::OnResize(u32 width, u32 height) {
@@ -847,10 +853,12 @@ namespace Manro {
     void CRendererImpl::UploadLights(u32 frameIndex) {
         m_CurrentFrameStats.lightCount = static_cast<u32>(m_PendingLights.size());
         FrameData_t &frame = m_Frames[frameIndex];
-        if (!m_PendingLights.empty())
+        if (frame.lightUploadedGeneration != m_unLightGeneration && !m_PendingLights.empty()) {
             frame.lightBuffer->LoadData(
                 m_PendingLights.data(),
                 sizeof(LightData) * m_PendingLights.size());
+            frame.lightUploadedGeneration = m_unLightGeneration;
+        }
     }
 
     void CRendererImpl::BeginRendering() {
@@ -1257,17 +1265,14 @@ namespace Manro {
 
     void CRendererImpl::DrawModelStatic(const CModel &model, const Mat4 &transform) {
         m_InstanceBatcher.DrawModelStatic(model, transform, m_Meshes, m_MaterialSystem);
-        m_InstanceBatcher.InvalidateStaticUpload(m_Frames);
     }
 
     void CRendererImpl::DrawMeshStatic(MeshHandle meshId, CMaterialInstance &material, const Mat4 &model) {
         m_InstanceBatcher.DrawMeshStatic(meshId, material, model, m_Meshes, m_MaterialSystem);
-        m_InstanceBatcher.InvalidateStaticUpload(m_Frames);
     }
 
     void CRendererImpl::ClearStaticDraws() {
         m_InstanceBatcher.ClearStaticDraws();
-        m_InstanceBatcher.InvalidateStaticUpload(m_Frames);
     }
 
     void *CRendererImpl::GetSceneTextureId() {

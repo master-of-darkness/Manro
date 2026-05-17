@@ -69,6 +69,7 @@ namespace Manro {
         m_StaticInstances.push_back(inst);
         m_StaticCullData.push_back(cullData);
         m_unStaticTriangleCount += inst.indexCount / 3;
+        ++m_unStaticGeneration;
     }
 
     void CInstanceBatcher::DrawModel(const CModel &model, const Mat4 &transform,
@@ -87,6 +88,7 @@ namespace Manro {
         m_StaticInstances.clear();
         m_StaticCullData.clear();
         m_unStaticTriangleCount = 0;
+        ++m_unStaticGeneration;
     }
 
     void CInstanceBatcher::ClearFrameInstances() {
@@ -98,10 +100,10 @@ namespace Manro {
         u32 staticInstCount = static_cast<u32>(m_StaticInstances.size());
         u32 dynamicInstCount = static_cast<u32>(m_CurrentFrameInstances.size());
 
-        if (!frame.staticUploaded && staticInstCount > 0) {
+        if (frame.staticUploadedGeneration != m_unStaticGeneration && staticInstCount > 0) {
             frame.instanceBuffer->LoadData(m_StaticInstances.data(), sizeof(MeshInstance_t) * staticInstCount, 0);
             frame.cullDataBuffer->LoadData(m_StaticCullData.data(), sizeof(CullData_t) * staticInstCount, 0);
-            frame.staticUploaded = true;
+            frame.staticUploadedGeneration = m_unStaticGeneration;
         }
         if (dynamicInstCount > 0) {
             frame.instanceBuffer->LoadData(m_CurrentFrameInstances.data(),
@@ -109,12 +111,6 @@ namespace Manro {
                                            sizeof(MeshInstance_t) * staticInstCount);
             frame.cullDataBuffer->LoadData(m_CurrentFrameCullData.data(), sizeof(CullData_t) * dynamicInstCount,
                                            sizeof(CullData_t) * staticInstCount);
-        }
-    }
-
-    void CInstanceBatcher::InvalidateStaticUpload(std::vector<FrameData_t> &frames) {
-        for (auto &frame: frames) {
-            frame.staticUploaded = false;
         }
     }
 } // namespace Manro

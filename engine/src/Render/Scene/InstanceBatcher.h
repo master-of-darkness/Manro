@@ -35,7 +35,7 @@ namespace Manro {
 
         void UploadToGpu(FrameData_t &frame);
 
-        void InvalidateStaticUpload(std::vector<FrameData_t> &frames);
+        [[nodiscard]] u32 GetStaticGeneration() const { return m_unStaticGeneration; }
 
         [[nodiscard]] u32 GetTotalInstanceCount() const {
             return static_cast<u32>(m_StaticInstances.size() + m_CurrentFrameInstances.size());
@@ -61,5 +61,6 @@ namespace Manro {
         std::vector<MeshInstance_t> m_StaticInstances;
         std::vector<CullData_t> m_StaticCullData;
         u32 m_unStaticTriangleCount = 0;
+        u32 m_unStaticGeneration = 0;
     };
 } // namespace Manro
