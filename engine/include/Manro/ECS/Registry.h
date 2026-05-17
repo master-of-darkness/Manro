@@ -16,7 +16,7 @@ namespace Manro {
             m_Arrays.reserve(64);
         }
 
-        Entity CreateEntity() {
+        [[nodiscard]] Entity CreateEntity() {
             assert(m_unLivingCount < MAX_ENTITIES && "Too many entities.");
             Entity id = m_Available.front();
             m_Available.pop();
@@ -76,7 +76,7 @@ namespace Manro {
         }
 
         template<typename T>
-        bool HasComponent(Entity entity) const {
+        [[nodiscard]] bool HasComponent(Entity entity) const {
             u32 id = ComponentTypeId<T>();
             if (id >= m_Arrays.size() || !m_Arrays[id]) return false;
             if (entity >= m_Signatures.size()) return false;

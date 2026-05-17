@@ -16,7 +16,7 @@ namespace Manro {
         Storage packed = kInvalid;
 
         // Construction
-        static Handle Make(Storage index, Storage gen) {
+        [[nodiscard]] static Handle Make(Storage index, Storage gen) {
             Handle h;
             h.packed = ((gen & kGenMask) << kIndexBits) | (index & kIndexMask);
             return h;
@@ -39,7 +39,7 @@ namespace Manro {
 
         Storage Generation() const { return (packed >> kIndexBits) & kGenMask; }
 
-        bool IsValid() const { return packed != kInvalid; }
+        [[nodiscard]] bool IsValid() const { return packed != kInvalid; }
 
         bool operator==(const Handle &o) const { return packed == o.packed; }
 
@@ -57,7 +57,7 @@ namespace Manro {
             m_Slots.push_back({T{}, 0, false});
         }
 
-        HandleT Insert(T value) {
+        [[nodiscard]] HandleT Insert(T value) {
             if (!m_FreeList.empty()) {
                 u32 idx = m_FreeList.back();
                 m_FreeList.pop_back();
@@ -71,7 +71,7 @@ namespace Manro {
             return HandleT::Make(idx, 0);
         }
 
-        bool Remove(HandleT handle) {
+        [[nodiscard]] bool Remove(HandleT handle) {
             if (!IsValid(handle)) return false;
             auto &slot = m_Slots[handle.Index()];
             slot.occupied = false;
@@ -90,7 +90,7 @@ namespace Manro {
             return &m_Slots[handle.Index()].value;
         }
 
-        bool IsValid(HandleT handle) const {
+        [[nodiscard]] bool IsValid(HandleT handle) const {
             if (!handle.IsValid()) return false;
             u32 idx = handle.Index();
             if (idx >= m_Slots.size()) return false;

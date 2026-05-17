@@ -20,11 +20,11 @@ namespace Manro {
 
         void SetActionMap(IInputActionMap *actionMap) { m_ActionMap = actionMap; }
 
-        UserCmd_t Poll() const;
+        [[nodiscard]] UserCmd_t Poll() const;
 
-        bool IsKeyDown(Key k) const;
+        [[nodiscard]] bool IsKeyDown(Key k) const;
 
-        bool IsMouseButtonDown(MouseButton button) const;
+        [[nodiscard]] bool IsMouseButtonDown(MouseButton button) const;
 
         RawMouseDelta_t ConsumeMouseDelta() const;
 

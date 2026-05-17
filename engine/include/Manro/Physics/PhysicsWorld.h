@@ -71,19 +71,19 @@ namespace Manro {
 
         void Step(float deltaTime);
 
-        PhysicsBodyHandle AddStaticBox(const Vec3 &position, const Vec3 &halfExtents,
+        [[nodiscard]] PhysicsBodyHandle AddStaticBox(const Vec3 &position, const Vec3 &halfExtents,
                                        const StaticBodyDesc_t &desc = {});
 
-        PhysicsBodyHandle AddDynamicBox(const Vec3 &position, const Vec3 &halfExtents,
+        [[nodiscard]] PhysicsBodyHandle AddDynamicBox(const Vec3 &position, const Vec3 &halfExtents,
                                         const DynamicBodyDesc_t &desc = {});
 
-        PhysicsBodyHandle AddDynamicCapsule(const Vec3 &position, float radius, float halfHeight,
+        [[nodiscard]] PhysicsBodyHandle AddDynamicCapsule(const Vec3 &position, float radius, float halfHeight,
                                             const DynamicBodyDesc_t &desc = {});
 
-        PhysicsBodyHandle AddStaticMesh(const std::vector<Vec3> &vertices, const std::vector<u32> &indices,
+        [[nodiscard]] PhysicsBodyHandle AddStaticMesh(const std::vector<Vec3> &vertices, const std::vector<u32> &indices,
                                         const Mat4 &transform = Mat4(1.f));
 
-        PhysicsBodyHandle AddDynamicCone(const Vec3 &position, float radius, float height,
+        [[nodiscard]] PhysicsBodyHandle AddDynamicCone(const Vec3 &position, float radius, float height,
                                          const DynamicBodyDesc_t &desc = {});
 
         void RemoveBody(PhysicsBodyHandle handle);
@@ -104,9 +104,9 @@ namespace Manro {
 
         void ApplyLinearImpulse(PhysicsBodyHandle handle, const Vec3 &impulse);
 
-        bool IsGrounded(PhysicsBodyHandle handle) const;
+        [[nodiscard]] bool IsGrounded(PhysicsBodyHandle handle) const;
 
-        bool RaycastClosest(const Vec3 &origin, const Vec3 &direction, float distance,
+        [[nodiscard]] bool RaycastClosest(const Vec3 &origin, const Vec3 &direction, float distance,
                             RaycastHit_t &outHit, PhysicsBodyHandle ignore = kInvalidBodyHandle) const;
 
         void SetKinematicVelocity(PhysicsBodyHandle handle, const Vec3 &velocity);

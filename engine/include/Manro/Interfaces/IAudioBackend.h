@@ -10,7 +10,7 @@ namespace Manro {
     public:
         ~IAudioBackend() override = default;
 
-        virtual SoundHandle LoadSound(const std::string &filepath) = 0;
+        [[nodiscard]] virtual SoundHandle LoadSound(const std::string &filepath) = 0;
 
         virtual void UnloadSound(SoundHandle handle) = 0;
 
@@ -22,7 +22,7 @@ namespace Manro {
 
         virtual void Resume(SoundHandle handle) = 0;
 
-        virtual bool IsPlaying(SoundHandle handle) const = 0;
+        [[nodiscard]] virtual bool IsPlaying(SoundHandle handle) const = 0;
 
         virtual void SetVolume(SoundHandle handle, f32 volume) = 0;
 

@@ -17,9 +17,9 @@ namespace Manro {
 
         CWindowManager &operator=(const CWindowManager &) = delete;
 
-        WindowHandle AddWindow(const WindowDesc_t &desc);
+        [[nodiscard]] WindowHandle AddWindow(const WindowDesc_t &desc);
 
-        WindowHandle AddWindowFromExisting(IWindow *window);
+        [[nodiscard]] WindowHandle AddWindowFromExisting(IWindow *window);
 
         void DestroyWindow(WindowHandle handle);
 
@@ -29,7 +29,7 @@ namespace Manro {
 
         const IWindow *Get(WindowHandle handle) const;
 
-        bool IsValid(WindowHandle handle) const;
+        [[nodiscard]] bool IsValid(WindowHandle handle) const;
 
         IWindow *GetPrimary();
 

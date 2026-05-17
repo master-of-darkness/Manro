@@ -19,7 +19,7 @@ namespace Manro {
 
         void Shutdown() override;
 
-        SoundHandle LoadSound(const std::string &filepath) override;
+        [[nodiscard]] SoundHandle LoadSound(const std::string &filepath) override;
 
         void UnloadSound(SoundHandle handle) override;
 
@@ -31,7 +31,7 @@ namespace Manro {
 
         void Resume(SoundHandle handle) override;
 
-        bool IsPlaying(SoundHandle handle) const override;
+        [[nodiscard]] bool IsPlaying(SoundHandle handle) const override;
 
         void SetVolume(SoundHandle handle, f32 volume) override;
 

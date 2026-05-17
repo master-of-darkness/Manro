@@ -63,7 +63,7 @@ namespace Manro {
             return m_ComponentArray[it->second];
         }
 
-        bool HasData(Entity entity) const {
+        [[nodiscard]] bool HasData(Entity entity) const {
             return m_SparseMap.find(entity) != m_SparseMap.end();
         }
 

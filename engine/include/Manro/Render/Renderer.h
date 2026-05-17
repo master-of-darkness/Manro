@@ -46,9 +46,9 @@ namespace Manro {
 
         CRenderer &operator=(const CRenderer &) = delete;
 
-        bool BeginFrame() const;
+        [[nodiscard]] bool BeginFrame() const;
 
-        bool BeginFramePace() const;
+        [[nodiscard]] bool BeginFramePace() const;
 
         void BeginFrameRecord() const;
 
@@ -80,19 +80,19 @@ namespace Manro {
 
         void SetSkybox(TextureHandle cubemap) const;
 
-        MeshHandle UploadMesh(const ModelData_t &data) const;
+        [[nodiscard]] MeshHandle UploadMesh(const ModelData_t &data) const;
 
-        TextureHandle UploadTexture(const TextureData_t &data) const;
+        [[nodiscard]] TextureHandle UploadTexture(const TextureData_t &data) const;
 
-        TextureHandle UploadCubemap(const std::vector<TextureData_t> &faces) const;
+        [[nodiscard]] TextureHandle UploadCubemap(const std::vector<TextureData_t> &faces) const;
 
-        Ref<CMaterial> GetDefaultMaterial() const;
+        [[nodiscard]] Ref<CMaterial> GetDefaultMaterial() const;
 
-        Scope<CMaterialInstance> CreateMaterialInstance(const Ref<CMaterial> &mat) const;
+        [[nodiscard]] Scope<CMaterialInstance> CreateMaterialInstance(const Ref<CMaterial> &mat) const;
 
         void OnResize(u32 width, u32 height) const;
 
-        float GetAspectRatio() const;
+        [[nodiscard]] float GetAspectRatio() const;
 
         CMeshManager &GetMeshes() const;
 
@@ -109,11 +109,11 @@ namespace Manro {
 
         void SetDebugUIEnabled(bool enabled) const;
 
-        bool IsDebugUIEnabled() const;
+        [[nodiscard]] bool IsDebugUIEnabled() const;
 
         void GetVramStats(u64 &usage, u64 &budget) const;
 
-        std::string GetAdapterName() const;
+        [[nodiscard]] std::string GetAdapterName() const;
 
         void DrawLine(const Vec3 &a, const Vec3 &b, u32 color, bool depthTest = true) const;
 

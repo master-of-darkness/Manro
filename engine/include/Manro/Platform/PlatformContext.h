@@ -19,7 +19,7 @@ namespace Manro {
 
         CPlatformContext &operator=(const CPlatformContext &) = delete;
 
-        bool PollEvents(const CInputManager *inputManager = nullptr);
+        [[nodiscard]] bool PollEvents(const CInputManager *inputManager = nullptr);
 
         CWindowManager &GetWindowManager() { return m_WindowManager; }
 

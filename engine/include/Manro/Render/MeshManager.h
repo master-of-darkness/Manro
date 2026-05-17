@@ -27,9 +27,9 @@ namespace Manro {
 
         CMeshManager &operator=(const CMeshManager &) = delete;
 
-        MeshHandle Upload(const ModelData_t &data) const;
+        [[nodiscard]] MeshHandle Upload(const ModelData_t &data) const;
 
-        const LoadedMesh_t *Get(MeshHandle handle) const;
+        [[nodiscard]] const LoadedMesh_t *Get(MeshHandle handle) const;
 
         CBuffer *GetVertexBuffer() const;
 

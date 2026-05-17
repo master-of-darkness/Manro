@@ -44,13 +44,13 @@ namespace Manro {
 
         std::string Serialize() const;
 
-        bool Deserialize(const std::string &json);
+        [[nodiscard]] bool Deserialize(const std::string &json);
 
-        bool LoadFromFile(const std::filesystem::path &path);
+        [[nodiscard]] bool LoadFromFile(const std::filesystem::path &path);
 
-        bool SaveToFile(const std::filesystem::path &path) const;
+        [[nodiscard]] bool SaveToFile(const std::filesystem::path &path) const;
 
-        bool LoadFromVfs(const std::string &vfsPath, const CVirtualFS &vfs);
+        [[nodiscard]] bool LoadFromVfs(const std::string &vfsPath, const CVirtualFS &vfs);
 
         Pack::PackResult PackToRres(const std::filesystem::path &outputRres,
                                     const std::filesystem::path &projectDir) const;

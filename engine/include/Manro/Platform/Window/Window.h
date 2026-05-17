@@ -11,7 +11,7 @@ namespace Manro {
         ~CWindow() override { Shutdown(); }
 
         // IWindow / IAppSystem
-        bool Initialize(const WindowDesc_t &desc) override;
+        [[nodiscard]] bool Initialize(const WindowDesc_t &desc) override;
 
         void Shutdown() override;
 
@@ -21,9 +21,9 @@ namespace Manro {
 
         void SetFullscreen(bool fullscreen) override;
 
-        bool IsFullscreen() const override { return m_bFullscreen; }
+        [[nodiscard]] bool IsFullscreen() const override { return m_bFullscreen; }
 
-        bool IsOpen() const override { return m_bOpen; }
+        [[nodiscard]] bool IsOpen() const override { return m_bOpen; }
 
         u32 GetWidth() const override { return m_unWidth; }
 

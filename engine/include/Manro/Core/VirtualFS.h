@@ -35,9 +35,9 @@ namespace Manro {
 
         std::vector<u8> ReadFile(std::string_view path) const;
 
-        bool GetFileSize(std::string_view path, size_t &size) const;
+        [[nodiscard]] bool GetFileSize(std::string_view path, size_t &size) const;
 
-        bool FileExists(std::string_view path) const;
+        [[nodiscard]] bool FileExists(std::string_view path) const;
 
         std::string ResolvePath(std::string_view path) const;
 

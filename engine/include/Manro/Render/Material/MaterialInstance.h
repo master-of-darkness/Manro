@@ -20,7 +20,7 @@ namespace Manro {
             m_bDirty = true;
         }
 
-        TextureHandle GetTexture() const {
+        [[nodiscard]] TextureHandle GetTexture() const {
             return (m_Data.pbrBaseColorTexture == 0)
                        ? kInvalidTexture
                        : TextureHandle::Make(m_Data.pbrBaseColorTexture - 1, 0);
@@ -37,7 +37,7 @@ namespace Manro {
             m_bDirty = false;
         }
 
-        bool IsDirty() const { return m_bDirty; }
+        [[nodiscard]] bool IsDirty() const { return m_bDirty; }
 
         void MarkDirty() { m_bDirty = true; }
 

@@ -20,7 +20,7 @@ namespace Manro {
 
         void Shutdown();
 
-        SoundHandle LoadSound(const std::string &filepath) const;
+        [[nodiscard]] SoundHandle LoadSound(const std::string &filepath) const;
 
         void UnloadSound(SoundHandle handle) const;
 
@@ -32,7 +32,7 @@ namespace Manro {
 
         void Resume(SoundHandle handle) const;
 
-        bool IsPlaying(SoundHandle handle) const;
+        [[nodiscard]] bool IsPlaying(SoundHandle handle) const;
 
         void SetVolume(SoundHandle handle, f32 volume) const;
 

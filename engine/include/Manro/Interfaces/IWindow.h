@@ -27,7 +27,7 @@ namespace Manro {
     public:
         ~IWindow() override = default;
 
-        virtual bool Initialize(const WindowDesc_t &desc) = 0;
+        [[nodiscard]] virtual bool Initialize(const WindowDesc_t &desc) = 0;
 
         virtual void SetTitle(const std::string &title) = 0;
 
@@ -35,11 +35,11 @@ namespace Manro {
 
         virtual void SetFullscreen(bool fullscreen) = 0;
 
-        virtual bool IsFullscreen() const = 0;
+        [[nodiscard]] virtual bool IsFullscreen() const = 0;
 
         virtual void ToggleFullscreen() { SetFullscreen(!IsFullscreen()); }
 
-        virtual bool IsOpen() const = 0;
+        [[nodiscard]] virtual bool IsOpen() const = 0;
 
         virtual u32 GetWidth() const = 0;
 

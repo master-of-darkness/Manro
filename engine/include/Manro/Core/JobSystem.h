@@ -15,7 +15,7 @@ namespace Manro {
     public:
         CJobHandle() = default;
 
-        bool IsValid() const { return static_cast<bool>(m_PendingJobs); }
+        [[nodiscard]] bool IsValid() const { return static_cast<bool>(m_PendingJobs); }
 
     private:
         friend class CJobSystem;
@@ -37,7 +37,7 @@ namespace Manro {
 
         CJobSystem &operator=(const CJobSystem &) = delete;
 
-        CJobHandle CreateHandle();
+        [[nodiscard]] CJobHandle CreateHandle();
 
         void Execute(std::function<void()> job);
 
