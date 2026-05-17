@@ -9,7 +9,6 @@ The engine is designed with a focus on rendering through the Vulkan API.
 
 - Renderer: Vulkan API, Slang shaders, and GPU-driven system
 - Virtual File System with URI scheme support (e.g., shaders://)
-- Entity-Component System (ECS)
 - Jolt physics
 - Linux and Windows support with SDL3
 
