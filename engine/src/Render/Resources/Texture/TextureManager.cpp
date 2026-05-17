@@ -146,7 +146,7 @@ namespace Manro {
     static constexpr size_t kMaxPendingUploadsBeforeFlush = 32;
 
     CTextureManager::CTextureManager(const CVulkanContext &ctx, CBindlessAllocator &bindlessAlloc)
-        : m_Impl(new Impl_t(ctx, bindlessAlloc)) {
+        : m_Impl(CreateScope<Impl_t>(ctx, bindlessAlloc)) {
         SetAnisotropy(16.0f);
     }
 
@@ -223,8 +223,6 @@ namespace Manro {
         if (m_Impl->transferFence) vkDestroyFence(m_Impl->context.GetDevice(), m_Impl->transferFence, nullptr);
         if (m_Impl->transferCommandPool)
             vkDestroyCommandPool(m_Impl->context.GetDevice(), m_Impl->transferCommandPool, nullptr);
-
-        delete m_Impl;
     }
 
     VkDescriptorSet CTextureManager::GetBindlessSet() const {

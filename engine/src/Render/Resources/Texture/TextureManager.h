@@ -44,6 +44,6 @@ namespace Manro {
 
     private:
         struct Impl_t;
-        Impl_t *m_Impl;
+        Scope<Impl_t> m_Impl;
     };
 } // namespace Manro

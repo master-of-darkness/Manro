@@ -17,7 +17,7 @@ namespace Manro {
 
     void CAudioManager::Shutdown() {
         if (!m_bInitialized) return;
-        m_Backend.release(); // release ownership so we don't double free
+        m_Backend.reset();
         m_bInitialized = false;
     }
 

@@ -6,7 +6,6 @@
 #include <queue>
 #include <memory>
 #include <cassert>
-#include <functional>
 
 namespace Manro {
     class CRegistry {
@@ -15,7 +14,6 @@ namespace Manro {
             for (Entity e = 0; e < MAX_ENTITIES; ++e)
                 m_Available.push(e);
             m_Arrays.reserve(64);
-            m_Signatures.fill(Signature{});
         }
 
         Entity CreateEntity() {
@@ -23,11 +21,14 @@ namespace Manro {
             Entity id = m_Available.front();
             m_Available.pop();
             ++m_unLivingCount;
+            if (id >= m_Signatures.size())
+                m_Signatures.resize(id + 1);
+            m_Signatures[id].reset();
             return id;
         }
 
         void DestroyEntity(Entity entity) {
-            assert(entity < MAX_ENTITIES);
+            assert(entity < m_Signatures.size());
             m_Signatures[entity].reset();
             m_Available.push(entity);
             --m_unLivingCount;
@@ -36,7 +37,7 @@ namespace Manro {
         }
 
         Signature GetSignature(Entity entity) const {
-            assert(entity < MAX_ENTITIES);
+            assert(entity < m_Signatures.size());
             return m_Signatures[entity];
         }
 
@@ -53,6 +54,8 @@ namespace Manro {
         template<typename T>
         void AddComponent(Entity entity, T component) {
             GetArray<T>().InsertData(entity, std::move(component));
+            if (entity >= m_Signatures.size())
+                m_Signatures.resize(entity + 1);
             m_Signatures[entity].set(ComponentTypeId<T>(), true);
         }
 
@@ -76,16 +79,17 @@ namespace Manro {
         bool HasComponent(Entity entity) const {
             u32 id = ComponentTypeId<T>();
             if (id >= m_Arrays.size() || !m_Arrays[id]) return false;
+            if (entity >= m_Signatures.size()) return false;
             return m_Signatures[entity].test(id);
         }
 
-        template<typename T>
-        void ForEach(const std::function<void(Entity, T &)> &cb) {
+        template<typename T, typename Fn>
+        void ForEach(Fn &&fn) {
             auto &arr = GetArray<T>();
             auto &dense = arr.GetDenseArray();
             const auto &entityMap = arr.GetDenseToEntityMap();
             for (size_t i = 0; i < arr.GetSize(); ++i)
-                cb(entityMap[i], dense[i]);
+                fn(entityMap[i], dense[i]);
         }
 
         template<typename T>
@@ -112,7 +116,7 @@ namespace Manro {
 
         std::queue<Entity> m_Available;
         u32 m_unLivingCount{0};
-        std::array<Signature, MAX_ENTITIES> m_Signatures;
+        std::vector<Signature> m_Signatures;
         std::vector<std::unique_ptr<IComponentArray> > m_Arrays;
     };
 } // namespace Manro

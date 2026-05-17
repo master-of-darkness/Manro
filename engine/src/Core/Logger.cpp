@@ -2,10 +2,12 @@
 
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
+#include <mutex>
 
 namespace Manro {
     static std::shared_ptr<spdlog::logger> s_CoreLogger;
     static LogCallback s_LogCallback;
+    static std::mutex s_CallbackMutex;
 
     void CLogger::Init() {
         spdlog::set_pattern("%^[%T] %n: %v%$");
@@ -14,6 +16,7 @@ namespace Manro {
     }
 
     void CLogger::SetCallback(LogCallback cb) {
+        std::scoped_lock lock(s_CallbackMutex);
         s_LogCallback = std::move(cb);
     }
 
@@ -31,6 +34,7 @@ namespace Manro {
             case LogLevel::Critical: s_CoreLogger->critical(msg);
                 break;
         }
+        std::scoped_lock lock(s_CallbackMutex);
         if (s_LogCallback) s_LogCallback(level, msg);
     }
 } // namespace Manro
