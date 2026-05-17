@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Manro/Interfaces/IAudioBackend.h>
+#include <Manro/Core/Handles.h>
+#include <Manro/Core/Types.h>
 #include <unordered_map>
 #include <string>
 
@@ -9,43 +10,43 @@ struct MIX_Track;
 struct MIX_Mixer;
 
 namespace Manro {
-    class CAudioBackend final : public IAudioBackend {
+    class CAudioBackend final {
     public:
         CAudioBackend() = default;
 
-        ~CAudioBackend() override { Shutdown(); }
+        ~CAudioBackend() { Shutdown(); }
 
-        InitReturnVal_t Init() override;
+        bool Init();
 
-        void Shutdown() override;
+        void Shutdown();
 
-        [[nodiscard]] SoundHandle LoadSound(const std::string &filepath) override;
+        [[nodiscard]] SoundHandle LoadSound(const std::string &filepath);
 
-        void UnloadSound(SoundHandle handle) override;
+        void UnloadSound(SoundHandle handle);
 
-        void Play(SoundHandle handle, bool loop = false) override;
+        void Play(SoundHandle handle, bool loop = false);
 
-        void Stop(SoundHandle handle) override;
+        void Stop(SoundHandle handle);
 
-        void Pause(SoundHandle handle) override;
+        void Pause(SoundHandle handle);
 
-        void Resume(SoundHandle handle) override;
+        void Resume(SoundHandle handle);
 
-        [[nodiscard]] bool IsPlaying(SoundHandle handle) const override;
+        [[nodiscard]] bool IsPlaying(SoundHandle handle) const;
 
-        void SetVolume(SoundHandle handle, f32 volume) override;
+        void SetVolume(SoundHandle handle, f32 volume);
 
-        void SetMasterVolume(f32 volume) override;
+        void SetMasterVolume(f32 volume);
 
-        void PlayMusic(const std::string &filepath, bool loop = true) override;
+        void PlayMusic(const std::string &filepath, bool loop = true);
 
-        void StopMusic() override;
+        void StopMusic();
 
-        void PauseMusic() override;
+        void PauseMusic();
 
-        void ResumeMusic() override;
+        void ResumeMusic();
 
-        void SetMusicVolume(f32 volume) override;
+        void SetMusicVolume(f32 volume);
 
     private:
         struct LoadedSound_t {

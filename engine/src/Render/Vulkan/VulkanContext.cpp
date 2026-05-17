@@ -6,13 +6,13 @@
 #include <VkBootstrap.h>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
-#include <Manro/Interfaces/IWindow.h>
+#include <Manro/Platform/Window/Window.h>
 #include <Manro/Core/Logger.h>
 #include <volk.h>
 #include <stdexcept>
 
 namespace Manro {
-    CVulkanContext::CVulkanContext(const char *appName, const IWindow &window) {
+    CVulkanContext::CVulkanContext(const char *appName, const CWindow &window) {
         if (volkInitialize() != VK_SUCCESS) {
             LOG_ERROR("Failed to initialize volk!");
             return;
@@ -77,7 +77,7 @@ namespace Manro {
         volkLoadInstance(m_Instance);
     }
 
-    void CVulkanContext::CreateSurface(const IWindow &window) {
+    void CVulkanContext::CreateSurface(const CWindow &window) {
         if (const auto sdlWindow = static_cast<SDL_Window *>(window.GetNativeHandle()); !SDL_Vulkan_CreateSurface(
             sdlWindow, m_Instance, nullptr, &m_Surface)) {
             LOG_ERROR("Failed to create SDL3 Vulkan surface: {}", SDL_GetError());

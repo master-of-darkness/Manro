@@ -19,7 +19,7 @@ namespace Manro {
         }
 
         auto audioBackend = CreateScope<CAudioBackend>();
-        if (audioBackend->Init() == INIT_OK) {
+        if (audioBackend->Init()) {
             m_AudioManager.Initialize(std::move(audioBackend));
         } else {
             LOG_WARN("[CPlatformContext] Audio backend init failed.");

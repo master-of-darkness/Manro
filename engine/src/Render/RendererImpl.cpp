@@ -39,7 +39,7 @@
 namespace Manro {
     class CRendererImpl final {
     public:
-        CRendererImpl(IWindow &window, CVirtualFS &vfs, u32 width, u32 height, const RenderSettings_t &settings,
+        CRendererImpl(CWindow &window, CVirtualFS &vfs, u32 width, u32 height, const RenderSettings_t &settings,
                       const RendererConfig_t &config = RendererConfig_t::Default());
 
         ~CRendererImpl();
@@ -258,7 +258,7 @@ namespace Manro {
         u32 m_unLightGeneration{0};
     };
 
-    CRendererImpl::CRendererImpl(IWindow &window, CVirtualFS &vfs, u32 width, u32 height,
+    CRendererImpl::CRendererImpl(CWindow &window, CVirtualFS &vfs, u32 width, u32 height,
                                  const RenderSettings_t &settings,
                                  const RendererConfig_t &config)
         : m_Context("ManroEngine", window),
@@ -1442,16 +1442,16 @@ namespace Manro {
         DrawLine(origin, origin + axisZ, 0xFFFF0000u, true);
     }
 
-    Scope<CRendererImpl> CreateRendererImpl(IWindow &window, CVirtualFS &vfs, u32 width, u32 height,
+    Scope<CRendererImpl> CreateRendererImpl(CWindow &window, CVirtualFS &vfs, u32 width, u32 height,
                                             const RenderSettings_t &settings, const RendererConfig_t &config) {
         return CreateScope<CRendererImpl>(window, vfs, width, height, settings, config);
     }
 
-    CRenderer::CRenderer(IWindow &window, CVirtualFS &vfs, u32 width, u32 height, const RenderSettings_t &settings)
+    CRenderer::CRenderer(CWindow &window, CVirtualFS &vfs, u32 width, u32 height, const RenderSettings_t &settings)
         : CRenderer(window, vfs, width, height, settings, RendererConfig_t::Default()) {
     }
 
-    CRenderer::CRenderer(IWindow &window, CVirtualFS &vfs, u32 width, u32 height, const RenderSettings_t &settings,
+    CRenderer::CRenderer(CWindow &window, CVirtualFS &vfs, u32 width, u32 height, const RenderSettings_t &settings,
                          const RendererConfig_t &config)
         : m_Impl(CreateRendererImpl(window, vfs, width, height, settings, config)) {
     }

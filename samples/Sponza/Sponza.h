@@ -96,7 +96,7 @@ private:
 
     static float CatmullRomAngle(float a0, float a1, float a2, float a3, float t);
 
-    Manro::IWindow *m_Window{nullptr};
+    Manro::CWindow *m_Window{nullptr};
     Manro::CJobSystem *m_Jobs{nullptr};
     Manro::CRenderer *m_Renderer{nullptr};
     Manro::CVirtualFS *m_Vfs{nullptr};

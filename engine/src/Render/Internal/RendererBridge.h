@@ -5,7 +5,7 @@
 namespace Manro {
     class CVirtualFS;
 
-    Scope<CRendererImpl> CreateRendererImpl(IWindow &window, CVirtualFS &vfs, u32 width, u32 height,
+    Scope<CRendererImpl> CreateRendererImpl(CWindow &window, CVirtualFS &vfs, u32 width, u32 height,
                                             const RenderSettings_t &settings, const RendererConfig_t &config);
 
     bool RendererImplBeginFrame(CRendererImpl & impl);

@@ -4,7 +4,7 @@
 #include <Manro/Platform/PlatformEvent.h>
 
 namespace Manro {
-    class IInputBackend;
+    class CInputBackend;
 
     class CInputManager {
     public:
@@ -16,7 +16,7 @@ namespace Manro {
 
         CInputManager &operator=(const CInputManager &) = delete;
 
-        void SetBackend(IInputBackend *backend) { m_Backend = backend; }
+        void SetBackend(CInputBackend *backend) { m_Backend = backend; }
 
         void SetActionMap(IInputActionMap *actionMap) { m_ActionMap = actionMap; }
 
@@ -31,7 +31,7 @@ namespace Manro {
         void ProcessEvent(const PlatformEvent_t &event) const;
 
     private:
-        IInputBackend *m_Backend{nullptr};
+        CInputBackend *m_Backend{nullptr};
         IInputActionMap *m_ActionMap{nullptr};
     };
 } // namespace Manro

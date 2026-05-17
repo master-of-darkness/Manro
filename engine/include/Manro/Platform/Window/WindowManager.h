@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Manro/Interfaces/IWindow.h>
+#include <Manro/Platform/Window/Window.h>
 #include <Manro/Core/Handles.h>
 #include <Manro/Core/Types.h>
 #include <unordered_map>
@@ -19,24 +19,22 @@ namespace Manro {
 
         [[nodiscard]] WindowHandle AddWindow(const WindowDesc_t &desc);
 
-        [[nodiscard]] WindowHandle AddWindowFromExisting(IWindow *window);
-
         void DestroyWindow(WindowHandle handle);
 
         void ShutdownAll();
 
-        IWindow *Get(WindowHandle handle);
+        CWindow *Get(WindowHandle handle);
 
-        const IWindow *Get(WindowHandle handle) const;
+        const CWindow *Get(WindowHandle handle) const;
 
         [[nodiscard]] bool IsValid(WindowHandle handle) const;
 
-        IWindow *GetPrimary();
+        CWindow *GetPrimary();
 
         void DispatchWindowEvent(u32 platformWindowId, u32 eventType, u32 data1, u32 data2);
 
     private:
-        std::unordered_map<WindowHandle, Scope<IWindow> > m_Windows;
+        std::unordered_map<WindowHandle, Scope<CWindow>> m_Windows;
         std::unordered_map<u32, WindowHandle> m_PlatformIdToHandle;
 
         WindowHandle m_nNextHandle{WindowHandle::Make(1, 0)};

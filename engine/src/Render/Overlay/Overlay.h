@@ -2,7 +2,7 @@
 
 #include <Manro/Core/Types.h>
 #include <volk.h>
-#include <Manro/Interfaces/IWindow.h>
+#include <Manro/Platform/Window/Window.h>
 #include <Manro/Render/RenderSettings.h>
 #include <string>
 
@@ -11,7 +11,7 @@ namespace Manro {
 
     struct OverlayInfo_t {
         CVulkanContext *context = nullptr;
-        IWindow *window = nullptr;
+        CWindow *window = nullptr;
         VkFormat colorFormat = VK_FORMAT_UNDEFINED;
         u32 imageCount = 2;
     };

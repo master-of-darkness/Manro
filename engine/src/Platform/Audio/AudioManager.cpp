@@ -1,8 +1,9 @@
 #include <Manro/Platform/Audio/AudioManager.h>
+#include <Manro/Platform/Audio/AudioBackend.h>
 #include <Manro/Core/Logger.h>
 
 namespace Manro {
-    bool CAudioManager::Initialize(Scope<IAudioBackend> backend) {
+    bool CAudioManager::Initialize(Scope<CAudioBackend> backend) {
         if (m_bInitialized) return true;
         if (!backend) {
             LOG_ERROR("[Audio] Null backend provided.");

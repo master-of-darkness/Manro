@@ -1,6 +1,6 @@
 #include "Sponza.h"
 
-#include <Manro/Interfaces/IWindow.h>
+#include <Manro/Platform/Window/Window.h>
 #include <Manro/Core/VirtualFS.h>
 #include <Manro/Resource/RresMount.h>
 #include <glm/gtc/matrix_transform.hpp>

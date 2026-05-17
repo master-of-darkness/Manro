@@ -7,11 +7,11 @@
 #include <Manro/Core/Types.h>
 
 namespace Manro {
-    class IWindow;
+    class CWindow;
 
     class CVulkanContext {
     public:
-        CVulkanContext(const char *appName, const IWindow &window);
+        CVulkanContext(const char *appName, const CWindow &window);
 
         ~CVulkanContext();
 
@@ -52,7 +52,7 @@ namespace Manro {
     private:
         void CreateInstance(const char *appName);
 
-        void CreateSurface(const IWindow &window);
+        void CreateSurface(const CWindow &window);
 
         void PickPhysicalDevice();
 

@@ -5,23 +5,23 @@
 #include <SDL3_mixer/SDL_mixer.h>
 
 namespace Manro {
-    InitReturnVal_t CAudioBackend::Init() {
-        if (m_bInitialized) return INIT_OK;
+    bool CAudioBackend::Init() {
+        if (m_bInitialized) return true;
 
         if (!MIX_Init()) {
             LOG_ERROR("[Audio] MIX_Init failed: {}", SDL_GetError());
-            return INIT_FAILED;
+            return false;
         }
 
         m_pMixer = MIX_CreateMixerDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, nullptr);
         if (!m_pMixer) {
             LOG_ERROR("[Audio] MIX_CreateMixerDevice failed: {}", SDL_GetError());
             MIX_Quit();
-            return INIT_FAILED;
+            return false;
         }
 
         m_bInitialized = true;
-        return INIT_OK;
+        return true;
     }
 
     void CAudioBackend::Shutdown() {

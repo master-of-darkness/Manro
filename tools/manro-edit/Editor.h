@@ -168,7 +168,7 @@ namespace ManroEdit {
 
         void HandleDialogResult(const std::string &path);
 
-        Manro::IWindow *m_Window = nullptr;
+        Manro::CWindow *m_Window = nullptr;
         Manro::CJobSystem *m_Jobs = nullptr;
         Manro::CRenderer *m_Renderer = nullptr;
         Manro::CVirtualFS *m_Vfs = nullptr;

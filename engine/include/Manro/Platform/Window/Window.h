@@ -1,43 +1,64 @@
 #pragma once
 
-#include <Manro/Interfaces/IWindow.h>
+#include <Manro/Core/Types.h>
+#include <functional>
 #include <string>
 
 namespace Manro {
-    class CWindow final : public IWindow {
+    enum class WindowEvent {
+        Close,
+        Resized,
+        FocusGained,
+        FocusLost,
+        Minimized,
+        Restored,
+    };
+
+    struct WindowDesc_t {
+        std::string Title = "Manro";
+        u32 Width = 1280;
+        u32 Height = 720;
+        bool Resizable = true;
+        bool Fullscreen = false;
+    };
+
+    class CWindow final {
     public:
+        using EventCallback = std::function<void(WindowEvent, u32 w, u32 h)>;
+
         CWindow() = default;
 
-        ~CWindow() override { Shutdown(); }
+        ~CWindow() { Shutdown(); }
 
-        // IWindow / IAppSystem
-        [[nodiscard]] bool Initialize(const WindowDesc_t &desc) override;
+        [[nodiscard]] bool Initialize(const WindowDesc_t &desc);
 
-        void Shutdown() override;
+        void Shutdown();
 
-        void SetTitle(const std::string &title) override;
+        void SetTitle(const std::string &title);
 
-        void Resize(u32 width, u32 height) override;
+        void Resize(u32 width, u32 height);
 
-        void SetFullscreen(bool fullscreen) override;
+        void SetFullscreen(bool fullscreen);
 
-        [[nodiscard]] bool IsFullscreen() const override { return m_bFullscreen; }
+        [[nodiscard]] bool IsFullscreen() const { return m_bFullscreen; }
 
-        [[nodiscard]] bool IsOpen() const override { return m_bOpen; }
+        void ToggleFullscreen() { SetFullscreen(!IsFullscreen()); }
 
-        u32 GetWidth() const override { return m_unWidth; }
+        [[nodiscard]] bool IsOpen() const { return m_bOpen; }
 
-        u32 GetHeight() const override { return m_unHeight; }
+        u32 GetWidth() const { return m_unWidth; }
 
-        std::string GetTitle() const override { return m_Title; }
+        u32 GetHeight() const { return m_unHeight; }
 
-        void *GetNativeHandle() const override;
+        std::string GetTitle() const { return m_Title; }
 
-        void SetEventCallback(EventCallback cb) override { m_Callback = std::move(cb); }
+        void *GetNativeHandle() const;
 
-        void ShowCursor(bool show) override;
+        void SetEventCallback(EventCallback cb) { m_Callback = std::move(cb); }
 
-        void CaptureMouse(bool capture) override;
+        void ShowCursor(bool show);
+
+        void CaptureMouse(bool capture);
 
         void OnPlatformWindowEvent(u32 platformWindowEventId, u32 data1, u32 data2);
 

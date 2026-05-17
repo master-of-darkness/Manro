@@ -1,7 +1,6 @@
 #include "Overlay.h"
 #include "Vulkan/VulkanContext.h"
 
-#include <Manro/Interfaces/IWindow.h>
 #include <Manro/Core/Logger.h>
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>

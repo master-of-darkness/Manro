@@ -13,7 +13,7 @@
 #include <vector>
 
 namespace Manro {
-    class IWindow;
+    class CWindow;
     class CMaterial;
     class CMeshManager;
     class CModel;
@@ -32,11 +32,11 @@ namespace Manro {
     class CRenderer {
     public:
         /// Constructor with default RendererConfig_t
-        CRenderer(IWindow &window, CVirtualFS &vfs, u32 width, u32 height,
+        CRenderer(CWindow &window, CVirtualFS &vfs, u32 width, u32 height,
                   const RenderSettings_t &settings = {});
 
         /// Constructor with custom RendererConfig_t
-        CRenderer(IWindow &window, CVirtualFS &vfs, u32 width, u32 height,
+        CRenderer(CWindow &window, CVirtualFS &vfs, u32 width, u32 height,
                   const RenderSettings_t &settings,
                   const RendererConfig_t &config);
 

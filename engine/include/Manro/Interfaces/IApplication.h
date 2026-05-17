@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Manro/Core/Types.h>
-#include <Manro/Interfaces/IAppSystem.h>
 
 namespace Manro {
     class CRenderer;
@@ -12,7 +11,7 @@ namespace Manro {
 
     class CVirtualFS;
 
-    class IWindow;
+    class CWindow;
 
     struct UserCmd_t;
 
@@ -23,7 +22,7 @@ namespace Manro {
     };
 
     struct InitContext_t {
-        IWindow &CWindow;
+        CWindow &CWindow;
         CJobSystem &Jobs;
         CRenderer &CRenderer;
         CVirtualFS &Vfs;
@@ -34,9 +33,11 @@ namespace Manro {
         const FrameContext_t &Frame;
     };
 
-    class IApplication : public IAppSystem {
+    struct WindowDesc_t;
+
+    class IApplication {
     public:
-        ~IApplication() override = default;
+        virtual ~IApplication() = default;
 
         virtual void OnStartup(const InitContext_t &ctx) = 0;
 
@@ -48,6 +49,6 @@ namespace Manro {
 
         virtual CInputManager *GetInputManager() { return nullptr; }
 
-        virtual struct WindowDesc_t GetWindowDesc() const = 0;
+        virtual WindowDesc_t GetWindowDesc() const = 0;
     };
 } // namespace Manro

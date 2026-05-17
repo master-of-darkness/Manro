@@ -1,11 +1,14 @@
 #pragma once
 
-#include <Manro/Interfaces/IAudioBackend.h>
+#include <Manro/Core/Handles.h>
 #include <Manro/Core/Types.h>
+#include <Manro/Platform/Audio/AudioBackend.h>
 #include <memory>
 #include <string>
 
 namespace Manro {
+    class CAudioBackend;
+
     class CAudioManager {
     public:
         CAudioManager() = default;
@@ -16,7 +19,7 @@ namespace Manro {
 
         CAudioManager &operator=(const CAudioManager &) = delete;
 
-        bool Initialize(Scope<IAudioBackend> backend);
+        bool Initialize(Scope<CAudioBackend> backend);
 
         void Shutdown();
 
@@ -49,7 +52,7 @@ namespace Manro {
         void SetMusicVolume(f32 volume) const;
 
     private:
-        Scope<IAudioBackend> m_Backend;
+        Scope<CAudioBackend> m_Backend;
         bool m_bInitialized{false};
     };
 } // namespace Manro

@@ -2,7 +2,7 @@
 
 #include <Manro/Core/Logger.h>
 #include <Manro/Core/VirtualFS.h>
-#include <Manro/Interfaces/IWindow.h>
+#include <Manro/Platform/Window/Window.h>
 #include <Manro/Resource/Pack.h>
 #include <Manro/Resource/TextureLoader.h>
 

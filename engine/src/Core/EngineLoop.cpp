@@ -40,15 +40,9 @@ namespace Manro {
         // Window
         auto winDesc = app.GetWindowDesc();
         WindowHandle wh = platform.GetWindowManager().AddWindow(winDesc);
-        IWindow *win = platform.GetWindowManager().Get(wh);
+        CWindow *win = platform.GetWindowManager().Get(wh);
         if (!win) {
             LOG_ERROR("[CEngineLoop] Window creation failed.");
-            return;
-        }
-
-        // App init lifecycle (no factory, just direct call).
-        if (!app.Connect() || app.Init() != INIT_OK) {
-            LOG_ERROR("[CEngineLoop] Application init failed.");
             return;
         }
 
@@ -108,8 +102,6 @@ namespace Manro {
         }
 
         app.OnShutdown();
-        app.Shutdown();
-        app.Disconnect();
 
 #ifdef _WIN32
         timeEndPeriod(1);

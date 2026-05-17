@@ -1,23 +1,23 @@
 #pragma once
 
-#include <Manro/Interfaces/IInputBackend.h>
 #include <Manro/Input/InputAction.h>
+#include <Manro/Platform/PlatformEvent.h>
 #include <array>
 
 namespace Manro {
-    class CInputBackend final : public IInputBackend {
+    class CInputBackend final {
     public:
         CInputBackend() = default;
 
-        ~CInputBackend() override = default;
+        ~CInputBackend() = default;
 
-        void ProcessEvent(const PlatformEvent_t &event) override;
+        void ProcessEvent(const PlatformEvent_t &event);
 
-        bool IsKeyDown(Key k) const override;
+        bool IsKeyDown(Key k) const;
 
-        bool IsMouseButtonDown(MouseButton button) const override;
+        bool IsMouseButtonDown(MouseButton button) const;
 
-        RawMouseDelta_t ConsumeMouseDelta() override;
+        RawMouseDelta_t ConsumeMouseDelta();
 
         float GetGamepadAxis(int axis) const;
 
