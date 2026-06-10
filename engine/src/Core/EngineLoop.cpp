@@ -3,6 +3,7 @@
 #include <Manro/Core/Logger.h>
 #include <Manro/Core/JobSystem.h>
 #include <Manro/Core/VirtualFS.h>
+#include <Manro/Core/World.h>
 #include "EmbeddedShaders.h"
 #include <Manro/Platform/PlatformContext.h>
 #include <Manro/Platform/Window/Window.h>
@@ -21,6 +22,8 @@
 #endif
 
 namespace Manro {
+    CWorld *CEngineLoop::s_World = nullptr;
+
     void CEngineLoop::Run(IApplication &app) {
         CLogger::Init();
 #ifdef MANRO_PROFILING
@@ -28,7 +31,6 @@ namespace Manro {
 #endif
 
 #ifdef _WIN32
-        // windows shit
         timeBeginPeriod(1);
 #endif
 
@@ -36,8 +38,9 @@ namespace Manro {
         CPlatformContext platform;
         CVirtualFS vfs;
         RegisterEmbeddedShaders(vfs);
+        CWorld world;
+        s_World = &world;
 
-        // Window
         auto winDesc = app.GetWindowDesc();
         WindowHandle wh = platform.GetWindowManager().AddWindow(winDesc);
         CWindow *win = platform.GetWindowManager().Get(wh);
@@ -56,7 +59,7 @@ namespace Manro {
             if (ev == WindowEvent::Resized) renderer.OnResize(w, h);
         });
 
-        InitContext_t ictx{*win, jobs, renderer, vfs};
+        InitContext_t ictx{*win, jobs, renderer, vfs, world};
         app.OnStartup(ictx);
 
         using Clock = std::chrono::steady_clock;
@@ -102,6 +105,7 @@ namespace Manro {
         }
 
         app.OnShutdown();
+        s_World = nullptr;
 
 #ifdef _WIN32
         timeEndPeriod(1);

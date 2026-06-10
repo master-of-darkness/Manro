@@ -6,6 +6,7 @@ set(ENGINE_CORE_SOURCES
         Core/JobSystem.cpp
         Core/VirtualFS.cpp
         Core/EmbeddedShaders.cpp
+        Core/World.cpp
 )
 
 set(ENGINE_INPUT_SOURCES
@@ -113,6 +114,7 @@ target_include_directories(Manro SYSTEM PUBLIC
         ${MANRO_THIRD_PARTY_DIR}/rres
         ${MANRO_THIRD_PARTY_DIR}/VulkanMemoryAllocator/include
         ${MANRO_THIRD_PARTY_DIR}/imgui/misc/freetype
+        ${MANRO_THIRD_PARTY_DIR}/flecs/distr
 )
 
 target_include_directories(Manro PUBLIC

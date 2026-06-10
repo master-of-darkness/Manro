@@ -64,6 +64,7 @@ namespace ManroEdit {
         m_Jobs = &ctx.Jobs;
         m_Renderer = &ctx.CRenderer;
         m_Vfs = &ctx.Vfs;
+        m_World = &ctx.World;
 
         m_Physics = Manro::CreateScope<Manro::CPhysicsWorld>();
 

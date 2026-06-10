@@ -10,12 +10,6 @@ namespace Manro {
         Vec3 Scale;
     };
 
-    enum class PhysicsBodyType : u8 {
-        Static,
-        Dynamic,
-        Kinematic,
-    };
-
     struct RigidBodyComponent_t {
         PhysicsBodyHandle BodyId{kInvalidBodyHandle};
         PhysicsBodyType Type{PhysicsBodyType::Static};

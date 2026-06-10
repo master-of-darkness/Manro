@@ -11,11 +11,6 @@ namespace Manro {
         struct PackResult;
     }
 
-    enum class ColliderShape_e : u8 {
-        None = 0,
-        Box = 1,
-    };
-
     struct MapCollider_t {
         ColliderShape_e shape{ColliderShape_e::None};
         Vec3 offset{0.f};

@@ -32,6 +32,17 @@ namespace Manro {
     constexpr Ref<T> CreateRef(Args &&... args) {
         return std::make_shared<T>(std::forward<Args>(args)...);
     }
+
+    enum class ColliderShape_e : u8 {
+        None = 0,
+        Box = 1,
+    };
+
+    enum class PhysicsBodyType : u8 {
+        Static,
+        Dynamic,
+        Kinematic,
+    };
 } // namespace Manro
 
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE

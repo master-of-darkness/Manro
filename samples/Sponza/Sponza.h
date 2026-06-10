@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Manro/Interfaces/IApplication.h>
+#include <Manro/Core/World.h>
 #include <Manro/Core/JobSystem.h>
 #include <Manro/Physics/PhysicsWorld.h>
 #include <Manro/Render/Model.h>
@@ -14,9 +15,7 @@
 
 namespace Manro {
     class CRenderer;
-
     class CJobSystem;
-
     class CVirtualFS;
 }
 
@@ -39,8 +38,8 @@ struct FlyCamera_t {
 
 struct BenchWaypoint_t {
     Manro::Vec3 position;
-    float yaw; // degrees
-    float pitch; // degrees
+    float yaw;
+    float pitch;
 };
 
 enum class BenchmarkState {
@@ -105,6 +104,7 @@ private:
     Manro::CJobSystem *m_Jobs{nullptr};
     Manro::CRenderer *m_Renderer{nullptr};
     Manro::CVirtualFS *m_Vfs{nullptr};
+    Manro::CWorld *m_World{nullptr};
 
     Manro::CJobSystem m_LoadJobs;
     Manro::CInputBackend m_InputBackend;

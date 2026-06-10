@@ -38,6 +38,7 @@ void CSponza::OnStartup(const Manro::InitContext_t &ctx) {
     m_Jobs = &ctx.Jobs;
     m_Renderer = &ctx.CRenderer;
     m_Vfs = &ctx.Vfs;
+    m_World = &ctx.World;
     m_Renderer->SetDebugUIEnabled(true);
 
     const auto worldDir =

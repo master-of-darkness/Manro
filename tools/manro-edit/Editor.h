@@ -173,6 +173,7 @@ namespace ManroEdit {
         Manro::CJobSystem *m_Jobs = nullptr;
         Manro::CRenderer *m_Renderer = nullptr;
         Manro::CVirtualFS *m_Vfs = nullptr;
+        Manro::CWorld *m_World = nullptr;
 
         Manro::CInputBackend m_InputBackend;
         Manro::CInputManager m_InputManager;
