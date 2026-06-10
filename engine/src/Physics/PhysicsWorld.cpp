@@ -673,4 +673,101 @@ namespace Manro {
             DrawShapeDebug(renderer, bi.GetShape(id), joltTransform, color);
         }
     }
+
+    static JPH::EMotionType ToJoltMotion(PhysicsBodyType t) {
+        switch (t) {
+            case PhysicsBodyType::Static: return JPH::EMotionType::Static;
+            case PhysicsBodyType::Dynamic: return JPH::EMotionType::Dynamic;
+            case PhysicsBodyType::Kinematic: return JPH::EMotionType::Kinematic;
+        }
+        return JPH::EMotionType::Static;
+    }
+
+    static JPH::ObjectLayer ToJoltLayer(PhysicsBodyType t) {
+        return (t == PhysicsBodyType::Static) ? Layers::NON_MOVING : Layers::MOVING;
+    }
+
+    void CPhysicsWorld::SyncWorld(CWorld &world) {
+        auto &w = world.GetWorld();
+
+        w.each([this](flecs::entity e, Position &pos, RigidBody &rb) {
+            if (e.has<PhysicsBody>()) {
+                PhysicsBody *pb = &e.get_mut<PhysicsBody>();
+                if (pb && pb->handle == kInvalidBodyHandle) {
+                    JPH::EMotionType motion = ToJoltMotion(rb.type);
+                    JPH::ObjectLayer layer = ToJoltLayer(rb.type);
+                    auto &bi = m_Impl->physicsSystem->GetBodyInterface();
+
+                    if (rb.type == PhysicsBodyType::Static) {
+                        JPH::BoxShapeSettings ss(JPH::Vec3(rb.halfExtents.x, rb.halfExtents.y, rb.halfExtents.z));
+                        ss.mConvexRadius = 0.01f;
+                        auto sr = ss.Create();
+                        if (sr.HasError()) return;
+                        JPH::BodyCreationSettings bcs(sr.Get(),
+                                                      JPH::RVec3(pos.x, pos.y, pos.z),
+                                                      JPH::Quat::sIdentity(), motion, layer);
+                        bcs.mFriction = rb.friction;
+                        bcs.mRestitution = rb.restitution;
+                        JPH::Body *body = bi.CreateBody(bcs);
+                        if (!body) return;
+                        bi.AddBody(body->GetID(), JPH::EActivation::DontActivate);
+                        pb->handle = toHandle(body->GetID());
+                        m_Impl->bodyToEntity[pb->handle] = e.id();
+                    } else {
+                        JPH::BoxShapeSettings ss(JPH::Vec3(rb.halfExtents.x, rb.halfExtents.y, rb.halfExtents.z));
+                        ss.mConvexRadius = 0.02f;
+                        auto sr = ss.Create();
+                        if (sr.HasError()) return;
+                        JPH::BodyCreationSettings bcs(sr.Get(),
+                                                      JPH::RVec3(pos.x, pos.y, pos.z),
+                                                      JPH::Quat::sIdentity(), motion, layer);
+                        ApplyDynamicBodyDesc(bcs, DynamicBodyDesc_t(rb.mass, rb.friction, rb.restitution));
+                        JPH::Body *body = bi.CreateBody(bcs);
+                        if (!body) return;
+                        bi.AddBody(body->GetID(), JPH::EActivation::Activate);
+                        pb->handle = toHandle(body->GetID());
+                        m_Impl->bodyToEntity[pb->handle] = e.id();
+                    }
+                }
+            } else {
+                PhysicsBodyHandle handle = kInvalidBodyHandle;
+                JPH::EMotionType motion = ToJoltMotion(rb.type);
+                JPH::ObjectLayer layer = ToJoltLayer(rb.type);
+                auto &bi = m_Impl->physicsSystem->GetBodyInterface();
+
+                if (rb.type == PhysicsBodyType::Static) {
+                    JPH::BoxShapeSettings ss(JPH::Vec3(rb.halfExtents.x, rb.halfExtents.y, rb.halfExtents.z));
+                    ss.mConvexRadius = 0.01f;
+                    auto sr = ss.Create();
+                    if (sr.HasError()) return;
+                    JPH::BodyCreationSettings bcs(sr.Get(),
+                                                  JPH::RVec3(pos.x, pos.y, pos.z),
+                                                  JPH::Quat::sIdentity(), motion, layer);
+                    bcs.mFriction = rb.friction;
+                    bcs.mRestitution = rb.restitution;
+                    JPH::Body *body = bi.CreateBody(bcs);
+                    if (!body) return;
+                    bi.AddBody(body->GetID(), JPH::EActivation::DontActivate);
+                    handle = toHandle(body->GetID());
+                    m_Impl->bodyToEntity[handle] = e.id();
+                } else {
+                    JPH::BoxShapeSettings ss(JPH::Vec3(rb.halfExtents.x, rb.halfExtents.y, rb.halfExtents.z));
+                    ss.mConvexRadius = 0.02f;
+                    auto sr = ss.Create();
+                    if (sr.HasError()) return;
+                    JPH::BodyCreationSettings bcs(sr.Get(),
+                                                  JPH::RVec3(pos.x, pos.y, pos.z),
+                                                  JPH::Quat::sIdentity(), motion, layer);
+                    ApplyDynamicBodyDesc(bcs, DynamicBodyDesc_t(rb.mass, rb.friction, rb.restitution));
+                    JPH::Body *body = bi.CreateBody(bcs);
+                    if (!body) return;
+                    bi.AddBody(body->GetID(), JPH::EActivation::Activate);
+                    handle = toHandle(body->GetID());
+                    m_Impl->bodyToEntity[handle] = e.id();
+                }
+                e.set<PhysicsBody>({handle});
+            }
+        });
+    }
+
 } // namespace Manro

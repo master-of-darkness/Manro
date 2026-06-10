@@ -127,12 +127,9 @@ namespace ManroEdit {
 
     void CEditor::OnShutdown() {
         if (m_Physics) {
-            for (auto h: m_ColliderBodies)
-                if (h != Manro::kInvalidBodyHandle) m_Physics->RemoveBody(h);
-            m_ColliderBodies.clear();
-            for (auto h: m_StandaloneBodies)
-                if (h != Manro::kInvalidBodyHandle) m_Physics->RemoveBody(h);
-            m_StandaloneBodies.clear();
+            for (auto e: m_WorldEntities)
+                if (e.is_valid()) m_World->DestroyEntity(e);
+            m_WorldEntities.clear();
             m_Physics.reset();
         }
         Manro::CLogger::SetCallback(nullptr);
@@ -140,31 +137,40 @@ namespace ManroEdit {
     }
 
     void CEditor::RebuildColliderBodies() {
-        if (!m_Physics) return;
-        for (auto h: m_ColliderBodies)
-            if (h != Manro::kInvalidBodyHandle) m_Physics->RemoveBody(h);
-        m_ColliderBodies.clear();
+        if (!m_World) return;
+        for (auto e: m_WorldEntities)
+            if (e.is_valid()) m_World->DestroyEntity(e);
+        m_WorldEntities.clear();
 
         const auto &ents = m_Map.Entities();
-        m_ColliderBodies.resize(ents.size(), Manro::kInvalidBodyHandle);
         for (size_t i = 0; i < ents.size(); ++i) {
             const auto &e = ents[i];
             if (e.collider.shape != Manro::ColliderShape_e::Box) continue;
             const Manro::Vec3 worldPos = e.position + e.collider.offset * e.scale;
             const Manro::Vec3 he = e.collider.halfExtents * e.scale;
-            m_ColliderBodies[i] = m_Physics->AddStaticBox(worldPos, he);
-            if (m_ColliderBodies[i] != Manro::kInvalidBodyHandle)
-                m_Physics->SetBodyUserData(m_ColliderBodies[i], static_cast<Manro::u32>(i));
+
+            flecs::entity ent = m_World->CreateEntity(e.name.c_str());
+            m_World->Set(ent, Manro::Position{worldPos.x, worldPos.y, worldPos.z});
+            m_World->Set(ent, Manro::Scale{e.scale.x, e.scale.y, e.scale.z});
+            m_World->Set(ent, Manro::RigidBody{Manro::PhysicsBodyType::Static, he, 0.3f, 0.5f, 1.f, 0.2f, 0.f, false, false});
+            m_World->Set(ent, Manro::Collider{Manro::ColliderShape_e::Box, e.collider.offset, e.collider.halfExtents});
+            m_WorldEntities.push_back(ent);
         }
 
         const auto &cols = m_Map.Colliders();
-        m_StandaloneBodies.clear();
-        m_StandaloneBodies.resize(cols.size(), Manro::kInvalidBodyHandle);
         for (size_t i = 0; i < cols.size(); ++i) {
             const auto &c = cols[i];
             if (c.shape != Manro::ColliderShape_e::Box) continue;
-            m_StandaloneBodies[i] = m_Physics->AddStaticBox(c.position, c.halfExtents);
+
+            flecs::entity ent = m_World->CreateEntity(c.name.c_str());
+            m_World->Set(ent, Manro::Position{c.position.x, c.position.y, c.position.z});
+            m_World->Set(ent, Manro::Scale{1.f, 1.f, 1.f});
+            m_World->Set(ent, Manro::RigidBody{Manro::PhysicsBodyType::Static, c.halfExtents, 0.3f, 0.5f, 1.f, 0.2f, 0.f, false, false});
+            m_World->Set(ent, Manro::Collider{Manro::ColliderShape_e::Box, Manro::Vec3{0.f}, c.halfExtents});
+            m_WorldEntities.push_back(ent);
         }
+
+        m_Physics->SyncWorld(*m_World);
         m_bCollidersDirty = false;
     }
 

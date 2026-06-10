@@ -114,8 +114,8 @@ private:
     std::unordered_map<std::string, Manro::Scope<Manro::CModel>> m_MapModels;
 
     Manro::Scope<Manro::CPhysicsWorld> m_Physics;
-    Manro::PhysicsBodyHandle m_PlayerBody{Manro::kInvalidBodyHandle};
-    std::vector<Manro::PhysicsBodyHandle> m_StaticWorldBodies;
+    flecs::entity m_PlayerEntity;
+    std::vector<flecs::entity> m_WorldEntities;
     Manro::Vec3 m_PlayerVelocity{0.f};
     static constexpr Manro::Vec3 kPlayerHalfExtents{20.f, 45.f, 20.f};
     static constexpr float kEyeOffsetY = 30.f;

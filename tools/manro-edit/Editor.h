@@ -203,8 +203,7 @@ namespace ManroEdit {
         std::unordered_map<std::string, CacheEntry> m_ModelCache;
 
         Manro::Scope<Manro::CPhysicsWorld> m_Physics;
-        std::vector<Manro::PhysicsBodyHandle> m_ColliderBodies; // index-aligned with m_Map.Entities()
-        std::vector<Manro::PhysicsBodyHandle> m_StandaloneBodies; // index-aligned with m_Map.Colliders()
+        std::vector<flecs::entity> m_WorldEntities;
         bool m_bCollidersDirty = true;
 
         void RebuildColliderBodies();

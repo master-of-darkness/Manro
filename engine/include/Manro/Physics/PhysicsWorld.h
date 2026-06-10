@@ -2,6 +2,7 @@
 
 #include <Manro/Core/Types.h>
 #include <Manro/Core/Handles.h>
+#include <Manro/Core/World.h>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -66,10 +67,11 @@ namespace Manro {
         ~CPhysicsWorld();
 
         CPhysicsWorld(const CPhysicsWorld &) = delete;
-
         CPhysicsWorld &operator=(const CPhysicsWorld &) = delete;
 
         void Step(float deltaTime);
+
+        void SyncWorld(CWorld &world);
 
         [[nodiscard]] PhysicsBodyHandle AddStaticBox(const Vec3 &position, const Vec3 &halfExtents,
                                        const StaticBodyDesc_t &desc = {});
