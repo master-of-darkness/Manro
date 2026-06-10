@@ -65,6 +65,8 @@ namespace ManroEdit {
         m_Renderer = &ctx.CRenderer;
         m_Vfs = &ctx.Vfs;
 
+        m_Physics = Manro::CreateScope<Manro::CPhysicsWorld>();
+
         m_Renderer->SetDebugUIEnabled(false);
         m_InputManager.SetBackend(&m_InputBackend);
 
@@ -123,8 +125,46 @@ namespace ManroEdit {
     }
 
     void CEditor::OnShutdown() {
+        if (m_Physics) {
+            for (auto h: m_ColliderBodies)
+                if (h != Manro::kInvalidBodyHandle) m_Physics->RemoveBody(h);
+            m_ColliderBodies.clear();
+            for (auto h: m_StandaloneBodies)
+                if (h != Manro::kInvalidBodyHandle) m_Physics->RemoveBody(h);
+            m_StandaloneBodies.clear();
+            m_Physics.reset();
+        }
         Manro::CLogger::SetCallback(nullptr);
         m_ModelCache.clear();
+    }
+
+    void CEditor::RebuildColliderBodies() {
+        if (!m_Physics) return;
+        for (auto h: m_ColliderBodies)
+            if (h != Manro::kInvalidBodyHandle) m_Physics->RemoveBody(h);
+        m_ColliderBodies.clear();
+
+        const auto &ents = m_Map.Entities();
+        m_ColliderBodies.resize(ents.size(), Manro::kInvalidBodyHandle);
+        for (size_t i = 0; i < ents.size(); ++i) {
+            const auto &e = ents[i];
+            if (e.collider.shape != Manro::ColliderShape_e::Box) continue;
+            const Manro::Vec3 worldPos = e.position + e.collider.offset * e.scale;
+            const Manro::Vec3 he = e.collider.halfExtents * e.scale;
+            m_ColliderBodies[i] = m_Physics->AddStaticBox(worldPos, he);
+            if (m_ColliderBodies[i] != Manro::kInvalidBodyHandle)
+                m_Physics->SetBodyUserData(m_ColliderBodies[i], static_cast<Manro::u32>(i));
+        }
+
+        const auto &cols = m_Map.Colliders();
+        m_StandaloneBodies.clear();
+        m_StandaloneBodies.resize(cols.size(), Manro::kInvalidBodyHandle);
+        for (size_t i = 0; i < cols.size(); ++i) {
+            const auto &c = cols[i];
+            if (c.shape != Manro::ColliderShape_e::Box) continue;
+            m_StandaloneBodies[i] = m_Physics->AddStaticBox(c.position, c.halfExtents);
+        }
+        m_bCollidersDirty = false;
     }
 
     bool CEditor::OnUpdate(const Manro::FrameContext_t &ctx,
@@ -138,6 +178,9 @@ namespace ManroEdit {
         }
 
         DrainLoadQueue();
+
+        if (m_bCollidersDirty) RebuildColliderBodies();
+        if (m_Physics) m_Physics->Step(dt);
 
         bool wantCapture = false;
         if (m_bProjectOpen) {
@@ -157,6 +200,7 @@ namespace ManroEdit {
                 if (m_InputManager.IsKeyDown(Manro::Key::Escape)) {
                     m_SelectedEntity = -1;
                     m_SelectedLight = -1;
+                    m_SelectedCollider = -1;
                 }
             }
         } else {
@@ -181,7 +225,9 @@ namespace ManroEdit {
         m_Renderer->SetCameraPosition(m_Camera.Position);
 
         m_Renderer->ClearLights();
-        if (m_Map.Lights().empty()) {
+        if (!m_bShowLights) {
+            // skip lights entirely
+        } else if (m_Map.Lights().empty()) {
             Manro::LightData sun{};
             sun.type = shaderio::eLightTypeDirectional;
             sun.direction = glm::normalize(Manro::Vec3{0.4f, -1.f, 0.2f});
@@ -205,10 +251,42 @@ namespace ManroEdit {
         }
 
         if (m_bProjectOpen) {
-            for (const auto &e: m_Map.Entities()) {
-                Manro::CModel *m = GetOrLoadModel(e.modelPath);
-                if (!m) continue;
-                m_Renderer->DrawModel(*m, EntityMatrix(e));
+            if (m_bShowEntities) {
+                for (const auto &e: m_Map.Entities()) {
+                    Manro::CModel *m = GetOrLoadModel(e.modelPath);
+                    if (!m) continue;
+                    m_Renderer->DrawModel(*m, EntityMatrix(e));
+                }
+            }
+
+            if (m_bShowColliders) {
+                const bool depthTest = !m_bChamsColliders;
+                const auto &ents = m_Map.Entities();
+                for (size_t i = 0; i < ents.size(); ++i) {
+                    const auto &e = ents[i];
+                    if (e.collider.shape != Manro::ColliderShape_e::Box) continue;
+                    const Manro::u32 color = (static_cast<int>(i) == m_SelectedEntity)
+                                          ? 0xFF00FF00u   // selected: green
+                                          : 0xFF00C8FFu;  // others: cyan
+                    m_Renderer->DrawBox(e.collider.offset, e.collider.halfExtents,
+                                        EntityMatrix(e), color, depthTest);
+                }
+
+                const auto &cols = m_Map.Colliders();
+                for (size_t i = 0; i < cols.size(); ++i) {
+                    const auto &c = cols[i];
+                    if (c.shape != Manro::ColliderShape_e::Box) continue;
+                    Manro::Mat4 xform;
+                    const float t[3] = {c.position.x, c.position.y, c.position.z};
+                    const float r[3] = {c.rotation.x, c.rotation.y, c.rotation.z};
+                    const float s[3] = {1.f, 1.f, 1.f};
+                    ImGuizmo::RecomposeMatrixFromComponents(t, r, s, glm::value_ptr(xform));
+                    const Manro::u32 color = (static_cast<int>(i) == m_SelectedCollider)
+                                          ? 0xFFFFFF00u   // selected: yellow
+                                          : 0xFFFF00FFu;  // others: magenta
+                    m_Renderer->DrawBox({0.f, 0.f, 0.f}, c.halfExtents, xform,
+                                        color, depthTest);
+                }
             }
         }
 
@@ -338,6 +416,7 @@ namespace ManroEdit {
                 m_Map.Clear();
                 m_SelectedEntity = -1;
                 m_SelectedLight = -1;
+                m_SelectedCollider = -1;
                 m_CurrentMapPath.clear();
                 m_ModelCache.clear();
                 m_Renderer->SetSkybox(Manro::kInvalidTexture);
@@ -377,6 +456,28 @@ namespace ManroEdit {
                 m_SelectedEntity = -1;
                 MarkDirty();
             }
+            ImGui::Separator();
+            if (ImGui::MenuItem(ICON_FA7_BORDER_ALL " Box Collider")) {
+                Manro::MapStandaloneCollider_t c;
+                c.name = "Collider_" + std::to_string(m_Map.Colliders().size());
+                c.position = m_Camera.Position + m_Camera.Forward() * 200.f;
+                m_Map.Colliders().push_back(c);
+                m_SelectedCollider = static_cast<int>(m_Map.Colliders().size()) - 1;
+                m_SelectedEntity = -1;
+                m_SelectedLight = -1;
+                MarkDirty();
+            }
+            ImGui::EndMenu();
+        }
+
+        if (ImGui::BeginMenu("View")) {
+            ImGui::MenuItem(ICON_FA7_CUBE " Entities", nullptr, &m_bShowEntities);
+            ImGui::MenuItem(ICON_FA7_LIGHTBULB " Lights", nullptr, &m_bShowLights);
+            ImGui::Separator();
+            ImGui::MenuItem(ICON_FA7_BORDER_ALL " Colliders", nullptr, &m_bShowColliders);
+            if (!m_bShowColliders) ImGui::BeginDisabled();
+            ImGui::MenuItem("    Chams (always visible)", nullptr, &m_bChamsColliders);
+            if (!m_bShowColliders) ImGui::EndDisabled();
             ImGui::EndMenu();
         }
 
@@ -483,6 +584,12 @@ namespace ManroEdit {
 
             if (ToolBtn(ICON_FA7_GLOBE, m_GizmoMode == 0, "World Space")) m_GizmoMode = 0;
             if (ToolBtn(ICON_FA7_CUBE, m_GizmoMode == 1, "Local Space")) m_GizmoMode = 1;
+
+            ImGui::Separator();
+
+            if (ToolBtn(ICON_FA7_BORDER_ALL, m_bShowColliders,
+                        "Show colliders"))
+                m_bShowColliders = !m_bShowColliders;
 
             if (m_FontToolbarIcon) ImGui::PopFont();
         }
@@ -633,6 +740,7 @@ namespace ManroEdit {
                 if (ImGui::Selectable(ents[i].name.c_str(), sel)) {
                     m_SelectedEntity = i;
                     m_SelectedLight = -1;
+                    m_SelectedCollider = -1;
                 }
                 if (ImGui::BeginPopupContextItem("entctx")) {
                     if (ImGui::MenuItem(ICON_FA7_CLONE " Duplicate")) {
@@ -671,6 +779,7 @@ namespace ManroEdit {
                 if (ImGui::Selectable(lights[i].name.c_str(), sel)) {
                     m_SelectedLight = i;
                     m_SelectedEntity = -1;
+                    m_SelectedCollider = -1;
                 }
                 if (ImGui::BeginPopupContextItem("lightctx")) {
                     if (ImGui::MenuItem(ICON_FA7_TRASH_CAN " Delete")) {
@@ -689,10 +798,50 @@ namespace ManroEdit {
             ImGui::TreePop();
         }
 
+        char colHeader[64];
+        std::snprintf(colHeader, sizeof(colHeader), ICON_FA7_BORDER_ALL " Colliders [%d]",
+                      (int) m_Map.Colliders().size());
+        if (ImGui::TreeNodeEx(colHeader,
+                              ImGuiTreeNodeFlags_DefaultOpen |
+                              ImGuiTreeNodeFlags_SpanAvailWidth)) {
+            auto &cols = m_Map.Colliders();
+            for (int i = 0; i < (int) cols.size(); ++i) {
+                if (!MatchesFilter(cols[i].name, m_OutlinerFilter)) continue;
+                ImGui::PushID(20000 + i);
+                const bool sel = (m_SelectedCollider == i);
+                if (ImGui::Selectable(cols[i].name.c_str(), sel)) {
+                    m_SelectedCollider = i;
+                    m_SelectedEntity = -1;
+                    m_SelectedLight = -1;
+                }
+                if (ImGui::BeginPopupContextItem("colctx")) {
+                    if (ImGui::MenuItem(ICON_FA7_CLONE " Duplicate")) {
+                        Manro::MapStandaloneCollider_t copy = cols[i];
+                        copy.name += "_copy";
+                        cols.push_back(copy);
+                        MarkDirty();
+                    }
+                    if (ImGui::MenuItem(ICON_FA7_TRASH_CAN " Delete")) {
+                        cols.erase(cols.begin() + i);
+                        if (m_SelectedCollider == i) m_SelectedCollider = -1;
+                        else if (m_SelectedCollider > i) --m_SelectedCollider;
+                        MarkDirty();
+                        ImGui::EndPopup();
+                        ImGui::PopID();
+                        break;
+                    }
+                    ImGui::EndPopup();
+                }
+                ImGui::PopID();
+            }
+            ImGui::TreePop();
+        }
+
         if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)
             && !ImGui::IsAnyItemHovered()) {
             m_SelectedEntity = -1;
             m_SelectedLight = -1;
+            m_SelectedCollider = -1;
         }
 
         ImGui::End();
@@ -731,6 +880,25 @@ namespace ManroEdit {
             if (ImGui::DragFloat3("Position", glm::value_ptr(e.position), 1.f)) MarkDirty();
             if (ImGui::DragFloat3("Rotation", glm::value_ptr(e.rotation), 1.f)) MarkDirty();
             if (ImGui::DragFloat3("Scale", glm::value_ptr(e.scale), 0.05f, 0.001f, 1000.f)) MarkDirty();
+
+            ImGui::Separator();
+            if (ImGui::CollapsingHeader(ICON_FA7_CUBE " Collider",
+                                        ImGuiTreeNodeFlags_DefaultOpen)) {
+                const char *shapes[] = {"None", "Box"};
+                int shapeIdx = static_cast<int>(e.collider.shape);
+                if (ImGui::Combo("Shape", &shapeIdx, shapes, IM_ARRAYSIZE(shapes))) {
+                    e.collider.shape = static_cast<Manro::ColliderShape_e>(shapeIdx);
+                    MarkDirty();
+                }
+                if (e.collider.shape == Manro::ColliderShape_e::Box) {
+                    if (ImGui::DragFloat3("Offset", glm::value_ptr(e.collider.offset), 1.f))
+                        MarkDirty();
+                    if (ImGui::DragFloat3("Half Extents",
+                                          glm::value_ptr(e.collider.halfExtents),
+                                          1.f, 0.01f, 100000.f))
+                        MarkDirty();
+                }
+            }
         } else if (m_SelectedLight >= 0 &&
                    m_SelectedLight < (int) m_Map.Lights().size()) {
             MapLight &l = m_Map.Lights()[m_SelectedLight];
@@ -758,6 +926,32 @@ namespace ManroEdit {
             if (ImGui::DragFloat("Intensity", &l.intensity, 0.05f, 0.f, 100.f)) MarkDirty();
             if (l.type == 1)
                 if (ImGui::DragFloat("Range", &l.range, 1.f, 1.f, 50000.f)) MarkDirty();
+        } else if (m_SelectedCollider >= 0 &&
+                   m_SelectedCollider < (int) m_Map.Colliders().size()) {
+            auto &c = m_Map.Colliders()[m_SelectedCollider];
+
+            if (m_FontBold) ImGui::PushFont(m_FontBold);
+            ImGui::Text(ICON_FA7_BORDER_ALL " Collider");
+            if (m_FontBold) ImGui::PopFont();
+            ImGui::Separator();
+
+            char nameBuf[256];
+            SetBuf(nameBuf, sizeof(nameBuf), c.name);
+            if (ImGui::InputText("Name", nameBuf, sizeof(nameBuf))) {
+                c.name = nameBuf;
+                MarkDirty();
+            }
+
+            const char *shapes[] = {"None", "Box"};
+            int shapeIdx = static_cast<int>(c.shape);
+            if (ImGui::Combo("Shape", &shapeIdx, shapes, IM_ARRAYSIZE(shapes))) {
+                c.shape = static_cast<Manro::ColliderShape_e>(shapeIdx);
+                MarkDirty();
+            }
+            if (ImGui::DragFloat3("Position", glm::value_ptr(c.position), 1.f)) MarkDirty();
+            if (ImGui::DragFloat3("Rotation", glm::value_ptr(c.rotation), 1.f)) MarkDirty();
+            if (ImGui::DragFloat3("Half Extents", glm::value_ptr(c.halfExtents),
+                                  1.f, 0.01f, 100000.f)) MarkDirty();
         } else {
             if (m_FontBold) ImGui::PushFont(m_FontBold);
             ImGui::Text(ICON_FA7_GLOBE " World Settings");
@@ -852,19 +1046,6 @@ namespace ManroEdit {
     }
 
     void CEditor::DrawGizmo() {
-        if (m_SelectedEntity < 0 ||
-            m_SelectedEntity >= (int) m_Map.Entities().size())
-            return;
-
-        MapEntity &e = m_Map.Entities()[m_SelectedEntity];
-
-        auto cacheIt = m_ModelCache.find(e.modelPath);
-        const bool failed = cacheIt != m_ModelCache.end() &&
-                            !cacheIt->second.model && !cacheIt->second.async;
-        if (failed) return;
-
-        Manro::Mat4 model = EntityMatrix(e);
-
         const Manro::Mat4 view = m_Camera.View();
         const Manro::Mat4 proj = FlyCamera_t::Projection(
             m_FovDeg, m_Renderer->GetAspectRatio(), m_NearZ, m_FarZ);
@@ -875,13 +1056,42 @@ namespace ManroEdit {
         const ImGuizmo::MODE mode = (m_GizmoMode == 0)
                                         ? ImGuizmo::WORLD
                                         : ImGuizmo::LOCAL;
-
         const float *snap = m_bSnap ? m_Snap : nullptr;
-        if (ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(proj),
-                                 op, mode, glm::value_ptr(model),
-                                 nullptr, snap)) {
-            DecomposeMatrix(model, e.position, e.rotation, e.scale);
-            MarkDirty();
+
+        if (m_SelectedEntity >= 0 &&
+            m_SelectedEntity < (int) m_Map.Entities().size()) {
+            MapEntity &e = m_Map.Entities()[m_SelectedEntity];
+
+            auto cacheIt = m_ModelCache.find(e.modelPath);
+            const bool failed = cacheIt != m_ModelCache.end() &&
+                                !cacheIt->second.model && !cacheIt->second.async;
+            if (failed) return;
+
+            Manro::Mat4 model = EntityMatrix(e);
+            if (ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(proj),
+                                     op, mode, glm::value_ptr(model),
+                                     nullptr, snap)) {
+                DecomposeMatrix(model, e.position, e.rotation, e.scale);
+                MarkDirty();
+            }
+            return;
+        }
+
+        if (m_SelectedCollider >= 0 &&
+            m_SelectedCollider < (int) m_Map.Colliders().size()) {
+            auto &c = m_Map.Colliders()[m_SelectedCollider];
+            Manro::Mat4 model;
+            const float t[3] = {c.position.x, c.position.y, c.position.z};
+            const float r[3] = {c.rotation.x, c.rotation.y, c.rotation.z};
+            const float s[3] = {1.f, 1.f, 1.f};
+            ImGuizmo::RecomposeMatrixFromComponents(t, r, s, glm::value_ptr(model));
+            if (ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(proj),
+                                     op, mode, glm::value_ptr(model),
+                                     nullptr, snap)) {
+                Manro::Vec3 dummy;
+                DecomposeMatrix(model, c.position, c.rotation, dummy);
+                MarkDirty();
+            }
         }
     }
 
@@ -1428,6 +1638,7 @@ namespace ManroEdit {
     }
 
     void CEditor::MarkDirty() {
+        m_bCollidersDirty = true;
         if (!m_bDirty) {
             m_bDirty = true;
             UpdateWindowTitle();

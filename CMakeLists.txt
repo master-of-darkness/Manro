@@ -91,7 +91,7 @@ add_subdirectory("${MANRO_THIRD_PARTY_DIR}/tinyobjloader")
 add_subdirectory("${MANRO_THIRD_PARTY_DIR}/tinygltf")
 add_subdirectory("${MANRO_THIRD_PARTY_DIR}/JoltPhysics/Build")
 add_subdirectory("${MANRO_THIRD_PARTY_DIR}/spdlog")
-
+add_subdirectory("${MANRO_THIRD_PARTY_DIR}/flecs")
 find_package(Freetype REQUIRED)
 
 if(WIN32)

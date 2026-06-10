@@ -4,6 +4,7 @@
 #include <Manro/Core/JobSystem.h>
 #include <Manro/Core/Logger.h>
 #include <Manro/Input/InputManager.h>
+#include <Manro/Physics/PhysicsWorld.h>
 #include <Manro/Platform/Input/InputBackend.h>
 #include <Manro/Render/Model.h>
 #include <Manro/Render/Renderer.h>
@@ -185,6 +186,7 @@ namespace ManroEdit {
         CMap m_Map;
         int m_SelectedEntity = -1;
         int m_SelectedLight = -1;
+        int m_SelectedCollider = -1;
         std::string m_CurrentMapPath;
         bool m_bDirty = false;
 
@@ -198,6 +200,13 @@ namespace ManroEdit {
         };
 
         std::unordered_map<std::string, CacheEntry> m_ModelCache;
+
+        Manro::Scope<Manro::CPhysicsWorld> m_Physics;
+        std::vector<Manro::PhysicsBodyHandle> m_ColliderBodies; // index-aligned with m_Map.Entities()
+        std::vector<Manro::PhysicsBodyHandle> m_StandaloneBodies; // index-aligned with m_Map.Colliders()
+        bool m_bCollidersDirty = true;
+
+        void RebuildColliderBodies();
 
         DialogPurpose m_DialogPurpose = DialogPurpose::None;
         PendingDialogResult m_DialogResult;
@@ -216,6 +225,10 @@ namespace ManroEdit {
         int m_GizmoOp = 0;
         int m_GizmoMode = 0;
         bool m_bSnap = false;
+        bool m_bShowColliders = true;
+        bool m_bShowEntities = true;
+        bool m_bShowLights = true;
+        bool m_bChamsColliders = true;
         float m_Snap[3]{1.f, 1.f, 1.f};
 
         float m_FovDeg = 70.f;

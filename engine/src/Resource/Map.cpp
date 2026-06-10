@@ -33,13 +33,21 @@ namespace Manro {
 
         json &ents = root["entities"] = json::array();
         for (const auto &e: m_Entities) {
-            ents.push_back({
+            json je{
                 {"name", e.name},
                 {"modelPath", e.modelPath},
                 {"position", V3(e.position)},
                 {"rotation", V3(e.rotation)},
                 {"scale", V3(e.scale)},
-            });
+            };
+            if (e.collider.shape != ColliderShape_e::None) {
+                je["collider"] = {
+                    {"shape", static_cast<int>(e.collider.shape)},
+                    {"offset", V3(e.collider.offset)},
+                    {"halfExtents", V3(e.collider.halfExtents)},
+                };
+            }
+            ents.push_back(std::move(je));
         }
 
         json &lights = root["lights"] = json::array();
@@ -52,6 +60,17 @@ namespace Manro {
                 {"color", V3(l.color)},
                 {"intensity", l.intensity},
                 {"range", l.range},
+            });
+        }
+
+        json &colliders = root["colliders"] = json::array();
+        for (const auto &c: m_Colliders) {
+            colliders.push_back({
+                {"name", c.name},
+                {"shape", static_cast<int>(c.shape)},
+                {"position", V3(c.position)},
+                {"rotation", V3(c.rotation)},
+                {"halfExtents", V3(c.halfExtents)},
             });
         }
         return root.dump(2);
@@ -71,6 +90,14 @@ namespace Manro {
                     e.position = V3from(je.value("position", json{}), {});
                     e.rotation = V3from(je.value("rotation", json{}), {});
                     e.scale = V3from(je.value("scale", json{}), Vec3{1.f});
+                    if (je.contains("collider")) {
+                        const auto &jc = je["collider"];
+                        const int s = jc.value("shape", 0);
+                        e.collider.shape = (s == 1) ? ColliderShape_e::Box : ColliderShape_e::None;
+                        e.collider.offset = V3from(jc.value("offset", json{}), {});
+                        e.collider.halfExtents = V3from(jc.value("halfExtents", json{}),
+                                                         Vec3{50.f});
+                    }
                     m_Entities.push_back(std::move(e));
                 }
             }
@@ -86,6 +113,19 @@ namespace Manro {
                     l.intensity = jl.value("intensity", 1.f);
                     l.range = jl.value("range", 1000.f);
                     m_Lights.push_back(std::move(l));
+                }
+            }
+            if (root.contains("colliders")) {
+                for (const auto &jc: root["colliders"]) {
+                    MapStandaloneCollider_t c;
+                    c.name = jc.value("name", std::string{});
+                    const int s = jc.value("shape", 1);
+                    c.shape = (s == 1) ? ColliderShape_e::Box : ColliderShape_e::None;
+                    c.position = V3from(jc.value("position", json{}), {});
+                    c.rotation = V3from(jc.value("rotation", json{}), {});
+                    c.halfExtents = V3from(jc.value("halfExtents", json{}),
+                                            Vec3{50.f});
+                    m_Colliders.push_back(std::move(c));
                 }
             }
             return true;

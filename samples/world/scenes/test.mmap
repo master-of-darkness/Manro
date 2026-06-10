@@ -1,33 +1,21 @@
 {
   "colliders": [
     {
-      "bodyType": 0,
-      "boxHalfExtents": [
-        200.0,
-        2.0,
-        200.0
+      "halfExtents": [
+        2000.0,
+        10.0,
+        1000.0
       ],
-      "capsuleHalfHeight": 50.0,
-      "capsuleRadius": 25.0,
-      "friction": 0.20000000298023224,
-      "isTrigger": false,
-      "mass": 1.0,
       "name": "Collider",
       "position": [
         0.0,
-        0.0,
+        -20.0,
         0.0
       ],
-      "restitution": 0.0,
       "rotation": [
         0.0,
         -0.0,
         0.0
-      ],
-      "scale": [
-        1.0,
-        1.0,
-        1.0
       ],
       "shape": 1
     }
@@ -36,22 +24,6 @@
     {
       "modelPath": "models/Sponza/Sponza.gltf",
       "name": "Sponza",
-      "physics": {
-        "bodyType": 0,
-        "boxHalfExtents": [
-          50.0,
-          50.0,
-          50.0
-        ],
-        "capsuleHalfHeight": 50.0,
-        "capsuleRadius": 25.0,
-        "enabled": false,
-        "friction": 0.20000000298023224,
-        "isTrigger": false,
-        "mass": 1.0,
-        "restitution": 0.0,
-        "shape": 1
-      },
       "position": [
         0.0,
         0.0,
@@ -63,9 +35,9 @@
         0.0
       ],
       "scale": [
-        10.0,
-        10.0,
-        10.0
+        100.0,
+        100.0,
+        100.0
       ]
     }
   ],

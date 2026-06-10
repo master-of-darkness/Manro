@@ -54,11 +54,82 @@ void CSponza::OnStartup(const Manro::InitContext_t &ctx) {
     m_InputManager.SetBackend(&m_InputBackend);
     m_BenchFrameTimes.reserve(30 * 500);
 
+    m_Physics = Manro::CreateScope<Manro::CPhysicsWorld>();
+
     LoadScene();
+    BuildWorldColliders();
+
+    {
+        Manro::CPhysicsWorld::DynamicBodyDesc_t desc;
+        desc.mass = 80.f;
+        desc.allowSleeping = false;
+        desc.lockRotation = true;
+        m_PlayerBody = m_Physics->AddDynamicBox(m_Camera.Position, kPlayerHalfExtents, desc);
+    }
 }
 
 void CSponza::OnShutdown() {
+    if (m_Physics) {
+        if (m_PlayerBody != Manro::kInvalidBodyHandle)
+            m_Physics->RemoveBody(m_PlayerBody);
+        for (auto h: m_StaticWorldBodies)
+            if (h != Manro::kInvalidBodyHandle) m_Physics->RemoveBody(h);
+        m_StaticWorldBodies.clear();
+        m_Physics.reset();
+    }
     m_MapModels.clear();
+}
+
+void CSponza::BuildWorldColliders() {
+    if (!m_Physics) return;
+    for (const auto &e: m_Map.Entities()) {
+        if (e.collider.shape != Manro::ColliderShape_e::Box) continue;
+        const Manro::Vec3 worldPos = e.position + e.collider.offset * e.scale;
+        const Manro::Vec3 he = e.collider.halfExtents * e.scale;
+        auto h = m_Physics->AddStaticBox(worldPos, he);
+        if (h != Manro::kInvalidBodyHandle) m_StaticWorldBodies.push_back(h);
+    }
+    for (const auto &c: m_Map.Colliders()) {
+        if (c.shape != Manro::ColliderShape_e::Box) continue;
+        auto h = m_Physics->AddStaticBox(c.position, c.halfExtents);
+        if (h != Manro::kInvalidBodyHandle) m_StaticWorldBodies.push_back(h);
+    }
+    LOG_INFO("[CSponza] built {} static world colliders", m_StaticWorldBodies.size());
+}
+
+void CSponza::StepPlayer(float dt) {
+    if (!m_Physics || m_PlayerBody == Manro::kInvalidBodyHandle) return;
+
+    using K = Manro::Key;
+    auto [mx, my] = m_InputManager.ConsumeMouseDelta();
+    m_Camera.Yaw += mx * m_Camera.MouseSensitivity;
+    m_Camera.Pitch = std::clamp(m_Camera.Pitch - my * m_Camera.MouseSensitivity, -89.f, 89.f);
+
+    const Manro::Vec3 fwdFull = m_Camera.Forward();
+    const Manro::Vec3 fwdFlat = glm::normalize(Manro::Vec3{fwdFull.x, 0.f, fwdFull.z});
+    const Manro::Vec3 right = glm::normalize(glm::cross(fwdFlat, Manro::Vec3{0, 1, 0}));
+
+    Manro::Vec3 wish{0.f};
+    if (m_InputManager.IsKeyDown(K::W)) wish += fwdFlat;
+    if (m_InputManager.IsKeyDown(K::S)) wish -= fwdFlat;
+    if (m_InputManager.IsKeyDown(K::D)) wish += right;
+    if (m_InputManager.IsKeyDown(K::A)) wish -= right;
+    if (glm::length(wish) > 0.001f) wish = glm::normalize(wish);
+
+    const float speed = m_InputManager.IsKeyDown(K::LeftShift) ? kRunSpeed : kWalkSpeed;
+    m_PlayerVelocity.x = wish.x * speed;
+    m_PlayerVelocity.z = wish.z * speed;
+
+    const bool grounded = m_Physics->IsGrounded(m_PlayerBody);
+    if (grounded && m_PlayerVelocity.y < 0.f) m_PlayerVelocity.y = 0.f;
+    if (grounded && m_InputManager.IsKeyDown(K::Space)) m_PlayerVelocity.y = kJumpSpeed;
+    if (!grounded) m_PlayerVelocity.y -= kGravity * dt;
+
+    m_Physics->SetLinearVelocity(m_PlayerBody, m_PlayerVelocity);
+    m_Physics->Step(dt);
+
+    const Manro::Vec3 bodyPos = m_Physics->GetBodyPosition(m_PlayerBody);
+    m_Camera.Position = bodyPos + Manro::Vec3{0.f, kEyeOffsetY, 0.f};
 }
 
 bool CSponza::OnUpdate(const Manro::FrameContext_t &ctx, const Manro::UserCmd_t & /*cmd*/) {
@@ -96,6 +167,11 @@ bool CSponza::OnUpdate(const Manro::FrameContext_t &ctx, const Manro::UserCmd_t 
             m_Camera.Position = m_SavedCamPos;
             m_Camera.Yaw = m_flSavedCamYaw;
             m_Camera.Pitch = m_flSavedCamPitch;
+            if (m_Physics && m_PlayerBody != Manro::kInvalidBodyHandle) {
+                m_Physics->SetBodyPosition(m_PlayerBody,
+                                           m_Camera.Position - Manro::Vec3{0.f, kEyeOffsetY, 0.f});
+                m_PlayerVelocity = {0.f, 0.f, 0.f};
+            }
             m_bInputCaptured = true;
         } else {
             return false;
@@ -107,9 +183,10 @@ bool CSponza::OnUpdate(const Manro::FrameContext_t &ctx, const Manro::UserCmd_t 
     if (benchActive) {
         AdvanceBenchCamera(dt);
     } else if (m_bInputCaptured) {
-        m_Camera.Update(m_InputManager, dt);
+        StepPlayer(dt);
     } else {
         m_InputManager.ConsumeMouseDelta();
+        if (m_Physics) m_Physics->Step(dt);
     }
 
     return true;
@@ -265,6 +342,11 @@ void CSponza::DrawGui(const float dt) {
                 m_Camera.Position = m_SavedCamPos;
                 m_Camera.Yaw = m_flSavedCamYaw;
                 m_Camera.Pitch = m_flSavedCamPitch;
+                if (m_Physics && m_PlayerBody != Manro::kInvalidBodyHandle) {
+                    m_Physics->SetBodyPosition(m_PlayerBody,
+                                               m_Camera.Position - Manro::Vec3{0.f, kEyeOffsetY, 0.f});
+                    m_PlayerVelocity = {0.f, 0.f, 0.f};
+                }
                 m_bInputCaptured = true;
             }
             ImGui::TextDisabled("Press Escape to cancel");
@@ -506,6 +588,11 @@ void CSponza::FinishBenchmark() {
     m_Camera.Position = m_SavedCamPos;
     m_Camera.Yaw = m_flSavedCamYaw;
     m_Camera.Pitch = m_flSavedCamPitch;
+    if (m_Physics && m_PlayerBody != Manro::kInvalidBodyHandle) {
+        m_Physics->SetBodyPosition(m_PlayerBody,
+                                   m_Camera.Position - Manro::Vec3{0.f, kEyeOffsetY, 0.f});
+        m_PlayerVelocity = {0.f, 0.f, 0.f};
+    }
     m_bInputCaptured = true;
 
     LOG_INFO("[Benchmark] Done  {:.2f} avg FPS  |  {:.3f}ms avg  |"

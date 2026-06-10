@@ -129,7 +129,7 @@ target_link_libraries(Manro PUBLIC
         vk-bootstrap::vk-bootstrap volk::volk GPUOpen::VulkanMemoryAllocator
         glm::glm tinyobjloader Jolt spdlog::spdlog
         SDL3::SDL3-static SDL3_mixer::SDL3_mixer-static tinygltf
-        Freetype::Freetype
+        Freetype::Freetype flecs::flecs_static
 )
 
 if (MANRO_ENABLE_PROFILING)

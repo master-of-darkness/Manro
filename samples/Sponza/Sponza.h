@@ -2,6 +2,7 @@
 
 #include <Manro/Interfaces/IApplication.h>
 #include <Manro/Core/JobSystem.h>
+#include <Manro/Physics/PhysicsWorld.h>
 #include <Manro/Render/Model.h>
 #include <Manro/Resource/Map.h>
 #include <Manro/Input/InputManager.h>
@@ -80,6 +81,10 @@ public:
 private:
     void LoadScene();
 
+    void BuildWorldColliders();
+
+    void StepPlayer(float dt);
+
     void DrawGui(float dt);
 
     void StartBenchmark();
@@ -107,6 +112,17 @@ private:
 
     Manro::CMap m_Map;
     std::unordered_map<std::string, Manro::Scope<Manro::CModel>> m_MapModels;
+
+    Manro::Scope<Manro::CPhysicsWorld> m_Physics;
+    Manro::PhysicsBodyHandle m_PlayerBody{Manro::kInvalidBodyHandle};
+    std::vector<Manro::PhysicsBodyHandle> m_StaticWorldBodies;
+    Manro::Vec3 m_PlayerVelocity{0.f};
+    static constexpr Manro::Vec3 kPlayerHalfExtents{20.f, 45.f, 20.f};
+    static constexpr float kEyeOffsetY = 30.f;
+    static constexpr float kJumpSpeed = 350.f;
+    static constexpr float kGravity = 980.f;
+    static constexpr float kWalkSpeed = 250.f;
+    static constexpr float kRunSpeed = 500.f;
 
     FlyCamera_t m_Camera;
     bool m_bInputCaptured{true};
