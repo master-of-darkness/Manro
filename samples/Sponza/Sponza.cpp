@@ -203,10 +203,6 @@ bool CSponza::OnUpdate(const Manro::FrameContext_t &ctx, const Manro::UserCmd_t 
         StepPlayer(dt);
     } else {
         m_InputManager.ConsumeMouseDelta();
-        if (m_Physics) {
-            m_Physics->Step(dt);
-            m_Physics->SyncPositionsBack(*m_World);
-        }
     }
 
     return true;
