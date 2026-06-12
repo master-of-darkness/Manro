@@ -93,12 +93,12 @@ namespace Manro
 
         template<typename T>
         T *Get(flecs::entity e) {
-            return &e.get_mut<T>();
+            return e.try_get_mut<T>();
         }
 
         template<typename T>
         const T *Get(flecs::entity e) const {
-            return &e.get<T>();
+            return e.try_get<T>();
         }
 
         template<typename T>

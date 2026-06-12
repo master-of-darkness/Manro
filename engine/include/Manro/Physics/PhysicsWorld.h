@@ -71,7 +71,7 @@ namespace Manro {
 
         void Step(float deltaTime);
 
-        void SyncWorld(CWorld &world);
+        void SyncWorld(CWorld &world) const;
 
         [[nodiscard]] PhysicsBodyHandle AddStaticBox(const Vec3 &position, const Vec3 &halfExtents,
                                        const StaticBodyDesc_t &desc = {});
