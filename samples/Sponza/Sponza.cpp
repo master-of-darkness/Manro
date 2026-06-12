@@ -140,10 +140,10 @@ void CSponza::StepPlayer(float dt) {
 
     m_Physics->SetLinearVelocity(pb->handle, m_PlayerVelocity);
     m_Physics->Step(dt);
+    m_Physics->SyncPositionsBack(*m_World);
 
     const Manro::Vec3 bodyPos = m_Physics->GetBodyPosition(pb->handle);
     m_Camera.Position = bodyPos + Manro::Vec3{0.f, kEyeOffsetY, 0.f};
-    m_World->Set(m_PlayerEntity, Manro::Position{bodyPos.x, bodyPos.y, bodyPos.z});
 }
 
 bool CSponza::OnUpdate(const Manro::FrameContext_t &ctx, const Manro::UserCmd_t & /*cmd*/) {
@@ -203,7 +203,10 @@ bool CSponza::OnUpdate(const Manro::FrameContext_t &ctx, const Manro::UserCmd_t 
         StepPlayer(dt);
     } else {
         m_InputManager.ConsumeMouseDelta();
-        if (m_Physics) m_Physics->Step(dt);
+        if (m_Physics) {
+            m_Physics->Step(dt);
+            m_Physics->SyncPositionsBack(*m_World);
+        }
     }
 
     return true;

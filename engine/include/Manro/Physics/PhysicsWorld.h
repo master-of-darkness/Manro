@@ -73,6 +73,8 @@ namespace Manro {
 
         void SyncWorld(CWorld &world) const;
 
+        void SyncPositionsBack(CWorld &world) const;
+
         [[nodiscard]] PhysicsBodyHandle AddStaticBox(const Vec3 &position, const Vec3 &halfExtents,
                                        const StaticBodyDesc_t &desc = {});
 

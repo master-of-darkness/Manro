@@ -127,8 +127,13 @@ namespace ManroEdit {
 
     void CEditor::OnShutdown() {
         if (m_Physics) {
-            for (auto e: m_WorldEntities)
-                if (e.is_valid()) m_World->DestroyEntity(e);
+            for (auto e: m_WorldEntities) {
+                if (!e.is_valid()) continue;
+                Manro::PhysicsBody *pb = m_World->Get<Manro::PhysicsBody>(e);
+                if (pb && pb->handle != Manro::kInvalidBodyHandle)
+                    m_Physics->RemoveBody(pb->handle);
+                m_World->DestroyEntity(e);
+            }
             m_WorldEntities.clear();
             m_Physics.reset();
         }
@@ -138,8 +143,13 @@ namespace ManroEdit {
 
     void CEditor::RebuildColliderBodies() {
         if (!m_World) return;
-        for (auto e: m_WorldEntities)
-            if (e.is_valid()) m_World->DestroyEntity(e);
+        for (auto e: m_WorldEntities) {
+            if (!e.is_valid()) continue;
+            Manro::PhysicsBody *pb = m_World->Get<Manro::PhysicsBody>(e);
+            if (pb && pb->handle != Manro::kInvalidBodyHandle)
+                m_Physics->RemoveBody(pb->handle);
+            m_World->DestroyEntity(e);
+        }
         m_WorldEntities.clear();
 
         const auto &ents = m_Map.Entities();
@@ -187,7 +197,10 @@ namespace ManroEdit {
         DrainLoadQueue();
 
         if (m_bCollidersDirty) RebuildColliderBodies();
-        if (m_Physics) m_Physics->Step(dt);
+        if (m_Physics) {
+            m_Physics->Step(dt);
+            m_Physics->SyncPositionsBack(*m_World);
+        }
 
         bool wantCapture = false;
         if (m_bProjectOpen) {
@@ -1609,7 +1622,7 @@ namespace ManroEdit {
         SetStatus("Skybox: " + path);
     }
 
-    std::string CEditor::ImportModelIntoProject(const std::string &absModelPath) {
+    std::string CEditor::ImportModelIntoProject(const std::string &absModelPath) const {
         const fs::path src = absModelPath;
         if (!fs::is_regular_file(src)) return {};
 
@@ -1652,7 +1665,7 @@ namespace ManroEdit {
         }
     }
 
-    void CEditor::UpdateWindowTitle() {
+    void CEditor::UpdateWindowTitle() const {
         std::string title = "Manro Map Editor";
         if (!m_CurrentMapPath.empty()) {
             title += " - " + fs::path(m_CurrentMapPath).filename().string();

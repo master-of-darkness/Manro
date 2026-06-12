@@ -148,7 +148,7 @@ namespace ManroEdit {
 
         bool SaveMap(const std::string &path);
 
-        std::string ImportModelIntoProject(const std::string &absModelPath);
+        std::string ImportModelIntoProject(const std::string &absModelPath) const;
 
         void ApplySkybox();
 
@@ -259,6 +259,6 @@ namespace ManroEdit {
 
         void MarkDirty();
 
-        void UpdateWindowTitle();
+        void UpdateWindowTitle() const;
     };
 } // namespace ManroEdit

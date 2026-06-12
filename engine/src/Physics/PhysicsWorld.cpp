@@ -739,4 +739,19 @@ namespace Manro {
         });
     }
 
+    void CPhysicsWorld::SyncPositionsBack(CWorld &world) const {
+        auto &w = world.GetWorld();
+        auto &bi = m_Impl->physicsSystem->GetBodyInterface();
+
+        w.each([&bi](flecs::entity e, PhysicsBody &pb, Position &pos) {
+            if (pb.handle == kInvalidBodyHandle) return;
+            JPH::BodyID id = fromHandle(pb.handle);
+            if (id.IsInvalid()) return;
+            JPH::RVec3 jpos = bi.GetPosition(id);
+            pos.x = static_cast<f32>(jpos.GetX());
+            pos.y = static_cast<f32>(jpos.GetY());
+            pos.z = static_cast<f32>(jpos.GetZ());
+        });
+    }
+
 } // namespace Manro
