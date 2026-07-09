@@ -22,8 +22,6 @@
 #endif
 
 namespace Manro {
-    CWorld *CEngineLoop::s_World = nullptr;
-
     void CEngineLoop::Run(IApplication &app) {
         CLogger::Init();
 #ifdef MANRO_PROFILING
@@ -39,7 +37,6 @@ namespace Manro {
         CVirtualFS vfs;
         RegisterEmbeddedShaders(vfs);
         CWorld world;
-        s_World = &world;
 
         auto winDesc = app.GetWindowDesc();
         WindowHandle wh = platform.GetWindowManager().AddWindow(winDesc);
@@ -105,7 +102,6 @@ namespace Manro {
         }
 
         app.OnShutdown();
-        s_World = nullptr;
 
 #ifdef _WIN32
         timeEndPeriod(1);

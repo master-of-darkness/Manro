@@ -9,6 +9,11 @@ target_include_directories(manro-edit PRIVATE
         ${MANRO_THIRD_PARTY_DIR}/imguizmo
         ${MANRO_THIRD_PARTY_DIR}/json
 )
+target_include_directories(manro-edit SYSTEM PRIVATE
+        ${MANRO_THIRD_PARTY_DIR}/imgui
+        ${MANRO_THIRD_PARTY_DIR}/imgui/backends
+        ${MANRO_THIRD_PARTY_DIR}/imgui/misc/freetype
+)
 
 target_link_libraries(manro-edit PRIVATE Manro)
 

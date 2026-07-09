@@ -7,7 +7,7 @@
 #include "../Internal/ShaderTypes.h"
 #include "../Internal/FrameData.h"
 #include "../Math/RenderMathUtils.h"
-#include "../../Core/Profiling.h"
+#include "Core/Profiling.h"
 
 #include <volk.h>
 #include <vector>

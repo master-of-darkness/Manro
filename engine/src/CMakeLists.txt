@@ -102,7 +102,13 @@ set_source_files_properties(${MANRO_THIRD_PARTY_DIR}/rres/rres_impl.c PROPERTIES
 
 add_dependencies(Manro PrecompileShaders EmbedShaders)
 
-target_include_directories(Manro SYSTEM PUBLIC
+target_include_directories(Manro PUBLIC
+        ${MANRO_PUBLIC_INCLUDE_DIR}
+        ${SHADER_BIN_DIR}
+        ${SHADER_SRC_DIR}
+)
+
+target_include_directories(Manro SYSTEM PRIVATE
         ${MANRO_THIRD_PARTY_DIR}/vk-bootstrap/src
         ${MANRO_THIRD_PARTY_DIR}/imgui
         ${MANRO_THIRD_PARTY_DIR}/imgui/backends
@@ -114,17 +120,13 @@ target_include_directories(Manro SYSTEM PUBLIC
         ${MANRO_THIRD_PARTY_DIR}/rres
         ${MANRO_THIRD_PARTY_DIR}/VulkanMemoryAllocator/include
         ${MANRO_THIRD_PARTY_DIR}/imgui/misc/freetype
-        ${MANRO_THIRD_PARTY_DIR}/flecs/distr
 )
 
-target_include_directories(Manro PUBLIC
-        ${MANRO_PUBLIC_INCLUDE_DIR}
-        ${GEN_DIR}
-        ${SHADER_BIN_DIR}
-        ${SHADER_SRC_DIR}
+target_include_directories(Manro PRIVATE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Render>
+        ${MANRO_THIRD_PARTY_DIR}/stb
 )
-
-target_include_directories(Manro PRIVATE Render ${MANRO_THIRD_PARTY_DIR}/stb)
 target_compile_definitions(Manro PUBLIC VK_NO_PROTOTYPES IMGUI_ENABLE_FREETYPE)
 
 target_link_libraries(Manro PUBLIC
@@ -151,7 +153,7 @@ target_precompile_headers(Manro PRIVATE
 
 target_compile_options(Manro PRIVATE
         -Wall -Wextra -Werror -Wno-unused-parameter -Wunused
-        $<$<CONFIG:Release>:-O3 -DNDEBUG -fvisibility=hidden -fvisibility-inlines-hidden -ffunction-sections -fdata-sections -flto>
+        $<$<CONFIG:Release>:-O3 -DNDEBUG -fvisibility=hidden -fvisibility-inlines-hidden -ffunction-sections -fdata-sections -flto=thin>
 )
 
 target_link_options(Manro PUBLIC

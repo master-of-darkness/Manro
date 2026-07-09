@@ -24,12 +24,18 @@ namespace Manro {
 
         Handle operator++(int) {
             Handle temp = *this;
-            packed++;
+            ++(*this);
             return temp;
         }
 
         Handle &operator++() {
-            packed++;
+            Storage index = packed & kIndexMask;
+            Storage gen = (packed >> kIndexBits) & kGenMask;
+            if (++index > kIndexMask) {
+                index = 1; // skip the all-zero invalid handle
+                gen = (gen + 1) & kGenMask;
+            }
+            packed = (gen << kIndexBits) | index;
             return *this;
         }
 
@@ -64,10 +70,12 @@ namespace Manro {
                 auto &slot = m_Slots[idx];
                 slot.value = std::move(value);
                 slot.occupied = true;
+                ++m_Count;
                 return HandleT::Make(idx, slot.generation);
             }
             u32 idx = static_cast<u32>(m_Slots.size());
             m_Slots.push_back({std::move(value), 0, true});
+            ++m_Count;
             return HandleT::Make(idx, 0);
         }
 
@@ -77,6 +85,7 @@ namespace Manro {
             slot.occupied = false;
             slot.generation = (slot.generation + 1) & HandleT::kGenMask;
             m_FreeList.push_back(handle.Index());
+            --m_Count;
             return true;
         }
 
@@ -106,7 +115,7 @@ namespace Manro {
         }
 
         u32 Size() const {
-            return static_cast<u32>(m_Slots.size() - m_FreeList.size() - 1);
+            return m_Count;
         }
 
     private:
@@ -118,6 +127,7 @@ namespace Manro {
 
         std::vector<Slot> m_Slots;
         std::vector<u32> m_FreeList;
+        u32 m_Count = 0;
     };
 } // namespace Manro
 

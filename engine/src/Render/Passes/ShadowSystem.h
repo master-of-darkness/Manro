@@ -4,7 +4,7 @@
 #include <Manro/Render/RenderSettings.h>
 #include <Manro/Render/Renderer.h>
 #include "../Vulkan/VulkanHelpers.h"
-#include "../../Core/Profiling.h"
+#include "Core/Profiling.h"
 #include <volk.h>
 
 namespace Manro {

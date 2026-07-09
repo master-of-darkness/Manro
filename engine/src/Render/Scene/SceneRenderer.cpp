@@ -1,6 +1,6 @@
 #include "SceneRenderer.h"
 #include "../Internal/PassStates.h"
-#include "../../Core/Profiling.h"
+#include "Core/Profiling.h"
 
 namespace Manro {
     CSceneRenderer::CSceneRenderer() = default;

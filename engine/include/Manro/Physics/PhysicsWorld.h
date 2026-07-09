@@ -76,37 +76,37 @@ namespace Manro {
         void SyncPositionsBack(CWorld &world) const;
 
         [[nodiscard]] PhysicsBodyHandle AddStaticBox(const Vec3 &position, const Vec3 &halfExtents,
-                                       const StaticBodyDesc_t &desc = {});
+                                                     const StaticBodyDesc_t &desc = {}) const;
 
         [[nodiscard]] PhysicsBodyHandle AddDynamicBox(const Vec3 &position, const Vec3 &halfExtents,
-                                        const DynamicBodyDesc_t &desc = {});
+                                                      const DynamicBodyDesc_t &desc = {}) const;
 
         [[nodiscard]] PhysicsBodyHandle AddDynamicCapsule(const Vec3 &position, float radius, float halfHeight,
-                                            const DynamicBodyDesc_t &desc = {});
+                                                          const DynamicBodyDesc_t &desc = {}) const;
 
         [[nodiscard]] PhysicsBodyHandle AddStaticMesh(const std::vector<Vec3> &vertices, const std::vector<u32> &indices,
-                                        const Mat4 &transform = Mat4(1.f));
+                                                      const Mat4 &transform = Mat4(1.f)) const;
 
         [[nodiscard]] PhysicsBodyHandle AddDynamicCone(const Vec3 &position, float radius, float height,
-                                         const DynamicBodyDesc_t &desc = {});
+                                                       const DynamicBodyDesc_t &desc = {}) const;
 
-        void RemoveBody(PhysicsBodyHandle handle);
+        void RemoveBody(PhysicsBodyHandle handle) const;
 
-        void SetBodyUserData(PhysicsBodyHandle handle, u32 entityId);
+        void SetBodyUserData(PhysicsBodyHandle handle, u32 entityId) const;
 
         u32 GetBodyUserData(PhysicsBodyHandle handle) const;
 
         Vec3 GetBodyPosition(PhysicsBodyHandle handle) const;
 
-        void SetBodyPosition(PhysicsBodyHandle handle, const Vec3 &position);
+        void SetBodyPosition(PhysicsBodyHandle handle, const Vec3 &position) const;
 
         Vec3 GetBodyLinearVelocity(PhysicsBodyHandle handle) const;
 
-        void SetLinearVelocity(PhysicsBodyHandle handle, const Vec3 &velocity);
+        void SetLinearVelocity(PhysicsBodyHandle handle, const Vec3 &velocity) const;
 
-        void SetBodyMotionType(PhysicsBodyHandle handle, bool kinematic);
+        void SetBodyMotionType(PhysicsBodyHandle handle, bool kinematic) const;
 
-        void ApplyLinearImpulse(PhysicsBodyHandle handle, const Vec3 &impulse);
+        void ApplyLinearImpulse(PhysicsBodyHandle handle, const Vec3 &impulse) const;
 
         [[nodiscard]] bool IsGrounded(PhysicsBodyHandle handle) const;
 
@@ -115,7 +115,7 @@ namespace Manro {
 
         void SetKinematicVelocity(PhysicsBodyHandle handle, const Vec3 &velocity);
 
-        void WakeBodyAndNeighbours(PhysicsBodyHandle handle, float radius = 2.f);
+        void WakeBodyAndNeighbours(PhysicsBodyHandle handle, float radius = 2.f) const;
 
         void ForEachDynamicBody(const BodySyncCallback &cb) const;
 

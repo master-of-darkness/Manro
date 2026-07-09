@@ -7,7 +7,6 @@
 #include <Manro/Core/Logger.h>
 #include <imgui.h>
 #include <algorithm>
-#include <filesystem>
 #include <numeric>
 #include <cmath>
 #include <cstdio>
@@ -41,13 +40,10 @@ void CSponza::OnStartup(const Manro::InitContext_t &ctx) {
     m_World = &ctx.World;
     m_Renderer->SetDebugUIEnabled(true);
 
-    const auto worldDir =
-            (std::filesystem::path(MANRO_ASSETS_DIR) / "../../world")
-            .lexically_normal().string();
-    m_Vfs->SetBaseDir(worldDir);
+    m_Vfs->SetBaseDir(MANRO_ASSETS_DIR);
 
-    const std::string rresPath = worldDir + "/scenes/test.rres";
-    if (std::filesystem::exists(rresPath)) {
+    if (m_Vfs->FileExists("scenes/test.rres")) {
+        const std::string rresPath = m_Vfs->ResolvePath("scenes/test.rres");
         LOG_INFO("[CSponza] Mounting archive {}", rresPath);
         Manro::CRresMount::MountArchive(*m_Vfs, rresPath);
     }
@@ -280,9 +276,8 @@ void CSponza::OnRender(Manro::FrameContext_t &frame) {
 
 void CSponza::LoadScene() {
     bool gotMap = false;
-    const std::string mmapPath = m_Vfs->ResolvePath("scenes/test.mmap");
-    if (std::filesystem::exists(mmapPath))
-        gotMap = m_Map.LoadFromFile(mmapPath);
+    if (m_Vfs->FileExists("scenes/test.mmap"))
+        gotMap = m_Map.LoadFromVfs("scenes/test.mmap", *m_Vfs);
 
     if (gotMap && !m_Map.Entities().empty()) {
         LOG_INFO("[CSponza] Loaded map: {} entities, {} lights",

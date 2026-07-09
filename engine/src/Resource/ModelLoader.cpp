@@ -2,7 +2,7 @@
 #include <Manro/Core/JobSystem.h>
 #include <Manro/Core/Logger.h>
 #include <Manro/Core/VirtualFS.h>
-#include "../Core/Profiling.h"
+#include "Core/Profiling.h"
 
 #define TINYOBJLOADER_IMPLEMENTATION
 
