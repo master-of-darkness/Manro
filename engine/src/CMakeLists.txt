@@ -49,7 +49,6 @@ set(ENGINE_RENDER_SOURCES
 set(ENGINE_RESOURCE_SOURCES
         Resource/ModelLoader.cpp
         Resource/TextureLoader.cpp
-        Resource/Primitives.cpp
         Resource/RresMount.cpp
         Resource/Map.cpp
         Resource/Pack.cpp

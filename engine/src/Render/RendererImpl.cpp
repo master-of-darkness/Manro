@@ -44,8 +44,6 @@ namespace Manro {
 
         ~CRendererImpl();
 
-        bool BeginFrame();
-
         bool BeginFramePace();
 
         void BeginFrameRecord();
@@ -96,7 +94,7 @@ namespace Manro {
         }
 
         void WaitIdle() const {
-            if (m_Context.GetDevice()) vkDeviceWaitIdle(m_Context.GetDevice());
+            vkDeviceWaitIdle(m_Context.GetDevice());
         }
 
         MeshHandle UploadMesh(const ModelData_t &data) const { return m_Meshes.Upload(data); }
@@ -119,15 +117,11 @@ namespace Manro {
             return static_cast<float>(m_unPendingWidth) / static_cast<float>(m_unPendingHeight);
         }
 
-        CMeshManager &GetMeshes() { return m_Meshes; }
-
         void SetSettings(const RenderSettings_t &settings);
 
         const RenderSettings_t &GetSettings() const { return m_Settings; }
 
         RenderSettings_t &GetSettings() { return m_Settings; }
-
-        const RendererConfig_t &GetConfig() const { return m_Config; }
 
         const FrameStats_t &GetLastFrameStats() const { return m_LastFrameStats; }
 
@@ -139,16 +133,6 @@ namespace Manro {
             return m_Overlay && m_Overlay->IsDebugUIEnabled();
         }
 
-        void GetVramStats(u64 &usage, u64 &budget) const {
-            m_Context.GetVramStats(usage, budget);
-        }
-
-        std::string GetAdapterName() const {
-            VkPhysicalDeviceProperties props{};
-            vkGetPhysicalDeviceProperties(m_Context.GetPhysicalDevice(), &props);
-            return props.deviceName;
-        }
-
         void DrawLine(const Vec3 &a, const Vec3 &b, u32 color, bool depthTest) const;
 
         void DrawAABB(const Vec3 &min, const Vec3 &max, u32 color, bool depthTest) const;
@@ -157,16 +141,16 @@ namespace Manro {
 
         void DrawSphere(const Vec3 &center, float radius, u32 color, int segments, bool depthTest) const;
 
-        void DrawFrustum(const Mat4 &invViewProj, u32 color, bool depthTest) const;
-
-        void DrawCross(const Vec3 &center, float size, u32 color, bool depthTest) const;
-
-        void DrawAxes(const Mat4 &transform, float size) const;
-
         void *GetSceneTextureId();
 
     private:
         void CreateCommandBuffers();
+
+        std::string GetAdapterName() const {
+            VkPhysicalDeviceProperties props{};
+            vkGetPhysicalDeviceProperties(m_Context.GetPhysicalDevice(), &props);
+            return props.deviceName;
+        }
 
         void InitAutoExposure();
 
@@ -226,8 +210,6 @@ namespace Manro {
         Scope<CBuffer> m_AutoExposureLuminanceBuffer;
 
         std::vector<FrameData_t> m_Frames;
-        std::vector<VkBuffer> m_SkyboxUboBuffers;
-        std::vector<VkDescriptorSet> m_SkyboxDescriptorSets;
         u32 m_unCurrentFrame = 0;
         u32 m_unCurrentImageIndex = 0;
 
@@ -344,7 +326,6 @@ namespace Manro {
     }
 
     CRendererImpl::~CRendererImpl() {
-        if (!m_Context.GetDevice()) return;
         vkDeviceWaitIdle(m_Context.GetDevice());
 
 #ifdef MANRO_PROFILING
@@ -485,7 +466,6 @@ namespace Manro {
         m_HistogramPipeline->BuildCompute(histogramSpv, histogramCfg);
 
         PipelineConfigParams_t autoExposureCfg = histogramCfg;
-        autoExposureCfg.computeEntryPoint = "main";
 
         m_AutoExposurePipeline = CreateScope<CPipeline>(m_Context);
         m_AutoExposurePipeline->BuildCompute(autoExposureSpv, autoExposureCfg);
@@ -640,12 +620,10 @@ namespace Manro {
         m_Skybox.RebuildPipeline(m_RenderTargets.GetOffscreenFormat(),
                                  m_RenderTargets.GetDepthFormat(),
                                  ToVulkanSampleCount(m_Settings.msaaSamples));
-        if (m_DrawSystem) {
-            m_DrawSystem->Shutdown();
-            m_DrawSystem->Init(m_RenderTargets.GetOffscreenFormat(),
-                               m_RenderTargets.GetDepthFormat(),
-                               ToVulkanSampleCount(m_Settings.msaaSamples));
-        }
+        m_DrawSystem->Shutdown();
+        m_DrawSystem->Init(m_RenderTargets.GetOffscreenFormat(),
+                           m_RenderTargets.GetDepthFormat(),
+                           ToVulkanSampleCount(m_Settings.msaaSamples));
 
         for (u32 i = 0; i < GetFrameCount(); ++i) {
             m_PipelineMgr.UpdateCompositeDescriptorSet(
@@ -721,12 +699,6 @@ namespace Manro {
         }
 
         m_unCurrentFrame = (m_unCurrentFrame + 1) % GetFrameCount();
-    }
-
-    bool CRendererImpl::BeginFrame() {
-        if (!BeginFramePace()) return false;
-        BeginFrameRecord();
-        return true;
     }
 
     bool CRendererImpl::BeginFramePace() {
@@ -813,22 +785,20 @@ namespace Manro {
 
             m_CurrentFrameStats.Reset();
             m_CurrentFrameStats.drawCalls = m_InstanceBatcher.GetStaticInstanceCount();
-            m_CurrentFrameStats.instanceCount = m_InstanceBatcher.GetStaticInstanceCount();
+            m_CurrentFrameStats.instanceCount = m_CurrentFrameStats.drawCalls;
             m_CurrentFrameStats.triangleCount = m_InstanceBatcher.GetStaticTriangleCount();
         }
 
         {
             MNR_PROFILE_SCOPE("DrawSystemBeginFrame");
-            if (m_DrawSystem) {
-                m_DrawSystem->BeginFrame();
-            }
+            m_DrawSystem->BeginFrame();
         }
 
         {
             MNR_PROFILE_SCOPE("OverlayUpdate");
-            if (m_Overlay) m_Overlay->NewFrame();
+            m_Overlay->NewFrame();
 
-            if (m_Overlay && m_Overlay->IsDebugUIEnabled()) {
+            if (m_Overlay->IsDebugUIEnabled()) {
                 bool settingsChanged = false;
                 RenderSettings_t editedSettings = m_Settings;
                 m_Overlay->DrawDebugger(
@@ -1079,7 +1049,7 @@ namespace Manro {
             m_SceneRenderer->SetSkyboxPassState(&skyState);
         }
 
-        if (m_SceneRenderer) {
+        {
             MNR_GPU_ZONE(m_TracyGpuCtx, cb, "Scene Passes");
             m_SceneRenderer->Flush(cb);
         }
@@ -1113,7 +1083,7 @@ namespace Manro {
         FrameData_t &frame = m_Frames[m_unCurrentFrame];
         VkCommandBuffer cb = frame.commandBuffer;
 
-        if (m_DrawSystem) {
+        {
             MNR_GPU_ZONE(m_TracyGpuCtx, cb, "Debug Draw");
             m_DrawSystem->DispatchExpand(cb);
 
@@ -1209,7 +1179,7 @@ namespace Manro {
         }
         m_Swapchain.SetImageLayout(m_unCurrentImageIndex, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
-        if (m_SceneRenderer) {
+        {
             CompositePushConstants_t cpc{};
             cpc.tm = m_Settings.postProcess.tonemapping;
             cpc.tm.inputMatrix = SlangFloat3x3_t(glm::mat3(cpc.tm.exposure));
@@ -1232,7 +1202,7 @@ namespace Manro {
             m_SceneRenderer->Flush(cb);
         }
 
-        if (m_Overlay) {
+        {
             MNR_GPU_ZONE(m_TracyGpuCtx, cb, "GUI COverlay");
             VkRenderingAttachmentInfo guiColorAtt{};
             guiColorAtt.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -1284,7 +1254,7 @@ namespace Manro {
                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
             m_bSceneTexDirty = false;
         }
-        return static_cast<void *>(m_SceneImGuiTex);
+        return m_SceneImGuiTex;
     }
 
     void CRendererImpl::CreateCommandBuffers() {
@@ -1295,10 +1265,6 @@ namespace Manro {
         const u32 maxLightsPerTile = GetMaxLightsPerTile();
 
         m_Frames.resize(frameCount);
-        m_SkyboxUboBuffers.clear();
-        m_SkyboxDescriptorSets.clear();
-        m_SkyboxUboBuffers.reserve(frameCount);
-        m_SkyboxDescriptorSets.reserve(frameCount);
 
         for (u32 i = 0; i < frameCount; ++i) {
             FrameData_t &f = m_Frames[i];
@@ -1388,58 +1354,25 @@ namespace Manro {
                 m_AutoExposureLuminanceBuffer->GetHandle());
             m_PipelineMgr.UpdatePbrDescriptorSet(i, f, m_MaterialSystem, m_Textures, m_Shadow, m_Skybox);
             UpdateAutoExposureDescriptorSet(f);
-            m_SkyboxUboBuffers.push_back(f.uboBuffer->GetHandle());
-            m_SkyboxDescriptorSets.push_back(f.skyboxSet);
         }
     }
 
     void CRendererImpl::DrawLine(const Vec3 &a, const Vec3 &b, u32 color, bool depthTest) const {
-        if (m_DrawSystem) {
-            m_DrawSystem->SubmitLine(a, b, color, depthTest);
-        }
+        m_DrawSystem->SubmitLine(a, b, color, depthTest);
     }
 
     void CRendererImpl::DrawAABB(const Vec3 &min, const Vec3 &max, u32 color, bool depthTest) const {
-        if (m_DrawSystem) {
-            m_DrawSystem->SubmitBox((min + max) * 0.5f, (max - min) * 0.5f, Mat4(1.0f), color, depthTest);
-        }
+        m_DrawSystem->SubmitBox((min + max) * 0.5f, (max - min) * 0.5f, Mat4(1.0f), color, depthTest);
     }
 
     void CRendererImpl::DrawBox(const Vec3 &center, const Vec3 &half,
                                 const Mat4 &transform, u32 color, bool depthTest) const {
-        if (m_DrawSystem) {
-            m_DrawSystem->SubmitBox(center, half, transform, color, depthTest);
-        }
+        m_DrawSystem->SubmitBox(center, half, transform, color, depthTest);
     }
 
     void CRendererImpl::DrawSphere(const Vec3 &center, float radius,
                                    u32 color, int segments, bool depthTest) const {
-        if (m_DrawSystem) {
-            m_DrawSystem->SubmitSphere(center, radius, color, segments, depthTest);
-        }
-    }
-
-    void CRendererImpl::DrawFrustum(const Mat4 &invViewProj, u32 color, bool depthTest) const {
-        if (m_DrawSystem) {
-            m_DrawSystem->SubmitFrustum(invViewProj, color, depthTest);
-        }
-    }
-
-    void CRendererImpl::DrawCross(const Vec3 &center, float size, u32 color, bool depthTest) const {
-        if (m_DrawSystem) {
-            m_DrawSystem->SubmitCross(center, size, color, depthTest);
-        }
-    }
-
-    void CRendererImpl::DrawAxes(const Mat4 &transform, float size) const {
-        Vec3 origin = Vec3(transform[3]);
-        Vec3 axisX = Vec3(transform[0]) * size;
-        Vec3 axisY = Vec3(transform[1]) * size;
-        Vec3 axisZ = Vec3(transform[2]) * size;
-
-        DrawLine(origin, origin + axisX, 0xFF0000FFu, true);
-        DrawLine(origin, origin + axisY, 0xFF00FF00u, true);
-        DrawLine(origin, origin + axisZ, 0xFFFF0000u, true);
+        m_DrawSystem->SubmitSphere(center, radius, color, segments, depthTest);
     }
 
     Scope<CRendererImpl> CreateRendererImpl(CWindow &window, CVirtualFS &vfs, u32 width, u32 height,
@@ -1458,7 +1391,6 @@ namespace Manro {
 
     CRenderer::~CRenderer() = default;
 
-    bool RendererImplBeginFrame(CRendererImpl &impl) { return impl.BeginFrame(); }
     bool RendererImplBeginFramePace(CRendererImpl &impl) { return impl.BeginFramePace(); }
     void RendererImplBeginFrameRecord(CRendererImpl &impl) { impl.BeginFrameRecord(); }
     void RendererImplBeginRendering(CRendererImpl &impl) { impl.BeginRendering(); }
@@ -1513,21 +1445,13 @@ namespace Manro {
 
     void RendererImplOnResize(CRendererImpl &impl, u32 width, u32 height) { impl.OnResize(width, height); }
     float RendererImplGetAspectRatio(const CRendererImpl &impl) { return impl.GetAspectRatio(); }
-    CMeshManager &RendererImplGetMeshes(CRendererImpl &impl) { return impl.GetMeshes(); }
     void RendererImplSetSettings(CRendererImpl &impl, const RenderSettings_t &settings) { impl.SetSettings(settings); }
     const RenderSettings_t &RendererImplGetSettingsConst(const CRendererImpl &impl) { return impl.GetSettings(); }
     RenderSettings_t &RendererImplGetSettings(CRendererImpl &impl) { return impl.GetSettings(); }
-    const RendererConfig_t &RendererImplGetConfig(const CRendererImpl &impl) { return impl.GetConfig(); }
 
     const FrameStats_t &RendererImplGetLastFrameStats(const CRendererImpl &impl) { return impl.GetLastFrameStats(); }
     void RendererImplSetDebugUIEnabled(const CRendererImpl &impl, bool enabled) { impl.SetDebugUIEnabled(enabled); }
     bool RendererImplIsDebugUIEnabled(const CRendererImpl &impl) { return impl.IsDebugUIEnabled(); }
-
-    void RendererImplGetVramStats(const CRendererImpl &impl, u64 &usage, u64 &budget) {
-        impl.GetVramStats(usage, budget);
-    }
-
-    std::string RendererImplGetAdapterName(const CRendererImpl &impl) { return impl.GetAdapterName(); }
 
     void *RendererImplGetSceneTextureId(CRendererImpl &impl) { return impl.GetSceneTextureId(); }
 
@@ -1547,18 +1471,6 @@ namespace Manro {
     void RendererImplDrawSphere(const CRendererImpl &impl, const Vec3 &center, float radius, u32 color, int segments,
                                 bool depthTest) {
         impl.DrawSphere(center, radius, color, segments, depthTest);
-    }
-
-    void RendererImplDrawFrustum(const CRendererImpl &impl, const Mat4 &invViewProj, u32 color, bool depthTest) {
-        impl.DrawFrustum(invViewProj, color, depthTest);
-    }
-
-    void RendererImplDrawCross(const CRendererImpl &impl, const Vec3 &center, float size, u32 color, bool depthTest) {
-        impl.DrawCross(center, size, color, depthTest);
-    }
-
-    void RendererImplDrawAxes(const CRendererImpl &impl, const Mat4 &transform, float size) {
-        impl.DrawAxes(transform, size);
     }
 
     void RendererImplWaitIdle(const CRendererImpl &impl) {

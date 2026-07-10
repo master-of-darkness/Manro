@@ -9,7 +9,6 @@
 #include <functional>
 
 namespace Manro {
-    class CRegistry;
     struct JoltFactoryGuard;
 
     using BodySyncCallback = std::function<void(u32 entity, const Vec3 & pos, const Vec3 & vel)>;

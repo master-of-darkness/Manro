@@ -8,8 +8,6 @@ namespace Manro {
     Scope<CRendererImpl> CreateRendererImpl(CWindow &window, CVirtualFS &vfs, u32 width, u32 height,
                                             const RenderSettings_t &settings, const RendererConfig_t &config);
 
-    bool RendererImplBeginFrame(CRendererImpl & impl);
-
     bool RendererImplBeginFramePace(CRendererImpl & impl);
 
     void RendererImplBeginFrameRecord(CRendererImpl & impl);
@@ -56,25 +54,17 @@ namespace Manro {
 
     float RendererImplGetAspectRatio(const CRendererImpl &impl);
 
-    CMeshManager &RendererImplGetMeshes(CRendererImpl & impl);
-
     void RendererImplSetSettings(CRendererImpl &impl, const RenderSettings_t &settings);
 
     const RenderSettings_t &RendererImplGetSettingsConst(const CRendererImpl &impl);
 
     RenderSettings_t &RendererImplGetSettings(CRendererImpl & impl);
 
-    const RendererConfig_t &RendererImplGetConfig(const CRendererImpl &impl);
-
     const FrameStats_t &RendererImplGetLastFrameStats(const CRendererImpl &impl);
 
     void RendererImplSetDebugUIEnabled(const CRendererImpl &impl, bool enabled);
 
     bool RendererImplIsDebugUIEnabled(const CRendererImpl &impl);
-
-    void RendererImplGetVramStats(const CRendererImpl &impl, u64 &usage, u64 &budget);
-
-    std::string RendererImplGetAdapterName(const CRendererImpl &impl);
 
     void RendererImplDrawLine(const CRendererImpl &impl, const Vec3 &a, const Vec3 &b, u32 color, bool depthTest);
 
@@ -85,12 +75,6 @@ namespace Manro {
 
     void RendererImplDrawSphere(const CRendererImpl &impl, const Vec3 &center, float radius, u32 color, int segments,
                                 bool depthTest);
-
-    void RendererImplDrawFrustum(const CRendererImpl &impl, const Mat4 &invViewProj, u32 color, bool depthTest);
-
-    void RendererImplDrawCross(const CRendererImpl &impl, const Vec3 &center, float size, u32 color, bool depthTest);
-
-    void RendererImplDrawAxes(const CRendererImpl &impl, const Mat4 &transform, float size);
 
     void *RendererImplGetSceneTextureId(CRendererImpl & impl);
 

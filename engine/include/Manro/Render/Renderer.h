@@ -46,8 +46,6 @@ namespace Manro {
 
         CRenderer &operator=(const CRenderer &) = delete;
 
-        [[nodiscard]] bool BeginFrame() const;
-
         [[nodiscard]] bool BeginFramePace() const;
 
         void BeginFrameRecord() const;
@@ -94,26 +92,17 @@ namespace Manro {
 
         [[nodiscard]] float GetAspectRatio() const;
 
-        CMeshManager &GetMeshes() const;
-
         void SetSettings(const RenderSettings_t &settings) const;
 
         const RenderSettings_t &GetSettings() const;
 
         RenderSettings_t &GetSettings();
 
-        /// Get the renderer configuration (read-only, set at construction time)
-        const RendererConfig_t &GetConfig() const;
-
         const FrameStats_t &GetLastFrameStats() const;
 
         void SetDebugUIEnabled(bool enabled) const;
 
         [[nodiscard]] bool IsDebugUIEnabled() const;
-
-        void GetVramStats(u64 &usage, u64 &budget) const;
-
-        [[nodiscard]] std::string GetAdapterName() const;
 
         void DrawLine(const Vec3 &a, const Vec3 &b, u32 color, bool depthTest = true) const;
 
@@ -124,12 +113,6 @@ namespace Manro {
 
         void DrawSphere(const Vec3 &center, float radius, u32 color,
                         int segments = 8, bool depthTest = true) const;
-
-        void DrawFrustum(const Mat4 &invViewProj, u32 color, bool depthTest = true) const;
-
-        void DrawCross(const Vec3 &center, float size, u32 color, bool depthTest = true) const;
-
-        void DrawAxes(const Mat4 &transform, float size = 50.f) const;
 
         void *GetSceneTextureId() const;
 
