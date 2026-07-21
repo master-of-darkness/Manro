@@ -107,7 +107,7 @@ void CMyApp::OnRender(Manro::FrameContext_t &frame) {
 
 ```cpp
 #include "MyApp.h"
-#include "Manro/Core/EngineLoop.h"
+#include <Manro/Core/EngineLoop.h>
 
 int main() {
     CMyApp app;
