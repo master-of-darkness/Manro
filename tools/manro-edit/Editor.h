@@ -195,9 +195,9 @@ namespace ManroEdit {
         std::string m_ProjectDir;
         std::vector<std::string> m_ProjectScenes;
 
-        struct CacheEntry {
+    struct CacheEntry {
             Manro::Scope<Manro::CModel> model;
-            Manro::Scope<AsyncModelLoad> async;
+            Manro::Ref<AsyncModelLoad> async;
         };
 
         std::unordered_map<std::string, CacheEntry> m_ModelCache;
@@ -207,6 +207,8 @@ namespace ManroEdit {
         bool m_bCollidersDirty = true;
 
         void RebuildColliderBodies();
+
+        static Manro::RigidBody MakeStaticBox(const Manro::Vec3 &halfExtents);
 
         DialogPurpose m_DialogPurpose = DialogPurpose::None;
         PendingDialogResult m_DialogResult;
@@ -238,9 +240,6 @@ namespace ManroEdit {
         float m_flDpiScale = 1.0f;
 
         bool m_bDockLayoutBuilt = false;
-
-        float m_SceneViewW = 800.f;
-        float m_SceneViewH = 600.f;
 
         ImFont *m_FontUI = nullptr;
         ImFont *m_FontBold = nullptr;

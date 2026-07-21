@@ -162,7 +162,7 @@ namespace ManroEdit {
             flecs::entity ent = m_World->CreateEntity(e.name.c_str());
             m_World->Set(ent, Manro::Position{worldPos.x, worldPos.y, worldPos.z});
             m_World->Set(ent, Manro::Scale{e.scale.x, e.scale.y, e.scale.z});
-            m_World->Set(ent, Manro::RigidBody{Manro::PhysicsBodyType::Static, he, 0.3f, 0.5f, 1.f, 0.2f, 0.f, false, false});
+            m_World->Set(ent, MakeStaticBox(he));
             m_World->Set(ent, Manro::Collider{Manro::ColliderShape_e::Box, e.collider.offset, e.collider.halfExtents});
             m_WorldEntities.push_back(ent);
         }
@@ -175,13 +175,17 @@ namespace ManroEdit {
             flecs::entity ent = m_World->CreateEntity(c.name.c_str());
             m_World->Set(ent, Manro::Position{c.position.x, c.position.y, c.position.z});
             m_World->Set(ent, Manro::Scale{1.f, 1.f, 1.f});
-            m_World->Set(ent, Manro::RigidBody{Manro::PhysicsBodyType::Static, c.halfExtents, 0.3f, 0.5f, 1.f, 0.2f, 0.f, false, false});
+            m_World->Set(ent, MakeStaticBox(c.halfExtents));
             m_World->Set(ent, Manro::Collider{Manro::ColliderShape_e::Box, Manro::Vec3{0.f}, c.halfExtents});
             m_WorldEntities.push_back(ent);
         }
 
         m_Physics->SyncWorld(*m_World);
         m_bCollidersDirty = false;
+    }
+
+    Manro::RigidBody CEditor::MakeStaticBox(const Manro::Vec3 &halfExtents) {
+        return {Manro::PhysicsBodyType::Static, halfExtents, 0.3f, 0.5f, 1.f, 0.2f, 0.f, false, false};
     }
 
     bool CEditor::OnUpdate(const Manro::FrameContext_t &ctx,
@@ -245,10 +249,9 @@ namespace ManroEdit {
         m_Renderer->SetCameraPosition(m_Camera.Position);
 
         m_Renderer->ClearLights();
-        if (!m_bShowLights) {
-            // skip lights entirely
-        } else if (m_Map.Lights().empty()) {
-            Manro::LightData sun{};
+        if (m_bShowLights) {
+            if (m_Map.Lights().empty()) {
+                Manro::LightData sun{};
             sun.type = shaderio::eLightTypeDirectional;
             sun.direction = glm::normalize(Manro::Vec3{0.4f, -1.f, 0.2f});
             sun.color = {1.f, 0.97f, 0.92f};
@@ -268,6 +271,7 @@ namespace ManroEdit {
                     ld.angularSizeOrInvRange = 1.f / std::max(l.range, 0.001f);
                 m_Renderer->AddLight(ld);
             }
+        }
         }
 
         if (m_bProjectOpen) {
@@ -507,41 +511,6 @@ namespace ManroEdit {
     void CEditor::DrawHorizontalToolbar() {
         if (!ImGui::BeginMenuBar()) return;
 
-        if (ImGui::BeginMenu(ICON_FA7_FILE " Scene")) {
-            if (ImGui::MenuItem(ICON_FA7_FILE " New scene...")) {
-                m_NewSceneNameBuf[0] = '\0';
-                m_bShowNewScenePopup = true;
-            }
-            if (ImGui::MenuItem(ICON_FA7_FOLDER_OPEN " Open scene..."))
-                RequestOpenFileDialog(DialogPurpose::OpenMap, m_ProjectDir,
-                                      "Manro maps", "mmap");
-            ImGui::Separator();
-            if (ImGui::MenuItem(ICON_FA7_FLOPPY_DISK " Save",
-                                nullptr, false, !m_CurrentMapPath.empty())) {
-                if (SaveMap(m_CurrentMapPath))
-                    SetStatus("Saved " + m_CurrentMapPath);
-                else
-                    SetStatus("Save failed");
-            }
-            ImGui::EndMenu();
-        }
-
-        if (ImGui::BeginMenu(ICON_FA7_FILE_IMPORT " Assets")) {
-            if (ImGui::MenuItem(ICON_FA7_FILE_IMPORT " Import model..."))
-                RequestOpenFileDialog(DialogPurpose::ImportModel, {},
-                                      "3D models", "gltf;glb;obj");
-            ImGui::EndMenu();
-        }
-
-        if (ImGui::BeginMenu(ICON_FA7_BOX_ARCHIVE " Export")) {
-            if (ImGui::MenuItem(ICON_FA7_BOX_ARCHIVE " Pack to .rres..."))
-                m_bShowPackDialog = true;
-            ImGui::EndMenu();
-        }
-
-        ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
-
-        // Scene switcher
         if (!m_ProjectScenes.empty()) {
             int currentIdx = -1;
             for (int i = 0; i < (int) m_ProjectScenes.size(); ++i) {
@@ -625,8 +594,6 @@ namespace ManroEdit {
             ImVec2 avail = ImGui::GetContentRegionAvail();
             if (avail.x < 1.f) avail.x = 1.f;
             if (avail.y < 1.f) avail.y = 1.f;
-            m_SceneViewW = avail.x;
-            m_SceneViewH = avail.y;
 
             ImTextureID texId = reinterpret_cast<ImTextureID>(m_Renderer->GetSceneTextureId());
             if (texId) {
@@ -654,35 +621,23 @@ namespace ManroEdit {
         }
         ImGui::SameLine();
 
-        ImGui::PushStyleColor(ImGuiCol_Button, m_bShowLogInfo
-                                                   ? ImVec4(0.15f, 0.55f, 0.15f, 1.f)
-                                                   : ImVec4(0.80f, 0.80f, 0.78f, 1.f));
-        ImGui::PushStyleColor(ImGuiCol_Text, m_bShowLogInfo
-                                                 ? ImVec4(1.f, 1.f, 1.f, 1.f)
-                                                 : ImVec4(0.40f, 0.40f, 0.40f, 1.f));
-        if (ImGui::SmallButton("Info")) m_bShowLogInfo = !m_bShowLogInfo;
-        ImGui::PopStyleColor(2);
-        ImGui::SameLine();
-
-        ImGui::PushStyleColor(ImGuiCol_Button, m_bShowLogWarn
-                                                   ? ImVec4(0.75f, 0.55f, 0.05f, 1.f)
-                                                   : ImVec4(0.80f, 0.80f, 0.78f, 1.f));
-        ImGui::PushStyleColor(ImGuiCol_Text, m_bShowLogWarn
-                                                 ? ImVec4(1.f, 1.f, 1.f, 1.f)
-                                                 : ImVec4(0.40f, 0.40f, 0.40f, 1.f));
-        if (ImGui::SmallButton("Warn")) m_bShowLogWarn = !m_bShowLogWarn;
-        ImGui::PopStyleColor(2);
-        ImGui::SameLine();
-
-        ImGui::PushStyleColor(ImGuiCol_Button, m_bShowLogError
-                                                   ? ImVec4(0.70f, 0.12f, 0.12f, 1.f)
-                                                   : ImVec4(0.80f, 0.80f, 0.78f, 1.f));
-        ImGui::PushStyleColor(ImGuiCol_Text, m_bShowLogError
-                                                 ? ImVec4(1.f, 1.f, 1.f, 1.f)
-                                                 : ImVec4(0.40f, 0.40f, 0.40f, 1.f));
-        if (ImGui::SmallButton("Error")) m_bShowLogError = !m_bShowLogError;
-        ImGui::PopStyleColor(2);
-        ImGui::SameLine();
+        struct LogBtn {
+            const char *label;
+            bool *flag;
+            ImVec4 on, off;
+        };
+        LogBtn btns[] = {
+            {"Info", &m_bShowLogInfo, {0.15f, 0.55f, 0.15f, 1.f}, {0.80f, 0.80f, 0.78f, 1.f}},
+            {"Warn", &m_bShowLogWarn, {0.75f, 0.55f, 0.05f, 1.f}, {0.80f, 0.80f, 0.78f, 1.f}},
+            {"Error", &m_bShowLogError, {0.70f, 0.12f, 0.12f, 1.f}, {0.80f, 0.80f, 0.78f, 1.f}},
+        };
+        for (auto &b: btns) {
+            ImGui::PushStyleColor(ImGuiCol_Button, *b.flag ? b.on : b.off);
+            ImGui::PushStyleColor(ImGuiCol_Text, *b.flag ? ImVec4(1, 1, 1, 1) : ImVec4(0.40f, 0.40f, 0.40f, 1.f));
+            if (ImGui::SmallButton(b.label)) *b.flag = !*b.flag;
+            ImGui::PopStyleColor(2);
+            ImGui::SameLine();
+        }
 
         ImGui::Checkbox("Auto-scroll", &m_bLogAutoScroll);
 
@@ -873,14 +828,18 @@ namespace ManroEdit {
             return;
         }
 
+        auto SectionHeader = [&](const char *label) {
+            if (m_FontBold) ImGui::PushFont(m_FontBold);
+            ImGui::TextUnformatted(label);
+            if (m_FontBold) ImGui::PopFont();
+            ImGui::Separator();
+        };
+
         if (m_SelectedEntity >= 0 &&
             m_SelectedEntity < (int) m_Map.Entities().size()) {
             MapEntity &e = m_Map.Entities()[m_SelectedEntity];
 
-            if (m_FontBold) ImGui::PushFont(m_FontBold);
-            ImGui::Text(ICON_FA7_CUBE " Entity");
-            if (m_FontBold) ImGui::PopFont();
-            ImGui::Separator();
+            SectionHeader(ICON_FA7_CUBE " Entity");
 
             char nameBuf[256];
             SetBuf(nameBuf, sizeof(nameBuf), e.name);
@@ -923,10 +882,7 @@ namespace ManroEdit {
                    m_SelectedLight < (int) m_Map.Lights().size()) {
             MapLight &l = m_Map.Lights()[m_SelectedLight];
 
-            if (m_FontBold) ImGui::PushFont(m_FontBold);
-            ImGui::Text(ICON_FA7_LIGHTBULB " Light");
-            if (m_FontBold) ImGui::PopFont();
-            ImGui::Separator();
+            SectionHeader(ICON_FA7_LIGHTBULB " Light");
 
             char nameBuf[256];
             SetBuf(nameBuf, sizeof(nameBuf), l.name);
@@ -950,10 +906,7 @@ namespace ManroEdit {
                    m_SelectedCollider < (int) m_Map.Colliders().size()) {
             auto &c = m_Map.Colliders()[m_SelectedCollider];
 
-            if (m_FontBold) ImGui::PushFont(m_FontBold);
-            ImGui::Text(ICON_FA7_BORDER_ALL " Collider");
-            if (m_FontBold) ImGui::PopFont();
-            ImGui::Separator();
+            SectionHeader(ICON_FA7_BORDER_ALL " Collider");
 
             char nameBuf[256];
             SetBuf(nameBuf, sizeof(nameBuf), c.name);
@@ -971,27 +924,22 @@ namespace ManroEdit {
             if (ImGui::DragFloat3("Position", glm::value_ptr(c.position), 1.f)) MarkDirty();
             if (ImGui::DragFloat3("Rotation", glm::value_ptr(c.rotation), 1.f)) MarkDirty();
             if (ImGui::DragFloat3("Half Extents", glm::value_ptr(c.halfExtents),
-                                  1.f, 0.01f, 100000.f)) MarkDirty();
+                                  1.f, 0.01f, 100000.f))
+                MarkDirty();
         } else {
-            if (m_FontBold) ImGui::PushFont(m_FontBold);
-            ImGui::Text(ICON_FA7_GLOBE " World Settings");
-            if (m_FontBold) ImGui::PopFont();
-            ImGui::Separator();
+            SectionHeader(ICON_FA7_GLOBE " World Settings");
 
             if (ImGui::CollapsingHeader(ICON_FA7_MOUNTAIN_SUN " Environment",
                                         ImGuiTreeNodeFlags_DefaultOpen)) {
                 SetBuf(m_SkyboxPathBuf, sizeof(m_SkyboxPathBuf), m_Map.SkyboxPath());
+                auto apply = [&] { m_Map.SetSkyboxPath(m_SkyboxPathBuf); ApplySkybox(); MarkDirty(); };
                 if (ImGui::InputText("Skybox", m_SkyboxPathBuf, sizeof(m_SkyboxPathBuf),
                                      ImGuiInputTextFlags_EnterReturnsTrue)) {
-                    m_Map.SetSkyboxPath(m_SkyboxPathBuf);
-                    ApplySkybox();
-                    MarkDirty();
+                    apply();
                 }
                 ImGui::SameLine();
                 if (ImGui::SmallButton("Apply")) {
-                    m_Map.SetSkyboxPath(m_SkyboxPathBuf);
-                    ApplySkybox();
-                    MarkDirty();
+                    apply();
                 }
             }
 
@@ -1082,11 +1030,6 @@ namespace ManroEdit {
             m_SelectedEntity < (int) m_Map.Entities().size()) {
             MapEntity &e = m_Map.Entities()[m_SelectedEntity];
 
-            auto cacheIt = m_ModelCache.find(e.modelPath);
-            const bool failed = cacheIt != m_ModelCache.end() &&
-                                !cacheIt->second.model && !cacheIt->second.async;
-            if (failed) return;
-
             Manro::Mat4 model = EntityMatrix(e);
             if (ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(proj),
                                      op, mode, glm::value_ptr(model),
@@ -1120,21 +1063,20 @@ namespace ManroEdit {
         auto it = m_ModelCache.find(path);
         if (it != m_ModelCache.end()) return it->second.model.get();
 
-        auto job = Manro::CreateScope<AsyncModelLoad>();
+        auto job = Manro::CreateRef<AsyncModelLoad>();
         job->virtualPath = path;
-        AsyncModelLoad *raw = job.get();
 
-        m_ModelCache.emplace(path, CacheEntry{nullptr, std::move(job)});
+        m_ModelCache.emplace(path, CacheEntry{nullptr, job});
 
-        m_Jobs->Execute([raw, this]() {
+        m_Jobs->Execute([job, this]() {
             try {
-                raw->prepared = Manro::CModel::Prepare({raw->virtualPath}, *m_Jobs, *m_Vfs);
-                raw->success.store(!raw->prepared.subMeshes.empty());
+                job->prepared = Manro::CModel::Prepare({job->virtualPath}, *m_Jobs, *m_Vfs);
+                job->success.store(!job->prepared.subMeshes.empty());
             } catch (const std::exception &ex) {
-                LOG_ERROR("[Editor] Prepare threw for {}: {}", raw->virtualPath, ex.what());
-                raw->success.store(false);
+                LOG_ERROR("[Editor] Prepare threw for {}: {}", job->virtualPath, ex.what());
+                job->success.store(false);
             }
-            raw->done.store(true);
+            job->done.store(true);
         });
 
         return nullptr;
@@ -1158,7 +1100,6 @@ namespace ManroEdit {
                 LOG_ERROR("[Editor] Failed to load {}", ce.async->virtualPath);
             }
             ce.async.reset();
-            return;
         }
     }
 
