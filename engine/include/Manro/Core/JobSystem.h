@@ -29,7 +29,7 @@ namespace Manro {
 
     class CJobSystem {
     public:
-        explicit CJobSystem(u32 numThreads = 0);
+        explicit CJobSystem(u32 numThreads = 0, bool pinToPerformanceCores = true);
 
         ~CJobSystem();
 
@@ -57,7 +57,7 @@ namespace Manro {
             std::shared_ptr<std::atomic<u32> > pendingJobs;
         };
 
-        void WorkerThread();
+        void WorkerThread(u32 unPinnedCpu);
 
         std::vector<std::thread> m_Threads;
         std::queue<JobEntry_t> m_Jobs;

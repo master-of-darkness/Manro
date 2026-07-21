@@ -4,6 +4,7 @@ set(ENGINE_CORE_SOURCES
         Core/EngineLoop.cpp
         Core/Logger.cpp
         Core/JobSystem.cpp
+        Core/CpuAffinity.cpp
         Core/VirtualFS.cpp
         Core/EmbeddedShaders.cpp
         Core/World.cpp

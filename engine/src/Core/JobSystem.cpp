@@ -1,19 +1,35 @@
 #include <Manro/Core/JobSystem.h>
+#include <Manro/Core/CpuAffinity.h>
+#include <Manro/Core/Logger.h>
 #include <algorithm>
 
 #include "Profiling.h"
 
 namespace Manro {
-    CJobSystem::CJobSystem(u32 numThreads) {
+    CJobSystem::CJobSystem(u32 numThreads, bool pinToPerformanceCores) {
+        CpuTopology_t topo;
+        if (pinToPerformanceCores) {
+            topo = QueryCpuTopology();
+        }
+
         if (numThreads == 0) {
-            numThreads = std::max(1u, std::thread::hardware_concurrency() - 1u);
+            if (pinToPerformanceCores) {
+                // Reserve one performance core for the main thread
+                numThreads = std::max(1u, static_cast<u32>(topo.m_PerformanceCores.size()) - 1u);
+            } else {
+                numThreads = std::max(1u, std::thread::hardware_concurrency() - 1u);
+            }
         }
 
         m_GlobalHandle = CreateHandle();
         m_Running.store(true, std::memory_order_release);
 
         for (u32 i = 0; i < numThreads; ++i) {
-            m_Threads.emplace_back(&CJobSystem::WorkerThread, this);
+            u32 pinnedCpu = ~0u;
+            if (pinToPerformanceCores && !topo.m_PerformanceCores.empty()) {
+                pinnedCpu = topo.m_PerformanceCores[i % topo.m_PerformanceCores.size()];
+            }
+            m_Threads.emplace_back(&CJobSystem::WorkerThread, this, pinnedCpu);
         }
     }
 
@@ -80,8 +96,13 @@ namespace Manro {
         Wait(m_GlobalHandle);
     }
 
-    void CJobSystem::WorkerThread() {
+    void CJobSystem::WorkerThread(u32 unPinnedCpu) {
         MNR_PROFILE_THREAD("Worker");
+        if (unPinnedCpu != ~0u) {
+            if (!PinThreadToCpu(unPinnedCpu)) {
+                LOG_WARN("[CJobSystem] Failed to pin worker to CPU {}", unPinnedCpu);
+            }
+        }
         for (;;) {
             JobEntry_t job;
 
