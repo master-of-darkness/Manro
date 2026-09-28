@@ -45,7 +45,14 @@ namespace Manro {
                            const PipelineConfigParams_t &config);
 
         void BuildCompute(const std::vector<u8> &computeSpv,
-                          const PipelineConfigParams_t &config);
+                           const PipelineConfigParams_t &config);
+
+        // Task + Mesh + Fragment pipeline for GPU-driven voxel rendering
+        // (VK_EXT_mesh_shader). Task SPV may be empty for mesh-only draws.
+        void BuildMeshTask(const std::vector<u8> &taskSpv,
+                           const std::vector<u8> &meshSpv,
+                           const std::vector<u8> &fragmentSpv,
+                           const PipelineConfigParams_t &config);
 
         void BuildShadowDepth(const std::vector<u8> &vertexSpv,
                               const PipelineConfigParams_t &config);

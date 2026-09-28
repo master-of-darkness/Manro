@@ -191,6 +191,149 @@ namespace Manro {
         vkDestroyShaderModule(m_Context.GetDevice(), compModule, nullptr);
     }
 
+    void CPipeline::BuildMeshTask(const std::vector<u8> &taskSpv,
+                                  const std::vector<u8> &meshSpv,
+                                  const std::vector<u8> &fragmentSpv,
+                                  const PipelineConfigParams_t &config) {
+        if (meshSpv.empty())
+            throw std::runtime_error("Failed to create mesh-task pipeline: mesh shader is required!");
+
+        std::vector<VkPipelineShaderStageCreateInfo> stages;
+        stages.reserve(3);
+        std::vector<VkShaderModule> modules;
+        modules.reserve(3);
+
+        auto pushStage = [&](const std::vector<u8> &spv, VkShaderStageFlagBits stage,
+                             const std::string &entry) {
+            VkShaderModule mod = CreateShaderModule(spv);
+            modules.push_back(mod);
+            VkPipelineShaderStageCreateInfo si{};
+            si.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+            si.stage = stage;
+            si.module = mod;
+            si.pName = entry.c_str();
+            stages.push_back(si);
+        };
+
+        if (!taskSpv.empty())
+            pushStage(taskSpv, VK_SHADER_STAGE_TASK_BIT_EXT, config.computeEntryPoint);
+        pushStage(meshSpv, VK_SHADER_STAGE_MESH_BIT_EXT, config.vertexEntryPoint);
+        if (!fragmentSpv.empty() && !config.fragmentEntryPoint.empty())
+            pushStage(fragmentSpv, VK_SHADER_STAGE_FRAGMENT_BIT, config.fragmentEntryPoint);
+
+        std::vector<VkDynamicState> dynamicStates = {
+            VK_DYNAMIC_STATE_VIEWPORT,
+            VK_DYNAMIC_STATE_SCISSOR,
+        };
+        VkPipelineDynamicStateCreateInfo dynamicState{};
+        dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+        dynamicState.dynamicStateCount = static_cast<u32>(dynamicStates.size());
+        dynamicState.pDynamicStates = dynamicStates.data();
+
+        // Mesh pipelines have no vertex input state.
+        VkPipelineVertexInputStateCreateInfo vertexInput{};
+        vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+
+        VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+        inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+        inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+        VkPipelineViewportStateCreateInfo viewportState{};
+        viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+        viewportState.viewportCount = 1;
+        viewportState.scissorCount = 1;
+
+        VkPipelineRasterizationStateCreateInfo rasterizer{};
+        rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+        rasterizer.depthClampEnable = VK_FALSE;
+        rasterizer.rasterizerDiscardEnable = VK_FALSE;
+        rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+        rasterizer.lineWidth = 1.0f;
+        rasterizer.cullMode = VK_CULL_MODE_NONE;
+        rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+        rasterizer.depthBiasEnable = VK_FALSE;
+
+        VkPipelineMultisampleStateCreateInfo multisampling{};
+        multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+        multisampling.sampleShadingEnable = VK_FALSE;
+        multisampling.rasterizationSamples = config.msaaSamples;
+
+        VkPipelineColorBlendAttachmentState blendAttachment{};
+        blendAttachment.colorWriteMask = config.colorWriteMask;
+        blendAttachment.blendEnable = VK_FALSE;
+
+        VkPipelineColorBlendStateCreateInfo colorBlend{};
+        colorBlend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+        colorBlend.logicOpEnable = VK_FALSE;
+        colorBlend.attachmentCount = config.colorAttachmentFormat != VK_FORMAT_UNDEFINED ? 1 : 0;
+        colorBlend.pAttachments = config.colorAttachmentFormat != VK_FORMAT_UNDEFINED ? &blendAttachment : nullptr;
+
+        VkPipelineDepthStencilStateCreateInfo depthStencil{};
+        depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+        depthStencil.depthTestEnable = config.depthTestEnable;
+        depthStencil.depthWriteEnable = config.depthWriteEnable;
+        depthStencil.depthCompareOp = config.depthCompareOp;
+        depthStencil.depthBoundsTestEnable = VK_FALSE;
+        depthStencil.stencilTestEnable = VK_FALSE;
+
+        VkPushConstantRange pushRange{};
+        pushRange.stageFlags = config.pushConstantStages
+                                   ? config.pushConstantStages
+                                   : (VK_SHADER_STAGE_TASK_BIT_EXT |
+                                      VK_SHADER_STAGE_MESH_BIT_EXT |
+                                      VK_SHADER_STAGE_FRAGMENT_BIT);
+        pushRange.offset = 0;
+        pushRange.size = config.pushConstantSize;
+
+        VkPipelineLayoutCreateInfo layoutInfo{};
+        layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        if (!config.descriptorSetLayouts.empty()) {
+            layoutInfo.setLayoutCount = static_cast<u32>(config.descriptorSetLayouts.size());
+            layoutInfo.pSetLayouts = config.descriptorSetLayouts.data();
+        }
+        if (config.pushConstantSize > 0) {
+            layoutInfo.pushConstantRangeCount = 1;
+            layoutInfo.pPushConstantRanges = &pushRange;
+        }
+        if (vkCreatePipelineLayout(m_Context.GetDevice(), &layoutInfo, nullptr, &m_PipelineLayout) != VK_SUCCESS)
+            throw std::runtime_error("Failed to create mesh-task pipeline layout!");
+
+        VkPipelineRenderingCreateInfo renderingInfo{};
+        renderingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+        if (config.colorAttachmentFormat != VK_FORMAT_UNDEFINED) {
+            renderingInfo.colorAttachmentCount = 1;
+            renderingInfo.pColorAttachmentFormats = &config.colorAttachmentFormat;
+        } else {
+            renderingInfo.colorAttachmentCount = 0;
+            renderingInfo.pColorAttachmentFormats = nullptr;
+        }
+        renderingInfo.depthAttachmentFormat = config.depthAttachmentFormat;
+
+        VkGraphicsPipelineCreateInfo pipelineInfo{};
+        pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+        pipelineInfo.pNext = &renderingInfo;
+        pipelineInfo.stageCount = static_cast<u32>(stages.size());
+        pipelineInfo.pStages = stages.data();
+        pipelineInfo.pVertexInputState = &vertexInput;
+        pipelineInfo.pInputAssemblyState = &inputAssembly;
+        pipelineInfo.pViewportState = &viewportState;
+        pipelineInfo.pRasterizationState = &rasterizer;
+        pipelineInfo.pMultisampleState = &multisampling;
+        pipelineInfo.pColorBlendState = &colorBlend;
+        pipelineInfo.pDepthStencilState = &depthStencil;
+        pipelineInfo.pDynamicState = &dynamicState;
+        pipelineInfo.layout = m_PipelineLayout;
+        pipelineInfo.renderPass = VK_NULL_HANDLE;
+
+        if (vkCreateGraphicsPipelines(m_Context.GetDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_Pipeline) !=
+            VK_SUCCESS)
+            throw std::runtime_error("Failed to create mesh-task graphics pipeline!");
+
+        for (VkShaderModule mod : modules)
+            vkDestroyShaderModule(m_Context.GetDevice(), mod, nullptr);
+    }
+
     void CPipeline::BuildShadowDepth(const std::vector<u8> &vertexSpv,
                                      const PipelineConfigParams_t &config) {
         VkShaderModule vertModule = CreateShaderModule(vertexSpv);

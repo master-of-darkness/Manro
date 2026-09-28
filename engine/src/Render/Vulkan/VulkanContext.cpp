@@ -117,6 +117,10 @@ namespace Manro {
         baseFeatures.drawIndirectFirstInstance = VK_TRUE;
         baseFeatures.samplerAnisotropy = VK_TRUE;
         baseFeatures.shaderInt16 = VK_TRUE;
+        baseFeatures.shaderInt64 = VK_TRUE;
+        baseFeatures.sparseBinding = VK_TRUE;
+        baseFeatures.sparseResidencyBuffer = VK_TRUE;
+        baseFeatures.sparseResidencyImage2D = VK_TRUE;
 
         VkPhysicalDeviceRayQueryFeaturesKHR rayQueryFeatures{};
         rayQueryFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR;
@@ -126,12 +130,21 @@ namespace Manro {
         asFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
         asFeatures.accelerationStructure = VK_TRUE;
 
+        VkPhysicalDeviceMeshShaderFeaturesEXT meshFeatures{};
+        meshFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
+        meshFeatures.taskShader = VK_TRUE;
+        meshFeatures.meshShader = VK_TRUE;
+        meshFeatures.multiviewMeshShader = VK_FALSE;
+        meshFeatures.primitiveFragmentShadingRateMeshShader = VK_FALSE;
+        meshFeatures.meshShaderQueries = VK_TRUE;
+
         auto phys_ret = selector
                 .set_surface(m_Surface)
                 .set_required_features(baseFeatures)
                 .set_required_features_11(features11)
                 .set_required_features_12(features12)
                 .set_required_features_13(features13)
+                .add_required_extension(VK_EXT_MESH_SHADER_EXTENSION_NAME)
                 .add_required_extension("VK_KHR_buffer_device_address")
                 .add_required_extension("VK_KHR_dynamic_rendering")
                 .add_required_extension("VK_KHR_synchronization2")
@@ -140,6 +153,7 @@ namespace Manro {
                 .add_required_extension("VK_KHR_deferred_host_operations")
                 .add_required_extension_features(rayQueryFeatures)
                 .add_required_extension_features(asFeatures)
+                .add_required_extension_features(meshFeatures)
                 .select();
 
         if (!phys_ret) {

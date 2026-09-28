@@ -157,6 +157,7 @@ add_subdirectory(engine/src)
 option(MANRO_BUILD_SAMPLES "Build sample applications" ON)
 if(MANRO_BUILD_SAMPLES)
     add_subdirectory("${MANRO_SAMPLES_ROOT}/Sponza")
+    add_subdirectory("${MANRO_SAMPLES_ROOT}/Voxel")
 endif()
 
 option(MANRO_BUILD_EDITOR "Build the editor" ON)

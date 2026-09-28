@@ -104,4 +104,28 @@ namespace Manro {
     void *CRenderer::GetSceneTextureId() const { return RendererImplGetSceneTextureId(*m_Impl); }
 
     void CRenderer::WaitIdle() const { RendererImplWaitIdle(*m_Impl); }
+
+    void CRenderer::VoxelInit(u32 /*width*/, u32 /*height*/) const { RendererImplVoxelInit(*m_Impl); }
+
+    void CRenderer::VoxelShutdown() const { RendererImplVoxelShutdown(*m_Impl); }
+
+    void CRenderer::VoxelAllocateBrick(u32 bx, u32 by, u32 bz) const {
+        RendererImplVoxelAllocateBrick(*m_Impl, bx, by, bz);
+    }
+
+    void CRenderer::VoxelUploadBrick(u32 brickIdx, const u16 *mats, const u32 *occupancy) const {
+        RendererImplVoxelUploadBrick(*m_Impl, brickIdx, mats, occupancy);
+    }
+
+    void CRenderer::VoxelQueueEdit(const Vec3 &pos, float radius, u32 material, u32 op) const {
+        RendererImplVoxelQueueEdit(*m_Impl, pos, radius, material, op);
+    }
+
+    u32 CRenderer::VoxelGetBrickCount() const { return RendererImplVoxelGetBrickCount(*m_Impl); }
+
+    u32 CRenderer::VoxelGetTaskGroups() const { return RendererImplVoxelGetTaskGroups(*m_Impl); }
+
+    void CRenderer::VoxelGetDebugCounters(u32 out[6]) const {
+        RendererImplVoxelGetDebugCounters(*m_Impl, out);
+    }
 } // namespace Manro

@@ -92,6 +92,18 @@ namespace Manro {
 
         [[nodiscard]] float GetAspectRatio() const;
 
+        // ---- GPU-driven voxel path (separate from the glTF/PBR path) ----
+        // Task/mesh + BDA + sparse bricks. No InstanceBatcher involvement.
+        void VoxelInit(u32 width, u32 height) const;
+        void VoxelShutdown() const;
+        void VoxelAllocateBrick(u32 bx, u32 by, u32 bz) const;
+        void VoxelUploadBrick(u32 brickIdx, const u16 *mats, const u32 *occupancy) const;
+        void VoxelQueueEdit(const Vec3 &pos, float radius, u32 material, u32 op) const;
+        [[nodiscard]] u32 VoxelGetBrickCount() const;
+        [[nodiscard]] u32 VoxelGetTaskGroups() const;
+        // DEBUG counters: taskRuns, visible, faces, culled, meshRuns, meshFaces.
+        void VoxelGetDebugCounters(u32 out[6]) const;
+
         void SetSettings(const RenderSettings_t &settings) const;
 
         const RenderSettings_t &GetSettings() const;

@@ -18,12 +18,15 @@ namespace Manro {
         PipelineVariant_DepthOnly = 1 << 4, // no colour attachment (shadow pass)
         PipelineVariant_DepthPrepass = 1 << 5, // colour writes disabled, depth write on
         PipelineVariant_Compute = 1 << 6, // marks this as a compute PSO key
+        PipelineVariant_MeshTask = 1 << 7, // marks this as a task+mesh PSO key
     };
 
     struct PipelineKey_t {
         u64 vertHash = 0; // FNV-1a of the SPIR-V bytecode
         u64 fragHash = 0; // 0 for compute pipelines
         u64 compHash = 0; // 0 for graphics pipelines
+        u64 taskHash = 0; // task/amplification SPIR-V (mesh pipelines)
+        u64 meshHash = 0; // mesh SPIR-V (mesh pipelines)
         u32 variants = PipelineVariant_None;
         VkFormat colorFmt = VK_FORMAT_UNDEFINED;
         VkFormat depthFmt = VK_FORMAT_UNDEFINED;
@@ -34,8 +37,10 @@ namespace Manro {
 
         bool operator==(const PipelineKey_t &o) const {
             return vertHash == o.vertHash
-                   && fragHash == o.fragHash
-                   && compHash == o.compHash
+                    && fragHash == o.fragHash
+                    && compHash == o.compHash
+                    && taskHash == o.taskHash
+                    && meshHash == o.meshHash
                    && variants == o.variants
                    && colorFmt == o.colorFmt
                    && depthFmt == o.depthFmt

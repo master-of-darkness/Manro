@@ -58,6 +58,9 @@ namespace Manro {
 
         InitContext_t ictx{*win, jobs, renderer, vfs, world};
         app.OnStartup(ictx);
+        // Settings applied in OnStartup (e.g. MSAA mode) flag a pending
+        // resize; apply it before the first frame so render targets match.
+        static_cast<void>(renderer.BeginFramePace());
 
         using Clock = std::chrono::steady_clock;
         auto lastTime = Clock::now();

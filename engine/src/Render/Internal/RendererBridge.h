@@ -79,4 +79,22 @@ namespace Manro {
     void *RendererImplGetSceneTextureId(CRendererImpl & impl);
 
     void RendererImplWaitIdle(const CRendererImpl &impl);
+
+    void RendererImplVoxelInit(CRendererImpl &impl);
+
+    void RendererImplVoxelShutdown(CRendererImpl &impl);
+
+    void RendererImplVoxelAllocateBrick(CRendererImpl &impl, u32 bx, u32 by, u32 bz);
+
+    void RendererImplVoxelUploadBrick(const CRendererImpl &impl, u32 brickIdx, const u16 *mats,
+                                      const u32 *occupancy);
+
+    void RendererImplVoxelQueueEdit(CRendererImpl &impl, const Vec3 &pos, float radius, u32 material,
+                                    u32 op);
+
+    u32 RendererImplVoxelGetBrickCount(const CRendererImpl &impl);
+
+    u32 RendererImplVoxelGetTaskGroups(const CRendererImpl &impl);
+
+    void RendererImplVoxelGetDebugCounters(const CRendererImpl &impl, u32 out[6]);
 }

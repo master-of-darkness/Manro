@@ -17,6 +17,12 @@ namespace Manro {
 
         void LoadData(const void *data, size_t size, size_t offset = 0) const;
 
+        [[nodiscard]] VkDeviceAddress GetDeviceAddress() const;
+
+        // DEBUG/diagnostic access (host-visible buffers only).
+        [[nodiscard]] VmaAllocation GetAllocation() const { return m_Allocation; }
+        [[nodiscard]] const void *GetMapped() const { return m_AllocationInfo.pMappedData; }
+
         VkBuffer GetHandle() const { return m_Buffer; }
 
         VkDeviceSize GetSize() const { return m_unSize; }

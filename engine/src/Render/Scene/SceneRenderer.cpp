@@ -108,7 +108,7 @@ namespace Manro {
             ri.pDepthAttachment = &depthAtt;
             vkCmdBeginRendering(cmd, &ri);
 
-            if (state.pipeline && state.indexBuffer && state.indirectBuffer && state.countBuffer) {
+            {
                 VkViewport vp{
                     0.f, 0.f, static_cast<float>(state.extent.width), static_cast<float>(state.extent.height),
                     0.f, 1.f
@@ -116,7 +116,8 @@ namespace Manro {
                 VkRect2D sc{{0, 0}, state.extent};
                 vkCmdSetViewport(cmd, 0, 1, &vp);
                 vkCmdSetScissor(cmd, 0, 1, &sc);
-
+            }
+            if (state.pipeline && state.indexBuffer && state.indirectBuffer && state.countBuffer) {
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, state.pipeline);
                 if (state.pipelineLayout && state.descriptorSetCount > 0) {
                     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -129,6 +130,10 @@ namespace Manro {
                                               state.countBuffer, 0,
                                               state.instanceCount, state.drawStride);
             }
+            // Voxel task/mesh hook shares this color+depth pass (separate PSO,
+            // same attachments). No-op when the voxel path is disabled.
+            if (m_VoxelFn)
+                m_VoxelFn(cmd, m_VoxelUser);
             vkCmdEndRendering(cmd);
         }
         m_PbrPassState = nullptr;
@@ -230,5 +235,9 @@ namespace Manro {
             }
         }
         m_CompositePassState = nullptr;
+
+        // Clear one-shot voxel hook so a stale pointer can't fire next frame.
+        m_VoxelFn = nullptr;
+        m_VoxelUser = nullptr;
     }
 } // namespace Manro

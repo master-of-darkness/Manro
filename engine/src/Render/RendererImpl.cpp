@@ -16,6 +16,9 @@
 #include "Passes/ShadowSystem.h"
 #include "Passes/SkyboxRenderer.h"
 #include "Passes/DebugDrawSystem.h"
+#include "Voxel/VoxelRenderer.h"
+#include "Voxel/VoxelTypes.h"
+#include "Voxel/VoxelWorld.h"
 #include "Overlay/Overlay.h"
 #include "Vulkan/VulkanContext.h"
 #include <imgui_impl_vulkan.h>
@@ -133,6 +136,58 @@ namespace Manro {
             return m_Overlay && m_Overlay->IsDebugUIEnabled();
         }
 
+        // ---- Separate voxel path ----
+        void VoxelInit() {
+            if (m_bVoxelEnabled)
+                return;
+            m_Voxel = CreateScope<CVoxelRenderer>(m_Context, m_Vfs);
+            m_Voxel->Init(m_PipelineCache, m_RenderExtent.width, m_RenderExtent.height);
+            m_bVoxelEnabled = true;
+        }
+
+        void VoxelShutdown() {
+            m_Voxel.reset();
+            m_bVoxelEnabled = false;
+        }
+
+        void VoxelAllocateBrick(u32 bx, u32 by, u32 bz) {
+            if (m_bVoxelEnabled && m_Voxel)
+                m_Voxel->GetWorld().AllocateBrick(bx, by, bz);
+        }
+
+        void VoxelUploadBrick(u32 brickIdx, const u16 *mats, const u32 *occupancy) const {
+            if (m_bVoxelEnabled && m_Voxel)
+                m_Voxel->GetWorld().UploadBrickData(brickIdx, mats, occupancy);
+        }
+
+        void VoxelQueueEdit(const Vec3 &pos, float radius, u32 material, u32 op) {
+            if (!m_bVoxelEnabled || !m_Voxel)
+                return;
+            VoxelEditCmd_t cmd{};
+            cmd.pos = pos;
+            cmd.radius = radius;
+            cmd.material = material;
+            cmd.op = op;
+            m_Voxel->GetWorld().QueueEdit(cmd);
+        }
+
+        u32 VoxelGetBrickCount() const {
+            return (m_bVoxelEnabled && m_Voxel) ? m_Voxel->GetWorld().GetBrickCount() : 0;
+        }
+
+        u32 VoxelGetTaskGroups() const {
+            return (m_bVoxelEnabled && m_Voxel) ? m_Voxel->GetStats().taskGroups : 0;
+        }
+
+        void VoxelGetDebugCounters(u32 out[6]) const {
+            if (!m_bVoxelEnabled || !m_Voxel) {
+                for (int i = 0; i < 6; ++i)
+                    out[i] = 0;
+                return;
+            }
+            m_Voxel->ReadDebugCounters(out);
+        }
+
         void DrawLine(const Vec3 &a, const Vec3 &b, u32 color, bool depthTest) const;
 
         void DrawAABB(const Vec3 &min, const Vec3 &max, u32 color, bool depthTest) const;
@@ -201,6 +256,11 @@ namespace Manro {
         CGpuCullDispatcher m_CullDispatcher;
         CPipelineManager m_PipelineMgr;
         CVirtualFS &m_Vfs;
+
+        // Separate GPU-driven voxel path (task/mesh + BDA + sparse).
+        Scope<CVoxelRenderer> m_Voxel;
+        bool m_bVoxelEnabled{false};
+        Mat4 m_PrevVoxelViewProj{1.f};
 
         VkDescriptorSetLayout m_AutoExposureSetLayout{VK_NULL_HANDLE};
         VkDescriptorPool m_AutoExposureDescriptorPool{VK_NULL_HANDLE};
@@ -276,7 +336,6 @@ namespace Manro {
         m_PipelineMgr.CreateDescriptorLayouts();
         m_CullDispatcher.Init();
         m_PipelineMgr.CreateDescriptorPool(GetFrameCount());
-
         m_Shadow.Init(m_PipelineMgr.GetDescriptorPool(), m_Settings.shadows, m_PipelineMgr.GetPbrSetLayout());
 
         m_Skybox.Init(m_PipelineMgr.GetDescriptorPool(), GetFrameCount(),
@@ -327,6 +386,9 @@ namespace Manro {
 
     CRendererImpl::~CRendererImpl() {
         vkDeviceWaitIdle(m_Context.GetDevice());
+
+        m_Voxel.reset();
+        m_bVoxelEnabled = false;
 
 #ifdef MANRO_PROFILING
         if (m_TracyGpuCtx)
@@ -1012,6 +1074,12 @@ namespace Manro {
         }
 
         Internal::PbrPassState_t pbrState{};
+        const bool voxelCompatible = m_bVoxelEnabled && m_Voxel &&
+                                     m_Voxel->GetWorld().GetBrickCount() > 0 &&
+                                     ToVulkanSampleCount(m_Settings.msaaSamples) ==
+                                         VK_SAMPLE_COUNT_1_BIT;
+        // Voxel task/mesh PSO is MSAA-free (1X) with its own pass; the PBR
+        // state block stays PBR-only so hasMeshes==false skips it entirely.
         if (hasMeshes) {
             pbrState.extent = m_RenderExtent;
             pbrState.msaaSamples = ToVulkanSampleCount(m_Settings.msaaSamples);
@@ -1032,6 +1100,8 @@ namespace Manro {
             pbrState.drawStride = sizeof(DrawCommand_t);
             m_SceneRenderer->SetPbrPassState(&pbrState);
         }
+
+        // Voxel record moved to the RenderQueue tail (own pass).
 
         Internal::SkyboxPassState_t skyState{};
         if (hasSkybox) {
@@ -1054,7 +1124,27 @@ namespace Manro {
             m_SceneRenderer->Flush(cb);
         }
 
-        if (!hasMeshes && !hasSkybox && m_RenderTargets.GetOffscreenView() != VK_NULL_HANDLE) {
+        // Separate voxel pass AFTER all Sponza passes (own rendering scope,
+        // shares offscreen+depth images). Runs compute outside any pass —
+        // legal dispatch/barrier territory.
+        // Clear ownership: the FIRST pass touching the targets each frame
+        // clears; later passes LOAD. ZPre clears depth whenever it runs;
+        // PBR clears color when it runs; otherwise the voxel pass clears.
+        if (voxelCompatible) {
+            MNR_GPU_ZONE(m_TracyGpuCtx, cb, "Voxel Pass");
+            Mat4 proj = m_ProjectionMatrix;
+            proj[1][1] *= -1.0f;
+            Mat4 viewProj = proj * m_ViewMatrix;
+            const bool clearColor = !hasMeshes && !hasSkybox;
+            m_Voxel->Record(cb, m_RenderExtent, m_RenderTargets.GetOffscreenView(),
+                            m_RenderTargets.GetDepthView(), clearColor, viewProj,
+                            m_PrevVoxelViewProj, m_CameraPosition, m_Settings.nearZ,
+                            m_Settings.farZ);
+            m_PrevVoxelViewProj = viewProj;
+        }
+
+        if (!hasMeshes && !hasSkybox && !voxelCompatible &&
+            m_RenderTargets.GetOffscreenView() != VK_NULL_HANDLE) {
             MNR_GPU_ZONE(m_TracyGpuCtx, cb, "Clear Empty Scene");
 
             VkRenderingAttachmentInfo colorAtt{};
@@ -1378,6 +1468,32 @@ namespace Manro {
     Scope<CRendererImpl> CreateRendererImpl(CWindow &window, CVirtualFS &vfs, u32 width, u32 height,
                                             const RenderSettings_t &settings, const RendererConfig_t &config) {
         return CreateScope<CRendererImpl>(window, vfs, width, height, settings, config);
+    }
+
+    void RendererImplVoxelInit(CRendererImpl &impl) { impl.VoxelInit(); }
+
+    void RendererImplVoxelShutdown(CRendererImpl &impl) { impl.VoxelShutdown(); }
+
+    void RendererImplVoxelAllocateBrick(CRendererImpl &impl, u32 bx, u32 by, u32 bz) {
+        impl.VoxelAllocateBrick(bx, by, bz);
+    }
+
+    void RendererImplVoxelUploadBrick(const CRendererImpl &impl, u32 brickIdx, const u16 *mats,
+                                      const u32 *occupancy) {
+        impl.VoxelUploadBrick(brickIdx, mats, occupancy);
+    }
+
+    void RendererImplVoxelQueueEdit(CRendererImpl &impl, const Vec3 &pos, float radius, u32 material,
+                                    u32 op) {
+        impl.VoxelQueueEdit(pos, radius, material, op);
+    }
+
+    u32 RendererImplVoxelGetBrickCount(const CRendererImpl &impl) { return impl.VoxelGetBrickCount(); }
+
+    u32 RendererImplVoxelGetTaskGroups(const CRendererImpl &impl) { return impl.VoxelGetTaskGroups(); }
+
+    void RendererImplVoxelGetDebugCounters(const CRendererImpl &impl, u32 out[6]) {
+        impl.VoxelGetDebugCounters(out);
     }
 
     CRenderer::CRenderer(CWindow &window, CVirtualFS &vfs, u32 width, u32 height, const RenderSettings_t &settings)

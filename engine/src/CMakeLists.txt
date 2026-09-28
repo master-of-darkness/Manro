@@ -29,6 +29,10 @@ set(ENGINE_RENDER_SOURCES
         Render/Scene/InstanceBatcher.cpp
         Render/Scene/SceneRenderer.cpp
 
+        Render/Voxel/VoxelSparseBinder.cpp
+        Render/Voxel/VoxelWorld.cpp
+        Render/Voxel/VoxelRenderer.cpp
+
         Render/Targets/RenderTargetManager.cpp
         Render/Targets/SwapchainManager.cpp
 

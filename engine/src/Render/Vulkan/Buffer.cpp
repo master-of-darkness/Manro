@@ -60,4 +60,11 @@ namespace Manro {
             Unmap();
         }
     }
+
+    VkDeviceAddress CBuffer::GetDeviceAddress() const {
+        VkBufferDeviceAddressInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+        info.buffer = m_Buffer;
+        return vkGetBufferDeviceAddress(m_Context.GetDevice(), &info);
+    }
 } // namespace Manro
