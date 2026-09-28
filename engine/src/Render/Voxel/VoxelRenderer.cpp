@@ -70,8 +70,15 @@ namespace Manro {
                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                 VMA_MEMORY_USAGE_CPU_TO_GPU);
         }
-        // DEBUG counters: uint[8], zeroed per frame on CPU, atomically
-        // incremented by task/mesh. Host-visible for printf diagnosis.
+        // Face cache: uint[2049] per resident brick (count + packed faces).
+        // Written by task on first sight / edits, read by task (count) +
+        // mesh (faces) every frame. 8192 bricks x 2049 x 4B = 64MB GPU-only.
+        m_FaceCache = CreateScope<CBuffer>(
+            m_Context, sizeof(u32) * 2049 * desc.maxResidentBricks,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+            VMA_MEMORY_USAGE_GPU_ONLY);
+        // DEBUG counters: uint[8], device-cleared when capture is enabled,
+        // atomically incremented by task/mesh. Host-visible for diagnosis.
         m_DebugReadback = CreateScope<CBuffer>(
             m_Context, sizeof(u32) * 8,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
@@ -115,6 +122,7 @@ namespace Manro {
         for (auto &slot : m_FrameParamsRing)
             slot.reset();
         m_DebugReadback.reset();
+        m_FaceCache.reset();
         if (m_World)
             m_World->Shutdown();
         m_bInitialized = false;
@@ -398,6 +406,8 @@ namespace Manro {
         frame.shadowsEnabled = 0;
         frame.hizAddr = 0;
         frame.debugEnabled = m_bDebugEnabled ? 1u : 0u;
+        frame.useBackface = m_bUseBackface ? 1u : 0u;
+        frame.useFrustum = m_bUseFrustum ? 1u : 0u;
         CBuffer &paramsSlot = *m_FrameParamsRing[flightSlot % kFlightSlots];
         paramsSlot.LoadData(&frame, sizeof(frame));
 
@@ -407,6 +417,7 @@ namespace Manro {
         root.pageTableAddr = m_World->GetPageTableAddr();
         root.visibilityAddr = m_VisibilityBuffer->GetDeviceAddress();
         root.frameAddr = paramsSlot.GetDeviceAddress();
+        root.faceCacheAddr = m_FaceCache->GetDeviceAddress();
         // DEBUG counters: device-side clear only when capture is enabled.
         // Skipping the Fill + extra barrier saves a full-buffer op/frame.
         if (m_bDebugEnabled)
@@ -414,7 +425,9 @@ namespace Manro {
         root.debugAddr = m_DebugReadback->GetDeviceAddress();
 
         // Frame params (host upload) -> task/mesh/fragment. Debug-clear
-        // barrier is appended only when capture is enabled.
+        // barrier is appended only when capture is enabled. The global
+        // memory barrier orders prior in-flight frames' shader writes
+        // (face-cache stores, edit writes) before this frame's task reads.
         {
             VkBufferMemoryBarrier2 b[2]{};
             u32 barrierCount = 1;
@@ -436,6 +449,21 @@ namespace Manro {
             dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
             dep.bufferMemoryBarrierCount = barrierCount;
             dep.pBufferMemoryBarriers = b;
+            // Cross-frame visibility: prior frames' task/mesh/compute writes
+            // (face cache, brick edits) -> this frame's task/mesh reads.
+            VkMemoryBarrier2 cross{};
+            cross.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+            cross.srcStageMask = VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT |
+                                 VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT |
+                                 VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT |
+                                 VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+            cross.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT;
+            cross.dstStageMask = VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT |
+                                 VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT |
+                                 VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+            cross.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+            dep.memoryBarrierCount = 1;
+            dep.pMemoryBarriers = &cross;
             vkCmdPipelineBarrier2(cb, &dep);
         }
 

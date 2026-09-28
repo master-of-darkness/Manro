@@ -132,4 +132,12 @@ namespace Manro {
     void CRenderer::VoxelSetDebugEnabled(bool enabled) const {
         RendererImplVoxelSetDebugEnabled(*m_Impl, enabled);
     }
+
+    void CRenderer::VoxelSetBackfaceEnabled(bool enabled) const {
+        RendererImplVoxelSetBackfaceEnabled(*m_Impl, enabled);
+    }
+
+    void CRenderer::VoxelSetFrustumEnabled(bool enabled) const {
+        RendererImplVoxelSetFrustumEnabled(*m_Impl, enabled);
+    }
 } // namespace Manro

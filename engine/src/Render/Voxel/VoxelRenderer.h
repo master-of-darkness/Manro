@@ -66,6 +66,9 @@ namespace Manro {
         // shader atomics (via frame.debugEnabled) and host barrier/WaitIdle.
         void SetDebugEnabled(bool e) { m_bDebugEnabled = e; }
         void SetGiEnabled(bool e) { m_bGiEnabled = e; }
+        // Culling-stage kill switches (bisection + perf comparison).
+        void SetBackfaceEnabled(bool e) { m_bUseBackface = e; }
+        void SetFrustumEnabled(bool e) { m_bUseFrustum = e; }
 
         // DEBUG: host-visible copy of GPU counters (valid after WaitIdle or
         // after the frame's fence signals; call post-present for prior frame).
@@ -108,12 +111,15 @@ namespace Manro {
         Scope<CBuffer> m_CascadeBuffer; // float4[cascadeRes^3 * cascadeCount]
         Scope<CBuffer> m_EditStaging; // VoxelEditCmd_t ring mirror
         Scope<CBuffer> m_DebugReadback; // DEBUG: host-visible task/mesh counters
+        Scope<CBuffer> m_FaceCache; // uint[2049] per resident brick (faceCount + faces)
 
         Mat4 m_PrevViewProj{1.f};
         VoxelFrameStats_t m_Stats{};
         bool m_bInitialized{false};
         bool m_bDebugEnabled{false};
         bool m_bGiEnabled{false};
+        bool m_bUseBackface{true};
+        bool m_bUseFrustum{true};
         mutable u32 m_CachedDebug[6]{};
     };
 } // namespace Manro

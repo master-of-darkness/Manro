@@ -105,6 +105,9 @@ namespace Manro {
         // Capture is opt-in; when disabled GetDebugCounters returns cached
         // values with no queue stall and shaders skip the atomics.
         void VoxelSetDebugEnabled(bool enabled) const;
+        // Culling-stage kill switches (default on).
+        void VoxelSetBackfaceEnabled(bool enabled) const;
+        void VoxelSetFrustumEnabled(bool enabled) const;
         void VoxelGetDebugCounters(u32 out[6]) const;
 
         void SetSettings(const RenderSettings_t &settings) const;

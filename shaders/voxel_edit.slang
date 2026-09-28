@@ -44,10 +44,13 @@ void EditMain(uint3 dtid : SV_DispatchThreadID) {
     int* pages = pageTable.getPtr();
     if (pages[brickIdx] < 0)
         return; // sparse page not resident; streaming pass binds it first
+    // brickIdx above is the VIRTUAL slot; voxel data / headers / face cache
+    // are all indexed by RESIDENT ordinal.
+    uint rBrick = uint(pages[brickIdx]);
 
     vk::BufferPointer<uint> bricks = vk::BufferPointer<uint>(g_Edit.brickBufferAddr);
     uint* base = bricks.getPtr();
-    uint* mats = base + brickIdx * 2176u;
+    uint* mats = base + rBrick * 2176u;
     uint* occupancy = mats + 2048u;
 
     // Sphere edit in brick-local voxel coords.
@@ -79,8 +82,10 @@ void EditMain(uint3 dtid : SV_DispatchThreadID) {
         }
     }
 
-    // Mark dirty so the BLAS refit + HiZ invalidate passes pick it up.
+    // Mark dirty so the BLAS refit + HiZ invalidate passes pick it up, and
+    // so the task shader rescans this brick's face cache. Header uint
+    // layout: origin(0-2), pageIndex(3), flags(4) — bit 1 = dirty.
     vk::BufferPointer<uint> headers = vk::BufferPointer<uint>(g_Edit.headerAddr);
     uint* h = headers.getPtr();
-    h[brickIdx * 8u + 1u] |= 2u; // flags word, bit 1 = dirty
+    InterlockedOr(h[rBrick * 8u + 4u], 2u);
 }

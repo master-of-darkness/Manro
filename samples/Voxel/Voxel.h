@@ -113,6 +113,24 @@ public:
         } else if (!m_InputManager.IsKeyDown(K::G)) {
             m_bGHeld = false;
         }
+        // Culling-stage kill switches for bisection: B = mesh backface,
+        // N = task frustum. Both default on.
+        if (m_InputManager.IsKeyDown(K::B) && !m_bBHeld) {
+            m_bBHeld = true;
+            m_UseBackface = !m_UseBackface;
+            m_Renderer->VoxelSetBackfaceEnabled(m_UseBackface);
+            printf("[Voxel] backface %s\n", m_UseBackface ? "ON" : "OFF");
+        } else if (!m_InputManager.IsKeyDown(K::B)) {
+            m_bBHeld = false;
+        }
+        if (m_InputManager.IsKeyDown(K::N) && !m_bNHeld) {
+            m_bNHeld = true;
+            m_UseFrustum = !m_UseFrustum;
+            m_Renderer->VoxelSetFrustumEnabled(m_UseFrustum);
+            printf("[Voxel] frustum %s\n", m_UseFrustum ? "ON" : "OFF");
+        } else if (!m_InputManager.IsKeyDown(K::N)) {
+            m_bNHeld = false;
+        }
         m_Fwd = fwd;
         return true;
     }
@@ -169,7 +187,9 @@ public:
                         m_EditCount);
             ImGui::TextDisabled("task=%u vis=%u faces=%u cull=%u mesh=%u mfaces=%u", dbg[0], dbg[1],
                                 dbg[2], dbg[3], dbg[4], dbg[5]);
-            ImGui::TextDisabled("WASD move | Shift fast | Space edit | G grid | Esc quit");
+            ImGui::TextDisabled("backface=%d frustum=%d", m_UseBackface ? 1 : 0,
+                                m_UseFrustum ? 1 : 0);
+            ImGui::TextDisabled("WASD move | Shift fast | Space edit | G grid | B/N cull | Esc quit");
         }
         ImGui::End();
 
@@ -228,6 +248,10 @@ private:
     Manro::u32 m_EditCount{0};
     bool m_bSpaceHeld{false};
     bool m_bGHeld{false};
+    bool m_bBHeld{false};
+    bool m_bNHeld{false};
+    bool m_UseBackface{true};
+    bool m_UseFrustum{true};
 
     // On-screen FPS state: EMA of frame dt + rolling window for lows.
     static constexpr Manro::u32 kFrameTimeWindow = 240;

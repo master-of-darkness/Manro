@@ -193,6 +193,16 @@ namespace Manro {
                 m_Voxel->SetDebugEnabled(enabled);
         }
 
+        void VoxelSetBackfaceEnabled(bool enabled) {
+            if (m_bVoxelEnabled && m_Voxel)
+                m_Voxel->SetBackfaceEnabled(enabled);
+        }
+
+        void VoxelSetFrustumEnabled(bool enabled) {
+            if (m_bVoxelEnabled && m_Voxel)
+                m_Voxel->SetFrustumEnabled(enabled);
+        }
+
         void DrawLine(const Vec3 &a, const Vec3 &b, u32 color, bool depthTest) const;
 
         void DrawAABB(const Vec3 &min, const Vec3 &max, u32 color, bool depthTest) const;
@@ -1503,6 +1513,14 @@ namespace Manro {
 
     void RendererImplVoxelSetDebugEnabled(CRendererImpl &impl, bool enabled) {
         impl.VoxelSetDebugEnabled(enabled);
+    }
+
+    void RendererImplVoxelSetBackfaceEnabled(CRendererImpl &impl, bool enabled) {
+        impl.VoxelSetBackfaceEnabled(enabled);
+    }
+
+    void RendererImplVoxelSetFrustumEnabled(CRendererImpl &impl, bool enabled) {
+        impl.VoxelSetFrustumEnabled(enabled);
     }
 
     CRenderer::CRenderer(CWindow &window, CVirtualFS &vfs, u32 width, u32 height, const RenderSettings_t &settings)

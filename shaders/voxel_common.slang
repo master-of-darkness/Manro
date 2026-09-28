@@ -20,6 +20,7 @@ struct VoxelFrameRoot {
     uint64_t visibilityAddr;  // uint2 visibility[brickCount] (brickID, packedQuadBase)
     uint64_t frameAddr;       // VoxelFrameParams (viewProj, camera, world, HiZ, palette, sun, GI)
     uint64_t debugAddr;       // DEBUG: uint counters[8] (taskRuns, visible, faces, meshRuns, ...)
+    uint64_t faceCacheAddr;   // uint[2049] per resident brick: [0]=faceCount, [1..2048]=packed faces
 };
 
 struct VoxelFrameParams {
@@ -38,16 +39,21 @@ struct VoxelFrameParams {
     uint shadowsEnabled;
     uint64_t hizAddr;         // Hi-Z pyramid sampler payload (image desc via descriptors)
     uint debugEnabled;        // 0 = skip debug atomics + host readback path
+    uint useBackface;         // mesh per-face backface cull (degenerate quads)
+    uint useFrustum;          // task brick frustum + distance cull
 };
 
-// Task->mesh payload: compacted exposed-face list for one brick.
-// faces[] packs (voxelIdx:12 | face:3 | mat:9). Worst-case surface of a
-// dense 16^3 brick is ~1536 faces; cap 2048 fits the 16KB payload limit.
+// Task->mesh payload: tiny — mesh loads faces from the face cache.
+// brickIdx addresses headers, brick data AND face cache (all resident-ordinal).
+// Kept small on purpose: the old 8KB faces[] copy ran per lane per brick.
 struct VoxelTaskPayload {
     uint brickIdx;
     uint faceCount;
-    uint faces[2048];
 };
+
+// Face-cache stride: [0] = faceCount, [1..2048] = packed faces
+// (voxelIdx:12 | face:3 | mat:9). Worst-case dense-brick surface ~1536.
+static const uint kVoxelFaceCacheStride = 2049u;
 
 static const uint kVoxelFacesPerMeshGroup = 16u;
 

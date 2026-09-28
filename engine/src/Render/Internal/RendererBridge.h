@@ -99,4 +99,8 @@ namespace Manro {
     void RendererImplVoxelGetDebugCounters(const CRendererImpl &impl, u32 out[6]);
 
     void RendererImplVoxelSetDebugEnabled(CRendererImpl &impl, bool enabled);
+
+    void RendererImplVoxelSetBackfaceEnabled(CRendererImpl &impl, bool enabled);
+
+    void RendererImplVoxelSetFrustumEnabled(CRendererImpl &impl, bool enabled);
 }
