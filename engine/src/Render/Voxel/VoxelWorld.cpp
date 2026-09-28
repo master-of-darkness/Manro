@@ -173,6 +173,11 @@ namespace Manro {
     void CVoxelWorld::FlushHeaders() {
         if (!m_Headers || !m_PageTable)
             return;
+        // Headers/page-table are host-written into buffers that in-flight
+        // frames are reading: only re-upload when something actually changed
+        // (allocation) or edits are pending, never blindly every frame.
+        if (!m_bHeadersDirty && m_PendingEdits.empty())
+            return;
         m_Headers->LoadData(m_HeaderMirror.data(), sizeof(VoxelBrickHeader_t) * m_HeaderMirror.size());
         m_PageTable->LoadData(m_PageMirror.data(), sizeof(i32) * m_PageMirror.size());
         if (!m_PendingEdits.empty())

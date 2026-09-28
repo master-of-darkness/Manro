@@ -60,10 +60,16 @@ namespace Manro {
             m_Context, sizeof(VoxelEditCmd_t) * 1024,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
             VMA_MEMORY_USAGE_CPU_TO_GPU);
-        m_FrameParamsBuffer = CreateScope<CBuffer>(
+        m_FrameParamsRing[0] = CreateScope<CBuffer>(
             m_Context, sizeof(VoxelFrameParams_t),
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
             VMA_MEMORY_USAGE_CPU_TO_GPU);
+        for (u32 i = 1; i < CVoxelRenderer::kFlightSlots; ++i) {
+            m_FrameParamsRing[i] = CreateScope<CBuffer>(
+                m_Context, sizeof(VoxelFrameParams_t),
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                VMA_MEMORY_USAGE_CPU_TO_GPU);
+        }
         // DEBUG counters: uint[8], zeroed per frame on CPU, atomically
         // incremented by task/mesh. Host-visible for printf diagnosis.
         m_DebugReadback = CreateScope<CBuffer>(
@@ -106,7 +112,8 @@ namespace Manro {
         m_SunBuffer.reset();
         m_CascadeBuffer.reset();
         m_EditStaging.reset();
-        m_FrameParamsBuffer.reset();
+        for (auto &slot : m_FrameParamsRing)
+            slot.reset();
         m_DebugReadback.reset();
         if (m_World)
             m_World->Shutdown();
@@ -309,6 +316,10 @@ namespace Manro {
     }
 
     void CVoxelRenderer::DispatchGi(VkCommandBuffer cb) {
+        // GI cascade volumes are stubs; skip both dispatches + barrier
+        // unless explicitly enabled (saves 2x 8x8x8 dispatches/frame).
+        if (!m_bGiEnabled)
+            return;
         if (!m_GiInjectPipeline->GetHandle() || !m_GiPropagatePipeline->GetHandle())
             return;
         VoxelGiPushConstants_t pc{};
@@ -346,8 +357,8 @@ namespace Manro {
     }
 
     void CVoxelRenderer::Record(VkCommandBuffer cb, VkExtent2D extent, VkImageView colorView,
-                                VkImageView depthView, bool clearColor, const Mat4 &viewProj,
-                                const Mat4 &prevViewProj,
+                                VkImageView depthView, bool clearColor, u32 flightSlot,
+                                const Mat4 &viewProj, const Mat4 &prevViewProj,
                                 const Vec3 &cameraPos, float nearZ, float farZ) {
         if (!m_bInitialized)
             return;
@@ -383,26 +394,30 @@ namespace Manro {
         frame.paletteAddr = m_PaletteBuffer->GetDeviceAddress();
         frame.sunAddr = m_SunBuffer->GetDeviceAddress();
         frame.giAddr = 0; // GI stub adds light on black; v1 visibility = lambert only
-        frame.giEnabled = 0;
+        frame.giEnabled = m_bGiEnabled ? 1u : 0u;
         frame.shadowsEnabled = 0;
         frame.hizAddr = 0;
-        m_FrameParamsBuffer->LoadData(&frame, sizeof(frame));
+        frame.debugEnabled = m_bDebugEnabled ? 1u : 0u;
+        CBuffer &paramsSlot = *m_FrameParamsRing[flightSlot % kFlightSlots];
+        paramsSlot.LoadData(&frame, sizeof(frame));
 
         VoxelFrameRoot_t root{};
         root.brickBufferAddr = m_World->GetBrickBufferAddr();
         root.headerAddr = m_World->GetHeaderAddr();
         root.pageTableAddr = m_World->GetPageTableAddr();
         root.visibilityAddr = m_VisibilityBuffer->GetDeviceAddress();
-        root.frameAddr = m_FrameParamsBuffer->GetDeviceAddress();
-        // DEBUG: zero counters via TRANSFER (device-side clear, ordered with
-        // the barrier below) instead of a host LoadData that can race the
-        // in-flight frame's task shader.
-        vkCmdFillBuffer(cb, m_DebugReadback->GetHandle(), 0, sizeof(u32) * 8, 0);
+        root.frameAddr = paramsSlot.GetDeviceAddress();
+        // DEBUG counters: device-side clear only when capture is enabled.
+        // Skipping the Fill + extra barrier saves a full-buffer op/frame.
+        if (m_bDebugEnabled)
+            vkCmdFillBuffer(cb, m_DebugReadback->GetHandle(), 0, sizeof(u32) * 8, 0);
         root.debugAddr = m_DebugReadback->GetDeviceAddress();
 
-        // Frame params (host upload) + debug-counter clear -> task/mesh/fragment.
+        // Frame params (host upload) -> task/mesh/fragment. Debug-clear
+        // barrier is appended only when capture is enabled.
         {
             VkBufferMemoryBarrier2 b[2]{};
+            u32 barrierCount = 1;
             b[0].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
             b[0].srcStageMask = VK_PIPELINE_STAGE_2_HOST_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT;
             b[0].srcAccessMask = VK_ACCESS_2_HOST_WRITE_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT;
@@ -410,13 +425,16 @@ namespace Manro {
                                 VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT |
                                 VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
             b[0].dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT;
-            b[0].buffer = m_FrameParamsBuffer->GetHandle();
+            b[0].buffer = paramsSlot.GetHandle();
             b[0].size = VK_WHOLE_SIZE;
-            b[1] = b[0];
-            b[1].buffer = m_DebugReadback->GetHandle();
+            if (m_bDebugEnabled) {
+                b[1] = b[0];
+                b[1].buffer = m_DebugReadback->GetHandle();
+                barrierCount = 2;
+            }
             VkDependencyInfo dep{};
             dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-            dep.bufferMemoryBarrierCount = 2;
+            dep.bufferMemoryBarrierCount = barrierCount;
             dep.pBufferMemoryBarriers = b;
             vkCmdPipelineBarrier2(cb, &dep);
         }
@@ -467,8 +485,9 @@ namespace Manro {
         vkCmdDrawMeshTasksEXT(cb, taskGroups, 1, 1);
         vkCmdEndRendering(cb);
 
-        // DEBUG: barrier + CPU readback of task/mesh counters.
-        {
+        // DEBUG host barrier only when capture is enabled; otherwise skip
+        // the extra pipeline stall entirely.
+        if (m_bDebugEnabled) {
             VkMemoryBarrier2 mem{};
             mem.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
             mem.srcStageMask = VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT |
@@ -491,9 +510,10 @@ namespace Manro {
     }
 
     void CVoxelRenderer::ReadDebugCounters(u32 out[6]) const {
-        if (!m_DebugReadback) {
+        // Disabled => return last cached values with NO queue stall.
+        if (!m_bDebugEnabled || !m_DebugReadback) {
             for (int i = 0; i < 6; ++i)
-                out[i] = 0;
+                out[i] = m_CachedDebug[i];
             return;
         }
         // GPU writes land in device memory; the validation app is the only
@@ -503,7 +523,9 @@ namespace Manro {
         vmaInvalidateAllocation(m_Context.GetAllocator(), m_DebugReadback->GetAllocation(), 0,
                                 sizeof(u32) * 8);
         const auto *src = static_cast<const u32 *>(m_DebugReadback->GetMapped());
-        for (int i = 0; i < 6; ++i)
+        for (int i = 0; i < 6; ++i) {
             out[i] = src[i];
+            m_CachedDebug[i] = src[i];
+        }
     }
 } // namespace Manro

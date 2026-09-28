@@ -102,6 +102,9 @@ namespace Manro {
         [[nodiscard]] u32 VoxelGetBrickCount() const;
         [[nodiscard]] u32 VoxelGetTaskGroups() const;
         // DEBUG counters: taskRuns, visible, faces, culled, meshRuns, meshFaces.
+        // Capture is opt-in; when disabled GetDebugCounters returns cached
+        // values with no queue stall and shaders skip the atomics.
+        void VoxelSetDebugEnabled(bool enabled) const;
         void VoxelGetDebugCounters(u32 out[6]) const;
 
         void SetSettings(const RenderSettings_t &settings) const;

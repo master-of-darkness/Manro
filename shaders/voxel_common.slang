@@ -37,7 +37,7 @@ struct VoxelFrameParams {
     uint giEnabled;
     uint shadowsEnabled;
     uint64_t hizAddr;         // Hi-Z pyramid sampler payload (image desc via descriptors)
-    uint _pad0;
+    uint debugEnabled;        // 0 = skip debug atomics + host readback path
 };
 
 // Task->mesh payload: compacted exposed-face list for one brick.

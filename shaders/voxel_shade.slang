@@ -24,14 +24,21 @@ float4 PSMain(VoxelFragIn input) : SV_Target {
 
     float ao = float((input.packed >> kVoxelVertShiftAO) & 0x3u) / 3.0;
 
+    // Minecraft-style directional face shading: gives every cube 3D
+    // definition independent of sun angle. Top full bright, bottom dark,
+    // sides stepped (X brighter than Z) so adjacent cubes never blend flat.
+    float3 fn = normalize(input.normal);
+    float3 an = abs(fn);
+    float faceShade = (an.y > 0.5) ? (fn.y > 0.0 ? 1.0 : 0.5) : (an.x > 0.5 ? 0.8 : 0.65);
+
     vk::BufferPointer<float4> sun = vk::BufferPointer<float4>(frame.sunAddr);
     float4* sunData = sun.getPtr();
     float3 sunDir = normalize(sunData[0].xyz);
     float3 sunColor = sunData[1].rgb;
     float sunI = sunData[1].a;
 
-    float ndl = saturate(dot(normalize(input.normal), -sunDir));
-    float3 lit = base.rgb * (0.25 + 0.75 * ao) * (0.15 + sunColor * (ndl * sunI));
+    float ndl = saturate(dot(fn, -sunDir));
+    float3 lit = base.rgb * (0.25 + 0.75 * ao) * (0.15 + sunColor * (ndl * sunI)) * faceShade;
 
     if (frame.giEnabled != 0u) {
         vk::BufferPointer<float4> gi = vk::BufferPointer<float4>(frame.giAddr);

@@ -30,7 +30,7 @@ void MeshMain(
 
     vk::BufferPointer<uint> mdbg = vk::BufferPointer<uint>(g_MeshRoot.debugAddr);
     uint* mdebug = mdbg.getPtr();
-    if (gidx == 0) {
+    if (gidx == 0 && frame.debugEnabled != 0u) {
         InterlockedAdd(mdebug[4], 1u); // mesh groups run
         InterlockedAdd(mdebug[5], payload.faceCount);
     }
@@ -61,10 +61,16 @@ void MeshMain(
 
             float3 b = hdr.origin + (float3(float(x), float(y), float(z)) + max(kFaceNormal[f], float3(0, 0, 0))) * voxelSize;
             float3 nrm = kFaceNormal[f];
-            float3 u = abs(nrm.y) > 0.5 ? float3(1, 0, 0) : float3(0, 1, 0);
-            float3 v = cross(nrm, u);
+            // Face tangents: the two non-normal +axes, so the quad spans
+            // exactly the voxel's face square. (The old v = cross(n, u)
+            // points down the negative tangent for -X/+Y/+Z, shifting those
+            // quads a full voxel and leaving open edge strips = holes.
+            // Winding is irrelevant: the PSO uses CULL_MODE_NONE.)
+            float3 t1 = abs(nrm.x) > 0.5 ? float3(0, 1, 0) : float3(1, 0, 0);
+            float3 t2 = abs(nrm.x) > 0.5 ? float3(0, 0, 1)
+                        : (abs(nrm.y) > 0.5 ? float3(0, 0, 1) : float3(0, 1, 0));
             float3 corners[4] = {
-                b, b + u * voxelSize, b + u * voxelSize + v * voxelSize, b + v * voxelSize
+                b, b + t1 * voxelSize, b + t1 * voxelSize + t2 * voxelSize, b + t2 * voxelSize
             };
             uint vtx = k * 4u;
             // Face-ambient-occlusion stub: wired in Phase 6 (GI), flat 3 now.

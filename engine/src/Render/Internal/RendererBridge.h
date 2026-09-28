@@ -97,4 +97,6 @@ namespace Manro {
     u32 RendererImplVoxelGetTaskGroups(const CRendererImpl &impl);
 
     void RendererImplVoxelGetDebugCounters(const CRendererImpl &impl, u32 out[6]);
+
+    void RendererImplVoxelSetDebugEnabled(CRendererImpl &impl, bool enabled);
 }

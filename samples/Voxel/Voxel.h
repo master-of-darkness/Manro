@@ -105,6 +105,14 @@ public:
         } else if (!m_InputManager.IsKeyDown(K::Space)) {
             m_bSpaceHeld = false;
         }
+        // Scale test: G spawns an 8x2x8 grid of floor bricks around the
+        // origin (one-way, no free API yet). Watch HUD bricks/faces + FPS.
+        if (m_InputManager.IsKeyDown(K::G) && !m_bGHeld) {
+            m_bGHeld = true;
+            SpawnStressGrid();
+        } else if (!m_InputManager.IsKeyDown(K::G)) {
+            m_bGHeld = false;
+        }
         m_Fwd = fwd;
         return true;
     }
@@ -115,6 +123,11 @@ public:
             glm::perspective(glm::radians(90.f), m_Renderer->GetAspectRatio(), 0.1f, 10000.f);
         m_Renderer->SetViewProjection(view, proj);
         m_Renderer->SetCameraPosition(m_CamPos);
+
+        // DEBUG capture only on log frames: skips per-frame Fill, shader
+        // atomics, extra barriers and the WaitIdle readback otherwise.
+        const bool wantLog = (m_Frame % 120) == 0;
+        m_Renderer->VoxelSetDebugEnabled(wantLog);
 
         m_Renderer->BeginRendering();
         m_Renderer->RenderQueue();
@@ -156,12 +169,12 @@ public:
                         m_EditCount);
             ImGui::TextDisabled("task=%u vis=%u faces=%u cull=%u mesh=%u mfaces=%u", dbg[0], dbg[1],
                                 dbg[2], dbg[3], dbg[4], dbg[5]);
-            ImGui::TextDisabled("WASD move | Shift fast | Space edit | Esc quit");
+            ImGui::TextDisabled("WASD move | Shift fast | Space edit | G grid | Esc quit");
         }
         ImGui::End();
 
         const float fps = frame.DeltaTime > 0.f ? 1.f / frame.DeltaTime : 0.f;
-        if ((m_Frame++ % 120) == 0) {
+        if (wantLog) {
             printf("[Voxel] fps=%.1f bricks=%u taskGroups=%u edits=%u cam=(%.1f,%.1f,%.1f)\n", fps,
                    m_Renderer->VoxelGetBrickCount(), m_Renderer->VoxelGetTaskGroups(), m_EditCount,
                    m_CamPos.x, m_CamPos.y, m_CamPos.z);
@@ -169,9 +182,38 @@ public:
             printf("[VoxelDbg] taskRuns=%u visible=%u faces=%u culled=%u meshRuns=%u meshFaces=%u\n",
                    dbg[0], dbg[1], dbg[2], dbg[3], dbg[4], dbg[5]);
         }
+        ++m_Frame;
     }
 
     Manro::CInputManager *GetInputManager() override { return &m_InputManager; }
+
+    // Allocates + uploads a grid of checkerboard floor bricks (same pattern
+    // as the startup brick). Brick indices follow allocation order.
+    void SpawnStressGrid() {
+        static Manro::u16 mats[4096];
+        static Manro::u32 occ[128] = {};
+        for (Manro::u32 z = 0; z < 16; ++z)
+            for (Manro::u32 y = 0; y < 16; ++y)
+                for (Manro::u32 x = 0; x < 16; ++x) {
+                    const Manro::u32 i = x + y * 16 + z * 256;
+                    if (y < 8) {
+                        occ[i >> 5u] |= (1u << (i & 31u));
+                        mats[i] = static_cast<Manro::u16>((x + z) & 1u);
+                    }
+                }
+        // 8x2x8 bricks around the origin brick (slot coords -4..+3, y 0..1).
+        // Virtual dim is 64, so this fits easily; resident cap is 8192.
+        for (Manro::u32 bz = 0; bz < 8; ++bz)
+            for (Manro::u32 by = 0; by < 2; ++by)
+                for (Manro::u32 bx = 0; bx < 8; ++bx) {
+                    if (bx == 0 && by == 0 && bz == 0)
+                        continue; // startup brick already occupies slot (0,0,0)
+                    m_Renderer->VoxelAllocateBrick(bx, by, bz);
+                    const Manro::u32 idx = m_Renderer->VoxelGetBrickCount() - 1;
+                    m_Renderer->VoxelUploadBrick(idx, mats, occ);
+                }
+        printf("[Voxel] stress grid spawned: bricks=%u\n", m_Renderer->VoxelGetBrickCount());
+    }
 
 private:
     Manro::CRenderer *m_Renderer{nullptr};
@@ -185,6 +227,7 @@ private:
     Manro::u32 m_Frame{0};
     Manro::u32 m_EditCount{0};
     bool m_bSpaceHeld{false};
+    bool m_bGHeld{false};
 
     // On-screen FPS state: EMA of frame dt + rolling window for lows.
     static constexpr Manro::u32 kFrameTimeWindow = 240;

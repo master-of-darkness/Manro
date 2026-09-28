@@ -188,6 +188,11 @@ namespace Manro {
             m_Voxel->ReadDebugCounters(out);
         }
 
+        void VoxelSetDebugEnabled(bool enabled) {
+            if (m_bVoxelEnabled && m_Voxel)
+                m_Voxel->SetDebugEnabled(enabled);
+        }
+
         void DrawLine(const Vec3 &a, const Vec3 &b, u32 color, bool depthTest) const;
 
         void DrawAABB(const Vec3 &min, const Vec3 &max, u32 color, bool depthTest) const;
@@ -1137,7 +1142,7 @@ namespace Manro {
             Mat4 viewProj = proj * m_ViewMatrix;
             const bool clearColor = !hasMeshes && !hasSkybox;
             m_Voxel->Record(cb, m_RenderExtent, m_RenderTargets.GetOffscreenView(),
-                            m_RenderTargets.GetDepthView(), clearColor, viewProj,
+                            m_RenderTargets.GetDepthView(), clearColor, m_unCurrentFrame, viewProj,
                             m_PrevVoxelViewProj, m_CameraPosition, m_Settings.nearZ,
                             m_Settings.farZ);
             m_PrevVoxelViewProj = viewProj;
@@ -1494,6 +1499,10 @@ namespace Manro {
 
     void RendererImplVoxelGetDebugCounters(const CRendererImpl &impl, u32 out[6]) {
         impl.VoxelGetDebugCounters(out);
+    }
+
+    void RendererImplVoxelSetDebugEnabled(CRendererImpl &impl, bool enabled) {
+        impl.VoxelSetDebugEnabled(enabled);
     }
 
     CRenderer::CRenderer(CWindow &window, CVirtualFS &vfs, u32 width, u32 height, const RenderSettings_t &settings)

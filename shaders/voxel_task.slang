@@ -10,6 +10,7 @@ VoxelFrameRoot g_TaskRoot;
 // Module-scope shared staging for face compaction (32 lanes cooperate).
 // s_faceStaging layout: [0] = count, [1..2048] = packed faces.
 groupshared uint s_faceStaging[2049];
+groupshared uint s_hasContent;
 
 VoxelFrameParams LoadFrame() {
     vk::BufferPointer<VoxelFrameParams> fp = vk::BufferPointer<VoxelFrameParams>(g_TaskRoot.frameAddr);
@@ -73,20 +74,21 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
     uint brickIdx = gid.x;
 
     // DEBUG counter helper: debugAddr[0] = task runs, [1] = visible bricks,
-    // [2] = total compacted faces.
+    // [2] = total compacted faces. Skipped unless frame.debugEnabled.
     vk::BufferPointer<uint> dbg = vk::BufferPointer<uint>(g_TaskRoot.debugAddr);
     uint* debug = dbg.getPtr();
-    if (gidx == 0) {
+    bool wantDbg = frame.debugEnabled != 0u;
+    if (gidx == 0 && wantDbg) {
         InterlockedAdd(debug[0], 1u);
     }
 
     if (!BrickVisible(brickIdx, frame)) {
-        if (gidx == 0) {
+        if (gidx == 0 && wantDbg) {
             InterlockedAdd(debug[3], 1u); // culled
         }
         return;
     }
-    if (gidx == 0) {
+    if (gidx == 0 && wantDbg) {
         InterlockedAdd(debug[1], 1u);
     }
 
@@ -94,7 +96,7 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
         // 16x16 top faces (+Y, f=2) at voxel y=7, checkerboard mats.
         // 256 faces -> 16 mesh groups. Uniform across lanes.
         // DEBUG counters: synthetic path reports through the same slots.
-        if (gidx == 0) {
+        if (gidx == 0 && wantDbg) {
             InterlockedAdd(debug[2], 256u);
         }
         VoxelTaskPayload p;
@@ -116,13 +118,35 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
     uint* mats = base + brickIdx * 2176u;
     uint* occupancy = mats + 2048u;
 
-    // Per-lane private face lists (worst case per lane: 128 voxels x 6 = 768,
-    // cap 768). Payload holds 2048 total; lane 0 merges after sync via
-    // shared staging. groupshared inside entry function is legal Slang.
+    // Empty-brick early-out: 128 occupancy words, 4 per lane. Avoids the
+    // full 4096-voxel x 6-face scan for air bricks (common at scale).
+    // Uniform exit after the barrier — all lanes observe s_hasContent.
     if (gidx == 0) {
         s_faceStaging[0] = 0u;
+        s_hasContent = 0u;
     }
     GroupMemoryBarrierWithGroupSync();
+
+    for (uint w = gidx; w < 128u; w += 32u) {
+        if (occupancy[w] != 0u) {
+            InterlockedOr(s_hasContent, 1u);
+        }
+    }
+    GroupMemoryBarrierWithGroupSync();
+    if (s_hasContent == 0u)
+        return;
+
+    // Backface rejection prep (uniform for the whole brick): brick origin
+    // + camera-inside test. Faces pointing away from the camera are
+    // skipped per-voxel below; disabled when the camera is inside the
+    // brick so interior views keep all faces (no holes).
+    vk::BufferPointer<VoxelBrickHeader> bheaders =
+        vk::BufferPointer<VoxelBrickHeader>(g_TaskRoot.headerAddr);
+    VoxelBrickHeader bhdr = bheaders.getPtr()[brickIdx];
+    float voxelSize = frame.brickSize / 16.0;
+    bool camInside =
+        all(frame.cameraPos >= bhdr.origin - voxelSize) &&
+        all(frame.cameraPos <= bhdr.origin + frame.brickSize + voxelSize);
 
     for (uint iter = gidx; iter < 4096u; iter += 32u) {
         uint x = iter & 15u;
@@ -131,10 +155,16 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
         if (!VoxelSolid(occupancy, x, y, z))
             continue;
         uint mat = VoxelMaterial(mats, x, y, z);
+        // Voxel center in world space (conservative cull plane: keeps
+        // grazing faces, never drops a visible one).
+        float3 vc = bhdr.origin + (float3(float(x), float(y), float(z)) + 0.5) * voxelSize;
+        float3 toCam = frame.cameraPos - vc;
         for (uint f = 0u; f < 6u; ++f) {
             int3 n = int3(x, y, z) + kFaceOffset[f];
             if (VoxelSolid(occupancy, uint(n.x), uint(n.y), uint(n.z)))
                 continue;
+            if (!camInside && dot(kFaceNormal[f], toCam) <= 0.0)
+                continue; // backfacing opaque quad — HW would cull it later
             uint slot;
             InterlockedAdd(s_faceStaging[0], 1u, slot);
             if (slot < 2048u) {
@@ -150,7 +180,7 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
     // (Divergent DispatchMesh / partial payloads are undefined behavior.)
     if (faceCount == 0u)
         return;
-    if (gidx == 0) {
+    if (gidx == 0 && wantDbg) {
         InterlockedAdd(debug[2], faceCount);
     }
     VoxelTaskPayload p;

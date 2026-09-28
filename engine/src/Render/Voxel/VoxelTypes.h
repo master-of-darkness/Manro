@@ -52,7 +52,7 @@ namespace Manro {
         u32 giEnabled{0};
         u32 shadowsEnabled{0};
         u64 hizAddr{0};
-        u32 _pad0{0};
+        u32 debugEnabled{0};
     };
 
     struct VoxelEditCmd_t {

@@ -128,4 +128,8 @@ namespace Manro {
     void CRenderer::VoxelGetDebugCounters(u32 out[6]) const {
         RendererImplVoxelGetDebugCounters(*m_Impl, out);
     }
+
+    void CRenderer::VoxelSetDebugEnabled(bool enabled) const {
+        RendererImplVoxelSetDebugEnabled(*m_Impl, enabled);
+    }
 } // namespace Manro
