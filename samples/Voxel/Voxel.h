@@ -15,7 +15,7 @@
 #include <cstdio>
 
 // CVoxel: minimal validation app for the separate GPU-driven voxel path.
-// - VoxelInit() builds sparse world + task/mesh PSO + HiZ + GI compute.
+// - VoxelInit() builds sparse world + task/mesh PSO + GI compute.
 // - One 16^3 brick of checkerboard voxels, uploaded once (no re-mesh).
 // - Per-frame: view/proj + camera -> CRenderer, Record happens inside
 //   BeginRendering/RenderQueue/EndRendering via the SceneRenderer hook.

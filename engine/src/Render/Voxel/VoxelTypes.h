@@ -46,13 +46,12 @@ namespace Manro {
         Vec3 worldMin{0.f};
         float brickSize{16.f};
         u32 maxDrawDistance{10000};
-        u32 enableHiZ{0};
+        u32 enableHiZ{0}; // reserved: software HiZ removed (ZCULL handles it)
         u64 paletteAddr{0};
         u64 sunAddr{0};
         u64 giAddr{0};
         u32 giEnabled{0};
         u32 shadowsEnabled{0};
-        u64 hizAddr{0};
         u32 debugEnabled{0};
         u32 useBackface{1}; // mesh per-face backface cull (degenerate quads)
         u32 useFrustum{1}; // task brick frustum + distance cull

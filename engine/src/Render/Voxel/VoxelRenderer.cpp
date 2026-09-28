@@ -27,7 +27,6 @@ namespace Manro {
         m_World->Init(desc);
 
         BuildPipelines(cache);
-        CreateHiZ(width, height);
 
         // Sorted visible ordinals (uint per brick), host-written every frame.
         m_VisibilityBuffer = CreateScope<CBuffer>(
@@ -110,7 +109,7 @@ namespace Manro {
         }
 
         m_bInitialized = true;
-        LOG_INFO("[CVoxelRenderer] Initialized (sparse bricks, task/mesh PSO, HiZ {}x{})", width, height);
+        LOG_INFO("[CVoxelRenderer] Initialized (sparse bricks, task/mesh PSO, {}x{})", width, height);
     }
 
     void CVoxelRenderer::Shutdown() {
@@ -118,9 +117,7 @@ namespace Manro {
         if (device) {
             vkDeviceWaitIdle(device);
         }
-        DestroyHiZ();
         m_TaskMeshPipeline.reset();
-        m_SpdPipeline.reset();
         m_EditPipeline.reset();
         m_GiInjectPipeline.reset();
         m_GiPropagatePipeline.reset();
@@ -144,7 +141,6 @@ namespace Manro {
         auto taskSpv = m_Vfs.ReadFile("shaders://voxel_task.task.spv");
         auto meshSpv = m_Vfs.ReadFile("shaders://voxel_mesh.mesh.spv");
         auto fragSpv = m_Vfs.ReadFile("shaders://voxel_shade.frag.spv");
-        auto spdSpv = m_Vfs.ReadFile("shaders://voxel_hiz_spd.comp.spv");
         auto editSpv = m_Vfs.ReadFile("shaders://voxel_edit.comp.spv");
         auto giInjectSpv = m_Vfs.ReadFile("shaders://voxel_gi_inject.comp.spv");
         auto giPropSpv = m_Vfs.ReadFile("shaders://voxel_gi_propagate.comp.spv");
@@ -153,7 +149,7 @@ namespace Manro {
             LOG_ERROR("[CVoxelRenderer] Voxel task/mesh shaders missing");
         if (fragSpv.empty())
             LOG_ERROR("[CVoxelRenderer] Voxel shade fragment missing");
-        if (spdSpv.empty() || editSpv.empty() || giInjectSpv.empty() || giPropSpv.empty())
+        if (editSpv.empty() || giInjectSpv.empty() || giPropSpv.empty())
             LOG_ERROR("[CVoxelRenderer] Voxel compute shaders missing");
 
         PipelineConfigParams_t meshCfg{};
@@ -202,84 +198,9 @@ namespace Manro {
                 LOG_ERROR("[CVoxelRenderer] Compute pipeline build failed: {}", name);
         };
 
-        buildCompute(m_SpdPipeline, spdSpv, 48, "voxel_hiz_spd");
         buildCompute(m_EditPipeline, editSpv, sizeof(VoxelEditPushConstants_t), "voxel_edit");
         buildCompute(m_GiInjectPipeline, giInjectSpv, sizeof(VoxelGiPushConstants_t), "voxel_gi_inject");
         buildCompute(m_GiPropagatePipeline, giPropSpv, sizeof(VoxelGiPushConstants_t), "voxel_gi_propagate");
-    }
-
-    void CVoxelRenderer::CreateHiZ(u32 width, u32 height) {
-        DestroyHiZ();
-        m_HiZWidth = std::max(1u, width / 2);
-        m_HiZHeight = std::max(1u, height / 2);
-        m_HiZMips = 1 + static_cast<u32>(std::floor(std::log2(std::max(m_HiZWidth, m_HiZHeight))));
-
-        VkImageCreateInfo ii{};
-        ii.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-        ii.imageType = VK_IMAGE_TYPE_2D;
-        ii.format = VK_FORMAT_R32_SFLOAT;
-        ii.extent = {m_HiZWidth, m_HiZHeight, 1};
-        ii.mipLevels = m_HiZMips;
-        ii.arrayLayers = 1;
-        ii.samples = VK_SAMPLE_COUNT_1_BIT;
-        ii.tiling = VK_IMAGE_TILING_OPTIMAL;
-        ii.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
-                   VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-        ii.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        ii.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-
-        VkDevice device = m_Context.GetDevice();
-        if (vkCreateImage(device, &ii, nullptr, &m_HiZImage) != VK_SUCCESS)
-            throw std::runtime_error("[CVoxelRenderer] HiZ image create failed");
-
-        VkMemoryRequirements req{};
-        vkGetImageMemoryRequirements(device, m_HiZImage, &req);
-        VkPhysicalDeviceMemoryProperties memProps{};
-        vkGetPhysicalDeviceMemoryProperties(m_Context.GetPhysicalDevice(), &memProps);
-        u32 memIdx = UINT32_MAX;
-        for (u32 i = 0; i < memProps.memoryTypeCount; ++i) {
-            if ((req.memoryTypeBits & (1u << i)) &&
-                (memProps.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
-                memIdx = i;
-                break;
-            }
-        }
-        if (memIdx == UINT32_MAX)
-            throw std::runtime_error("[CVoxelRenderer] No HiZ memory type");
-        VkMemoryAllocateInfo ai{};
-        ai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        ai.allocationSize = req.size;
-        ai.memoryTypeIndex = memIdx;
-        if (vkAllocateMemory(device, &ai, nullptr, &m_HiZMemory) != VK_SUCCESS)
-            throw std::runtime_error("[CVoxelRenderer] HiZ alloc failed");
-        vkBindImageMemory(device, m_HiZImage, m_HiZMemory, 0);
-
-        VkImageViewCreateInfo vi{};
-        vi.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        vi.image = m_HiZImage;
-        vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        vi.format = VK_FORMAT_R32_SFLOAT;
-        vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, m_HiZMips, 0, 1};
-        if (vkCreateImageView(device, &vi, nullptr, &m_HiZView) != VK_SUCCESS)
-            throw std::runtime_error("[CVoxelRenderer] HiZ view create failed");
-    }
-
-    void CVoxelRenderer::DestroyHiZ() {
-        VkDevice device = m_Context.GetDevice();
-        if (!device)
-            return;
-        if (m_HiZView) {
-            vkDestroyImageView(device, m_HiZView, nullptr);
-            m_HiZView = VK_NULL_HANDLE;
-        }
-        if (m_HiZImage) {
-            vkDestroyImage(device, m_HiZImage, nullptr);
-            m_HiZImage = VK_NULL_HANDLE;
-        }
-        if (m_HiZMemory) {
-            vkFreeMemory(device, m_HiZMemory, nullptr);
-            m_HiZMemory = VK_NULL_HANDLE;
-        }
     }
 
     void CVoxelRenderer::DispatchEdits(VkCommandBuffer cb) {
@@ -399,10 +320,11 @@ namespace Manro {
             return;
 
         // CPU front-to-back sort + frustum compact (the proper overdraw cut):
-        // visible bricks only, nearest first, so early-z kills hidden pixels
-        // instead of shading them. 128 bricks is microseconds; dispatch gets
-        // the exact visible count — no empty task groups. Same NDC test the
-        // task shader runs (same matrix convention by construction: glm M*v).
+        // visible bricks only, nearest first, so hardware ZCULL + early-z
+        // kills hidden pixels instead of shading them. 128 bricks is
+        // microseconds; dispatch gets the exact visible count — no empty
+        // task groups. Same NDC convention the mesh shader rasterizes with
+        // (glm M*v), so the compact can never disagree with the draw.
         u32 visibleCount = brickCount;
         {
             const float brickSize = m_World->GetBrickSize();
@@ -461,9 +383,6 @@ namespace Manro {
                                              sizeof(u32) * m_VisibleList.size());
         }
 
-        // Pass 1: task-shader frustum + distance cull, HiZ re-projection uses
-        // prevViewProj once the pyramid is populated (enableHiZ flipped when
-        // the SPD chain has run at least once — v1 runs it unconditionally).
         // Push constant is the frame root; frame params live in a BDA buffer.
         VoxelFrameParams_t frame{};
         frame.viewProj = viewProj;
@@ -473,13 +392,12 @@ namespace Manro {
         frame.worldMin = m_World->GetWorldMin();
         frame.brickSize = m_World->GetBrickSize();
         frame.maxDrawDistance = 10000;
-        frame.enableHiZ = 1;
+        frame.enableHiZ = 0; // reserved: software HiZ removed (ZCULL handles it)
         frame.paletteAddr = m_PaletteBuffer->GetDeviceAddress();
         frame.sunAddr = m_SunBuffer->GetDeviceAddress();
         frame.giAddr = 0; // GI stub adds light on black; v1 visibility = lambert only
         frame.giEnabled = m_bGiEnabled ? 1u : 0u;
         frame.shadowsEnabled = 0;
-        frame.hizAddr = 0;
         frame.debugEnabled = m_bDebugEnabled ? 1u : 0u;
         frame.useBackface = m_bUseBackface ? 1u : 0u;
         frame.useFrustum = m_bUseFrustum ? 1u : 0u;
@@ -610,10 +528,6 @@ namespace Manro {
         }
 
         m_PrevViewProj = viewProj;
-
-        // Pass 2 (HiZ occlusion resolution) + SPD pyramid rebuild are driven
-        // from the depth image produced by this pass; the SPD compute reads
-        // the depth attachment via the HiZ sampler set (follow-up diff).
     }
 
     void CVoxelRenderer::ReadDebugCounters(u32 out[6]) const {
@@ -628,7 +542,7 @@ namespace Manro {
         // read is the correct (if slow) diagnostic path.
         vkQueueWaitIdle(m_Context.GetGraphicsQueue());
         vmaInvalidateAllocation(m_Context.GetAllocator(), m_DebugReadback->GetAllocation(), 0,
-                                sizeof(u32) * 8);
+                                sizeof(u32) * 6);
         const auto *src = static_cast<const u32 *>(m_DebugReadback->GetMapped());
         for (int i = 0; i < 6; ++i) {
             out[i] = src[i];

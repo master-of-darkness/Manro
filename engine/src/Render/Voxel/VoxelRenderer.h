@@ -2,7 +2,10 @@
 
 // CVoxelRenderer: separate GPU-driven voxel path (task/mesh + BDA + sparse).
 // Does NOT use CInstanceBatcher / GpuCullDispatcher / PBR pipelines.
-// Owns: sparse world, task/mesh PSO, HiZ pyramid, edit + GI compute, BLAS stub.
+// Owns: sparse world, task/mesh PSO, edit + GI compute, BLAS stub.
+// Occlusion is hardware ZCULL + front-to-back sort + early-z; no software
+// HiZ pyramid (measured slower than nothing: build cost, zero savings at
+// occ~=0, bursty lows).
 
 #include "VoxelTypes.h"
 #include <Manro/Core/Types.h>
@@ -46,8 +49,7 @@ namespace Manro {
         void Shutdown();
 
         // Per-frame record into an externally-owned command buffer.
-        // viewProj/prevViewProj/camera drive the task-shader cull (two-pass HiZ
-        // re-projection uses prevViewProj).
+        // viewProj/prevViewProj/camera drive the task-shader cull.
         // flightSlot selects the frame-params ring entry and MUST be the
         // engine's frame-in-flight index: the params buffer is host-written
         // every frame, so sharing one buffer across in-flight frames lets
@@ -58,8 +60,7 @@ namespace Manro {
         // inside its own voxel-only rendering pass over the given attachments.
         void Record(VkCommandBuffer cb, VkExtent2D extent, VkImageView colorView,
                     VkImageView depthView, bool clearColor, u32 flightSlot, const Mat4 &viewProj,
-                    const Mat4 &prevViewProj,
-                    const Vec3 &cameraPos, float nearZ, float farZ);
+                    const Mat4 &prevViewProj, const Vec3 &cameraPos, float nearZ, float farZ);
 
         [[nodiscard]] CVoxelWorld &GetWorld() { return *m_World; }
         [[nodiscard]] const VoxelFrameStats_t &GetStats() const { return m_Stats; }
@@ -78,8 +79,6 @@ namespace Manro {
 
     private:
         void BuildPipelines(CPipelineCache &cache);
-        void CreateHiZ(u32 width, u32 height);
-        void DestroyHiZ();
         void DispatchEdits(VkCommandBuffer cb);
         void DispatchGi(VkCommandBuffer cb);
 
@@ -88,18 +87,9 @@ namespace Manro {
 
         Scope<CVoxelWorld> m_World;
         Scope<CPipeline> m_TaskMeshPipeline;
-        Scope<CPipeline> m_SpdPipeline;
         Scope<CPipeline> m_EditPipeline;
         Scope<CPipeline> m_GiInjectPipeline;
         Scope<CPipeline> m_GiPropagatePipeline;
-
-        // Visibility + HiZ targets (separate from Sponza offscreen/depth).
-        VkImage m_HiZImage{VK_NULL_HANDLE};
-        VkImageView m_HiZView{VK_NULL_HANDLE};
-        VkDeviceMemory m_HiZMemory{VK_NULL_HANDLE};
-        u32 m_HiZMips{1};
-        u32 m_HiZWidth{0};
-        u32 m_HiZHeight{0};
 
         Scope<CBuffer> m_VisibilityBuffer; // uint2 per brick
         Scope<CBuffer> m_TaskIndirectBuffer; // VkDispatchIndirectCommand for pass 2

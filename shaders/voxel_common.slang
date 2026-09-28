@@ -5,7 +5,7 @@
 struct VoxelBrickHeader {
     float3 origin;   // world-space min corner of the 16^3 brick
     uint pageIndex;  // index into sparse page residency table
-    uint flags;      // bit 0: resident, bit 1: dirty (needs BLAS refit + HiZ invalidate)
+    uint flags;      // bit 0: resident, bit 1: dirty (needs BLAS refit)
     uint paletteBase;// offset into global material palette
     uint _pad0;
     uint _pad1;
@@ -18,7 +18,7 @@ struct VoxelFrameRoot {
     uint64_t headerAddr;      // VoxelBrickHeader[brickCount]
     uint64_t pageTableAddr;   // int32 pageTable[virtualBrickCount], -1 = unbound
     uint64_t visibilityAddr;  // uint2 visibility[brickCount] (brickID, packedQuadBase)
-    uint64_t frameAddr;       // VoxelFrameParams (viewProj, camera, world, HiZ, palette, sun, GI)
+    uint64_t frameAddr;       // VoxelFrameParams (viewProj, camera, world, palette, sun, GI)
     uint64_t debugAddr;       // DEBUG: uint counters[8] (taskRuns, visible, faces, meshRuns, ...)
     uint64_t faceCacheAddr;   // uint[2049] per resident brick: [0]=faceCount, [1..2048]=packed faces
 };
@@ -31,13 +31,12 @@ struct VoxelFrameParams {
     float3 worldMin;          // virtual world min corner (for hash -> page table)
     float brickSize;          // world units per brick edge (16 * voxelSize)
     uint maxDrawDistance;
-    uint enableHiZ;
+    uint enableHiZ;           // reserved: software HiZ removed (ZCULL handles it)
     uint64_t paletteAddr;     // float4 albedo[512]
     uint64_t sunAddr;         // float4 sunDir + float4 sunColor+intensity
     uint64_t giAddr;          // radiance cascade buffer (0 = disabled)
     uint giEnabled;
     uint shadowsEnabled;
-    uint64_t hizAddr;         // Hi-Z pyramid sampler payload (image desc via descriptors)
     uint debugEnabled;        // 0 = skip debug atomics + host readback path
     uint useBackface;         // mesh per-face backface cull (degenerate quads)
     uint useFrustum;          // task brick frustum + distance cull

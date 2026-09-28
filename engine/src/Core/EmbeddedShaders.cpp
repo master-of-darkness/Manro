@@ -20,7 +20,6 @@
 #include "voxel_task_task_spv.h"
 #include "voxel_mesh_mesh_spv.h"
 #include "voxel_shade_frag_spv.h"
-#include "voxel_hiz_spd_comp_spv.h"
 #include "voxel_edit_comp_spv.h"
 #include "voxel_gi_inject_comp_spv.h"
 #include "voxel_gi_propagate_comp_spv.h"
@@ -53,7 +52,6 @@ namespace Manro {
         vfs.MountStaticView("shaders://voxel_task.task.spv", v(voxel_task_task_spv, voxel_task_task_spv_len));
         vfs.MountStaticView("shaders://voxel_mesh.mesh.spv", v(voxel_mesh_mesh_spv, voxel_mesh_mesh_spv_len));
         vfs.MountStaticView("shaders://voxel_shade.frag.spv", v(voxel_shade_frag_spv, voxel_shade_frag_spv_len));
-        vfs.MountStaticView("shaders://voxel_hiz_spd.comp.spv", v(voxel_hiz_spd_comp_spv, voxel_hiz_spd_comp_spv_len));
         vfs.MountStaticView("shaders://voxel_edit.comp.spv", v(voxel_edit_comp_spv, voxel_edit_comp_spv_len));
         vfs.MountStaticView("shaders://voxel_gi_inject.comp.spv",
                             v(voxel_gi_inject_comp_spv, voxel_gi_inject_comp_spv_len));

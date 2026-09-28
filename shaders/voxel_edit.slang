@@ -82,7 +82,7 @@ void EditMain(uint3 dtid : SV_DispatchThreadID) {
         }
     }
 
-    // Mark dirty so the BLAS refit + HiZ invalidate passes pick it up, and
+    // Mark dirty so the BLAS refit pass picks it up, and
     // so the task shader rescans this brick's face cache. Header uint
     // layout: origin(0-2), pageIndex(3), flags(4) — bit 1 = dirty.
     vk::BufferPointer<uint> headers = vk::BufferPointer<uint>(g_Edit.headerAddr);
