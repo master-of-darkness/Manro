@@ -34,8 +34,10 @@ namespace Manro {
         u64 frameAddr{0};
         u64 debugAddr{0};
         u64 faceCacheAddr{0}; // uint[2049] per resident brick: [0]=faceCount, [1..]=packed faces
+        u64 tileTableAddr{0}; // uint32[32768*6]: tile layer per (state, face)
+        u64 mcFlagsAddr{0}; // uint32[32768]: kMcFlag* per protocol state id
     };
-    static_assert(sizeof(VoxelFrameRoot_t) == 56);
+    static_assert(sizeof(VoxelFrameRoot_t) == 72);
 
     // Must match VoxelFrameParams in voxel_common.slang (std430, RowMajor mat4).
     struct VoxelFrameParams_t {
@@ -55,6 +57,7 @@ namespace Manro {
         u32 debugEnabled{0};
         u32 useBackface{1}; // mesh per-face backface cull (degenerate quads)
         u32 useFrustum{1}; // task brick frustum + distance cull
+        u32 virtualDim{64}; // bricks per axis: task cross-brick page lookups
     };
 
     struct VoxelEditCmd_t {

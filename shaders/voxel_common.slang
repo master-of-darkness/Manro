@@ -13,6 +13,7 @@ struct VoxelBrickHeader {
 
 // Frame root: the ONLY push constant (~112B). Everything else is
 // reached pointerless via BDA — no descriptor binding per brick.
+// (The tile texture array IS descriptor-bound: images can't travel by BDA.)
 struct VoxelFrameRoot {
     uint64_t brickBufferAddr; // Brick voxel words: uint16 matID[4096] + uint64 occupancy[64]
     uint64_t headerAddr;      // VoxelBrickHeader[brickCount]
@@ -21,6 +22,8 @@ struct VoxelFrameRoot {
     uint64_t frameAddr;       // VoxelFrameParams (viewProj, camera, world, palette, sun, GI)
     uint64_t debugAddr;       // DEBUG: uint counters[8] (taskRuns, visible, faces, meshRuns, ...)
     uint64_t faceCacheAddr;   // uint[2049] per resident brick: [0]=faceCount, [1..2048]=packed faces
+    uint64_t tileTableAddr;   // uint32[32768*6]: tile layer per (state, face)
+    uint64_t mcFlagsAddr;     // uint32[32768]: kMcFlag* per protocol state id
 };
 
 struct VoxelFrameParams {
@@ -40,6 +43,7 @@ struct VoxelFrameParams {
     uint debugEnabled;        // 0 = skip debug atomics + host readback path
     uint useBackface;         // mesh per-face backface cull (degenerate quads)
     uint useFrustum;          // task brick frustum + distance cull
+    uint virtualDim;          // bricks per axis: task cross-brick page lookups
 };
 
 // Task->mesh payload: tiny — mesh loads faces from the face cache.
@@ -85,10 +89,14 @@ static const float3 kFaceNormal[6] = {
 
 // Packed micro-quad vertex: X:6 Y:6 Z:6 (brick-local voxel coords)
 // Normal:3 AO:2 Material:9 — single 32-bit word per vertex.
+// NOTE: materials are now full protocol state ids (up to 32365); the face
+// cache stores (voxelIdx:12 | face:3 | state:15) in one word (state < 32768).
 static const uint kVoxelVertMaskX = 0x3Fu;
 static const uint kVoxelVertShiftN = 18u;
 static const uint kVoxelVertShiftAO = 21u;
 static const uint kVoxelVertShiftMat = 23u;
+static const uint kMcStateBits = 15u;
+static const uint kMcStateMax = 32768u;
 
 uint PackVoxelVertex(uint x, uint y, uint z, uint n, uint ao, uint mat) {
     return (x & 0x3Fu)

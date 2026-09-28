@@ -35,6 +35,7 @@
 #include <Manro/Render/Model.h>
 #include <Manro/Render/RendererConfig.h>
 #include <VkBootstrap.h>
+#include <SDL3/SDL.h>
 #include <stdexcept>
 #include <algorithm>
 #include <array>
@@ -201,6 +202,19 @@ namespace Manro {
         void VoxelSetFrustumEnabled(bool enabled) {
             if (m_bVoxelEnabled && m_Voxel)
                 m_Voxel->SetFrustumEnabled(enabled);
+        }
+
+        Vec3 VoxelMcInit(const std::string &worldDir, const std::string &assetsDir,
+                         int radiusSections) {
+            if (!m_bVoxelEnabled || !m_Voxel)
+                return Vec3(8.f, 80.f, 8.f);
+            return m_Voxel->McInit(worldDir, assetsDir, radiusSections);
+        }
+
+        int VoxelMcUpdate() {
+            if (!m_bVoxelEnabled || !m_Voxel)
+                return 0;
+            return m_Voxel->McUpdate(m_CameraPosition);
         }
 
         void DrawLine(const Vec3 &a, const Vec3 &b, u32 color, bool depthTest) const;
@@ -390,6 +404,16 @@ namespace Manro {
 
         m_InstanceBatcher.Init(GetMaxInstances());
         m_PendingLights.reserve(GetMaxLights());
+
+        // Display refresh rate: explains observed fps caps (fifo vsync,
+        // compositor throttling) in perf reports.
+        if (SDL_Window *sdlWin = static_cast<SDL_Window *>(window.GetNativeHandle())) {
+            const SDL_DisplayID did = SDL_GetDisplayForWindow(sdlWin);
+            const SDL_DisplayMode *dm = SDL_GetDesktopDisplayMode(did);
+            if (dm)
+                LOG_INFO("[Display] desktop refresh: {:.1f}Hz ({}x{})", dm->refresh_rate, dm->w,
+                         dm->h);
+        }
 
         OverlayInfo_t guiInfo{};
         guiInfo.context = &m_Context;
@@ -1521,6 +1545,15 @@ namespace Manro {
 
     void RendererImplVoxelSetFrustumEnabled(CRendererImpl &impl, bool enabled) {
         impl.VoxelSetFrustumEnabled(enabled);
+    }
+
+    Vec3 RendererImplVoxelMcInit(CRendererImpl &impl, const std::string &worldDir,
+                                 const std::string &assetsDir, int radiusSections) {
+        return impl.VoxelMcInit(worldDir, assetsDir, radiusSections);
+    }
+
+    int RendererImplVoxelMcUpdate(const CRendererImpl &impl) {
+        return const_cast<CRendererImpl &>(impl).VoxelMcUpdate();
     }
 
     CRenderer::CRenderer(CWindow &window, CVirtualFS &vfs, u32 width, u32 height, const RenderSettings_t &settings)

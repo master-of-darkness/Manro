@@ -140,4 +140,11 @@ namespace Manro {
     void CRenderer::VoxelSetFrustumEnabled(bool enabled) const {
         RendererImplVoxelSetFrustumEnabled(*m_Impl, enabled);
     }
+
+    Vec3 CRenderer::VoxelMcInit(const char *worldDir, const char *assetsDir, int radiusSections) const {
+        return RendererImplVoxelMcInit(*m_Impl, worldDir ? worldDir : "", assetsDir ? assetsDir : "",
+                                       radiusSections);
+    }
+
+    int CRenderer::VoxelMcUpdate() const { return RendererImplVoxelMcUpdate(*m_Impl); }
 } // namespace Manro

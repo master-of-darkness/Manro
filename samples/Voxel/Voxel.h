@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 
 // CVoxel: minimal validation app for the separate GPU-driven voxel path.
 // - VoxelInit() builds sparse world + task/mesh PSO + GI compute.
@@ -50,26 +51,22 @@ public:
         // Voxel path first: sparse world + PSOs.
         m_Renderer->VoxelInit(1280, 720);
 
-        // One brick at slot (0,0,0): solid checkerboard floor (y < 8).
-        // Brick origin = world (0,0,0); camera parked 24 up / 40 out.
-        m_Renderer->VoxelAllocateBrick(0, 0, 0);
-        static Manro::u16 mats[4096];
-        static Manro::u32 occ[128] = {};
-        for (Manro::u32 z = 0; z < 16; ++z)
-            for (Manro::u32 y = 0; y < 16; ++y)
-                for (Manro::u32 x = 0; x < 16; ++x) {
-                    const Manro::u32 i = x + y * 16 + z * 256;
-                    if (y < 8) {
-                        occ[i >> 5u] |= (1u << (i & 31u));
-                        mats[i] = static_cast<Manro::u16>((x + z) & 1u);
-                    }
-                }
-        // Brick index 0 = first allocation.
-        m_Renderer->VoxelUploadBrick(0, mats, occ);
+        // Minecraft path: vanilla tiles + section volume (Anvil when
+        // MC_WORLD_DIR points at a save with region files, else MC-scale
+        // procedural terrain). Assets from MC_ASSETS_DIR or the default.
+        const char *worldDir = std::getenv("MC_WORLD_DIR");
+        const char *assetsDir = std::getenv("MC_ASSETS_DIR");
+        int radius = 6;
+        if (const char *r = std::getenv("MC_RADIUS"))
+            radius = std::clamp(std::atoi(r), 1, 10);
+        const Manro::Vec3 spawn = m_Renderer->VoxelMcInit(
+            worldDir ? worldDir : "", assetsDir ? assetsDir : "", radius);
+        printf("[Voxel] mc spawn=(%.1f,%.1f,%.1f) world=%s\n", spawn.x, spawn.y, spawn.z,
+               worldDir ? worldDir : "<procedural>");
 
-        m_CamPos = Manro::Vec3(8.f, 24.f, 40.f);
-        // Look at brick center (8,4,8) from the start.
-        m_Fwd = glm::normalize(Manro::Vec3(8.f, 4.f, 8.f) - m_CamPos);
+        // Park above spawn, looking at the terrain.
+        m_CamPos = spawn + Manro::Vec3(24.f, 26.f, 40.f);
+        m_Fwd = glm::normalize(spawn - m_CamPos);
         m_Yaw = glm::degrees(atan2f(m_Fwd.z, m_Fwd.x));
         m_Pitch = glm::degrees(asinf(std::clamp(m_Fwd.y, -1.f, 1.f)));
     }
@@ -104,14 +101,6 @@ public:
             ++m_EditCount;
         } else if (!m_InputManager.IsKeyDown(K::Space)) {
             m_bSpaceHeld = false;
-        }
-        // Scale test: G spawns an 8x2x8 grid of floor bricks around the
-        // origin (one-way, no free API yet). Watch HUD bricks/faces + FPS.
-        if (m_InputManager.IsKeyDown(K::G) && !m_bGHeld) {
-            m_bGHeld = true;
-            SpawnStressGrid();
-        } else if (!m_InputManager.IsKeyDown(K::G)) {
-            m_bGHeld = false;
         }
         // Culling-stage kill switches for bisection: B = mesh backface,
         // N = task frustum. Both default on.
@@ -153,6 +142,9 @@ public:
         m_Renderer->SetViewProjection(view, proj);
         m_Renderer->SetCameraPosition(m_CamPos);
 
+        // Minecraft section streaming: fills budget near the camera.
+        m_Unfilled = m_Renderer->VoxelMcUpdate();
+
         // DEBUG capture only on log frames: skips per-frame Fill, shader
         // atomics, extra barriers and the WaitIdle readback otherwise.
         const bool wantLog = (m_Frame % 120) == 0;
@@ -193,19 +185,21 @@ public:
             ImGui::Text("1%% low: %.2f ms  0.1%% low: %.2f ms", static_cast<double>(worst1),
                         static_cast<double>(worst01));
             ImGui::Separator();
-            ImGui::Text("Bricks: %u  TaskGroups: %u  Edits: %u",
+            ImGui::Text("Bricks: %u  TaskGroups: %u  Edits: %u  Unfilled: %d",
                         m_Renderer->VoxelGetBrickCount(), m_Renderer->VoxelGetTaskGroups(),
-                        m_EditCount);
+                        m_EditCount, m_Unfilled);
             ImGui::TextDisabled("task=%u vis=%u faces=%u cull=%u mesh=%u mfaces=%u", dbg[0], dbg[1],
                                 dbg[2], dbg[3], dbg[4], dbg[5]);
             ImGui::TextDisabled("backface=%d frustum=%d", m_UseBackface ? 1 : 0,
                                 m_UseFrustum ? 1 : 0);
-            ImGui::TextDisabled("WASD move | Shift fast | Space edit | G grid | B/N cull | V vsync | Esc quit");
+            ImGui::TextDisabled("WASD move | Shift fast | Space edit | B/N cull | V vsync | Esc quit");
         }
         ImGui::End();
 
         const float fps = frame.DeltaTime > 0.f ? 1.f / frame.DeltaTime : 0.f;
-        if (wantLog) {
+        // Frame 0's DeltaTime is loop-entry overhead (~50ns), not a frame —
+        // skip it so the log doesn't open with fps=19607842 every run.
+        if (wantLog && m_Frame > 0) {
             printf("[Voxel] fps=%.1f bricks=%u taskGroups=%u edits=%u cam=(%.1f,%.1f,%.1f)\n", fps,
                    m_Renderer->VoxelGetBrickCount(), m_Renderer->VoxelGetTaskGroups(), m_EditCount,
                    m_CamPos.x, m_CamPos.y, m_CamPos.z);
@@ -218,35 +212,7 @@ public:
 
     Manro::CInputManager *GetInputManager() override { return &m_InputManager; }
 
-    // Allocates + uploads a grid of checkerboard floor bricks (same pattern
-    // as the startup brick). Brick indices follow allocation order.
-    void SpawnStressGrid() {
-        static Manro::u16 mats[4096];
-        static Manro::u32 occ[128] = {};
-        for (Manro::u32 z = 0; z < 16; ++z)
-            for (Manro::u32 y = 0; y < 16; ++y)
-                for (Manro::u32 x = 0; x < 16; ++x) {
-                    const Manro::u32 i = x + y * 16 + z * 256;
-                    if (y < 8) {
-                        occ[i >> 5u] |= (1u << (i & 31u));
-                        mats[i] = static_cast<Manro::u16>((x + z) & 1u);
-                    }
-                }
-        // 8x2x8 bricks around the origin brick (slot coords -4..+3, y 0..1).
-        // Virtual dim is 64, so this fits easily; resident cap is 8192.
-        for (Manro::u32 bz = 0; bz < 8; ++bz)
-            for (Manro::u32 by = 0; by < 2; ++by)
-                for (Manro::u32 bx = 0; bx < 8; ++bx) {
-                    if (bx == 0 && by == 0 && bz == 0)
-                        continue; // startup brick already occupies slot (0,0,0)
-                    m_Renderer->VoxelAllocateBrick(bx, by, bz);
-                    const Manro::u32 idx = m_Renderer->VoxelGetBrickCount() - 1;
-                    m_Renderer->VoxelUploadBrick(idx, mats, occ);
-                }
-        printf("[Voxel] stress grid spawned: bricks=%u\n", m_Renderer->VoxelGetBrickCount());
-    }
-
-private:
+ private:
     Manro::CRenderer *m_Renderer{nullptr};
     Manro::CWindow *m_Window{nullptr};
     Manro::CInputBackend m_InputBackend;
@@ -258,12 +224,12 @@ private:
     Manro::u32 m_Frame{0};
     Manro::u32 m_EditCount{0};
     bool m_bSpaceHeld{false};
-    bool m_bGHeld{false};
     bool m_bBHeld{false};
     bool m_bNHeld{false};
     bool m_bVHeld{false};
     bool m_UseBackface{true};
     bool m_UseFrustum{true};
+    int m_Unfilled{0};
 
     // On-screen FPS state: EMA of frame dt + rolling window for lows.
     static constexpr Manro::u32 kFrameTimeWindow = 240;

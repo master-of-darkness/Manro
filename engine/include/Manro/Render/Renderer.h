@@ -108,6 +108,11 @@ namespace Manro {
         // Culling-stage kill switches (default on).
         void VoxelSetBackfaceEnabled(bool enabled) const;
         void VoxelSetFrustumEnabled(bool enabled) const;
+        // Minecraft path: vanilla tiles + Anvil/procedural section volume.
+        // worldDir empty = procedural fallback. Returns the spawn position.
+        Vec3 VoxelMcInit(const char *worldDir, const char *assetsDir, int radiusSections) const;
+        // Fills section budget near the camera. Returns unfilled remainder.
+        int VoxelMcUpdate() const;
         void VoxelGetDebugCounters(u32 out[6]) const;
 
         void SetSettings(const RenderSettings_t &settings) const;

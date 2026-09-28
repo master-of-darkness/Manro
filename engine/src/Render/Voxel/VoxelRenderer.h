@@ -8,10 +8,13 @@
 // occ~=0, bursty lows).
 
 #include "VoxelTypes.h"
+#include "VoxelMcAssets.h"
 #include <Manro/Core/Types.h>
 #include <volk.h>
 
 #include <array>
+#include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -23,6 +26,7 @@ namespace Manro {
     class CBuffer;
     class CVoxelWorld;
     class CVoxelSparseBinder;
+    class CVoxelMcWorld;
 
     struct VoxelFrameStats_t {
         u32 brickCount{0};
@@ -62,6 +66,14 @@ namespace Manro {
                     VkImageView depthView, bool clearColor, u32 flightSlot, const Mat4 &viewProj,
                     const Mat4 &prevViewProj, const Vec3 &cameraPos, float nearZ, float farZ);
 
+        // Minecraft path: builds the vanilla asset pack (textures + per-state
+        // face tiles), uploads the tile array + BDA tables, opens the Anvil
+        // world (or procedural fallback) and allocates the section volume.
+        // Returns the spawn position. worldDir empty = procedural only.
+        Vec3 McInit(const std::string &worldDir, const std::string &assetsDir, int radiusSections);
+        // Fills up to the section budget near the camera. Returns unfilled.
+        int McUpdate(const Vec3 &cameraPos);
+
         [[nodiscard]] CVoxelWorld &GetWorld() { return *m_World; }
         [[nodiscard]] const VoxelFrameStats_t &GetStats() const { return m_Stats; }
 
@@ -79,6 +91,11 @@ namespace Manro {
 
     private:
         void BuildPipelines(CPipelineCache &cache);
+        void CreateTileDescriptor();
+        void DestroyTileDescriptor();
+        void UploadMcTables();
+        void CreateMcTiles(const McAssetPack_t &pack);
+        void DestroyMcTiles();
         void DispatchEdits(VkCommandBuffer cb);
         void DispatchGi(VkCommandBuffer cb);
 
@@ -91,13 +108,34 @@ namespace Manro {
         Scope<CPipeline> m_GiInjectPipeline;
         Scope<CPipeline> m_GiPropagatePipeline;
 
-        Scope<CBuffer> m_VisibilityBuffer; // uint2 per brick
         Scope<CBuffer> m_TaskIndirectBuffer; // VkDispatchIndirectCommand for pass 2
         Scope<CBuffer> m_TaskCountBuffer;
+        // Vanilla tile tables (BDA): tile layer per (state, face), flags per
+        // state. Sized 32768 so any uint16 state indexes safely.
+        Scope<CBuffer> m_McTileTable;
+        Scope<CBuffer> m_McFlagsTable;
+        // Vanilla tile texture array (descriptor-bound: images can't use
+        // BDA). 16x16 sRGB tiles + CPU-generated mip chain, NEAREST mag.
+        VkImage m_TileImage{VK_NULL_HANDLE};
+        VkDeviceMemory m_TileMemory{VK_NULL_HANDLE};
+        VkImageView m_TileView{VK_NULL_HANDLE};
+        VkSampler m_TileSampler{VK_NULL_HANDLE};
+        VkDescriptorSetLayout m_TileSetLayout{VK_NULL_HANDLE};
+        VkDescriptorPool m_TilePool{VK_NULL_HANDLE};
+        VkDescriptorSet m_TileSet{VK_NULL_HANDLE};
+        u32 m_TileLayers{0};
+        // Minecraft world source (Anvil via mcs, procedural fallback).
+        McAssetPack_t m_McPack;
+        std::unique_ptr<CVoxelMcWorld> m_McWorld;
         // Frame-params ring: one host-written buffer per frame in flight
         // (see Record). Must cover the engine's maxFramesInFlight (3).
         static constexpr u32 kFlightSlots = 3;
         std::array<Scope<CBuffer>, kFlightSlots> m_FrameParamsRing{};
+        // Sorted visible ordinals (uint per brick), host-written every frame.
+        // Ringed like frame params: a single buffer would let frame N+1's
+        // upload tear frame N's in-flight task reads (wrong bricks for a
+        // frame — visible as dragging/ghosting while the camera moves).
+        std::array<Scope<CBuffer>, kFlightSlots> m_VisibilityRing{};
         Scope<CBuffer> m_PaletteBuffer; // float4[512]
         Scope<CBuffer> m_SunBuffer; // float4[2]
         Scope<CBuffer> m_CascadeBuffer; // float4[cascadeRes^3 * cascadeCount]

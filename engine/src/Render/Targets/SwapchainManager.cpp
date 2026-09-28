@@ -1,6 +1,7 @@
 #include "SwapchainManager.h"
 #include "../Vulkan/VulkanContext.h"
 
+#include <Manro/Core/Logger.h>
 #include <VkBootstrap.h>
 #include <stdexcept>
 
@@ -19,9 +20,11 @@ namespace Manro {
         if (vsync) {
             builder.set_desired_present_mode(VK_PRESENT_MODE_FIFO_KHR);
         } else {
+            // Mailbox first: uncapped like immediate but tear-free, and it
+            // recycles images promptly (no acquire stalls under compositors).
             builder
-                    .set_desired_present_mode(VK_PRESENT_MODE_IMMEDIATE_KHR)
-                    .add_fallback_present_mode(VK_PRESENT_MODE_MAILBOX_KHR)
+                    .set_desired_present_mode(VK_PRESENT_MODE_MAILBOX_KHR)
+                    .add_fallback_present_mode(VK_PRESENT_MODE_IMMEDIATE_KHR)
                     .add_fallback_present_mode(VK_PRESENT_MODE_FIFO_KHR);
         }
 
@@ -38,6 +41,21 @@ namespace Manro {
         m_Swapchain = vkbSwapchain.swapchain;
         m_SwapchainExtent = vkbSwapchain.extent;
         m_SwapchainFormat = vkbSwapchain.image_format;
+        // Log the negotiated present mode: immediate/mailbox run uncapped,
+        // fifo caps at display refresh. First suspect in any fps report.
+        {
+            const char *pm = "?";
+            switch (vkbSwapchain.present_mode) {
+                case VK_PRESENT_MODE_IMMEDIATE_KHR: pm = "immediate"; break;
+                case VK_PRESENT_MODE_MAILBOX_KHR: pm = "mailbox"; break;
+                case VK_PRESENT_MODE_FIFO_KHR: pm = "fifo"; break;
+                case VK_PRESENT_MODE_FIFO_RELAXED_KHR: pm = "fifo_relaxed"; break;
+                default: break;
+            }
+            LOG_INFO("[Swapchain] present={} images={} extent={}x{}", pm,
+                     vkbSwapchain.image_count, vkbSwapchain.extent.width,
+                     vkbSwapchain.extent.height);
+        }
 
         auto imagesRet = vkbSwapchain.get_images();
         auto imageViewsRet = vkbSwapchain.get_image_views();

@@ -102,6 +102,15 @@ add_subdirectory("${MANRO_THIRD_PARTY_DIR}/JoltPhysics/Build")
 add_subdirectory("${MANRO_THIRD_PARTY_DIR}/spdlog")
 add_subdirectory("${MANRO_THIRD_PARTY_DIR}/flecs")
 find_package(Freetype REQUIRED)
+find_package(ZLIB REQUIRED)
+
+# mcs (Minecraft server) Anvil world source: McWorld links the prebuilt
+# mcs_core static lib (AnvilWorld/block-state tables) + mcs headers.
+# The lib only needs zlib + libstdc++ for the world path (no uring/curl).
+set(MCS_CORE_LIB "/home/laptop/CLionProjects/mcs/cmake-build-release/libmcs_core.a"
+    CACHE FILEPATH "Prebuilt mcs_core static library")
+set(MCS_INCLUDE_DIR "/home/laptop/CLionProjects/mcs/include"
+    CACHE PATH "mcs public headers")
 
 if(WIN32)
     set(SLANG_OS "windows")

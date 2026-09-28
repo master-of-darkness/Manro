@@ -138,8 +138,9 @@ namespace Manro {
         meshFeatures.primitiveFragmentShadingRateMeshShader = VK_FALSE;
         meshFeatures.meshShaderQueries = VK_TRUE;
 
-        auto phys_ret = selector
-                .set_surface(m_Surface)
+        auto configureSelector = [&](vkb::PhysicalDeviceSelector &sel, bool discreteOnly)
+                -> vkb::PhysicalDeviceSelector & {
+            sel.set_surface(m_Surface)
                 .set_required_features(baseFeatures)
                 .set_required_features_11(features11)
                 .set_required_features_12(features12)
@@ -153,8 +154,26 @@ namespace Manro {
                 .add_required_extension("VK_KHR_deferred_host_operations")
                 .add_required_extension_features(rayQueryFeatures)
                 .add_required_extension_features(asFeatures)
-                .add_required_extension_features(meshFeatures)
-                .select();
+                .add_required_extension_features(meshFeatures);
+            if (discreteOnly) {
+                // allow_any=false makes the preferred type a hard filter:
+                // with the default (allow_any=true) the type is only a
+                // soft hint and the first enumerated device (usually the
+                // integrated GPU) wins. A voxel scene that runs at 80fps
+                // on an iGPU runs 200+ on the discrete GPU.
+                sel.prefer_gpu_device_type(vkb::PreferredDeviceType::discrete);
+                sel.allow_any_gpu_device_type(false);
+            }
+            return sel;
+        };
+
+        auto phys_ret = configureSelector(selector, true).select();
+        if (!phys_ret) {
+            LOG_WARN("[Vulkan] No discrete GPU matches requirements ({}), falling back to any device",
+                     phys_ret.error().message());
+            vkb::PhysicalDeviceSelector fallback{vkb_Instance};
+            phys_ret = configureSelector(fallback, false).select();
+        }
 
         if (!phys_ret) {
             LOG_ERROR("Failed to select physical device: {}", phys_ret.error().message());
@@ -163,6 +182,19 @@ namespace Manro {
 
         vkb_PhysDev = phys_ret.value();
         m_PhysicalDevice = vkb_PhysDev.physical_device;
+        {
+            VkPhysicalDeviceProperties props{};
+            vkGetPhysicalDeviceProperties(m_PhysicalDevice, &props);
+            const char *typeName = "other";
+            switch (props.deviceType) {
+                case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU: typeName = "discrete"; break;
+                case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU: typeName = "integrated"; break;
+                case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU: typeName = "virtual"; break;
+                case VK_PHYSICAL_DEVICE_TYPE_CPU: typeName = "cpu"; break;
+                default: break;
+            }
+            LOG_INFO("[Vulkan] Selected GPU: {} ({})", props.deviceName, typeName);
+        }
     }
 
     void CVulkanContext::CreateLogicalDevice() {

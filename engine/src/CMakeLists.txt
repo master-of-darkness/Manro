@@ -32,6 +32,8 @@ set(ENGINE_RENDER_SOURCES
         Render/Voxel/VoxelSparseBinder.cpp
         Render/Voxel/VoxelWorld.cpp
         Render/Voxel/VoxelRenderer.cpp
+        Render/Voxel/VoxelMcAssets.cpp
+        Render/Voxel/VoxelMcWorld.cpp
 
         Render/Targets/RenderTargetManager.cpp
         Render/Targets/SwapchainManager.cpp
@@ -130,6 +132,7 @@ target_include_directories(Manro PRIVATE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Render>
         ${MANRO_THIRD_PARTY_DIR}/stb
+        ${MCS_INCLUDE_DIR}
 )
 target_compile_definitions(Manro PUBLIC VK_NO_PROTOTYPES IMGUI_ENABLE_FREETYPE)
 
@@ -138,6 +141,7 @@ target_link_libraries(Manro PUBLIC
         glm::glm tinyobjloader Jolt spdlog::spdlog
         SDL3::SDL3-static SDL3_mixer::SDL3_mixer-static tinygltf
         Freetype::Freetype flecs::flecs_static
+        ZLIB::ZLIB ${MCS_CORE_LIB}
 )
 
 if (MANRO_ENABLE_PROFILING)

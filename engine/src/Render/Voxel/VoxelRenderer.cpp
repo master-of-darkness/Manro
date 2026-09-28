@@ -1,6 +1,8 @@
 #include "VoxelRenderer.h"
 #include "VoxelWorld.h"
+#include "VoxelMcWorld.h"
 #include "../Vulkan/VulkanContext.h"
+#include "../Vulkan/VulkanHelpers.h"
 #include "../Vulkan/Pipeline.h"
 #include "../Vulkan/PipelineCache.h"
 #include "../Vulkan/Buffer.h"
@@ -9,6 +11,7 @@
 #include <Manro/Core/VirtualFS.h>
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <vector>
 
 namespace Manro {
@@ -26,13 +29,20 @@ namespace Manro {
         desc.maxResidentBricks = 8192;
         m_World->Init(desc);
 
+        // Tile descriptor set layout must exist before the task/mesh PSO
+        // bakes it into its pipeline layout.
+        CreateTileDescriptor();
         BuildPipelines(cache);
 
         // Sorted visible ordinals (uint per brick), host-written every frame.
-        m_VisibilityBuffer = CreateScope<CBuffer>(
-            m_Context, sizeof(u32) * 2 * desc.maxResidentBricks,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-            VMA_MEMORY_USAGE_CPU_TO_GPU);
+        // Ringed per flight slot (see header): sharing one buffer across
+        // in-flight frames tears task reads.
+        for (u32 i = 0; i < CVoxelRenderer::kFlightSlots; ++i) {
+            m_VisibilityRing[i] = CreateScope<CBuffer>(
+                m_Context, sizeof(u32) * 2 * desc.maxResidentBricks,
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                VMA_MEMORY_USAGE_CPU_TO_GPU);
+        }
         // VkDispatchIndirectCommand layout for pass-2 re-dispatch.
         m_TaskIndirectBuffer = CreateScope<CBuffer>(
             m_Context, sizeof(VkDispatchIndirectCommand),
@@ -84,10 +94,38 @@ namespace Manro {
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
                 VK_BUFFER_USAGE_TRANSFER_DST_BIT,
             VMA_MEMORY_USAGE_CPU_TO_GPU);
+        // Vanilla tables: tile layer per (state, face) + flags per state.
+        // Sized 32768 so any uint16 state id indexes safely (real states top
+        // out at ~32365). Host-written once per McInit.
+        m_McTileTable = CreateScope<CBuffer>(
+            m_Context, sizeof(u32) * 32768 * 6,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+            VMA_MEMORY_USAGE_CPU_TO_GPU);
+        m_McFlagsTable = CreateScope<CBuffer>(
+            m_Context, sizeof(u32) * 32768,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+            VMA_MEMORY_USAGE_CPU_TO_GPU);
+        // Fallback 1-magenta-tile array: the descriptor set is always valid,
+        // even before McInit uploads the real pack.
+        {
+            McAssetPack_t fallback{};
+            fallback.tiles.emplace_back(16 * 16 * 4, 0);
+            for (int i = 0; i < 16 * 16; ++i) {
+                fallback.tiles[0][i * 4 + 0] = 255;
+                fallback.tiles[0][i * 4 + 2] = 255;
+                fallback.tiles[0][i * 4 + 3] = 255;
+            }
+            fallback.tilePaths.emplace_back();
+            fallback.states.resize(32768);
+            CreateMcTiles(fallback);
+            UploadMcTables();
+        }
 
         // Sun dir normalized once here so the fragment shader (SM-bound at
         // fullscreen) can use it directly with no per-pixel normalize.
-        Vec4 sun[2] = {Vec4(0.3f, -1.f, 0.2f, 0.f), Vec4(1.f, 0.98f, 0.9f, 3.f)};
+        // Intensity 1.0: vanilla albedo is authored for ~1x daylight; the old
+        // 3.0 blew sand/water to white through the tonemapper.
+        Vec4 sun[2] = {Vec4(0.3f, -1.f, 0.2f, 0.f), Vec4(1.f, 0.98f, 0.9f, 1.f)};
         {
             const float len =
                 std::sqrt(sun[0].x * sun[0].x + sun[0].y * sun[0].y + sun[0].z * sun[0].z);
@@ -117,11 +155,17 @@ namespace Manro {
         if (device) {
             vkDeviceWaitIdle(device);
         }
+        DestroyMcTiles();
+        DestroyTileDescriptor();
+        m_McWorld.reset();
+        m_McTileTable.reset();
+        m_McFlagsTable.reset();
         m_TaskMeshPipeline.reset();
         m_EditPipeline.reset();
         m_GiInjectPipeline.reset();
         m_GiPropagatePipeline.reset();
-        m_VisibilityBuffer.reset();
+        for (auto &slot : m_VisibilityRing)
+            slot.reset();
         m_TaskIndirectBuffer.reset();
         m_TaskCountBuffer.reset();
         m_PaletteBuffer.reset();
@@ -160,8 +204,11 @@ namespace Manro {
         meshCfg.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
         meshCfg.msaaSamples = VK_SAMPLE_COUNT_1_BIT; // voxel path is MSAA-free
         meshCfg.pushConstantStages = VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT |
-                                     VK_SHADER_STAGE_FRAGMENT_BIT;
+                                      VK_SHADER_STAGE_FRAGMENT_BIT;
         meshCfg.pushConstantSize = sizeof(VoxelFrameRoot_t);
+        // Vanilla tile array (fragment set 0): images can't travel by BDA.
+        if (m_TileSetLayout != VK_NULL_HANDLE)
+            meshCfg.descriptorSetLayouts = {m_TileSetLayout};
         meshCfg.depthWriteEnable = VK_TRUE;
         meshCfg.depthCompareOp = VK_COMPARE_OP_LESS;
 
@@ -173,6 +220,12 @@ namespace Manro {
         meshKey.colorFmt = meshCfg.colorAttachmentFormat;
         meshKey.depthFmt = meshCfg.depthAttachmentFormat;
         meshKey.pushConstantSize = meshCfg.pushConstantSize;
+        if (m_TileSetLayout != VK_NULL_HANDLE) {
+            meshKey.setLayoutCount = 1;
+            // Stable id for the single tile-array set (FNV-1a of
+            // "voxel_tiles_v1", precomputed).
+            meshKey.setLayoutHash = 0x7B9B2F4A8C1D3E55ull;
+        }
 
         m_TaskMeshPipeline = CreateScope<CPipeline>(m_Context);
         cache.GetGraphics(meshKey, [&](VkPipelineCache) -> VkPipeline {
@@ -201,6 +254,308 @@ namespace Manro {
         buildCompute(m_EditPipeline, editSpv, sizeof(VoxelEditPushConstants_t), "voxel_edit");
         buildCompute(m_GiInjectPipeline, giInjectSpv, sizeof(VoxelGiPushConstants_t), "voxel_gi_inject");
         buildCompute(m_GiPropagatePipeline, giPropSpv, sizeof(VoxelGiPushConstants_t), "voxel_gi_propagate");
+    }
+
+    void CVoxelRenderer::CreateTileDescriptor() {
+        DestroyTileDescriptor();
+        VkDevice device = m_Context.GetDevice();
+        VkDescriptorSetLayoutBinding b{};
+        b.binding = 0;
+        b.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        b.descriptorCount = 1;
+        b.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        VkDescriptorSetLayoutCreateInfo li{};
+        li.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        li.bindingCount = 1;
+        li.pBindings = &b;
+        if (vkCreateDescriptorSetLayout(device, &li, nullptr, &m_TileSetLayout) != VK_SUCCESS)
+            throw std::runtime_error("[CVoxelRenderer] Tile set layout failed");
+        VkDescriptorPoolSize ps{};
+        ps.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        ps.descriptorCount = 1;
+        VkDescriptorPoolCreateInfo pi{};
+        pi.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        pi.maxSets = 1;
+        pi.poolSizeCount = 1;
+        pi.pPoolSizes = &ps;
+        if (vkCreateDescriptorPool(device, &pi, nullptr, &m_TilePool) != VK_SUCCESS)
+            throw std::runtime_error("[CVoxelRenderer] Tile pool failed");
+        VkDescriptorSetAllocateInfo ai{};
+        ai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        ai.descriptorPool = m_TilePool;
+        ai.descriptorSetCount = 1;
+        ai.pSetLayouts = &m_TileSetLayout;
+        if (vkAllocateDescriptorSets(device, &ai, &m_TileSet) != VK_SUCCESS)
+            throw std::runtime_error("[CVoxelRenderer] Tile set alloc failed");
+    }
+
+    void CVoxelRenderer::DestroyTileDescriptor() {
+        VkDevice device = m_Context.GetDevice();
+        if (!device)
+            return;
+        // Destroying the pool frees the set.
+        m_TileSet = VK_NULL_HANDLE;
+        if (m_TilePool) {
+            vkDestroyDescriptorPool(device, m_TilePool, nullptr);
+            m_TilePool = VK_NULL_HANDLE;
+        }
+        if (m_TileSetLayout) {
+            vkDestroyDescriptorSetLayout(device, m_TileSetLayout, nullptr);
+            m_TileSetLayout = VK_NULL_HANDLE;
+        }
+    }
+
+    namespace {
+        u32 FindDeviceLocalMemory(VkPhysicalDevice phys, u32 bits) {
+            VkPhysicalDeviceMemoryProperties props{};
+            vkGetPhysicalDeviceMemoryProperties(phys, &props);
+            for (u32 i = 0; i < props.memoryTypeCount; ++i) {
+                if ((bits & (1u << i)) &&
+                    (props.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
+                    return i;
+            }
+            throw std::runtime_error("[CVoxelRenderer] No device-local memory type");
+        }
+    } // namespace
+
+    void CVoxelRenderer::CreateMcTiles(const McAssetPack_t &pack) {
+        DestroyMcTiles();
+        VkDevice device = m_Context.GetDevice();
+        const u32 layers = std::max<u32>(1u, static_cast<u32>(pack.tiles.size()));
+        constexpr u32 kMips = 5; // 16 -> 1
+        m_TileLayers = layers;
+
+        VkImageCreateInfo ii{};
+        ii.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        ii.imageType = VK_IMAGE_TYPE_2D;
+        ii.format = VK_FORMAT_R8G8B8A8_SRGB;
+        ii.extent = {16, 16, 1};
+        ii.mipLevels = kMips;
+        ii.arrayLayers = layers;
+        ii.samples = VK_SAMPLE_COUNT_1_BIT;
+        ii.tiling = VK_IMAGE_TILING_OPTIMAL;
+        ii.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        ii.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        ii.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        if (vkCreateImage(device, &ii, nullptr, &m_TileImage) != VK_SUCCESS)
+            throw std::runtime_error("[CVoxelRenderer] Tile image failed");
+        VkMemoryRequirements req{};
+        vkGetImageMemoryRequirements(device, m_TileImage, &req);
+        VkMemoryAllocateInfo ai{};
+        ai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        ai.allocationSize = req.size;
+        ai.memoryTypeIndex = FindDeviceLocalMemory(m_Context.GetPhysicalDevice(), req.memoryTypeBits);
+        if (vkAllocateMemory(device, &ai, nullptr, &m_TileMemory) != VK_SUCCESS)
+            throw std::runtime_error("[CVoxelRenderer] Tile memory failed");
+        vkBindImageMemory(device, m_TileImage, m_TileMemory, 0);
+
+        // CPU mip chain (box filter in sRGB bytes — invisible at 16px, and
+        // it avoids 5k GPU blits at init). One staging buffer, one copy.
+        constexpr u32 kLevelPx[5] = {256, 64, 16, 4, 1};
+        VkDeviceSize layerBytes = 0;
+        for (u32 m = 0; m < kMips; ++m)
+            layerBytes += static_cast<VkDeviceSize>(kLevelPx[m]) * 4u;
+        std::vector<u8> staging(static_cast<size_t>(layerBytes) * layers);
+        std::vector<u32> prev(256), cur(256);
+        for (u32 l = 0; l < layers; ++l) {
+            const u8 *src = (l < pack.tiles.size() && pack.tiles[l].size() >= 16 * 16 * 4)
+                                ? pack.tiles[l].data()
+                                : pack.tiles[0].data();
+            for (int i = 0; i < 256; ++i)
+                prev[static_cast<size_t>(i)] = static_cast<u32>(src[i * 4 + 0]) |
+                                               (static_cast<u32>(src[i * 4 + 1]) << 8u) |
+                                               (static_cast<u32>(src[i * 4 + 2]) << 16u) |
+                                               (static_cast<u32>(src[i * 4 + 3]) << 24u);
+            size_t dstOff = static_cast<size_t>(layerBytes) * l;
+            u32 dim = 16;
+            for (u32 m = 0; m < kMips; ++m) {
+                for (u32 i = 0; i < dim * dim; ++i) {
+                    const u32 p = prev[i];
+                    staging[dstOff + i * 4 + 0] = static_cast<u8>(p & 0xFFu);
+                    staging[dstOff + i * 4 + 1] = static_cast<u8>((p >> 8u) & 0xFFu);
+                    staging[dstOff + i * 4 + 2] = static_cast<u8>((p >> 16u) & 0xFFu);
+                    staging[dstOff + i * 4 + 3] = static_cast<u8>((p >> 24u) & 0xFFu);
+                }
+                dstOff += static_cast<size_t>(dim) * dim * 4u;
+                if (m + 1u < kMips) {
+                    const u32 nd = dim / 2u;
+                    for (u32 y = 0; y < nd; ++y) {
+                        for (u32 x = 0; x < nd; ++x) {
+                            u32 acc[4] = {0, 0, 0, 0};
+                            for (u32 dy = 0; dy < 2; ++dy) {
+                                for (u32 dx = 0; dx < 2; ++dx) {
+                                    const u32 p = prev[(y * 2u + dy) * dim + (x * 2u + dx)];
+                                    acc[0] += p & 0xFFu;
+                                    acc[1] += (p >> 8u) & 0xFFu;
+                                    acc[2] += (p >> 16u) & 0xFFu;
+                                    acc[3] += (p >> 24u) & 0xFFu;
+                                }
+                            }
+                            cur[y * nd + x] = ((acc[0] + 2u) / 4u) | (((acc[1] + 2u) / 4u) << 8u) |
+                                              (((acc[2] + 2u) / 4u) << 16u) |
+                                              (((acc[3] + 2u) / 4u) << 24u);
+                        }
+                    }
+                    prev = cur;
+                    dim = nd;
+                }
+            }
+        }
+        CBuffer stageBuf(m_Context, staging.size(),
+                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+        stageBuf.LoadData(staging.data(), staging.size());
+
+        std::vector<VkBufferImageCopy> regions;
+        regions.reserve(static_cast<size_t>(layers) * kMips);
+        for (u32 l = 0; l < layers; ++l) {
+            VkDeviceSize off = static_cast<VkDeviceSize>(layerBytes) * l;
+            u32 dim = 16;
+            for (u32 m = 0; m < kMips; ++m) {
+                VkBufferImageCopy r{};
+                r.bufferOffset = off;
+                r.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, m, l, 1};
+                r.imageExtent = {dim, dim, 1};
+                regions.push_back(r);
+                off += static_cast<VkDeviceSize>(dim) * dim * 4u;
+                dim /= 2u;
+            }
+        }
+
+        VkImageViewCreateInfo vi{};
+        vi.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        vi.image = m_TileImage;
+        vi.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+        vi.format = VK_FORMAT_R8G8B8A8_SRGB;
+        vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, kMips, 0, layers};
+        if (vkCreateImageView(device, &vi, nullptr, &m_TileView) != VK_SUCCESS)
+            throw std::runtime_error("[CVoxelRenderer] Tile view failed");
+
+        VkSamplerCreateInfo si{};
+        si.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        si.magFilter = VK_FILTER_NEAREST;
+        si.minFilter = VK_FILTER_LINEAR;
+        si.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        si.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        si.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        si.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        si.minLod = 0.f;
+        si.maxLod = static_cast<float>(kMips - 1);
+        si.maxAnisotropy = 1.f;
+        if (vkCreateSampler(device, &si, nullptr, &m_TileSampler) != VK_SUCCESS)
+            throw std::runtime_error("[CVoxelRenderer] Tile sampler failed");
+
+        ExecuteOneShot(m_Context, [&](VkCommandBuffer cmd) {
+            VkImageMemoryBarrier b0{};
+            b0.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            b0.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            b0.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            b0.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            b0.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            b0.image = m_TileImage;
+            b0.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, kMips, 0, layers};
+            b0.srcAccessMask = 0;
+            b0.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                                 VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &b0);
+            vkCmdCopyBufferToImage(cmd, stageBuf.GetHandle(), m_TileImage,
+                                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                   static_cast<u32>(regions.size()), regions.data());
+            VkImageMemoryBarrier b1 = b0;
+            b1.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            b1.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            b1.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            b1.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr,
+                                 1, &b1);
+        });
+
+        VkDescriptorImageInfo ii2{};
+        ii2.sampler = m_TileSampler;
+        ii2.imageView = m_TileView;
+        ii2.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        VkWriteDescriptorSet w{};
+        w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        w.dstSet = m_TileSet;
+        w.dstBinding = 0;
+        w.descriptorCount = 1;
+        w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        w.pImageInfo = &ii2;
+        vkUpdateDescriptorSets(device, 1, &w, 0, nullptr);
+        LOG_INFO("[CVoxelRenderer] Tile array: {} layers, {} mips", layers, kMips);
+    }
+
+    void CVoxelRenderer::DestroyMcTiles() {
+        VkDevice device = m_Context.GetDevice();
+        if (!device)
+            return;
+        if (m_TileSampler) {
+            vkDestroySampler(device, m_TileSampler, nullptr);
+            m_TileSampler = VK_NULL_HANDLE;
+        }
+        if (m_TileView) {
+            vkDestroyImageView(device, m_TileView, nullptr);
+            m_TileView = VK_NULL_HANDLE;
+        }
+        if (m_TileImage) {
+            vkDestroyImage(device, m_TileImage, nullptr);
+            m_TileImage = VK_NULL_HANDLE;
+        }
+        if (m_TileMemory) {
+            vkFreeMemory(device, m_TileMemory, nullptr);
+            m_TileMemory = VK_NULL_HANDLE;
+        }
+        m_TileLayers = 0;
+    }
+
+    void CVoxelRenderer::UploadMcTables() {
+        std::vector<u32> tiles(32768u * 6u, 0u), flags(32768u, 0u);
+        const size_t n = std::min(m_McPack.states.size(), static_cast<size_t>(32768u));
+        for (size_t s = 0; s < n; ++s) {
+            for (int f = 0; f < 6; ++f)
+                tiles[s * 6u + static_cast<size_t>(f)] = m_McPack.states[s].faces.tile[f];
+            flags[s] = m_McPack.states[s].flags;
+        }
+        m_McTileTable->LoadData(tiles.data(), tiles.size() * sizeof(u32));
+        m_McFlagsTable->LoadData(flags.data(), flags.size() * sizeof(u32));
+    }
+
+    Vec3 CVoxelRenderer::McInit(const std::string &worldDir, const std::string &assetsDir,
+                                int radiusSections) {
+        // Recreating the tile array while flights may sample it: init-time
+        // op, idle is correct and cheap here.
+        VkDevice device = m_Context.GetDevice();
+        if (device)
+            vkDeviceWaitIdle(device);
+        std::string dir = assetsDir;
+        if (dir.empty()) {
+            if (const char *env = std::getenv("MC_ASSETS_DIR"))
+                dir = env;
+            else
+                dir = "/home/laptop/CLionProjects/Manro/.mcassets/assets/minecraft";
+        }
+        std::string err;
+        if (!BuildMcAssetPack(dir, m_McPack, err)) {
+            LOG_ERROR("[CVoxelRenderer] Mc assets failed: {}", err);
+            return Vec3(8.f, 80.f, 8.f);
+        }
+        if (m_McPack.maxState >= 32768u) {
+            LOG_ERROR("[CVoxelRenderer] State id {} exceeds 15-bit face-cache pack", m_McPack.maxState);
+            return Vec3(8.f, 80.f, 8.f);
+        }
+        CreateMcTiles(m_McPack);
+        UploadMcTables();
+        m_McWorld = std::make_unique<CVoxelMcWorld>();
+        McWorldDesc_t desc{};
+        desc.worldDir = worldDir;
+        desc.radiusSections = radiusSections;
+        return m_McWorld->Init(*m_World, m_McPack, desc);
+    }
+
+    int CVoxelRenderer::McUpdate(const Vec3 &cameraPos) {
+        if (!m_McWorld)
+            return 0;
+        return m_McWorld->Update(*m_World, cameraPos);
     }
 
     void CVoxelRenderer::DispatchEdits(VkCommandBuffer cb) {
@@ -321,19 +676,44 @@ namespace Manro {
 
         // CPU front-to-back sort + frustum compact (the proper overdraw cut):
         // visible bricks only, nearest first, so hardware ZCULL + early-z
-        // kills hidden pixels instead of shading them. 128 bricks is
-        // microseconds; dispatch gets the exact visible count — no empty
-        // task groups. Same NDC convention the mesh shader rasterizes with
-        // (glm M*v), so the compact can never disagree with the draw.
+        // kills hidden pixels instead of shading them. Dispatch gets the
+        // exact visible count — no empty task groups.
+        // - Hidden interior bricks (fully opaque + opaque neighbors) are
+        //   skipped before dispatch: no task/mesh/raster cost for solid rock.
+        // - Frustum test is 6-plane sphere vs the same viewProj the mesh
+        //   shader rasterizes with (plane extraction is exact, unlike an
+        //   8-corner NDC test it can never disagree per corner convention).
         u32 visibleCount = brickCount;
+        // Visibility + params rings share the flight slot so host uploads
+        // can never tear an in-flight frame's task/mesh reads.
+        CBuffer &visSlot = *m_VisibilityRing[flightSlot % kFlightSlots];
         {
             const float brickSize = m_World->GetBrickSize();
             const float radius = brickSize * 0.8660254f; // half-diagonal
             const float maxD = 10000.f + radius;
             m_VisibleScratch.clear();
             if (m_bUseFrustum) {
+                // Frustum planes from viewProj rows (glm column-major:
+                // row r = (m[0][r], m[1][r], m[2][r], m[3][r])).
+                Vec4 rows[4];
+                for (int r = 0; r < 4; ++r)
+                    rows[r] = Vec4(viewProj[0][r], viewProj[1][r], viewProj[2][r], viewProj[3][r]);
+                Vec4 planes[6] = {rows[3] + rows[0], rows[3] - rows[0], rows[3] + rows[1],
+                                  rows[3] - rows[1], rows[3] + rows[2], rows[3] - rows[2]};
+                for (auto &pl : planes) {
+                    const float len = std::sqrt(pl.x * pl.x + pl.y * pl.y + pl.z * pl.z);
+                    if (len > 1e-6f) {
+                        const float inv = 1.f / len;
+                        pl.x *= inv;
+                        pl.y *= inv;
+                        pl.z *= inv;
+                        pl.w *= inv;
+                    }
+                }
                 const auto &mirror = m_World->GetHeaderMirror();
                 for (u32 i = 0; i < brickCount; ++i) {
+                    if (m_World->IsBrickHidden(i))
+                        continue;
                     const VoxelBrickHeader_t &h = mirror[i];
                     if ((h.flags & 1u) == 0u)
                         continue;
@@ -342,45 +722,34 @@ namespace Manro {
                     const float dist2 = glm::dot(toC, toC);
                     if (dist2 > maxD * maxD)
                         continue;
-                    const bool inBox =
-                        cameraPos.x >= h.origin.x && cameraPos.y >= h.origin.y &&
-                        cameraPos.z >= h.origin.z && cameraPos.x <= h.origin.x + brickSize &&
-                        cameraPos.y <= h.origin.y + brickSize && cameraPos.z <= h.origin.z + brickSize;
-                    bool hit = inBox, anyFront = false, anyBehind = false;
-                    if (!inBox) {
-                        for (u32 c = 0; c < 8u && !hit; ++c) {
-                            const Vec3 corner =
-                                h.origin +
-                                Vec3(float(c & 1u), float((c >> 1u) & 1u), float((c >> 2u) & 1u)) *
-                                    brickSize;
-                            const Vec4 clip = viewProj * Vec4(corner, 1.f);
-                            if (clip.w > 0.f) {
-                                anyFront = true;
-                                if (std::abs(clip.x) <= clip.w && std::abs(clip.y) <= clip.w &&
-                                    clip.z >= 0.f && clip.z <= clip.w)
-                                    hit = true;
-                            } else {
-                                anyBehind = true;
-                            }
+                    bool inside = true;
+                    for (const auto &pl : planes) {
+                        const float d = pl.x * center.x + pl.y * center.y + pl.z * center.z + pl.w;
+                        if (d < -radius) {
+                            inside = false;
+                            break;
                         }
-                        if (!hit && !(anyFront && anyBehind))
-                            continue; // culled
                     }
+                    if (!inside)
+                        continue; // culled
                     m_VisibleScratch.emplace_back(dist2, i);
                 }
                 std::sort(m_VisibleScratch.begin(), m_VisibleScratch.end(),
                           [](const auto &a, const auto &b) { return a.first < b.first; });
                 visibleCount = static_cast<u32>(m_VisibleScratch.size());
             } else {
-                for (u32 i = 0; i < brickCount; ++i)
+                for (u32 i = 0; i < brickCount; ++i) {
+                    if (m_World->IsBrickHidden(i))
+                        continue;
                     m_VisibleScratch.emplace_back(0.f, i);
+                }
+                visibleCount = static_cast<u32>(m_VisibleScratch.size());
             }
             m_VisibleList.resize(m_VisibleScratch.size());
             for (size_t k = 0; k < m_VisibleScratch.size(); ++k)
                 m_VisibleList[k] = m_VisibleScratch[k].second;
             if (!m_VisibleList.empty())
-                m_VisibilityBuffer->LoadData(m_VisibleList.data(),
-                                             sizeof(u32) * m_VisibleList.size());
+                visSlot.LoadData(m_VisibleList.data(), sizeof(u32) * m_VisibleList.size());
         }
 
         // Push constant is the frame root; frame params live in a BDA buffer.
@@ -401,6 +770,7 @@ namespace Manro {
         frame.debugEnabled = m_bDebugEnabled ? 1u : 0u;
         frame.useBackface = m_bUseBackface ? 1u : 0u;
         frame.useFrustum = m_bUseFrustum ? 1u : 0u;
+        frame.virtualDim = m_World->GetVirtualDim();
         CBuffer &paramsSlot = *m_FrameParamsRing[flightSlot % kFlightSlots];
         paramsSlot.LoadData(&frame, sizeof(frame));
 
@@ -408,16 +778,20 @@ namespace Manro {
         root.brickBufferAddr = m_World->GetBrickBufferAddr();
         root.headerAddr = m_World->GetHeaderAddr();
         root.pageTableAddr = m_World->GetPageTableAddr();
-        root.visibilityAddr = m_VisibilityBuffer->GetDeviceAddress();
+        root.visibilityAddr = visSlot.GetDeviceAddress();
         root.frameAddr = paramsSlot.GetDeviceAddress();
         root.faceCacheAddr = m_FaceCache->GetDeviceAddress();
+        root.tileTableAddr = m_McTileTable ? m_McTileTable->GetDeviceAddress() : 0u;
+        root.mcFlagsAddr = m_McFlagsTable ? m_McFlagsTable->GetDeviceAddress() : 0u;
         // DEBUG counters: device-side clear only when capture is enabled.
         // Skipping the Fill + extra barrier saves a full-buffer op/frame.
         if (m_bDebugEnabled)
             vkCmdFillBuffer(cb, m_DebugReadback->GetHandle(), 0, sizeof(u32) * 8, 0);
         root.debugAddr = m_DebugReadback->GetDeviceAddress();
 
-        // Frame params + visibility list (host uploads) -> task/mesh.
+        // Frame params + visibility list (host uploads) -> task/mesh reads.
+        // Downloaded buffers are read-only downstream: dst access is READ,
+        // not READ|WRITE (the WRITE bit needlessly stalls the pipeline).
         // Debug-clear barrier appended only when capture is enabled. The
         // global memory barrier orders prior in-flight frames' shader
         // writes (face-cache stores, edit writes) before task reads.
@@ -430,11 +804,11 @@ namespace Manro {
             b[0].dstStageMask = VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT |
                                 VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT |
                                 VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-            b[0].dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT;
+            b[0].dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
             b[0].buffer = paramsSlot.GetHandle();
             b[0].size = VK_WHOLE_SIZE;
             b[1] = b[0];
-            b[1].buffer = m_VisibilityBuffer->GetHandle();
+            b[1].buffer = visSlot.GetHandle();
             if (m_bDebugEnabled) {
                 b[2] = b[0];
                 b[2].buffer = m_DebugReadback->GetHandle();
@@ -502,6 +876,11 @@ namespace Manro {
                            VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT |
                                VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(root), &root);
+        // Vanilla tile array (always valid: magenta fallback before McInit).
+        if (m_TileSet != VK_NULL_HANDLE) {
+            vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    m_TaskMeshPipeline->GetLayout(), 0, 1, &m_TileSet, 0, nullptr);
+        }
 
         // Sorted front-to-back compact list: exact dispatch count, no empty
         // task groups, early-z order for hidden-pixel rejection.

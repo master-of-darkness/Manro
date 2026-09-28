@@ -103,4 +103,9 @@ namespace Manro {
     void RendererImplVoxelSetBackfaceEnabled(CRendererImpl &impl, bool enabled);
 
     void RendererImplVoxelSetFrustumEnabled(CRendererImpl &impl, bool enabled);
+
+    Vec3 RendererImplVoxelMcInit(CRendererImpl &impl, const std::string &worldDir,
+                                 const std::string &assetsDir, int radiusSections);
+
+    int RendererImplVoxelMcUpdate(const CRendererImpl &impl);
 }

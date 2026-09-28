@@ -11,11 +11,11 @@ VoxelFrameRoot g_MeshRoot;
 
 struct VoxelMeshVertex {
     float4 pos : SV_Position;
-    // Flat lit color, computed once per face here (mesh rate) instead of per
-    // pixel in fragment: every lighting input is face-uniform (flat normal,
-    // flat material/AO, uniform sun/palette), so per-pixel evaluation was
-    // pure redundancy. Bit-identical output, ~4x less fragment ALU.
-    nointerpolation float3 color : COLOR;
+    // Per-corner quad UV (u along the horizontal tangent, v=0 at the
+    // texture top row). Interpolated; the fragment samples the tile array.
+    float2 uv : TEXCOORD0;
+    // Flat (face:3 | state:15): tile + cutout resolve in fragment.
+    nointerpolation uint faceState : TEXCOORD1;
 };
 
 [shader("mesh")]
@@ -69,7 +69,7 @@ void MeshMain(
         uint packed = fcb[1u + base + gidx];
         uint iter = packed & 0xFFFu;
         uint f = (packed >> 12u) & 0x7u;
-        uint mat = (packed >> 15u) & 0x1FFu;
+        uint mat = (packed >> 15u) & 0x7FFFu;
         uint x = iter & 15u;
         uint y = (iter >> 4u) & 15u;
         uint z = (iter >> 8u) & 15u;
@@ -88,29 +88,36 @@ void MeshMain(
             b, b + t1 * voxelSize, b + t1 * voxelSize + t2 * voxelSize, b + t2 * voxelSize
         };
         uint vtx = gidx * 4u;
-        // Per-face lighting (mesh rate = ~100x fewer evaluations than
-        // fragment rate for typical quads). Same formula the fragment used.
-        vk::BufferPointer<float4> palette = vk::BufferPointer<float4>(frame.paletteAddr);
-        float3 base = palette.getPtr()[mat & 511u].rgb;
-        vk::BufferPointer<float4> sun = vk::BufferPointer<float4>(frame.sunAddr);
-        float4* sunData = sun.getPtr();
-        float3 toSun = -sunData[0].xyz; // normalized once on upload
-        float ndl = saturate(dot(nrm, toSun));
-        float an = abs(nrm.y) > 0.5 ? (nrm.y > 0.0 ? 1.0 : 0.5)
-                 : (abs(nrm.x) > 0.5 ? 0.8 : 0.65);
-        float3 lit = base * (0.15 + sunData[1].rgb * (ndl * sunData[1].a)) * an;
-        // Face-ambient-occlusion stub: wired in Phase 6 (GI), flat 3 now
-        // (folds to 1.0, omitted).
+        // Quad UVs: u along the horizontal tangent, v=0 at the top row
+        // (Vulkan v=0 is the PNG's first row). Corner order is fixed:
+        // [b, b+t1, b+t1+t2, b+t2], so per-face axis mapping gives upright
+        // textures on every orientation.
+        // ±Y faces: t1=+X (u), t2=+Z; ±Z faces: t1=+X (u), t2=+Y;
+        // ±X faces: t1=+Y, t2=+Z (u along t2).
+        bool uAlongT1 = abs(nrm.x) < 0.5;
         // Backface test uses the voxel center (conservative: keeps grazing
         // faces, never drops a visible one).
         float3 vc = hdr.origin + (float3(float(x), float(y), float(z)) + 0.5) * voxelSize;
         bool culled = frame.useBackface != 0u && !camInside &&
                       dot(nrm, frame.cameraPos - vc) <= 0.0;
         float3 anchor = culled ? vc : corners[0];
+        uint faceState = ((mat & 0x7FFFu) << 3u) | (f & 0x7u);
         for (uint c = 0u; c < 4u; ++c) {
+            float o1 = (c == 1u || c == 2u) ? 1.0 : 0.0;
+            float o2 = (c >= 2u) ? 1.0 : 0.0;
+            float uu = uAlongT1 ? o1 : o2;
+            float vv;
+            if (abs(nrm.y) > 0.5) {
+                vv = o2; // top/bottom faces: v along +Z
+            } else if (abs(t1.y) > 0.5) {
+                vv = 1.0 - o1; // t1 vertical: v along +Y, top row first
+            } else {
+                vv = 1.0 - o2; // t2 vertical: v along +Y, top row first
+            }
             verts[vtx + c].pos =
                 mul(frame.viewProj, float4(culled ? anchor : corners[c], 1.0));
-            verts[vtx + c].color = lit;
+            verts[vtx + c].uv = float2(uu, vv);
+            verts[vtx + c].faceState = faceState;
         }
         tris[gidx * 2u] = uint3(vtx, vtx + 1, vtx + 2);
         tris[gidx * 2u + 1u] = uint3(vtx, vtx + 2u, vtx + 3u);

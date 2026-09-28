@@ -144,10 +144,29 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
             }
             GroupMemoryBarrierWithGroupSync();
             if (s_hasContent != 0u) {
-                // Occupancy-only scan: every exposed face is stored, with NO
+                // State-aware scan: every exposed face is stored, with NO
                 // view-dependent culling. The cache must stay valid for all
                 // viewpoints (backface rejection runs per-frame in mesh);
                 // caching a culled list freezes one viewpoint's visibility.
+                // mats[] holds vanilla protocol state ids; mcFlags (root)
+                // carries opaque/cutout/skip/inner bits per state.
+                // Emit rule per face of V against neighbor N:
+                // - N skipped/air -> emit; N == V -> emit only for inner
+                //   faces (leaves); opaque N -> cull; else emit.
+                // Neighbors outside this brick resolve through the page table
+                // into the adjacent resident brick (missing/unfilled reads as
+                // air, so the face emits and the neighbor emits its own side
+                // when IT fills + dirties us for a re-evaluation). This kills
+                // the doubled hidden boundary faces that otherwise rasterize
+                // inside solid rock on every frame.
+                vk::BufferPointer<uint> mcfl = vk::BufferPointer<uint>(g_TaskRoot.mcFlagsAddr);
+                uint* mcFlags = mcfl.getPtr();
+                vk::BufferPointer<int> nbpt = vk::BufferPointer<int>(g_TaskRoot.pageTableAddr);
+                int* pageTable = nbpt.getPtr();
+                vk::BufferPointer<uint> nbr = vk::BufferPointer<uint>(g_TaskRoot.brickBufferAddr);
+                uint* nstore = nbr.getPtr();
+                float voxelSize = frame.brickSize / 16.0;
+                uint vdim = frame.virtualDim;
                 for (uint iter = gidx; iter < 4096u; iter += 32u) {
                     uint x = iter & 15u;
                     uint y = (iter >> 4u) & 15u;
@@ -155,15 +174,54 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                     if (!VoxelSolid(occupancy, x, y, z))
                         continue;
                     uint mat = VoxelMaterial(mats, x, y, z);
+                    uint vflags = (mat < kMcStateMax) ? mcFlags[mat] : 0u;
+                    if ((vflags & 4u) != 0u)
+                        continue; // skip-states never emit (flora/air)
                     for (uint f = 0u; f < 6u; ++f) {
                         int3 n = int3(x, y, z) + kFaceOffset[f];
-                        if (VoxelSolid(occupancy, uint(n.x), uint(n.y), uint(n.z)))
+                        uint nstate = 0u;
+                        if (n.x >= 0 && n.x < 16 && n.y >= 0 && n.y < 16 && n.z >= 0 &&
+                            n.z < 16) {
+                            if (VoxelSolid(occupancy, uint(n.x), uint(n.y), uint(n.z)))
+                                nstate = VoxelMaterial(mats, uint(n.x), uint(n.y), uint(n.z));
+                        } else {
+                            // Cross-brick neighbor voxel: world pos -> page
+                            // slot -> resident ordinal -> occupancy/material.
+                            float3 nwc = bhdr.origin +
+                                         (float3(float(n.x), float(n.y), float(n.z)) + 0.5) *
+                                             voxelSize;
+                            int3 nbc = int3(floor((nwc - frame.worldMin) / frame.brickSize));
+                            if (nbc.x >= 0 && nbc.y >= 0 && nbc.z >= 0 &&
+                                uint(nbc.x) < vdim && uint(nbc.y) < vdim &&
+                                uint(nbc.z) < vdim) {
+                                uint nslot = uint(nbc.x) + uint(nbc.y) * vdim +
+                                             uint(nbc.z) * vdim * vdim;
+                                int rnb = pageTable[nslot];
+                                if (rnb >= 0) {
+                                    uint* nnbase = nstore + uint(rnb) * 2176u;
+                                    uint* nnmats = nnbase;
+                                    uint* nnocc = nnbase + 2048u;
+                                    uint nx = uint(n.x) & 15u;
+                                    uint ny = uint(n.y) & 15u;
+                                    uint nz = uint(n.z) & 15u;
+                                    if (VoxelSolid(nnocc, nx, ny, nz))
+                                        nstate = VoxelMaterial(nnmats, nx, ny, nz);
+                                }
+                            }
+                        }
+                        bool emit;
+                        if (nstate == mat)
+                            emit = (vflags & 8u) != 0u; // inner faces only
+                        else
+                            emit = (nstate >= kMcStateMax) ||
+                                   ((mcFlags[nstate] & 1u) == 0u);
+                        if (!emit)
                             continue;
                         uint slot;
                         InterlockedAdd(s_faceStaging[0], 1u, slot);
                         if (slot < 2048u) {
                             s_faceStaging[1u + slot] =
-                                (iter & 0xFFFu) | ((f & 0x7u) << 12u) | ((mat & 0x1FFu) << 15u);
+                                (iter & 0xFFFu) | ((f & 0x7u) << 12u) | ((mat & 0x7FFFu) << 15u);
                         }
                     }
                 }
