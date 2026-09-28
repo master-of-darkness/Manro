@@ -26,13 +26,19 @@ file(MAKE_DIRECTORY "${SHADER_BIN_DIR}")
 set(_EMBED_SCRIPT "${CMAKE_SOURCE_DIR}/cmake/embed_spv.cmake")
 
 macro(compile_shader SHADER_FILE ENTRY_POINT STAGE OUTPUT_FILE)
+    # Depfile tracks Slang `import` edges (e.g. voxel_common.slang), so
+    # editing a shared module recompiles all its importers. Without this,
+    # mixed old/new SPVs produce silent miscompiles (task /16 vs mesh /32).
+    set(_depfile "${OUTPUT_FILE}.d")
     add_custom_command(
             OUTPUT "${OUTPUT_FILE}"
             COMMAND ${CMAKE_COMMAND} -E env
             "${_SLANG_ENV_VAR}=$<TARGET_FILE_DIR:slangc>${_SLANG_ENV_SEP}${SLANG_EXTRA_LIB_DIR}"
             $<TARGET_FILE:slangc> "${SHADER_SRC_DIR}/${SHADER_FILE}"
             -entry ${ENTRY_POINT} -stage ${STAGE} -target spirv -I "${SHADER_SRC_DIR}" -o "${OUTPUT_FILE}"
+            -depfile "${_depfile}"
             DEPENDS "${SHADER_SRC_DIR}/${SHADER_FILE}" slangc
+            DEPFILE "${_depfile}"
             COMMENT "Compiling shader: ${SHADER_FILE} [${ENTRY_POINT}]"
     )
     list(APPEND PRECOMPILED_SHADERS "${OUTPUT_FILE}")

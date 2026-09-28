@@ -55,7 +55,7 @@ struct VoxelTaskPayload {
 // (voxelIdx:12 | face:3 | mat:9). Worst-case dense-brick surface ~1536.
 static const uint kVoxelFaceCacheStride = 2049u;
 
-static const uint kVoxelFacesPerMeshGroup = 16u;
+static const uint kVoxelFacesPerMeshGroup = 32u;
 
 bool VoxelSolid(uint* occupancy, uint x, uint y, uint z) {
     if (x >= 16u || y >= 16u || z >= 16u)

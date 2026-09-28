@@ -57,6 +57,11 @@ namespace Manro {
         [[nodiscard]] const Vec3 &GetWorldMin() const { return m_WorldMin; }
         [[nodiscard]] u32 GetVirtualDim() const { return m_VirtualDim; }
         [[nodiscard]] const std::vector<VoxelEditCmd_t> &GetPendingEdits() const { return m_PendingEdits; }
+        // CPU mirror of brick headers (origins/flags) for the front-to-back
+        // sort + frustum compact in Record. Origins are alloc-time constant.
+        [[nodiscard]] const std::vector<VoxelBrickHeader_t> &GetHeaderMirror() const {
+            return m_HeaderMirror;
+        }
 
         // Sync headers + page table to GPU after allocation/upload.
         void FlushHeaders();

@@ -55,7 +55,11 @@ static const bool kDebugSyntheticFaces = false;
 [numthreads(32, 1, 1)]
 void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
     VoxelFrameParams frame = LoadFrame();
-    uint brickIdx = gid.x;
+    // Dispatch covers the CPU-compacted front-to-back visible list exactly
+    // (no empty groups); remap group -> resident brick ordinal here.
+    // frame.brickCount stays the total for bounds checks below.
+    vk::BufferPointer<uint> vis = vk::BufferPointer<uint>(g_TaskRoot.visibilityAddr);
+    uint brickIdx = vis.getPtr()[gid.x];
 
     // DEBUG counter helper: debugAddr[0] = task runs, [1] = visible bricks,
     // [2] = total compacted faces. Skipped unless frame.debugEnabled.
@@ -66,16 +70,14 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
         InterlockedAdd(debug[0], 1u);
     }
 
-    // useFrustum=0 disables residency + frustum + distance culling (dense
-    // append-only allocation keeps every slot < brickCount resident anyway).
+    // useFrustum=0 disables the residency + distance check here (the CPU
+    // compact + sort that feeds this dispatch is gated by the same flag).
+    // Dense append-only allocation keeps every slot < brickCount resident.
     if (frame.useFrustum != 0u && !BrickResidentAndNear(brickIdx, frame)) {
         if (gidx == 0 && wantDbg) {
             InterlockedAdd(debug[3], 1u); // culled
         }
         return;
-    }
-    if (gidx == 0 && wantDbg) {
-        InterlockedAdd(debug[1], 1u);
     }
 
     vk::BufferPointer<uint> bricks = vk::BufferPointer<uint>(g_TaskRoot.brickBufferAddr);
@@ -87,44 +89,15 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
         vk::BufferPointer<VoxelBrickHeader>(g_TaskRoot.headerAddr);
     VoxelBrickHeader bhdr = bheaders.getPtr()[brickIdx];
 
-    // 8-corner NDC frustum test, lane-cooperative (lanes 0-7 take a corner).
-    // Projects with the same mul() the mesh shader uses, so the test spans
-    // exactly the rasterized frustum: |x|<=w, |y|<=w, 0<=z<=w, w>0.
-    // s_hasContent bits: 1 = NDC hit, 2 = corner behind camera (w<=0),
-    // 4 = corner in front (w>0). Keep on: camera inside box, any hit, or
-    // straddle (some behind AND some front). All-behind / all-front-outside
-    // culls. Uniform branch after the barrier — all lanes agree.
-    if (frame.useFrustum != 0u) {
-        if (gidx == 0) {
-            s_hasContent = 0u;
-        }
-        GroupMemoryBarrierWithGroupSync();
-        bool inBox = all(frame.cameraPos >= bhdr.origin) &&
-                     all(frame.cameraPos <= bhdr.origin + frame.brickSize);
-        if (gidx < 8u && !inBox) {
-            float3 corner = bhdr.origin +
-                float3(float(gidx & 1u), float((gidx >> 1u) & 1u), float((gidx >> 2u) & 1u)) *
-                frame.brickSize;
-            float4 clip = mul(frame.viewProj, float4(corner, 1.0));
-            if (clip.w > 0.0) {
-                InterlockedOr(s_hasContent, 4u);
-                if (abs(clip.x) <= clip.w && abs(clip.y) <= clip.w &&
-                    clip.z >= 0.0 && clip.z <= clip.w) {
-                    InterlockedOr(s_hasContent, 1u);
-                }
-            } else {
-                InterlockedOr(s_hasContent, 2u);
-            }
-        }
-        GroupMemoryBarrierWithGroupSync();
-        bool boxVisible = inBox || ((s_hasContent & 1u) != 0u) ||
-                          ((s_hasContent & 6u) == 6u);
-        if (!boxVisible) {
-            if (gidx == 0 && wantDbg) {
-                InterlockedAdd(debug[3], 1u); // culled
-            }
-            return;
-        }
+    // NOTE: no GPU frustum re-test here on purpose. The CPU already
+    // compacted the dispatch to frustum-visible bricks (exact: same NDC test
+    // against the same matrix), so a lane-cooperative re-test with its two
+    // group barriers + shared atomics measured SLOWER than nothing when the
+    // scene is mostly visible. Residency + distance above stay as cheap,
+    // barrier-free belt-and-braces (and cover future sparse eviction).
+    // Survived all culling: this brick will dispatch mesh groups.
+    if (gidx == 0 && wantDbg) {
+        InterlockedAdd(debug[1], 1u);
     }
     vk::BufferPointer<uint> fcache = vk::BufferPointer<uint>(g_TaskRoot.faceCacheAddr);
     uint* fcb = fcache.getPtr() + brickIdx * kVoxelFaceCacheStride;
@@ -132,9 +105,8 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
     // Face-cache fast path (Minecraft rule: static bricks cost ~nothing).
     // needsScan is uniform — same header for all lanes.
     // bit1 = dirty (a GPU edit touched this brick), bit2 = cache valid.
-    // Task never clears dirty (clearing races in-flight readers); an edited
-    // brick simply rescans until a CPU header flush resets it — rare and
-    // always correct.
+    // The scan path consumes dirty after storing (see below), so an edited
+    // brick rescans exactly the frames it needs — no permanent rescan.
     bool needsScan = kDebugSyntheticFaces ||
                      ((bhdr.flags & 4u) == 0u) || ((bhdr.flags & 2u) != 0u);
     uint faceCount = 0u;
@@ -217,10 +189,18 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
             // Task stores -> mesh reads within this draw.
             DeviceMemoryBarrier();
             if (gidx == 0) {
-                // Mark cache valid. Header uint layout: origin(0-2),
-                // pageIndex(3), flags(4). Dirty bit intentionally kept set.
+                // Consume dirty + mark cache valid. Header uint layout:
+                // origin(0-2), pageIndex(3), flags(4).
+                // Clearing dirty here (instead of never) stops edited bricks
+                // rescanning forever — the fps death seen after ~50 edits.
+                // Residual race: an edit landing in the same in-flight window
+                // as this clear can lose one dirty flag; the next edit or
+                // alloc re-marks it, so it self-heals. Strictly better than
+                // permanent rescan.
                 vk::BufferPointer<uint> hraw = vk::BufferPointer<uint>(g_TaskRoot.headerAddr);
-                InterlockedOr(hraw.getPtr()[brickIdx * 8u + 4u], 4u);
+                uint* hw = hraw.getPtr();
+                InterlockedAnd(hw[brickIdx * 8u + 4u], ~2u);
+                InterlockedOr(hw[brickIdx * 8u + 4u], 4u);
             }
         }
     }

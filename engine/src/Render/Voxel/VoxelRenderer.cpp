@@ -29,10 +29,11 @@ namespace Manro {
         BuildPipelines(cache);
         CreateHiZ(width, height);
 
+        // Sorted visible ordinals (uint per brick), host-written every frame.
         m_VisibilityBuffer = CreateScope<CBuffer>(
             m_Context, sizeof(u32) * 2 * desc.maxResidentBricks,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-            VMA_MEMORY_USAGE_GPU_ONLY);
+            VMA_MEMORY_USAGE_CPU_TO_GPU);
         // VkDispatchIndirectCommand layout for pass-2 re-dispatch.
         m_TaskIndirectBuffer = CreateScope<CBuffer>(
             m_Context, sizeof(VkDispatchIndirectCommand),
@@ -85,7 +86,18 @@ namespace Manro {
                 VK_BUFFER_USAGE_TRANSFER_DST_BIT,
             VMA_MEMORY_USAGE_CPU_TO_GPU);
 
+        // Sun dir normalized once here so the fragment shader (SM-bound at
+        // fullscreen) can use it directly with no per-pixel normalize.
         Vec4 sun[2] = {Vec4(0.3f, -1.f, 0.2f, 0.f), Vec4(1.f, 0.98f, 0.9f, 3.f)};
+        {
+            const float len =
+                std::sqrt(sun[0].x * sun[0].x + sun[0].y * sun[0].y + sun[0].z * sun[0].z);
+            if (len > 1e-6f) {
+                sun[0].x /= len;
+                sun[0].y /= len;
+                sun[0].z /= len;
+            }
+        }
         m_SunBuffer->LoadData(sun, sizeof(sun));
 
         // Distinct palette entries so the checkerboard is visible: 0 = warm grey,
@@ -386,10 +398,73 @@ namespace Manro {
         if (brickCount == 0 || !m_TaskMeshPipeline->GetHandle())
             return;
 
+        // CPU front-to-back sort + frustum compact (the proper overdraw cut):
+        // visible bricks only, nearest first, so early-z kills hidden pixels
+        // instead of shading them. 128 bricks is microseconds; dispatch gets
+        // the exact visible count — no empty task groups. Same NDC test the
+        // task shader runs (same matrix convention by construction: glm M*v).
+        u32 visibleCount = brickCount;
+        {
+            const float brickSize = m_World->GetBrickSize();
+            const float radius = brickSize * 0.8660254f; // half-diagonal
+            const float maxD = 10000.f + radius;
+            m_VisibleScratch.clear();
+            if (m_bUseFrustum) {
+                const auto &mirror = m_World->GetHeaderMirror();
+                for (u32 i = 0; i < brickCount; ++i) {
+                    const VoxelBrickHeader_t &h = mirror[i];
+                    if ((h.flags & 1u) == 0u)
+                        continue;
+                    const Vec3 center = h.origin + Vec3(brickSize * 0.5f);
+                    const Vec3 toC = center - cameraPos;
+                    const float dist2 = glm::dot(toC, toC);
+                    if (dist2 > maxD * maxD)
+                        continue;
+                    const bool inBox =
+                        cameraPos.x >= h.origin.x && cameraPos.y >= h.origin.y &&
+                        cameraPos.z >= h.origin.z && cameraPos.x <= h.origin.x + brickSize &&
+                        cameraPos.y <= h.origin.y + brickSize && cameraPos.z <= h.origin.z + brickSize;
+                    bool hit = inBox, anyFront = false, anyBehind = false;
+                    if (!inBox) {
+                        for (u32 c = 0; c < 8u && !hit; ++c) {
+                            const Vec3 corner =
+                                h.origin +
+                                Vec3(float(c & 1u), float((c >> 1u) & 1u), float((c >> 2u) & 1u)) *
+                                    brickSize;
+                            const Vec4 clip = viewProj * Vec4(corner, 1.f);
+                            if (clip.w > 0.f) {
+                                anyFront = true;
+                                if (std::abs(clip.x) <= clip.w && std::abs(clip.y) <= clip.w &&
+                                    clip.z >= 0.f && clip.z <= clip.w)
+                                    hit = true;
+                            } else {
+                                anyBehind = true;
+                            }
+                        }
+                        if (!hit && !(anyFront && anyBehind))
+                            continue; // culled
+                    }
+                    m_VisibleScratch.emplace_back(dist2, i);
+                }
+                std::sort(m_VisibleScratch.begin(), m_VisibleScratch.end(),
+                          [](const auto &a, const auto &b) { return a.first < b.first; });
+                visibleCount = static_cast<u32>(m_VisibleScratch.size());
+            } else {
+                for (u32 i = 0; i < brickCount; ++i)
+                    m_VisibleScratch.emplace_back(0.f, i);
+            }
+            m_VisibleList.resize(m_VisibleScratch.size());
+            for (size_t k = 0; k < m_VisibleScratch.size(); ++k)
+                m_VisibleList[k] = m_VisibleScratch[k].second;
+            if (!m_VisibleList.empty())
+                m_VisibilityBuffer->LoadData(m_VisibleList.data(),
+                                             sizeof(u32) * m_VisibleList.size());
+        }
+
         // Pass 1: task-shader frustum + distance cull, HiZ re-projection uses
         // prevViewProj once the pyramid is populated (enableHiZ flipped when
         // the SPD chain has run at least once — v1 runs it unconditionally).
-        // Push constant is the 40B frame root; frame params live in a BDA buffer.
+        // Push constant is the frame root; frame params live in a BDA buffer.
         VoxelFrameParams_t frame{};
         frame.viewProj = viewProj;
         frame.prevViewProj = prevViewProj;
@@ -424,13 +499,13 @@ namespace Manro {
             vkCmdFillBuffer(cb, m_DebugReadback->GetHandle(), 0, sizeof(u32) * 8, 0);
         root.debugAddr = m_DebugReadback->GetDeviceAddress();
 
-        // Frame params (host upload) -> task/mesh/fragment. Debug-clear
-        // barrier is appended only when capture is enabled. The global
-        // memory barrier orders prior in-flight frames' shader writes
-        // (face-cache stores, edit writes) before this frame's task reads.
+        // Frame params + visibility list (host uploads) -> task/mesh.
+        // Debug-clear barrier appended only when capture is enabled. The
+        // global memory barrier orders prior in-flight frames' shader
+        // writes (face-cache stores, edit writes) before task reads.
         {
-            VkBufferMemoryBarrier2 b[2]{};
-            u32 barrierCount = 1;
+            VkBufferMemoryBarrier2 b[3]{};
+            u32 barrierCount = 2;
             b[0].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
             b[0].srcStageMask = VK_PIPELINE_STAGE_2_HOST_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT;
             b[0].srcAccessMask = VK_ACCESS_2_HOST_WRITE_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT;
@@ -440,10 +515,12 @@ namespace Manro {
             b[0].dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT;
             b[0].buffer = paramsSlot.GetHandle();
             b[0].size = VK_WHOLE_SIZE;
+            b[1] = b[0];
+            b[1].buffer = m_VisibilityBuffer->GetHandle();
             if (m_bDebugEnabled) {
-                b[1] = b[0];
-                b[1].buffer = m_DebugReadback->GetHandle();
-                barrierCount = 2;
+                b[2] = b[0];
+                b[2].buffer = m_DebugReadback->GetHandle();
+                barrierCount = 3;
             }
             VkDependencyInfo dep{};
             dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
@@ -508,9 +585,11 @@ namespace Manro {
                                VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(root), &root);
 
-        const u32 taskGroups = brickCount; // one task group per brick; task fans out x32 mesh
-        m_Stats.taskGroups = taskGroups;
-        vkCmdDrawMeshTasksEXT(cb, taskGroups, 1, 1);
+        // Sorted front-to-back compact list: exact dispatch count, no empty
+        // task groups, early-z order for hidden-pixel rejection.
+        m_Stats.taskGroups = visibleCount;
+        if (visibleCount > 0)
+            vkCmdDrawMeshTasksEXT(cb, visibleCount, 1, 1);
         vkCmdEndRendering(cb);
 
         // DEBUG host barrier only when capture is enabled; otherwise skip

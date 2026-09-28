@@ -1,7 +1,8 @@
 // Mesh shader: emits faces from the per-brick face cache (written by task
 // on first sight / edits, re-scanned only when dirty). Each mesh group
-// renders 16 faces (64 verts / 32 tris). Payload carries only brickIdx +
-// faceCount; faces come from faceCacheAddr (see voxel_common).
+// renders 32 faces (128 verts / 64 tris) — full 32-lane occupancy on full
+// groups. Payload carries only brickIdx + faceCount; faces come from
+// faceCacheAddr (see voxel_common).
 import voxel_common;
 import voxel_task;
 
@@ -10,9 +11,11 @@ VoxelFrameRoot g_MeshRoot;
 
 struct VoxelMeshVertex {
     float4 pos : SV_Position;
-    float3 normal : NORMAL;
-    nointerpolation uint packed : PACKED;
-    nointerpolation uint material : MATERIAL;
+    // Flat lit color, computed once per face here (mesh rate) instead of per
+    // pixel in fragment: every lighting input is face-uniform (flat normal,
+    // flat material/AO, uniform sun/palette), so per-pixel evaluation was
+    // pure redundancy. Bit-identical output, ~4x less fragment ALU.
+    nointerpolation float3 color : COLOR;
 };
 
 [shader("mesh")]
@@ -22,8 +25,8 @@ void MeshMain(
     uint gtid : SV_DispatchThreadID,
     uint gidx : SV_GroupIndex,
     uint3 mgrid : SV_GroupID,
-    out vertices VoxelMeshVertex verts[64],
-    out indices uint3 tris[32],
+    out vertices VoxelMeshVertex verts[128],
+    out indices uint3 tris[64],
     payload VoxelTaskPayload payload) {
     vk::BufferPointer<VoxelFrameParams> fp = vk::BufferPointer<VoxelFrameParams>(g_MeshRoot.frameAddr);
     VoxelFrameParams* fpp = fp.getPtr();
@@ -42,8 +45,8 @@ void MeshMain(
 
     float voxelSize = frame.brickSize / 16.0;
 
-    // This group owns faces [base, base+16). Lane-parallel emission: lane
-    // gidx owns face gidx (16 of 32 lanes active instead of just lane 0).
+    // This group owns faces [base, base+32); lane-parallel emission: lane
+    // gidx owns face gidx, so full groups run 32/32 lanes.
     // Counts stay uniform across lanes, so SetMeshOutputCounts is uniform;
     // only the per-face writes diverge, which is legal.
     uint base = mgrid.x * kVoxelFacesPerMeshGroup;
@@ -85,7 +88,19 @@ void MeshMain(
             b, b + t1 * voxelSize, b + t1 * voxelSize + t2 * voxelSize, b + t2 * voxelSize
         };
         uint vtx = gidx * 4u;
-        // Face-ambient-occlusion stub: wired in Phase 6 (GI), flat 3 now.
+        // Per-face lighting (mesh rate = ~100x fewer evaluations than
+        // fragment rate for typical quads). Same formula the fragment used.
+        vk::BufferPointer<float4> palette = vk::BufferPointer<float4>(frame.paletteAddr);
+        float3 base = palette.getPtr()[mat & 511u].rgb;
+        vk::BufferPointer<float4> sun = vk::BufferPointer<float4>(frame.sunAddr);
+        float4* sunData = sun.getPtr();
+        float3 toSun = -sunData[0].xyz; // normalized once on upload
+        float ndl = saturate(dot(nrm, toSun));
+        float an = abs(nrm.y) > 0.5 ? (nrm.y > 0.0 ? 1.0 : 0.5)
+                 : (abs(nrm.x) > 0.5 ? 0.8 : 0.65);
+        float3 lit = base * (0.15 + sunData[1].rgb * (ndl * sunData[1].a)) * an;
+        // Face-ambient-occlusion stub: wired in Phase 6 (GI), flat 3 now
+        // (folds to 1.0, omitted).
         // Backface test uses the voxel center (conservative: keeps grazing
         // faces, never drops a visible one).
         float3 vc = hdr.origin + (float3(float(x), float(y), float(z)) + 0.5) * voxelSize;
@@ -95,9 +110,7 @@ void MeshMain(
         for (uint c = 0u; c < 4u; ++c) {
             verts[vtx + c].pos =
                 mul(frame.viewProj, float4(culled ? anchor : corners[c], 1.0));
-            verts[vtx + c].normal = nrm;
-            verts[vtx + c].packed = PackVoxelVertex(x, y, z, f, 3u, mat);
-            verts[vtx + c].material = mat;
+            verts[vtx + c].color = lit;
         }
         tris[gidx * 2u] = uint3(vtx, vtx + 1, vtx + 2);
         tris[gidx * 2u + 1u] = uint3(vtx, vtx + 2u, vtx + 3u);

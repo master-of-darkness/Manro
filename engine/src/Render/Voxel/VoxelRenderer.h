@@ -9,6 +9,8 @@
 #include <volk.h>
 
 #include <array>
+#include <utility>
+#include <vector>
 
 namespace Manro {
     class CVulkanContext;
@@ -112,6 +114,10 @@ namespace Manro {
         Scope<CBuffer> m_EditStaging; // VoxelEditCmd_t ring mirror
         Scope<CBuffer> m_DebugReadback; // DEBUG: host-visible task/mesh counters
         Scope<CBuffer> m_FaceCache; // uint[2049] per resident brick (faceCount + faces)
+        // CPU sort scratch: front-to-back visible ordinals uploaded to the
+        // visibility buffer each frame (exact dispatch, early-z order).
+        std::vector<std::pair<float, u32>> m_VisibleScratch;
+        std::vector<u32> m_VisibleList;
 
         Mat4 m_PrevViewProj{1.f};
         VoxelFrameStats_t m_Stats{};

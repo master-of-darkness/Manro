@@ -131,6 +131,17 @@ public:
         } else if (!m_InputManager.IsKeyDown(K::N)) {
             m_bNHeld = false;
         }
+        // V: vsync toggle (swapchain recreate). The honest headroom meter:
+        // locked 144/60Hz + GPU util shows what the scene really costs.
+        if (m_InputManager.IsKeyDown(K::V) && !m_bVHeld) {
+            m_bVHeld = true;
+            Manro::RenderSettings_t s = m_Renderer->GetSettings();
+            s.enableVSync = !s.enableVSync;
+            m_Renderer->SetSettings(s);
+            printf("[Voxel] vsync %s\n", s.enableVSync ? "ON" : "OFF");
+        } else if (!m_InputManager.IsKeyDown(K::V)) {
+            m_bVHeld = false;
+        }
         m_Fwd = fwd;
         return true;
     }
@@ -189,7 +200,7 @@ public:
                                 dbg[2], dbg[3], dbg[4], dbg[5]);
             ImGui::TextDisabled("backface=%d frustum=%d", m_UseBackface ? 1 : 0,
                                 m_UseFrustum ? 1 : 0);
-            ImGui::TextDisabled("WASD move | Shift fast | Space edit | G grid | B/N cull | Esc quit");
+            ImGui::TextDisabled("WASD move | Shift fast | Space edit | G grid | B/N cull | V vsync | Esc quit");
         }
         ImGui::End();
 
@@ -250,6 +261,7 @@ private:
     bool m_bGHeld{false};
     bool m_bBHeld{false};
     bool m_bNHeld{false};
+    bool m_bVHeld{false};
     bool m_UseBackface{true};
     bool m_UseFrustum{true};
 
