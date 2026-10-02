@@ -622,8 +622,14 @@ namespace Manro {
         }
 
         // Load one texture, resampled to a 16x16 RGBA tile. Animated strips
-        // (water/lava) use the top width x width frame only.
-        bool LoadTile(const std::string &texDir, const std::string &path, std::vector<u8> &tile) {
+        // (water/lava) use the top width x width frame only. Reports via
+        // outHasCutout whether any texel is fully transparent (alpha < 128,
+        // matching the shader's `albedo.a < 0.5` discard): transparent texels
+        // are black RGB, so baking such a tile on an opaque cube renders a
+        // black background instead of a hole.
+        bool LoadTile(const std::string &texDir, const std::string &path, std::vector<u8> &tile,
+                      bool &outHasCutout) {
+            outHasCutout = false;
             std::string rel = StripPrefix(path);
             if (rel.rfind("block/", 0) == 0)
                 rel = rel.substr(6);
@@ -646,6 +652,17 @@ namespace Manro {
                 }
             }
             stbi_image_free(px);
+            // Binary transparency scan on the resampled tile (alpha channel
+            // survives the tint above untouched). Threshold matches the
+            // fragment discard (`albedo.a < 0.5`); semi-transparent texels
+            // (water 180, ice 190, slime 180) intentionally stay opaque here —
+            // true translucency needs blending, a separate feature.
+            for (int i = 0; i < 16 * 16; ++i) {
+                if (tile[i * 4 + 3] < 128u) {
+                    outHasCutout = true;
+                    break;
+                }
+            }
             const auto slash = path.rfind('/');
             const std::string base =
                 (slash == std::string::npos) ? path : path.substr(slash + 1);
@@ -725,6 +742,10 @@ namespace Manro {
             pack.tiles[0][i * 4 + 3] = 255;
         }
         std::unordered_map<std::string, u16> tileByPath;
+        // Per-tile binary-transparency bit (parallel to pack.tiles; [0] = 0).
+        // tileForPath records it on first load so face resolution below can
+        // promote any state using a transparent tile to cutout.
+        std::vector<u8> tileCutout{0};
         auto tileForPath = [&](const std::string &path) -> u16 {
             if (path.empty())
                 return 0;
@@ -732,7 +753,8 @@ namespace Manro {
             if (it != tileByPath.end())
                 return it->second;
             std::vector<u8> tile;
-            if (!LoadTile(texDir, path, tile)) {
+            bool hasCutout = false;
+            if (!LoadTile(texDir, path, tile, hasCutout)) {
                 std::printf("[BlockAssets] missing texture %s\n", path.c_str());
                 tileByPath[path] = 0;
                 return 0;
@@ -740,8 +762,18 @@ namespace Manro {
             const u16 idx = static_cast<u16>(pack.tiles.size());
             pack.tiles.push_back(std::move(tile));
             pack.tilePaths.push_back(path);
+            tileCutout.push_back(hasCutout ? 1u : 0u);
             tileByPath[path] = idx;
             return idx;
+        };
+        // True when any of the six face tiles carries binary transparency.
+        auto facesNeedCutout = [&](const BlockFaceTiles_t &faces) -> bool {
+            for (size_t f = 0; f < 6; ++f) {
+                const u16 t = faces.tile[f];
+                if (t < tileCutout.size() && tileCutout[t])
+                    return true;
+            }
+            return false;
         };
 
         pack.states.resize(kBlockStateMax);
@@ -766,7 +798,7 @@ namespace Manro {
             return &blockCache.emplace(name, std::move(j)).first->second;
         };
 
-        u32 mapped = 0, fallback = 0, skipped = 0;
+        u32 mapped = 0, fallback = 0, skipped = 0, autoCutout = 0;
         u32 id = 0;
         for (const FullState &fs : ordered) {
             const std::string key = MakeStateKey(fs.name, fs.props);
@@ -799,6 +831,15 @@ namespace Manro {
                         look.flags |= kBlockFlagCutout;
                     if (IsInnerFaces(bname))
                         look.flags |= kBlockFlagInner;
+                    // Texture-driven cutout: a transparent tile on an opaque
+                    // cube renders black (transparent texels are black RGB),
+                    // so promote to alpha-tested and drop occlusion — a
+                    // discarding cube must let neighbors emit.
+                    if ((look.flags & kBlockFlagCutout) == 0u && facesNeedCutout(look.faces)) {
+                        look.flags |= kBlockFlagCutout;
+                        look.flags &= ~kBlockFlagOpaque;
+                        ++autoCutout;
+                    }
                 } else {
                     const json *bj = blockJson(bname);
                     const ModelRef ref =
@@ -850,6 +891,16 @@ namespace Manro {
                             look.flags |= kBlockFlagCutout;
                         if (IsInnerFaces(bname))
                             look.flags |= kBlockFlagInner;
+                        // Texture-driven cutout (trapdoors/doors/...): any
+                        // face tile with binary transparency must alpha-test,
+                        // else its transparent texels (black RGB) render as
+                        // a black background. A discarding cube can't occlude.
+                        if ((look.flags & kBlockFlagCutout) == 0u &&
+                            facesNeedCutout(look.faces)) {
+                            look.flags |= kBlockFlagCutout;
+                            look.flags &= ~kBlockFlagOpaque;
+                            ++autoCutout;
+                        }
                         if (anyTile == 0u)
                             ++fallback; // all faces missing: magenta cube
                         else
@@ -874,8 +925,9 @@ namespace Manro {
         const auto stoneIt = pack.stateByKey.find(MakeStateKey("minecraft:stone", {}));
         pack.fallbackState = (stoneIt != pack.stateByKey.end()) ? stoneIt->second : 1u;
         out = std::move(pack);
-        std::printf("[BlockAssets] states=%u mapped=%u fallback=%u skipped=%u tiles=%zu (%s)\n",
-                    id, mapped, fallback, skipped, out.tiles.size(), assetsDir.c_str());
+        std::printf("[BlockAssets] states=%u mapped=%u fallback=%u skipped=%u autoCutout=%u "
+                    "tiles=%zu (%s)\n",
+                    id, mapped, fallback, skipped, autoCutout, out.tiles.size(), assetsDir.c_str());
         return true;
     }
 } // namespace Manro
