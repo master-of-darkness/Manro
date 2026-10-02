@@ -31,14 +31,13 @@ void EditMain(uint3 dtid : SV_DispatchThreadID) {
     VoxelEditCmd* cmds = edits.getPtr();
     VoxelEditCmd cmd = cmds[dtid.x];
 
-    // Map world pos -> brick index via the virtual page table.
+    // Map world pos -> brick index via the virtual page table (slots wrap
+    // mod-virtualDim; the live set always spans less, so no aliasing).
     float3 local = (cmd.pos - g_Edit.worldMin) / g_Edit.brickSize;
     int3 brickCoord = int3(floor(local));
     int dim = int(g_Edit.virtualDim);
-    if (brickCoord.x < 0 || brickCoord.y < 0 || brickCoord.z < 0 ||
-        brickCoord.x >= dim || brickCoord.y >= dim || brickCoord.z >= dim)
-        return;
-    uint brickIdx = uint(brickCoord.x + brickCoord.y * dim + brickCoord.z * dim * dim);
+    int3 wrapped = ((brickCoord % dim) + dim) % dim;
+    uint brickIdx = uint(wrapped.x + wrapped.y * dim + wrapped.z * dim * dim);
 
     vk::BufferPointer<int> pageTable = vk::BufferPointer<int>(g_Edit.pageTableAddr);
     int* pages = pageTable.getPtr();

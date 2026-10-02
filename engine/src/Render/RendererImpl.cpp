@@ -170,6 +170,10 @@ namespace Manro {
             cmd.material = material;
             cmd.op = op;
             m_Voxel->GetWorld().QueueEdit(cmd);
+            // CPU physics mirrors must follow the GPU edit (see
+            // CVoxelMcWorld::ApplyEdit), or broken blocks keep ghost
+            // collision and placed blocks have none.
+            m_Voxel->McApplyEdit(pos, radius, op);
         }
 
         u32 VoxelGetBrickCount() const {
@@ -214,7 +218,19 @@ namespace Manro {
         int VoxelMcUpdate() {
             if (!m_bVoxelEnabled || !m_Voxel)
                 return 0;
-            return m_Voxel->McUpdate(m_CameraPosition);
+            return m_Voxel->McUpdate(m_CameraPosition, m_unCurrentFrame);
+        }
+
+        bool VoxelMcIsSolid(const Vec3 &p) const {
+            return (m_bVoxelEnabled && m_Voxel) ? m_Voxel->McIsSolid(p) : true;
+        }
+
+        bool VoxelMcIsFluid(const Vec3 &p) const {
+            return (m_bVoxelEnabled && m_Voxel) ? m_Voxel->McIsFluid(p) : false;
+        }
+
+        u32 VoxelMcPlaceState() const {
+            return (m_bVoxelEnabled && m_Voxel) ? m_Voxel->McPlaceState() : 1u;
         }
 
         void DrawLine(const Vec3 &a, const Vec3 &b, u32 color, bool depthTest) const;
@@ -1092,7 +1108,12 @@ namespace Manro {
         const bool hasSkybox = m_Skybox.IsValid();
 
         Internal::ZPrepassPassState_t zState{};
-        if (hasMeshes || m_RenderTargets.GetDepthView() != VK_NULL_HANDLE) {
+        // No meshes and no skybox: nothing reads depth before the voxel pass
+        // (which clears it itself when first) or the empty-scene clear, so
+        // skip the depth CLEAR+STORE entirely. Previously this ran every
+        // voxel frame: a full-res depth clear+store with zero draws,
+        // immediately overwritten by the voxel pass's own clear.
+        if (hasMeshes || hasSkybox) {
             zState.extent = m_RenderExtent;
             zState.depthView = m_RenderTargets.GetDepthView();
             if (hasMeshes) {
@@ -1554,6 +1575,18 @@ namespace Manro {
 
     int RendererImplVoxelMcUpdate(const CRendererImpl &impl) {
         return const_cast<CRendererImpl &>(impl).VoxelMcUpdate();
+    }
+
+    bool RendererImplVoxelMcIsSolid(const CRendererImpl &impl, const Vec3 &p) {
+        return impl.VoxelMcIsSolid(p);
+    }
+
+    bool RendererImplVoxelMcIsFluid(const CRendererImpl &impl, const Vec3 &p) {
+        return impl.VoxelMcIsFluid(p);
+    }
+
+    u32 RendererImplVoxelMcPlaceState(const CRendererImpl &impl) {
+        return impl.VoxelMcPlaceState();
     }
 
     CRenderer::CRenderer(CWindow &window, CVirtualFS &vfs, u32 width, u32 height, const RenderSettings_t &settings)

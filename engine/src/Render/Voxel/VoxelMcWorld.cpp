@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -49,22 +50,62 @@ namespace Manro {
         McWorldDesc_t desc{};
         std::shared_ptr<const mcs::world::AnvilWorld> anvil;
         const McAssetPack_t *pack{nullptr};
-        // Section key -> slot state. Slot (bx,by,bz) in world-local coords.
+        // Live sections: world-section key -> slot state.
         struct SlotInfo {
             i32 brickIdx{-1};
             bool filled{false};
         };
         std::unordered_map<i64, SlotInfo> slots;
-        // Unfilled section keys (shrinks as streaming completes; empty =>
-        // Update returns 0 immediately without scanning anything).
+        // Sections wanted but not yet filled (shrinks as streaming catches
+        // up; rebuilt when the streaming center moves).
         std::vector<i64> unfilled;
+        // Streaming center (player section XZ) + eviction radius (R+1 when
+        // the hysteresis ring fits the resident pool, else R).
+        int centerCx{0}, centerCz{0};
+        bool hasCenter{false};
+        int evictRadius{7};
+        // worldMin in brick units (fixed at Init; shaders wrap slots
+        // mod-virtualDim against the same origin, so it never moves).
+        int minBX{0}, minBZ{0};
+        // CPU mirrors for physics/raycasts: occupancy + fluid bits per brick
+        // (128 u32 words each, indexed brickIdx*128). Unfilled/missing reads
+        // as solid (players can't fall through unloaded world).
+        std::vector<u32> occMirror;
+        std::vector<u32> fluidMirror;
+        // Fluid protocol states (water/lava levels) for the fluid mirror.
+        std::vector<u8> fluidState;
         Vec3 spawn{8.f, 80.f, 8.f};
         // Procedural state ids (resolved once).
         i32 sGrass{1}, sDirt{1}, sStone{1}, sBedrock{1}, sWater{0}, sLog{1}, sLeaves{0}, sSand{1};
+        i32 sPlace{1}; // right-click place block (planks, stone fallback)
 
         static i64 Key(int sx, int sy, int sz) {
             return (static_cast<i64>(sx + 32768) << 42) | (static_cast<i64>(sy + 32768) << 21) |
                    static_cast<i64>(sz + 32768);
+        }
+
+        static void DecodeKey(i64 key, int &sx, int &sy, int &sz) {
+            sx = static_cast<int>((key >> 42) & 0x1FFFFF) - 32768;
+            sy = static_cast<int>((key >> 21) & 0x1FFFFF) - 32768;
+            sz = static_cast<int>(key & 0x1FFFFF) - 32768;
+        }
+
+        // Page-table slot for a world section. Matches the shaders, which
+        // wrap floor((worldPos-worldMin)/brickSize) mod-virtualDim.
+        u32 SlotFor(int sx, int sy, int sz) const {
+            constexpr int D = 64;
+            int bx = (sx - minBX) % D;
+            int by = (sy + 4) % D;
+            int bz = (sz - minBZ) % D;
+            if (bx < 0) bx += D;
+            if (by < 0) by += D;
+            if (bz < 0) bz += D;
+            return static_cast<u32>(bx) + static_cast<u32>(by) * D + static_cast<u32>(bz) * D * D;
+        }
+
+        static Vec3 OriginFor(int sx, int sy, int sz) {
+            return Vec3(static_cast<float>(sx * 16), static_cast<float>(sy * 16),
+                        static_cast<float>(sz * 16));
         }
 
         i32 Procedural(i64 x, i64 y, i64 z) {
@@ -103,7 +144,6 @@ namespace Manro {
                 return (h <= kSeaLevel + 1) ? sSand : sDirt;
             return sStone;
         }
-
         // Terrain half of Procedural() for a precomputed column (h/hi known).
         // Bit-exact with Procedural() for y > -64 outside tree crowns.
         i32 ColumnTerrain(i64 y, float h, i64 hi) {
@@ -117,6 +157,43 @@ namespace Manro {
             if (y > hi - 4)
                 return (h <= kSeaLevel + 1) ? sSand : sDirt;
             return sStone;
+        }
+
+        // Physics/raycast queries against the CPU mirrors. Unfilled or
+        // untracked sections read SOLID (nothing may fall through unloaded
+        // world); out-of-range Y is bedrock/air respectively.
+        bool IsSolidAt(i64 x, i64 y, i64 z) const {
+            if (y < -64)
+                return true;
+            if (y >= 320)
+                return false;
+            const int sx = static_cast<int>(x >> 4);
+            const int sy = static_cast<int>(y >> 4);
+            const int sz = static_cast<int>(z >> 4);
+            const auto it = slots.find(Key(sx, sy, sz));
+            if (it == slots.end() || !it->second.filled || it->second.brickIdx < 0)
+                return true;
+            const size_t vi = static_cast<size_t>((x & 15) + (y & 15) * 16 + (z & 15) * 256);
+            const size_t w = static_cast<size_t>(it->second.brickIdx) * 128 + (vi >> 5u);
+            if (w >= occMirror.size())
+                return true;
+            return ((occMirror[w] >> (vi & 31u)) & 1u) != 0u;
+        }
+
+        bool IsFluidAt(i64 x, i64 y, i64 z) const {
+            if (y < -64 || y >= 320)
+                return false;
+            const int sx = static_cast<int>(x >> 4);
+            const int sy = static_cast<int>(y >> 4);
+            const int sz = static_cast<int>(z >> 4);
+            const auto it = slots.find(Key(sx, sy, sz));
+            if (it == slots.end() || !it->second.filled || it->second.brickIdx < 0)
+                return false;
+            const size_t vi = static_cast<size_t>((x & 15) + (y & 15) * 16 + (z & 15) * 256);
+            const size_t w = static_cast<size_t>(it->second.brickIdx) * 128 + (vi >> 5u);
+            if (w >= fluidMirror.size())
+                return false;
+            return ((fluidMirror[w] >> (vi & 31u)) & 1u) != 0u;
         }
     };
 
@@ -145,6 +222,20 @@ namespace Manro {
         I.sSand = res("minecraft:sand", {});
         if (I.sLeaves < 0)
             I.sLeaves = 0;
+        I.sPlace = res("minecraft:oak_planks", {});
+        if (I.sPlace < 0)
+            I.sPlace = I.sStone;
+        // Fluid states (every water/lava level) for the physics fluid mirror.
+        I.fluidState.assign(I.pack->states.size(), 0u);
+        for (int lv = 0; lv <= 15; ++lv) {
+            const std::string lvs = std::to_string(lv);
+            const i32 w = res("minecraft:water", {{"level", lvs}});
+            const i32 l = res("minecraft:lava", {{"level", lvs}});
+            if (w >= 0 && static_cast<size_t>(w) < I.fluidState.size())
+                I.fluidState[static_cast<size_t>(w)] = 1u;
+            if (l >= 0 && static_cast<size_t>(l) < I.fluidState.size())
+                I.fluidState[static_cast<size_t>(l)] = 1u;
+        }
 
         if (!desc.worldDir.empty()) {
             auto anvil = mcs::world::AnvilWorld::open(desc.worldDir);
@@ -166,37 +257,28 @@ namespace Manro {
             I.spawn = Vec3(8.f, h + 2.f, 8.f);
         }
 
-        // Allocate the full static volume now; fill lazily in Update.
-        // Slot coords are volume-local: bx = sx-csx+R, by = sy+4, bz = sz-csz+R,
-        // so the world origin must be the volume min corner (set before alloc;
-        // origins are alloc-time constants).
+        // Streaming world: the origin is fixed ONCE (shaders wrap slots
+        // mod-virtualDim against it, so it must never move), sections are
+        // allocated/filled around the player in Update and evicted past the
+        // hysteresis ring. Nothing is allocated here besides sparse pages.
         const int csx = static_cast<int>(std::floor(I.spawn.x / 16.f));
         const int csz = static_cast<int>(std::floor(I.spawn.z / 16.f));
         const int R = desc.radiusSections;
         world.SetWorldMin(Vec3(static_cast<float>((csx - R) * 16), -64.f,
                                static_cast<float>((csz - R) * 16)));
-        // Bind all sparse pages up front in ONE queue operation. Without
-        // this each AllocateBrick below binds + drains the queue on its own
-        // (~580 waits, ~300ms at R=6).
-        world.ReserveResident(
-            static_cast<u32>((2 * R + 1) * (kMaxSectionY - kMinSectionY + 1) * (2 * R + 1)));
-        for (int sz = csz - R; sz <= csz + R; ++sz) {
-            for (int sy = kMinSectionY; sy <= kMaxSectionY; ++sy) {
-                for (int sx = csx - R; sx <= csx + R; ++sx) {
-                    const u32 bx = static_cast<u32>(sx - csx + R);
-                    const u32 by = static_cast<u32>(sy + 4);
-                    const u32 bz = static_cast<u32>(sz - csz + R);
-                    const i32 idx = world.AllocateBrick(bx, by, bz);
-                    if (idx >= 0)
-                        I.slots[Impl::Key(sx, sy, sz)] = Impl::SlotInfo{idx, false};
-                }
-            }
-        }
-        std::printf("[McWorld] allocated %zu sections R=%d anvil=%d\n", I.slots.size(), R,
-                 I.anvil ? 1 : 0);
-        I.unfilled.reserve(I.slots.size());
-        for (const auto &[key, s] : I.slots)
-            I.unfilled.push_back(key);
+        I.minBX = csx - R;
+        I.minBZ = csz - R;
+        // Hysteresis ring fits the pool? (2(R+1)+1)^2 columns x 24 sections.
+        const int wantLive =
+            (2 * (R + 1) + 1) * (kMaxSectionY - kMinSectionY + 1) * (2 * (R + 1) + 1);
+        I.evictRadius = (wantLive <= 8192) ? (R + 1) : R;
+        // Bind the whole resident pool up front in ONE queue operation, so
+        // steady-state streaming (alloc reuse + fills) never touches the
+        // sparse bind queue. Without this each brick binds + drains the
+        // queue on its own (~580 waits, ~300ms at R=6).
+        world.ReserveResident(8192);
+        std::printf("[McWorld] streaming R=%d evict=%d anvil=%d spawn=(%.1f,%.1f,%.1f)\n", R,
+                 I.evictRadius, I.anvil ? 1 : 0, I.spawn.x, I.spawn.y, I.spawn.z);
         return I.spawn;
     }
 
@@ -204,64 +286,120 @@ namespace Manro {
         return static_cast<int>(m_Impl->unfilled.size());
     }
 
-    int CVoxelMcWorld::Update(CVoxelWorld &world, const Vec3 &cameraPos) {
+    int CVoxelMcWorld::Update(CVoxelWorld &world, const Vec3 &cameraPos, u32 flightSlot) {
         auto &I = *m_Impl;
-        // Streaming complete: no scan, no sort, no allocation — O(1).
-        // (The old code rebuilt + nth_element'd a 4k candidate list every
-        // frame even after the world was fully resident.)
+        const int R = I.desc.radiusSections;
+        const auto secOf = [](float v) { return static_cast<int>(std::floor(v / 16.f)); };
+        const int pcx = secOf(cameraPos.x);
+        const int pcy = secOf(cameraPos.y);
+        const int pcz = secOf(cameraPos.z);
+
+        // Follow the player: when the center section changes, evict live
+        // sections outside the hysteresis ring and rebuild the wanted set.
+        // Eviction returns brick indices to the reuse pool (no unbind cost);
+        // the free pool + full-height columns keep this O(volume) rarely.
+        if (!I.hasCenter || pcx != I.centerCx || pcz != I.centerCz) {
+            I.centerCx = pcx;
+            I.centerCz = pcz;
+            I.hasCenter = true;
+            const int E = I.evictRadius;
+            for (auto it = I.slots.begin(); it != I.slots.end();) {
+                int sx, sy, sz;
+                Impl::DecodeKey(it->first, sx, sy, sz);
+                if (std::max(std::abs(sx - pcx), std::abs(sz - pcz)) > E) {
+                    const i32 b = it->second.brickIdx;
+                    if (b >= 0) {
+                        world.EvictBrick(static_cast<u32>(b));
+                        const size_t base = static_cast<size_t>(b) * 128;
+                        if (base + 128 <= I.occMirror.size()) {
+                            std::fill(I.occMirror.begin() + static_cast<ptrdiff_t>(base),
+                                      I.occMirror.begin() + static_cast<ptrdiff_t>(base + 128), 0u);
+                            std::fill(I.fluidMirror.begin() + static_cast<ptrdiff_t>(base),
+                                      I.fluidMirror.begin() + static_cast<ptrdiff_t>(base + 128),
+                                      0u);
+                        }
+                    }
+                    it = I.slots.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+            I.unfilled.clear();
+            I.unfilled.reserve(static_cast<size_t>(2 * R + 1) * 24 * (2 * R + 1));
+            for (int sz = pcz - R; sz <= pcz + R; ++sz) {
+                for (int sy = kMinSectionY; sy <= kMaxSectionY; ++sy) {
+                    for (int sx = pcx - R; sx <= pcx + R; ++sx) {
+                        const i64 key = Impl::Key(sx, sy, sz);
+                        const auto it = I.slots.find(key);
+                        if (it == I.slots.end() || !it->second.filled)
+                            I.unfilled.push_back(key);
+                    }
+                }
+            }
+            // Nearest-first ONCE per rebuild. The old per-frame path (heap
+            // alloc + nth_element + partial sort of ~4k candidates every
+            // frame) was hot during streaming; the order goes slightly stale
+            // as the camera drifts inside the center section, which only
+            // costs fill order, not correctness.
+            std::sort(I.unfilled.begin(), I.unfilled.end(), [&](i64 a, i64 b) {
+                int ax, ay, az, bx, by, bz;
+                Impl::DecodeKey(a, ax, ay, az);
+                Impl::DecodeKey(b, bx, by, bz);
+                const float adx = static_cast<float>(ax - pcx), ady = static_cast<float>(ay - pcy),
+                            adz = static_cast<float>(az - pcz);
+                const float bdx = static_cast<float>(bx - pcx), bdy = static_cast<float>(by - pcy),
+                            bdz = static_cast<float>(bz - pcz);
+                return adx * adx + ady * ady + adz * adz < bdx * bdx + bdy * bdy + bdz * bdz;
+            });
+        }
+        // Streaming caught up: no scan, no sort, no allocation — O(1).
         if (I.unfilled.empty())
             return 0;
-        // Nearest-first order around the camera section.
-        const int ccx = static_cast<int>(std::floor(cameraPos.x / 16.f));
-        const int ccy = static_cast<int>(std::floor(cameraPos.y / 16.f));
-        const int ccz = static_cast<int>(std::floor(cameraPos.z / 16.f));
-        struct Cand {
-            float d;
-            i64 key;
-        };
-        std::vector<Cand> cands;
-        cands.reserve(I.unfilled.size());
-        for (const i64 key : I.unfilled) {
-            const int sx = static_cast<int>((key >> 42) & 0x1FFFFF) - 32768;
-            const int sy = static_cast<int>((key >> 21) & 0x1FFFFF) - 32768;
-            const int sz = static_cast<int>(key & 0x1FFFFF) - 32768;
-            const float dx = static_cast<float>(sx - ccx), dy = static_cast<float>(sy - ccy),
-                        dz = static_cast<float>(sz - ccz);
-            cands.push_back({dx * dx + dy * dy + dz * dz, key});
-        }
-        if (cands.empty())
-            return 0;
-        const size_t take = std::min<size_t>(cands.size(), 32);
-        if (take < cands.size())
-            std::nth_element(cands.begin(), cands.begin() + take, cands.end(),
-                             [](const Cand &a, const Cand &b) { return a.d < b.d; });
-        std::sort(cands.begin(), cands.begin() + take,
-                  [](const Cand &a, const Cand &b) { return a.d < b.d; });
-        const int budget = std::min<int>(I.desc.fillBudgetPerUpdate, static_cast<int>(take));
-        // Batch staging: ONE staging buffer + ONE one-shot submit for the
-        // whole frame's fills (per-brick one-shots cost a fence wait +
-        // submit + wait each: ~70ms/frame at budget 32).
+        // Pre-sorted at rebuild: take from the front, no per-frame work.
+        const int budget = std::min<int>(I.desc.fillBudgetPerUpdate,
+                                         static_cast<int>(I.unfilled.size()));
+        // Deferred device upload: McUpdate only stages into the flight-slot
+        // ring (plain memcpys); Record emits the copies into the frame CB
+        // with a transfer barrier — no one-shot submit, no fence wait, no
+        // pipeline drain while streaming.
         thread_local std::vector<u16> batchMats;
         thread_local std::vector<u32> batchOcc;
+        thread_local std::vector<u32> batchFluid;
         thread_local std::vector<i64> filledKeys;
         batchMats.resize(static_cast<size_t>(budget) * 4096);
         batchOcc.resize(static_cast<size_t>(budget) * 128);
+        batchFluid.resize(static_cast<size_t>(budget) * 128);
         std::vector<u32> batchIdx;
         batchIdx.reserve(static_cast<size_t>(budget));
         std::vector<u8> batchOpaque;
         batchOpaque.reserve(static_cast<size_t>(budget));
         filledKeys.clear();
+        const size_t fluidStates = I.fluidState.size();
         for (int i = 0; i < budget; ++i) {
-            const i64 key = cands[static_cast<size_t>(i)].key;
-            const int sx = static_cast<int>((key >> 42) & 0x1FFFFF) - 32768;
-            const int sy = static_cast<int>((key >> 21) & 0x1FFFFF) - 32768;
-            const int sz = static_cast<int>(key & 0x1FFFFF) - 32768;
+            const i64 key = I.unfilled[static_cast<size_t>(i)];
+            int sx, sy, sz;
+            Impl::DecodeKey(key, sx, sy, sz);
             auto sit = I.slots.find(key);
-            if (sit == I.slots.end() || sit->second.filled)
+            u32 bidx = ~0u;
+            if (sit == I.slots.end()) {
+                // Allocate (reuse pool first, high-water otherwise). Pool
+                // exhausted: skip this frame, retry after evictions.
+                const i32 nb =
+                    world.AllocateBrickSlot(I.SlotFor(sx, sy, sz), Impl::OriginFor(sx, sy, sz));
+                if (nb < 0)
+                    break; // pool exhausted: stop the batch, retry after evictions
+                sit = I.slots.emplace(key, Impl::SlotInfo{nb, false}).first;
+                bidx = static_cast<u32>(nb);
+            } else if (sit->second.filled || sit->second.brickIdx < 0) {
                 continue;
+            } else {
+                bidx = static_cast<u32>(sit->second.brickIdx);
+            }
             u16 *mats = batchMats.data() + static_cast<size_t>(batchIdx.size()) * 4096;
             u32 *occ = batchOcc.data() + static_cast<size_t>(batchIdx.size()) * 128;
+            u32 *fld = batchFluid.data() + static_cast<size_t>(batchIdx.size()) * 128;
             std::fill(occ, occ + 128, 0u);
+            std::fill(fld, fld + 128, 0u);
             bool allOpaque = true;
             // Anvil fast path: one chunk fetch per section (sections align
             // 1:1 with chunk columns x chunk sections), then lock-free reads.
@@ -337,8 +475,17 @@ namespace Manro {
                         const bool skip =
                             !valid || ((flags & kMcFlagSkip) != 0);
                         mats[vi] = skip ? 0 : static_cast<u16>(st);
-                        if (!skip)
-                            occ[vi >> 5u] |= (1u << (vi & 31u));
+                        if (!skip) {
+                            // Physics mirror: fluids are swimmable, NOT solid
+                            // (the GPU brick occupancy keeps them for rendering;
+                            // only this CPU mirror drives collision/raycasts).
+                            const bool fluid = static_cast<size_t>(st) < fluidStates &&
+                                               I.fluidState[static_cast<size_t>(st)] != 0u;
+                            if (fluid)
+                                fld[vi >> 5u] |= (1u << (vi & 31u));
+                            else
+                                occ[vi >> 5u] |= (1u << (vi & 31u));
+                        }
                         // Fully-opaque brick tracking (hidden-brick culling):
                         // any air/skip/cutout/non-opaque voxel disqualifies.
                         if (skip || (flags & kMcFlagOpaque) == 0u)
@@ -346,15 +493,30 @@ namespace Manro {
                     }
                 }
             }
-            batchIdx.push_back(static_cast<u32>(sit->second.brickIdx));
+            batchIdx.push_back(bidx);
             batchOpaque.push_back(allOpaque ? 1u : 0u);
             sit->second.filled = true;
             filledKeys.push_back(key);
         }
         if (!batchIdx.empty()) {
-            world.UploadBrickBatch(batchIdx.data(), batchMats.data(), batchOcc.data(),
-                                   static_cast<u32>(batchIdx.size()));
+            if (!world.StageBrickBatch(flightSlot, batchIdx.data(), batchMats.data(),
+                                       batchOcc.data(), static_cast<u32>(batchIdx.size()))) {
+                // Staging ring full (budget <= 32 < 64 capacity: unreachable
+                // in practice): synchronous fallback with a pipeline drain.
+                world.UploadBrickBatch(batchIdx.data(), batchMats.data(), batchOcc.data(),
+                                       static_cast<u32>(batchIdx.size()));
+            }
             for (size_t k = 0; k < batchIdx.size(); ++k) {
+                // Physics mirrors (occupancy + fluid) for the filled brick.
+                const size_t need = (static_cast<size_t>(batchIdx[k]) + 1) * 128;
+                if (I.occMirror.size() < need) {
+                    I.occMirror.resize(need, 0u);
+                    I.fluidMirror.resize(need, 0u);
+                }
+                std::memcpy(I.occMirror.data() + static_cast<size_t>(batchIdx[k]) * 128,
+                            batchOcc.data() + k * 128, sizeof(u32) * 128);
+                std::memcpy(I.fluidMirror.data() + static_cast<size_t>(batchIdx[k]) * 128,
+                            batchFluid.data() + k * 128, sizeof(u32) * 128);
                 world.SetBrickOpaqueFull(batchIdx[k], batchOpaque[k] != 0u);
                 // Re-evaluate neighbor boundaries too: this fill can hide
                 // (or, for air pockets, reveal) adjacent bricks' faces.
@@ -372,8 +534,99 @@ namespace Manro {
             }
             I.unfilled.resize(w);
         }
+        // DEBUG-PROBE: camera column surface from the occupancy mirror vs
+        // a fresh Fbm eval — catches CPU/GPU brick contamination.
+        {
+            static u32 probeSeq = 0;
+            if ((++probeSeq % 90) == 1) {
+                const int px = static_cast<int>(std::floor(cameraPos.x));
+                const int pz = static_cast<int>(std::floor(cameraPos.z));
+                int mirrorTop = -999;
+                for (int y = 100; y >= -64; --y) {
+                    if (I.IsSolidAt(px, y, pz)) {
+                        mirrorTop = y;
+                        break;
+                    }
+                }
+                const float fh = 66.f + Fbm(static_cast<float>(px), static_cast<float>(pz)) * 22.f;
+                std::printf("[McWorld][probe] cam=(%d,%d) mirrorTop=%d fbmH=%.1f unfilled=%zu\n",
+                            px, pz, mirrorTop, static_cast<double>(fh), I.unfilled.size());
+                if (!I.unfilled.empty() && I.unfilled.size() <= 12) {
+                    for (const i64 k : I.unfilled) {
+                        int a, b, c;
+                        Impl::DecodeKey(k, a, b, c);
+                        const auto it2 = I.slots.find(k);
+                        std::printf("[McWorld][stuck] key=(%d,%d,%d) slotEntry=%d filled=%d\n", a, b,
+                                    c, it2 == I.slots.end() ? -2 : it2->second.brickIdx,
+                                    it2 == I.slots.end() ? 0 : (it2->second.filled ? 1 : 0));
+                    }
+                }
+            }
+        }
         return static_cast<int>(I.unfilled.size());
     }
 
     bool CVoxelMcWorld::HasAnvil() const { return m_Impl->anvil != nullptr; }
+
+    void CVoxelMcWorld::ApplyEdit(const Vec3 &pos, float radius, u32 op) {
+        auto &I = *m_Impl;
+        // Home brick only (mirrors the GPU edit shader's single-brick span).
+        const int bsx = static_cast<int>(std::floor(pos.x / 16.f));
+        const int bsy = static_cast<int>(std::floor(pos.y / 16.f));
+        const int bsz = static_cast<int>(std::floor(pos.z / 16.f));
+        const auto it = I.slots.find(Impl::Key(bsx, bsy, bsz));
+        if (it == I.slots.end() || !it->second.filled || it->second.brickIdx < 0)
+            return;
+        const size_t base = static_cast<size_t>(it->second.brickIdx) * 128;
+        if (base + 128 > I.occMirror.size() || base + 128 > I.fluidMirror.size())
+            return;
+        const auto applyVoxel = [&](int vx, int vy, int vz) {
+            // Clamp to the home brick (out-of-brick voxels belong to a
+            // neighbor the GPU edit never touches).
+            if ((vx >> 4) != bsx || (vy >> 4) != bsy || (vz >> 4) != bsz)
+                return;
+            const size_t vi =
+                static_cast<size_t>((vx & 15) + (vy & 15) * 16 + (vz & 15) * 256);
+            const size_t w = base + (vi >> 5u);
+            const u32 bit = 1u << (vi & 31u);
+            if (op == 0u) {
+                I.occMirror[w] &= ~bit;
+                I.fluidMirror[w] &= ~bit;
+            } else {
+                I.occMirror[w] |= bit;
+                I.fluidMirror[w] &= ~bit; // placed states are solid, never fluid
+            }
+        };
+        if (radius < 0.5f) {
+            applyVoxel(static_cast<int>(std::floor(pos.x)), static_cast<int>(std::floor(pos.y)),
+                       static_cast<int>(std::floor(pos.z)));
+            return;
+        }
+        const float reach = radius + 0.5f;
+        const int x0 = static_cast<int>(std::floor(pos.x - reach));
+        const int x1 = static_cast<int>(std::floor(pos.x + reach));
+        const int y0 = static_cast<int>(std::floor(pos.y - reach));
+        const int y1 = static_cast<int>(std::floor(pos.y + reach));
+        const int z0 = static_cast<int>(std::floor(pos.z - reach));
+        const int z1 = static_cast<int>(std::floor(pos.z + reach));
+        for (int vz = z0; vz <= z1; ++vz) {
+            for (int vy = y0; vy <= y1; ++vy) {
+                for (int vx = x0; vx <= x1; ++vx) {
+                    // Same sphere predicate as the GPU edit shader.
+                    const float dx = static_cast<float>(vx) + 0.5f - pos.x;
+                    const float dy = static_cast<float>(vy) + 0.5f - pos.y;
+                    const float dz = static_cast<float>(vz) + 0.5f - pos.z;
+                    if (std::sqrt(dx * dx + dy * dy + dz * dz) > reach)
+                        continue;
+                    applyVoxel(vx, vy, vz);
+                }
+            }
+        }
+    }
+
+    bool CVoxelMcWorld::IsSolidAt(i64 x, i64 y, i64 z) const { return m_Impl->IsSolidAt(x, y, z); }
+
+    bool CVoxelMcWorld::IsFluidAt(i64 x, i64 y, i64 z) const { return m_Impl->IsFluidAt(x, y, z); }
+
+    i32 CVoxelMcWorld::PlaceState() const { return m_Impl->sPlace; }
 } // namespace Manro

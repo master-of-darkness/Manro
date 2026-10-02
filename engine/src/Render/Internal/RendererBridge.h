@@ -108,4 +108,10 @@ namespace Manro {
                                  const std::string &assetsDir, int radiusSections);
 
     int RendererImplVoxelMcUpdate(const CRendererImpl &impl);
+
+    bool RendererImplVoxelMcIsSolid(const CRendererImpl &impl, const Vec3 &p);
+
+    bool RendererImplVoxelMcIsFluid(const CRendererImpl &impl, const Vec3 &p);
+
+    u32 RendererImplVoxelMcPlaceState(const CRendererImpl &impl);
 }

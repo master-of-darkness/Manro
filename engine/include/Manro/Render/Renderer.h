@@ -113,6 +113,12 @@ namespace Manro {
         Vec3 VoxelMcInit(const char *worldDir, const char *assetsDir, int radiusSections) const;
         // Fills section budget near the camera. Returns unfilled remainder.
         int VoxelMcUpdate() const;
+        // Block queries against the streamed voxel world (for players,
+        // raycasts). Unloaded reads solid / non-fluid.
+        bool VoxelMcIsSolid(const Vec3 &p) const;
+        bool VoxelMcIsFluid(const Vec3 &p) const;
+        // Protocol state id used for player block placement.
+        u32 VoxelMcPlaceState() const;
         void VoxelGetDebugCounters(u32 out[6]) const;
 
         void SetSettings(const RenderSettings_t &settings) const;

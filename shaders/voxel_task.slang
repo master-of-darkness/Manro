@@ -191,22 +191,24 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                                          (float3(float(n.x), float(n.y), float(n.z)) + 0.5) *
                                              voxelSize;
                             int3 nbc = int3(floor((nwc - frame.worldMin) / frame.brickSize));
-                            if (nbc.x >= 0 && nbc.y >= 0 && nbc.z >= 0 &&
-                                uint(nbc.x) < vdim && uint(nbc.y) < vdim &&
-                                uint(nbc.z) < vdim) {
-                                uint nslot = uint(nbc.x) + uint(nbc.y) * vdim +
-                                             uint(nbc.z) * vdim * vdim;
-                                int rnb = pageTable[nslot];
-                                if (rnb >= 0) {
-                                    uint* nnbase = nstore + uint(rnb) * 2176u;
-                                    uint* nnmats = nnbase;
-                                    uint* nnocc = nnbase + 2048u;
-                                    uint nx = uint(n.x) & 15u;
-                                    uint ny = uint(n.y) & 15u;
-                                    uint nz = uint(n.z) & 15u;
-                                    if (VoxelSolid(nnocc, nx, ny, nz))
-                                        nstate = VoxelMaterial(nnmats, nx, ny, nz);
-                                }
+                            // Wrap into the page table: CPU slots are
+                            // mod-virtualDim of the same brick coords (the
+                            // live set always spans < virtualDim, so wrapped
+                            // slots never alias live bricks).
+                            int3 wrapped =
+                                ((nbc % int(vdim)) + int(vdim)) % int(vdim);
+                            uint nslot = uint(wrapped.x) + uint(wrapped.y) * vdim +
+                                         uint(wrapped.z) * vdim * vdim;
+                            int rnb = pageTable[nslot];
+                            if (rnb >= 0) {
+                                uint* nnbase = nstore + uint(rnb) * 2176u;
+                                uint* nnmats = nnbase;
+                                uint* nnocc = nnbase + 2048u;
+                                uint nx = uint(n.x) & 15u;
+                                uint ny = uint(n.y) & 15u;
+                                uint nz = uint(n.z) & 15u;
+                                if (VoxelSolid(nnocc, nx, ny, nz))
+                                    nstate = VoxelMaterial(nnmats, nx, ny, nz);
                             }
                         }
                         bool emit;

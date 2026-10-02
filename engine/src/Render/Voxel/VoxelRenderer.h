@@ -71,8 +71,22 @@ namespace Manro {
         // world (or procedural fallback) and allocates the section volume.
         // Returns the spawn position. worldDir empty = procedural only.
         Vec3 McInit(const std::string &worldDir, const std::string &assetsDir, int radiusSections);
-        // Fills up to the section budget near the camera. Returns unfilled.
-        int McUpdate(const Vec3 &cameraPos);
+        // Streams sections around the camera (nearest-first fill, eviction
+        // past the hysteresis ring). Returns unfilled remainder.
+        // flightSlot is the frame-in-flight index: staged brick fills are
+        // buffered into that slot's staging ring and copied in-frame by
+        // Record (same slot), so no extra queue submit or fence wait.
+        int McUpdate(const Vec3 &cameraPos, u32 flightSlot);
+        // Physics queries against the streamed world (block coords floored
+        // from p). Unloaded reads solid (see CVoxelMcWorld).
+        bool McIsSolid(const Vec3 &p) const;
+        bool McIsFluid(const Vec3 &p) const;
+        // Protocol state id for player block placement.
+        u32 McPlaceState() const;
+        // CPU-mirror half of a gameplay edit (see CVoxelMcWorld::ApplyEdit).
+        // The GPU half is queued in the world edit ring and consumed by the
+        // edit compute dispatch; both must run for visuals + physics to agree.
+        void McApplyEdit(const Vec3 &pos, float radius, u32 op);
 
         [[nodiscard]] CVoxelWorld &GetWorld() { return *m_World; }
         [[nodiscard]] const VoxelFrameStats_t &GetStats() const { return m_Stats; }

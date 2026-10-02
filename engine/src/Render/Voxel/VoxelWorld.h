@@ -8,6 +8,7 @@
 
 #include "VoxelTypes.h"
 #include <volk.h>
+#include <array>
 #include <vector>
 
 namespace Manro {
@@ -36,6 +37,17 @@ namespace Manro {
         // Reserve + bind sparse pages for a brick slot; returns brick index or -1.
         i32 AllocateBrick(u32 bx, u32 by, u32 bz);
 
+        // Streaming allocation by explicit page-table slot + world-space
+        // origin. Returns the resident brick index (existing mapping wins) or
+        // -1 when the resident pool is exhausted (caller retries later).
+        // Reuses evicted indices first, so steady-state streaming performs no
+        // queue binding at all (pages stay bound; see ReserveResident).
+        i32 AllocateBrickSlot(u32 slot, const Vec3 &origin);
+        // Releases a brick back to the reuse pool: unmaps its slot, clears
+        // residency/opacity/hidden state and dirties exposed neighbors (their
+        // boundary faces may now be visible). Sparse pages stay bound.
+        void EvictBrick(u32 brickIdx);
+
         // Reserve physical sparse pages for `brickCount` bricks in ONE
         // bind (one vkQueueBindSparse + one queue wait). Without this, the
         // per-brick BindRange inside AllocateBrick stalls the queue ~580
@@ -55,6 +67,19 @@ namespace Manro {
         // + submit + wait); streaming 32 sections/frame that way costs ~70ms.
         // Batching cuts it to a single sync point.
         void UploadBrickBatch(const u32 *indices, const u16 *mats, const u32 *occupancy, u32 count);
+
+        // Deferred fill: memcpy into the flight-slot staging ring (no submit,
+        // no fence wait). FlushStagedUploads emits the device copies into the
+        // frame command buffer. Returns false when the slot ring is full
+        // (caller falls back to UploadBrickBatch or retries next frame).
+        // slot is the frame-in-flight index (ringed like the visibility and
+        // frame-params rings: reusing a slot is safe once its fence waited).
+        bool StageBrickBatch(u32 slot, const u32 *indices, const u16 *mats, const u32 *occupancy,
+                             u32 count);
+        // Emit staged device copies + transfer->shader barrier. Must run
+        // OUTSIDE any render pass, before the voxel pass. No-op when empty.
+        void FlushStagedUploads(VkCommandBuffer cb, u32 slot);
+        [[nodiscard]] VkBuffer GetBrickStoreHandle() const;
 
         // Single-voxel CPU write (staging path for world-gen; gameplay uses GPU edits).
         void SetVoxel(u32 bx, u32 by, u32 bz, u32 lx, u32 ly, u32 lz, u16 mat);
@@ -103,10 +128,20 @@ namespace Manro {
         }
 
         // Sync headers + page table to GPU after allocation/upload.
+        // Partial uploads ONLY: re-uploading all 8192 headers every time
+        // wipes the GPU face-cache valid bit (bit2, GPU-only — the mirror
+        // never carries it), forcing every visible brick to rescan its 4096
+        // voxels next frame. During streaming (or after a single block edit)
+        // that turned every frame into a full-world rescan. Dirty brick
+        // indices are tracked exactly; untouched headers (and their valid
+        // bits) are never rewritten.
         void FlushHeaders();
 
     private:
         u32 BrickSlot(u32 bx, u32 by, u32 bz) const { return bx + by * m_VirtualDim + bz * m_VirtualDim * m_VirtualDim; }
+        // Page-table slot of a face-neighbor of a slot, or -1 (no wrap:
+        // callers guarantee the live set spans less than virtualDim).
+        i32 SlotNeighbor(u32 slot, int dx, int dy, int dz) const;
         // Resident brick index of the face-neighbor brick (dx,dy,dz), or -1.
         i32 NeighborBrick(u32 brickIdx, int dx, int dy, int dz) const;
         void RecomputeHidden(u32 brickIdx);
@@ -128,12 +163,29 @@ namespace Manro {
         std::vector<u32> m_BrickSlots;
         std::vector<u8> m_BrickOpaqueFull;
         std::vector<u8> m_BrickHidden;
+        // Evicted resident indices ready for reuse (sparse pages stay bound).
+        std::vector<u32> m_FreeBricks;
+        // Deferred upload staging: one TRANSFER_SRC ring buffer + per-slot
+        // resident-brick index lists. Written by StageBrickBatch (CPU thread,
+        // pre-record), consumed by FlushStagedUploads (frame CB).
+        static constexpr u32 kStageSlots = 3;
+        static constexpr u32 kStageCapacityBricks = 64;
+        Scope<CBuffer> m_UploadStaging;
+        std::array<u32, kStageSlots> m_StageCounts{};
+        std::array<std::array<u32, kStageCapacityBricks>, kStageSlots> m_StageIndices{};
 
         u32 m_VirtualDim{64};
         float m_VoxelSize{1.f};
         float m_BrickSize{16.f};
         Vec3 m_WorldMin{0.f};
         u32 m_BrickCount{0}; // high-water allocated slot count
-        bool m_bHeadersDirty{false};
+        // Exact header-upload set (see FlushHeaders). MarkBrickDirty dedups
+        // via the mirror bit1: an index is listed iff its bit is set.
+        std::vector<u32> m_DirtyHeaders;
+        // Page-table upload flag (slot mappings change on alloc/evict only;
+        // the table has no GPU-side valid bits, so a full upload is safe).
+        bool m_bPagesDirty{true};
+        // First upload covers every header (VMA memory starts uninitialized).
+        bool m_bHeadersFullUpload{true};
     };
 } // namespace Manro

@@ -552,10 +552,38 @@ namespace Manro {
         return m_McWorld->Init(*m_World, m_McPack, desc);
     }
 
-    int CVoxelRenderer::McUpdate(const Vec3 &cameraPos) {
+    int CVoxelRenderer::McUpdate(const Vec3 &cameraPos, u32 flightSlot) {
         if (!m_McWorld)
             return 0;
-        return m_McWorld->Update(*m_World, cameraPos);
+        return m_McWorld->Update(*m_World, cameraPos, flightSlot);
+    }
+
+    bool CVoxelRenderer::McIsSolid(const Vec3 &p) const {
+        if (!m_McWorld)
+            return true;
+        return m_McWorld->IsSolidAt(static_cast<i64>(std::floor(p.x)),
+                                    static_cast<i64>(std::floor(p.y)),
+                                    static_cast<i64>(std::floor(p.z)));
+    }
+
+    bool CVoxelRenderer::McIsFluid(const Vec3 &p) const {
+        if (!m_McWorld)
+            return false;
+        return m_McWorld->IsFluidAt(static_cast<i64>(std::floor(p.x)),
+                                    static_cast<i64>(std::floor(p.y)),
+                                    static_cast<i64>(std::floor(p.z)));
+    }
+
+    u32 CVoxelRenderer::McPlaceState() const {
+        if (!m_McWorld)
+            return 1u;
+        const i32 st = m_McWorld->PlaceState();
+        return st >= 0 ? static_cast<u32>(st) : 1u;
+    }
+
+    void CVoxelRenderer::McApplyEdit(const Vec3 &pos, float radius, u32 op) {
+        if (m_McWorld)
+            m_McWorld->ApplyEdit(pos, radius, op);
     }
 
     void CVoxelRenderer::DispatchEdits(VkCommandBuffer cb) {
@@ -667,6 +695,9 @@ namespace Manro {
         DispatchEdits(cb);
         DispatchGi(cb);
         m_World->ClearEdits();
+        // Staged streaming fills (buffered by McUpdate into this flight
+        // slot): device copies + transfer barrier, in-frame, no extra sync.
+        m_World->FlushStagedUploads(cb, flightSlot);
 
         const u32 brickCount = m_World->GetBrickCount();
         m_Stats.brickCount = brickCount;

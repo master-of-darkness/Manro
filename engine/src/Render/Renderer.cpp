@@ -147,4 +147,14 @@ namespace Manro {
     }
 
     int CRenderer::VoxelMcUpdate() const { return RendererImplVoxelMcUpdate(*m_Impl); }
+
+    bool CRenderer::VoxelMcIsSolid(const Vec3 &p) const {
+        return RendererImplVoxelMcIsSolid(*m_Impl, p);
+    }
+
+    bool CRenderer::VoxelMcIsFluid(const Vec3 &p) const {
+        return RendererImplVoxelMcIsFluid(*m_Impl, p);
+    }
+
+    u32 CRenderer::VoxelMcPlaceState() const { return RendererImplVoxelMcPlaceState(*m_Impl); }
 } // namespace Manro
