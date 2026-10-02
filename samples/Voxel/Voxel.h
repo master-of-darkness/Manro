@@ -16,9 +16,10 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
-#include <cstdlib>
+#include <string>
+#include <utility>
 
-// CVoxel: playable Minecraft-like sample on the GPU-driven voxel path.
+// CVoxel: playable block-world sample on the GPU-driven voxel path.
 // - First-person player (walk/sprint/jump/swim, noclip fly on F) with AABB
 //   collision against the streamed world; chunks stream + evict around the
 //   player with no preallocated volume limit.
@@ -27,6 +28,18 @@
 //   V toggles vsync.
 class CVoxel final : public Manro::IApplication {
 public:
+    // Startup parameters (parsed from argv in main.cpp). No env vars.
+    struct Params {
+        std::string worldDir; // Anvil save dir (required; no fallback)
+        std::string assetsDir; // empty = build-time client-jar assets
+        int radius{6}; // section radius, clamped to [1, 10]
+        float resScale{1.f}; // offscreen resolution scale, clamped to [0.25, 1]
+        bool debug{false}; // GPU debug counters (costs a readback)
+        bool chaos{false}; // streaming-torture teleports
+    };
+
+    explicit CVoxel(Params params);
+
     Manro::WindowDesc_t GetWindowDesc() const override {
         Manro::WindowDesc_t d;
         d.Title = "Voxel";
@@ -49,12 +62,11 @@ public:
             Manro::RenderSettings_t s = m_Renderer->GetSettings();
             s.aaMode = Manro::AntiAliasingMode::None;
             s.msaaSamples = Manro::MSAASampleCount::MSAA_1X;
-            // Fill-bound probe: MC_RES_SCALE=0.5 renders the offscreen at
+            // Fill-bound probe: --res-scale=0.5 renders the offscreen at
             // half res (composite upscales to the swapchain).
-            if (const char *rs = std::getenv("MC_RES_SCALE")) {
-                const float f = std::clamp(static_cast<float>(std::atof(rs)), 0.25f, 1.f);
-                s.resolutionScale = f;
-                printf("[Voxel] resolutionScale=%.2f\n", static_cast<double>(f));
+            if (m_Params.resScale < 1.f) {
+                s.resolutionScale = m_Params.resScale;
+                printf("[Voxel] resolutionScale=%.2f\n", static_cast<double>(m_Params.resScale));
             }
             m_Renderer->SetSettings(s);
         }
@@ -62,18 +74,13 @@ public:
         // Voxel path first: sparse world + PSOs.
         m_Renderer->VoxelInit(1280, 720);
 
-        // Minecraft path: vanilla tiles + streaming section volume (Anvil
-        // when MC_WORLD_DIR points at a save with region files, else
-        // MC-scale procedural terrain). Assets from MC_ASSETS_DIR or default.
-        const char *worldDir = std::getenv("MC_WORLD_DIR");
-        const char *assetsDir = std::getenv("MC_ASSETS_DIR");
-        int radius = 6;
-        if (const char *r = std::getenv("MC_RADIUS"))
-            radius = std::clamp(std::atoi(r), 1, 10);
-        m_Spawn = m_Renderer->VoxelMcInit(worldDir ? worldDir : "",
-                                          assetsDir ? assetsDir : "", radius);
-        printf("[Voxel] mc spawn=(%.1f,%.1f,%.1f) world=%s\n", m_Spawn.x, m_Spawn.y, m_Spawn.z,
-               worldDir ? worldDir : "<procedural>");
+        // Streamed path: block tiles from the build-time client-jar assets
+        // (--assets-dir overrides the default) plus the Anvil save under
+        // --world-dir (required — without a save the volume fills as air).
+        m_Spawn = m_Renderer->VoxelStreamInit(m_Params.worldDir.c_str(), m_Params.assetsDir.c_str(),
+                                              m_Params.radius);
+        printf("[Voxel] stream spawn=(%.1f,%.1f,%.1f) world=%s\n", m_Spawn.x, m_Spawn.y, m_Spawn.z,
+               m_Params.worldDir.empty() ? "<no-save>" : m_Params.worldDir.c_str());
 
         // Player starts at spawn (falls to the ground once it streams in);
         // camera is the eye, driven by mouse look below.
@@ -89,10 +96,10 @@ public:
         m_bGrabbed = true;
 
         // GPU debug counters cost a vkQueueWaitIdle readback on capture
-        // frames: opt-in via MC_VOXEL_DEBUG=1, off by default so the steady
+        // frames: opt-in via --debug, off by default so the steady
         // log/HUD numbers measure the renderer, not the diagnostic stall.
-        m_DbgAllowed = std::getenv("MC_VOXEL_DEBUG") != nullptr;
-        m_Chaos = std::getenv("MC_VOXEL_CHAOS") != nullptr;
+        m_DbgAllowed = m_Params.debug;
+        m_Chaos = m_Params.chaos;
     }
 
     void OnShutdown() override {
@@ -156,7 +163,7 @@ public:
                      ctx.TotalTime);
 
         // Streaming-torture teleports (repro for the streaming-bug
-        // bisection): opt-in via MC_VOXEL_CHAOS=1, OFF by default — when on,
+        // bisection): opt-in via --chaos, OFF by default — when on,
         // the world perpetually restreams and most of the view is unfilled
         // holes while it catches up.
         if (m_Chaos) {
@@ -202,10 +209,10 @@ public:
                 const Manro::Vec3 target(static_cast<float>(hit.hx + hit.nx),
                                          static_cast<float>(hit.hy + hit.ny),
                                          static_cast<float>(hit.hz + hit.nz));
-                if (!m_Renderer->VoxelMcIsSolid(target)) {
+                if (!m_Renderer->VoxelStreamIsSolid(target)) {
                     m_Renderer->VoxelQueueEdit(
                         target + Manro::Vec3(0.5f),
-                        0.f, m_Renderer->VoxelMcPlaceState(), 1);
+                        0.f, m_Renderer->VoxelStreamPlaceState(), 1);
                     ++m_EditCount;
                 }
             }
@@ -254,8 +261,8 @@ public:
         m_Renderer->SetViewProjection(view, proj);
         m_Renderer->SetCameraPosition(m_CamPos);
 
-        // Minecraft section streaming follows the player eye.
-        m_Unfilled = m_Renderer->VoxelMcUpdate();
+        // Section streaming follows the player eye.
+        m_Unfilled = m_Renderer->VoxelStreamUpdate();
         const auto t1 = std::chrono::steady_clock::now();
 
         // DEBUG capture only on opted-in log frames: skips per-frame Fill,
@@ -271,12 +278,13 @@ public:
         // CPU share of the frame: streaming + command recording (t0->t2 is
         // CPU-only; the GPU works the submitted CB asynchronously, so
         // dt - cpuMs is queue/present/compositor + GPU time).
-        const float mcMs =
+        const float streamMs =
             std::chrono::duration<float, std::milli>(t1 - t0).count();
         const float cpuMs =
             std::chrono::duration<float, std::milli>(t2 - t0).count();
         m_CpuEma = (m_CpuEma <= 0.f) ? cpuMs : m_CpuEma + (cpuMs - m_CpuEma) * 0.05f;
-        m_McEma = (m_McEma <= 0.f) ? mcMs : m_McEma + (mcMs - m_McEma) * 0.05f;
+        m_StreamEma =
+            (m_StreamEma <= 0.f) ? streamMs : m_StreamEma + (streamMs - m_StreamEma) * 0.05f;
 
         // On-screen FPS: EMA of frame dt + 1%/0.1% lows over a rolling window.
         const float dtMs = frame.DeltaTime * 1000.f;
@@ -334,11 +342,11 @@ public:
             // EMA, not the instantaneous sample: a single WaitIdle / upload
             // stall frame would otherwise dominate the reported number.
             printf("[Voxel] fps=%.0f (%.2f ms) 1%%low=%.2fms 0.1%%low=%.2fms bricks=%u "
-                   "taskGroups=%u edits=%u unfilled=%d cpu=%.2fms mc=%.2fms cam=(%.1f,%.1f,%.1f)\n",
+                   "taskGroups=%u edits=%u unfilled=%d cpu=%.2fms stream=%.2fms cam=(%.1f,%.1f,%.1f)\n",
                    static_cast<double>(emaFps), static_cast<double>(m_FpsEma),
                    static_cast<double>(worst1), static_cast<double>(worst01),
                    m_Renderer->VoxelGetBrickCount(), m_Renderer->VoxelGetTaskGroups(), m_EditCount,
-                   m_Unfilled, static_cast<double>(m_CpuEma), static_cast<double>(m_McEma),
+                   m_Unfilled, static_cast<double>(m_CpuEma), static_cast<double>(m_StreamEma),
                    m_CamPos.x, m_CamPos.y, m_CamPos.z);
             // DEBUG: [0]=taskRuns [1]=visible [2]=faces [3]=culled [4]=meshRuns [5]=meshFaces
             if (m_DbgAllowed)
@@ -350,8 +358,8 @@ public:
     }
 
     Manro::CInputManager *GetInputManager() override { return &m_InputManager; }
-
- private:
+  private:
+    Params m_Params;
     Manro::CRenderer *m_Renderer{nullptr};
     Manro::CWindow *m_Window{nullptr};
     Manro::CInputBackend m_InputBackend;
@@ -387,5 +395,7 @@ public:
     Manro::u32 m_FramesSeen{0};
     float m_FpsEma{0.f};
     float m_CpuEma{0.f};
-    float m_McEma{0.f};
+    float m_StreamEma{0.f};
 };
+
+inline CVoxel::CVoxel(Params params) : m_Params(std::move(params)) {}

@@ -1,16 +1,13 @@
-// CVoxelMcWorld: MC-dimension section fill (Anvil via mcs, procedural
-// fallback). This TU is C++23 (mcs headers) — see engine CMake.
+// CVoxelStreamWorld: save-backed section fill for the voxel renderer.
+// Sections are 16^3 blocks (== our bricks). World data comes from an Anvil
+// save on disk (region files under worldDir); there is no procedural
+// fallback — without a save the volume fills as air and Init reports an
+// error. Block textures come from the build-time client-jar assets.
 
-#include "VoxelMcWorld.h"
-#include "VoxelMcAssets.h"
+#include "VoxelStreamWorld.h"
+#include "VoxelAnvilReader.h"
+#include "VoxelBlockAssets.h"
 #include "VoxelWorld.h"
-
-#include "mcs/world/anvil.hpp"
-#include "mcs/protocol/block_states.hpp"
-#include "mcs/protocol/play/constants.hpp"
-
-#define STB_PERLIN_IMPLEMENTATION
-#include <stb_perlin.h>
 
 #include <algorithm>
 #include <cmath>
@@ -21,35 +18,16 @@
 #include <vector>
 
 namespace Manro {
-    namespace play = mcs::protocol::play;
-
     namespace {
         constexpr int kMinSectionY = -4; // y -64
         constexpr int kMaxSectionY = 19; // y ..319
-        constexpr int kSeaLevel = 62;
-
-        float Fbm(float x, float z) {
-            float a = 0.5f, f = 1.f / 180.f, s = 0.f, norm = 0.f;
-            for (int o = 0; o < 4; ++o) {
-                s += a * stb_perlin_noise3(x * f, 0.f, z * f, 0, 0, 0);
-                norm += a;
-                a *= 0.5f;
-                f *= 2.03f;
-            }
-            return s / norm; // ~[-1, 1]
-        }
-
-        u64 Hash2(i64 x, i64 z) {
-            u64 h = static_cast<u64>(x * 374761393LL + z * 668265263LL);
-            h = (h ^ (h >> 13)) * 1274126177ULL;
-            return h ^ (h >> 16);
-        }
     } // namespace
 
-    struct CVoxelMcWorld::Impl {
-        McWorldDesc_t desc{};
-        std::shared_ptr<const mcs::world::AnvilWorld> anvil;
-        const McAssetPack_t *pack{nullptr};
+    struct CVoxelStreamWorld::Impl {
+        VoxelStreamDesc_t desc{};
+        const BlockAssetPack_t *pack{nullptr};
+        CAnvilWorldReader reader;
+        bool hasSave{false};
         // Live sections: world-section key -> slot state.
         struct SlotInfo {
             i32 brickIdx{-1};
@@ -72,12 +50,7 @@ namespace Manro {
         // as solid (players can't fall through unloaded world).
         std::vector<u32> occMirror;
         std::vector<u32> fluidMirror;
-        // Fluid protocol states (water/lava levels) for the fluid mirror.
-        std::vector<u8> fluidState;
         Vec3 spawn{8.f, 80.f, 8.f};
-        // Procedural state ids (resolved once).
-        i32 sGrass{1}, sDirt{1}, sStone{1}, sBedrock{1}, sWater{0}, sLog{1}, sLeaves{0}, sSand{1};
-        i32 sPlace{1}; // right-click place block (planks, stone fallback)
 
         static i64 Key(int sx, int sy, int sz) {
             return (static_cast<i64>(sx + 32768) << 42) | (static_cast<i64>(sy + 32768) << 21) |
@@ -106,57 +79,6 @@ namespace Manro {
         static Vec3 OriginFor(int sx, int sy, int sz) {
             return Vec3(static_cast<float>(sx * 16), static_cast<float>(sy * 16),
                         static_cast<float>(sz * 16));
-        }
-
-        i32 Procedural(i64 x, i64 y, i64 z) {
-            if (y < -64)
-                return sBedrock; // floor guard (shouldn't happen)
-            if (y == -64)
-                return sBedrock;
-            const float h = 66.f + Fbm(static_cast<float>(x), static_cast<float>(z)) * 22.f;
-            // Trees: hash grid, trunks on grass.
-            const i64 tx = x >> 4, tz = z >> 4;
-            const u64 th = Hash2(tx, tz);
-            const int treeX = static_cast<int>(tx * 16 + (th % 11));
-            const int treeZ = static_cast<int>(tz * 16 + ((th >> 4) % 11));
-            const float treeH = 66.f + Fbm(static_cast<float>(treeX), static_cast<float>(treeZ)) * 22.f;
-            if ((th & 7) == 0 && x >= treeX - 2 && x <= treeX + 2 && z >= treeZ - 2 &&
-                z <= treeZ + 2) {
-                const int ty = static_cast<int>(treeH);
-                const int dx = static_cast<int>(x - treeX), dz = static_cast<int>(z - treeZ);
-                const int ad = std::abs(dx) + std::abs(dz);
-                if (y > ty && y <= ty + 4 && (dx != 0 || dz != 0) && ad <= 4 &&
-                    !(std::abs(dx) == 2 && std::abs(dz) == 2))
-                    return sLeaves;
-                if (y == ty + 5 && dx == 0 && dz == 0)
-                    return sLeaves;
-                if (y > ty && y <= ty + 4 && dx == 0 && dz == 0)
-                    return sLog;
-            }
-            if (y > static_cast<i64>(h))
-                return (y <= kSeaLevel) ? sWater : 0;
-            if (y == static_cast<i64>(h)) {
-                if (h <= kSeaLevel + 1)
-                    return sSand; // beaches
-                return sGrass;
-            }
-            if (y > static_cast<i64>(h) - 4)
-                return (h <= kSeaLevel + 1) ? sSand : sDirt;
-            return sStone;
-        }
-        // Terrain half of Procedural() for a precomputed column (h/hi known).
-        // Bit-exact with Procedural() for y > -64 outside tree crowns.
-        i32 ColumnTerrain(i64 y, float h, i64 hi) {
-            if (y > hi)
-                return (y <= kSeaLevel) ? sWater : 0;
-            if (y == hi) {
-                if (h <= kSeaLevel + 1)
-                    return sSand; // beaches
-                return sGrass;
-            }
-            if (y > hi - 4)
-                return (h <= kSeaLevel + 1) ? sSand : sDirt;
-            return sStone;
         }
 
         // Physics/raycast queries against the CPU mirrors. Unfilled or
@@ -197,64 +119,30 @@ namespace Manro {
         }
     };
 
-    CVoxelMcWorld::CVoxelMcWorld() : m_Impl(std::make_unique<Impl>()) {}
-    CVoxelMcWorld::~CVoxelMcWorld() = default;
+    CVoxelStreamWorld::CVoxelStreamWorld() : m_Impl(std::make_unique<Impl>()) {}
+    CVoxelStreamWorld::~CVoxelStreamWorld() = default;
 
-    Vec3 CVoxelMcWorld::Init(CVoxelWorld &world, const McAssetPack_t &pack,
-                             const McWorldDesc_t &desc) {
+    Vec3 CVoxelStreamWorld::Init(CVoxelWorld &world, const BlockAssetPack_t &pack,
+                                 const VoxelStreamDesc_t &desc) {
         m_Impl->desc = desc;
         m_Impl->pack = &pack;
-        auto res = [](const char *name,
-                      std::initializer_list<std::pair<std::string_view, std::string_view>> p) {
-            std::vector<std::pair<std::string_view, std::string_view> > v(p);
-            return play::resolve_block_state(name, v);
-        };
         auto &I = *m_Impl;
-        I.sGrass = res("minecraft:grass_block", {{"snowy", "false"}});
-        I.sDirt = res("minecraft:dirt", {});
-        I.sStone = res("minecraft:stone", {});
-        I.sBedrock = res("minecraft:bedrock", {});
-        I.sWater = res("minecraft:water", {{"level", "0"}});
-        I.sLog = res("minecraft:oak_log", {{"axis", "y"}});
-        I.sLeaves = res("minecraft:oak_leaves", {{"distance", "1"},
-                                                 {"persistent", "true"},
-                                                 {"waterlogged", "false"}});
-        I.sSand = res("minecraft:sand", {});
-        if (I.sLeaves < 0)
-            I.sLeaves = 0;
-        I.sPlace = res("minecraft:oak_planks", {});
-        if (I.sPlace < 0)
-            I.sPlace = I.sStone;
-        // Fluid states (every water/lava level) for the physics fluid mirror.
-        I.fluidState.assign(I.pack->states.size(), 0u);
-        for (int lv = 0; lv <= 15; ++lv) {
-            const std::string lvs = std::to_string(lv);
-            const i32 w = res("minecraft:water", {{"level", lvs}});
-            const i32 l = res("minecraft:lava", {{"level", lvs}});
-            if (w >= 0 && static_cast<size_t>(w) < I.fluidState.size())
-                I.fluidState[static_cast<size_t>(w)] = 1u;
-            if (l >= 0 && static_cast<size_t>(l) < I.fluidState.size())
-                I.fluidState[static_cast<size_t>(l)] = 1u;
-        }
 
-        if (!desc.worldDir.empty()) {
-            auto anvil = mcs::world::AnvilWorld::open(desc.worldDir);
-            if (anvil) {
-                I.anvil = anvil;
-                const auto &lv = anvil->level();
-                I.spawn = Vec3(static_cast<float>(lv.spawn_x), static_cast<float>(lv.spawn_y) + 1.f,
-                               static_cast<float>(lv.spawn_z));
-                std::printf("[McWorld] anvil %s spawn=(%d,%d,%d)\n", desc.worldDir.c_str(),
-                         lv.spawn_x, lv.spawn_y, lv.spawn_z);
-            } else {
-                std::printf("[McWorld] no region data in %s, procedural fallback\n",
-                         desc.worldDir.c_str());
-            }
-        }
-        if (!I.anvil) {
-            // Procedural spawn above terrain at origin.
-            const float h = 66.f + Fbm(8.f, 8.f) * 22.f;
-            I.spawn = Vec3(8.f, h + 2.f, 8.f);
+        I.hasSave = false;
+        if (!desc.worldDir.empty() && I.reader.Open(desc.worldDir)) {
+            I.hasSave = true;
+            Vec3 s{};
+            if (I.reader.ReadSpawn(s))
+                I.spawn = s + Vec3(0.f, 1.f, 0.f);
+            else
+                I.spawn = Vec3(8.f, 80.f, 8.f);
+            std::printf("[StreamWorld] save %s spawn=(%.1f,%.1f,%.1f)\n", desc.worldDir.c_str(),
+                        I.spawn.x, I.spawn.y, I.spawn.z);
+        } else {
+            // No procedural fallback: without a save the volume fills as air.
+            I.spawn = Vec3(8.f, 80.f, 8.f);
+            std::printf("[StreamWorld] ERROR: no region data in '%s' (pass --world-dir)\n",
+                        desc.worldDir.c_str());
         }
 
         // Streaming world: the origin is fixed ONCE (shaders wrap slots
@@ -277,16 +165,16 @@ namespace Manro {
         // sparse bind queue. Without this each brick binds + drains the
         // queue on its own (~580 waits, ~300ms at R=6).
         world.ReserveResident(8192);
-        std::printf("[McWorld] streaming R=%d evict=%d anvil=%d spawn=(%.1f,%.1f,%.1f)\n", R,
-                 I.evictRadius, I.anvil ? 1 : 0, I.spawn.x, I.spawn.y, I.spawn.z);
+        std::printf("[StreamWorld] streaming R=%d evict=%d save=%d spawn=(%.1f,%.1f,%.1f)\n", R,
+                    I.evictRadius, I.hasSave ? 1 : 0, I.spawn.x, I.spawn.y, I.spawn.z);
         return I.spawn;
     }
 
-    int CVoxelMcWorld::UnfilledCount() const {
+    int CVoxelStreamWorld::UnfilledCount() const {
         return static_cast<int>(m_Impl->unfilled.size());
     }
 
-    int CVoxelMcWorld::Update(CVoxelWorld &world, const Vec3 &cameraPos, u32 flightSlot) {
+    int CVoxelStreamWorld::Update(CVoxelWorld &world, const Vec3 &cameraPos, u32 flightSlot) {
         auto &I = *m_Impl;
         const int R = I.desc.radiusSections;
         const auto secOf = [](float v) { return static_cast<int>(std::floor(v / 16.f)); };
@@ -358,23 +246,27 @@ namespace Manro {
         // Pre-sorted at rebuild: take from the front, no per-frame work.
         const int budget = std::min<int>(I.desc.fillBudgetPerUpdate,
                                          static_cast<int>(I.unfilled.size()));
-        // Deferred device upload: McUpdate only stages into the flight-slot
+        // Deferred device upload: StreamUpdate only stages into the flight-slot
         // ring (plain memcpys); Record emits the copies into the frame CB
         // with a transfer barrier — no one-shot submit, no fence wait, no
         // pipeline drain while streaming.
         thread_local std::vector<u16> batchMats;
         thread_local std::vector<u32> batchOcc;
         thread_local std::vector<u32> batchFluid;
+        thread_local std::vector<u32> batchGpuOcc;
         thread_local std::vector<i64> filledKeys;
         batchMats.resize(static_cast<size_t>(budget) * 4096);
         batchOcc.resize(static_cast<size_t>(budget) * 128);
         batchFluid.resize(static_cast<size_t>(budget) * 128);
+        batchGpuOcc.resize(static_cast<size_t>(budget) * 128);
         std::vector<u32> batchIdx;
         batchIdx.reserve(static_cast<size_t>(budget));
         std::vector<u8> batchOpaque;
         batchOpaque.reserve(static_cast<size_t>(budget));
         filledKeys.clear();
-        const size_t fluidStates = I.fluidState.size();
+        AnvilSectionStates saveSec{};
+        // Per-section palette -> pack id translation (palettes are tiny).
+        std::vector<u32> palLocal;
         for (int i = 0; i < budget; ++i) {
             const i64 key = I.unfilled[static_cast<size_t>(i)];
             int sx, sy, sz;
@@ -401,97 +293,44 @@ namespace Manro {
             std::fill(occ, occ + 128, 0u);
             std::fill(fld, fld + 128, 0u);
             bool allOpaque = true;
-            // Anvil fast path: one chunk fetch per section (sections align
-            // 1:1 with chunk columns x chunk sections), then lock-free reads.
-            // Per-voxel block_state_at costs a mutex + hash lookup +
-            // shared_ptr atomic each — ~4096x overhead per section.
-            std::shared_ptr<const mcs::world::LoadedChunk> chunk;
-            const mcs::world::ChunkSection *sec = nullptr;
-            if (I.anvil) {
-                chunk = I.anvil->chunk(sx, sz);
-                const int secIdx = sy + 4;
-                if (chunk && secIdx >= 0 &&
-                    static_cast<size_t>(secIdx) < chunk->sections.size())
-                    sec = &chunk->sections[static_cast<size_t>(secIdx)];
-            }
-            // Column-major fill: terrain height + tree params depend only on
-            // (x,z), so they are computed once per column (256x) instead of
-            // per voxel (4096x). Fbm/Hash are pure in (x,z), so hoisting is
-            // exact. The Anvil path can't hoist (per-voxel lookups).
-            for (int lz = 0; lz < 16; ++lz) {
-                for (int lx = 0; lx < 16; ++lx) {
-                    const i64 x = static_cast<i64>(sx) * 16 + lx;
-                    const i64 z = static_cast<i64>(sz) * 16 + lz;
-                    float colH = 0.f;
-                    i64 colHi = 0;
-                    bool colTree = false;
-                    int colTreeX = 0, colTreeZ = 0, colTreeY = 0;
-                    if (!I.anvil) {
-                        colH = 66.f + Fbm(static_cast<float>(x), static_cast<float>(z)) * 22.f;
-                        colHi = static_cast<i64>(colH);
-                        const i64 tx = x >> 4, tz = z >> 4;
-                        const u64 th = Hash2(tx, tz);
-                        colTreeX = static_cast<int>(tx * 16 + (th % 11));
-                        colTreeZ = static_cast<int>(tz * 16 + ((th >> 4) % 11));
-                        const float treeH =
-                            66.f +
-                            Fbm(static_cast<float>(colTreeX), static_cast<float>(colTreeZ)) * 22.f;
-                        colTreeY = static_cast<int>(treeH);
-                        colTree = ((th & 7) == 0 && x >= colTreeX - 2 && x <= colTreeX + 2 &&
-                                   z >= colTreeZ - 2 && z <= colTreeZ + 2);
-                    }
-                    for (int ly = 0; ly < 16; ++ly) {
-                        const i64 y = static_cast<i64>(sy) * 16 + ly;
-                        i32 st = 0;
-                        if (sec) {
-                            const size_t cell =
-                                static_cast<size_t>(ly * 256 + lz * 16 + lx);
-                            st = sec->block_state(cell);
-                        } else if (I.anvil) {
-                            st = 0; // missing chunk/section reads as air
-                        } else if (y <= -64) {
-                            st = I.sBedrock;
-                        } else if (colTree) {
-                            const int dx = static_cast<int>(x - colTreeX);
-                            const int dz = static_cast<int>(z - colTreeZ);
-                            const int ad = std::abs(dx) + std::abs(dz);
-                            if (y > colTreeY && y <= colTreeY + 4 && (dx != 0 || dz != 0) &&
-                                ad <= 4 && !(std::abs(dx) == 2 && std::abs(dz) == 2))
-                                st = I.sLeaves;
-                            else if (y == colTreeY + 5 && dx == 0 && dz == 0)
-                                st = I.sLeaves;
-                            else if (y > colTreeY && y <= colTreeY + 4 && dx == 0 && dz == 0)
-                                st = I.sLog;
-                            else
-                                st = I.ColumnTerrain(y, colH, colHi);
-                        } else {
-                            st = I.ColumnTerrain(y, colH, colHi);
-                        }
-                        const size_t vi = static_cast<size_t>(lx + ly * 16 + lz * 256);
-                        const bool valid = st >= 0 &&
-                                           static_cast<size_t>(st) < I.pack->states.size();
-                        const u32 flags =
-                            valid ? I.pack->states[static_cast<size_t>(st)].flags : 0u;
-                        const bool skip =
-                            !valid || ((flags & kMcFlagSkip) != 0);
-                        mats[vi] = skip ? 0 : static_cast<u16>(st);
-                        if (!skip) {
-                            // Physics mirror: fluids are swimmable, NOT solid
-                            // (the GPU brick occupancy keeps them for rendering;
-                            // only this CPU mirror drives collision/raycasts).
-                            const bool fluid = static_cast<size_t>(st) < fluidStates &&
-                                               I.fluidState[static_cast<size_t>(st)] != 0u;
-                            if (fluid)
-                                fld[vi >> 5u] |= (1u << (vi & 31u));
-                            else
-                                occ[vi >> 5u] |= (1u << (vi & 31u));
-                        }
-                        // Fully-opaque brick tracking (hidden-brick culling):
-                        // any air/skip/cutout/non-opaque voxel disqualifies.
-                        if (skip || (flags & kMcFlagOpaque) == 0u)
-                            allOpaque = false;
-                    }
+            // Save-backed fill: section palette entries resolve through the
+            // pack table (built from this same save, so hits are the norm).
+            // Missing data (ungenerated chunk) fills as air.
+            palLocal.clear();
+            bool haveData = false;
+            if (I.hasSave && I.reader.ReadSectionStates(sx, sy, sz, saveSec) &&
+                saveSec.present) {
+                haveData = true;
+                palLocal.reserve(saveSec.palette.size());
+                for (const FullState &fs : saveSec.palette) {
+                    const auto it =
+                        I.pack->stateByKey.find(MakeStateKey(fs.name, fs.props));
+                    palLocal.push_back(it != I.pack->stateByKey.end()
+                                            ? it->second
+                                            : I.pack->fallbackState);
                 }
+            }
+            for (int vi = 0; vi < 4096; ++vi) {
+                const u32 st = haveData ? palLocal[saveSec.pal[vi]] : 0u;
+                const bool valid = static_cast<size_t>(st) < I.pack->states.size();
+                const u32 flags = valid ? I.pack->states[static_cast<size_t>(st)].flags : 0u;
+                const bool skip = !valid || ((flags & kBlockFlagSkip) != 0);
+                mats[vi] = skip ? 0 : static_cast<u16>(st);
+                if (!skip) {
+                    // Physics mirror: fluids are swimmable, NOT solid
+                    // (the GPU brick occupancy keeps them for rendering;
+                    // only this CPU mirror drives collision/raycasts).
+                    const bool fluid = static_cast<size_t>(st) < I.pack->fluid.size() &&
+                                       I.pack->fluid[static_cast<size_t>(st)] != 0u;
+                    if (fluid)
+                        fld[vi >> 5u] |= (1u << (vi & 31u));
+                    else
+                        occ[vi >> 5u] |= (1u << (vi & 31u));
+                }
+                // Fully-opaque brick tracking (hidden-brick culling):
+                // any air/skip/cutout/non-opaque voxel disqualifies.
+                if (skip || (flags & kBlockFlagOpaque) == 0u)
+                    allOpaque = false;
             }
             batchIdx.push_back(bidx);
             batchOpaque.push_back(allOpaque ? 1u : 0u);
@@ -499,11 +338,23 @@ namespace Manro {
             filledKeys.push_back(key);
         }
         if (!batchIdx.empty()) {
+            // GPU occupancy must include fluids (they render as opaque
+            // water/lava tiles); the CPU physics mirror below stays
+            // solid-only (fluids are swimmable, not solid). Without the OR
+            // here water bricks scan as empty on the GPU: fully invisible
+            // while physics still reports solid/air correctly.
+            for (size_t k = 0; k < batchIdx.size(); ++k) {
+                const u32 *occ = batchOcc.data() + k * 128;
+                const u32 *fld = batchFluid.data() + k * 128;
+                u32 *gpu = batchGpuOcc.data() + k * 128;
+                for (int w = 0; w < 128; ++w)
+                    gpu[w] = occ[w] | fld[w];
+            }
             if (!world.StageBrickBatch(flightSlot, batchIdx.data(), batchMats.data(),
-                                       batchOcc.data(), static_cast<u32>(batchIdx.size()))) {
+                                       batchGpuOcc.data(), static_cast<u32>(batchIdx.size()))) {
                 // Staging ring full (budget <= 32 < 64 capacity: unreachable
                 // in practice): synchronous fallback with a pipeline drain.
-                world.UploadBrickBatch(batchIdx.data(), batchMats.data(), batchOcc.data(),
+                world.UploadBrickBatch(batchIdx.data(), batchMats.data(), batchGpuOcc.data(),
                                        static_cast<u32>(batchIdx.size()));
             }
             for (size_t k = 0; k < batchIdx.size(); ++k) {
@@ -534,8 +385,7 @@ namespace Manro {
             }
             I.unfilled.resize(w);
         }
-        // DEBUG-PROBE: camera column surface from the occupancy mirror vs
-        // a fresh Fbm eval — catches CPU/GPU brick contamination.
+        // DEBUG-PROBE: camera column top surface from the occupancy mirror.
         {
             static u32 probeSeq = 0;
             if ((++probeSeq % 90) == 1) {
@@ -548,16 +398,15 @@ namespace Manro {
                         break;
                     }
                 }
-                const float fh = 66.f + Fbm(static_cast<float>(px), static_cast<float>(pz)) * 22.f;
-                std::printf("[McWorld][probe] cam=(%d,%d) mirrorTop=%d fbmH=%.1f unfilled=%zu\n",
-                            px, pz, mirrorTop, static_cast<double>(fh), I.unfilled.size());
+                std::printf("[StreamWorld][probe] cam=(%d,%d) mirrorTop=%d unfilled=%zu\n", px,
+                            pz, mirrorTop, I.unfilled.size());
                 if (!I.unfilled.empty() && I.unfilled.size() <= 12) {
                     for (const i64 k : I.unfilled) {
                         int a, b, c;
                         Impl::DecodeKey(k, a, b, c);
                         const auto it2 = I.slots.find(k);
-                        std::printf("[McWorld][stuck] key=(%d,%d,%d) slotEntry=%d filled=%d\n", a, b,
-                                    c, it2 == I.slots.end() ? -2 : it2->second.brickIdx,
+                        std::printf("[StreamWorld][stuck] key=(%d,%d,%d) slotEntry=%d filled=%d\n",
+                                    a, b, c, it2 == I.slots.end() ? -2 : it2->second.brickIdx,
                                     it2 == I.slots.end() ? 0 : (it2->second.filled ? 1 : 0));
                     }
                 }
@@ -566,9 +415,7 @@ namespace Manro {
         return static_cast<int>(I.unfilled.size());
     }
 
-    bool CVoxelMcWorld::HasAnvil() const { return m_Impl->anvil != nullptr; }
-
-    void CVoxelMcWorld::ApplyEdit(const Vec3 &pos, float radius, u32 op) {
+    void CVoxelStreamWorld::ApplyEdit(const Vec3 &pos, float radius, u32 op) {
         auto &I = *m_Impl;
         // Home brick only (mirrors the GPU edit shader's single-brick span).
         const int bsx = static_cast<int>(std::floor(pos.x / 16.f));
@@ -624,9 +471,11 @@ namespace Manro {
         }
     }
 
-    bool CVoxelMcWorld::IsSolidAt(i64 x, i64 y, i64 z) const { return m_Impl->IsSolidAt(x, y, z); }
+    bool CVoxelStreamWorld::IsSolidAt(i64 x, i64 y, i64 z) const { return m_Impl->IsSolidAt(x, y, z); }
 
-    bool CVoxelMcWorld::IsFluidAt(i64 x, i64 y, i64 z) const { return m_Impl->IsFluidAt(x, y, z); }
+    bool CVoxelStreamWorld::IsFluidAt(i64 x, i64 y, i64 z) const { return m_Impl->IsFluidAt(x, y, z); }
 
-    i32 CVoxelMcWorld::PlaceState() const { return m_Impl->sPlace; }
+    i32 CVoxelStreamWorld::PlaceState() const {
+        return static_cast<i32>(m_Impl->pack->placeState);
+    }
 } // namespace Manro

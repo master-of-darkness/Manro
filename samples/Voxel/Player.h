@@ -1,6 +1,6 @@
 #pragma once
 
-// First-person Minecraft-like character controller for the voxel sample.
+// First-person block-world character controller for the voxel sample.
 // Kinematic AABB vs the streamed CPU occupancy mirror (CRenderer voxel
 // queries): walk/sprint/jump, swim, noclip fly. Unloaded sections read
 // solid, so the player can never fall through not-yet-streamed world.
@@ -17,7 +17,7 @@ struct CPlayer {
     bool onGround{false};
     bool fly{false};
     bool fWasDown{false};
-    // Vanilla sprint: double-tap W latches sprint while W is held (Shift
+    // Sprint: double-tap W latches sprint while W is held (Shift
     // also forces it). sprinting mirrors the live state for FOV/HUD.
     bool sprinting{false};
     bool sprintLatch{false};
@@ -47,7 +47,7 @@ namespace PlayerDetail {
         for (int y = y0; y <= y1; ++y)
             for (int z = z0; z <= z1; ++z)
                 for (int x = x0; x <= x1; ++x)
-                    if (ren.VoxelMcIsSolid(Manro::Vec3(static_cast<float>(x),
+                    if (ren.VoxelStreamIsSolid(Manro::Vec3(static_cast<float>(x),
                                                        static_cast<float>(y),
                                                        static_cast<float>(z))))
                         return true;
@@ -157,7 +157,7 @@ namespace PlayerDetail {
             }
             if (t > maxDist)
                 return r;
-            if (ren.VoxelMcIsSolid(Manro::Vec3(static_cast<float>(x), static_cast<float>(y),
+            if (ren.VoxelStreamIsSolid(Manro::Vec3(static_cast<float>(x), static_cast<float>(y),
                                                static_cast<float>(z)))) {
                 r.hit = true;
                 r.hx = x;
@@ -206,7 +206,7 @@ inline void PlayerUpdate(CPlayer &p, Manro::CRenderer &ren, Manro::CInputManager
         steps = 12;
     const float h = dt / static_cast<float>(steps);
 
-    // Vanilla sprint: double-tap W latches sprint while W stays held.
+    // Sprint: double-tap W latches sprint while W stays held.
     const bool wDown = in.IsKeyDown(K::W);
     if (wDown && !p.wWasDown && (nowSec - p.lastWRelease) < 0.30f)
         p.sprintLatch = true;
@@ -246,7 +246,7 @@ inline void PlayerUpdate(CPlayer &p, Manro::CRenderer &ren, Manro::CInputManager
         }
 
         const float bodyY = p.pos.y + 0.5f;
-        const bool inFluid = ren.VoxelMcIsFluid(
+        const bool inFluid = ren.VoxelStreamIsFluid(
             Manro::Vec3(p.pos.x, bodyY, p.pos.z));
 
         float speed = CPlayer::kWalk;
@@ -282,7 +282,7 @@ inline void PlayerUpdate(CPlayer &p, Manro::CRenderer &ren, Manro::CInputManager
         const bool hitZ = PlayerDetail::MoveAxis(ren, p, 2, p.vel.z * h);
         PlayerDetail::MoveAxis(ren, p, 1, p.vel.y * h);
         // Running into a wall breaks the double-tap latch (Shift re-applies
-        // while held, like vanilla).
+        // while held).
         if (p.sprintLatch && (hitX || hitZ))
             p.sprintLatch = false;
     }

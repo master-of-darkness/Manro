@@ -141,20 +141,21 @@ namespace Manro {
         RendererImplVoxelSetFrustumEnabled(*m_Impl, enabled);
     }
 
-    Vec3 CRenderer::VoxelMcInit(const char *worldDir, const char *assetsDir, int radiusSections) const {
-        return RendererImplVoxelMcInit(*m_Impl, worldDir ? worldDir : "", assetsDir ? assetsDir : "",
-                                       radiusSections);
+    Vec3 CRenderer::VoxelStreamInit(const char *worldDir, const char *assetsDir,
+                                    int radiusSections) const {
+        return RendererImplVoxelStreamInit(*m_Impl, worldDir ? worldDir : "",
+                                           assetsDir ? assetsDir : "", radiusSections);
     }
 
-    int CRenderer::VoxelMcUpdate() const { return RendererImplVoxelMcUpdate(*m_Impl); }
+    int CRenderer::VoxelStreamUpdate() const { return RendererImplVoxelStreamUpdate(*m_Impl); }
 
-    bool CRenderer::VoxelMcIsSolid(const Vec3 &p) const {
-        return RendererImplVoxelMcIsSolid(*m_Impl, p);
+    bool CRenderer::VoxelStreamIsSolid(const Vec3 &p) const {
+        return RendererImplVoxelStreamIsSolid(*m_Impl, p);
     }
 
-    bool CRenderer::VoxelMcIsFluid(const Vec3 &p) const {
-        return RendererImplVoxelMcIsFluid(*m_Impl, p);
+    bool CRenderer::VoxelStreamIsFluid(const Vec3 &p) const {
+        return RendererImplVoxelStreamIsFluid(*m_Impl, p);
     }
 
-    u32 CRenderer::VoxelMcPlaceState() const { return RendererImplVoxelMcPlaceState(*m_Impl); }
+    u32 CRenderer::VoxelStreamPlaceState() const { return RendererImplVoxelStreamPlaceState(*m_Impl); }
 } // namespace Manro

@@ -1,6 +1,6 @@
 #include "VoxelRenderer.h"
 #include "VoxelWorld.h"
-#include "VoxelMcWorld.h"
+#include "VoxelStreamWorld.h"
 #include "../Vulkan/VulkanContext.h"
 #include "../Vulkan/VulkanHelpers.h"
 #include "../Vulkan/Pipeline.h"
@@ -11,7 +11,6 @@
 #include <Manro/Core/VirtualFS.h>
 #include <algorithm>
 #include <cmath>
-#include <cstdlib>
 #include <vector>
 
 namespace Manro {
@@ -94,21 +93,21 @@ namespace Manro {
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
                 VK_BUFFER_USAGE_TRANSFER_DST_BIT,
             VMA_MEMORY_USAGE_CPU_TO_GPU);
-        // Vanilla tables: tile layer per (state, face) + flags per state.
-        // Sized 32768 so any uint16 state id indexes safely (real states top
-        // out at ~32365). Host-written once per McInit.
-        m_McTileTable = CreateScope<CBuffer>(
+        // Block tables: tile layer per (state, face) + flags per state.
+        // Sized 32768 so any uint16 state id indexes safely. Host-written
+        // once per StreamInit.
+        m_BlockTileTable = CreateScope<CBuffer>(
             m_Context, sizeof(u32) * 32768 * 6,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
             VMA_MEMORY_USAGE_CPU_TO_GPU);
-        m_McFlagsTable = CreateScope<CBuffer>(
+        m_BlockFlagsTable = CreateScope<CBuffer>(
             m_Context, sizeof(u32) * 32768,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
             VMA_MEMORY_USAGE_CPU_TO_GPU);
         // Fallback 1-magenta-tile array: the descriptor set is always valid,
-        // even before McInit uploads the real pack.
+        // even before StreamInit uploads the real pack.
         {
-            McAssetPack_t fallback{};
+            BlockAssetPack_t fallback{};
             fallback.tiles.emplace_back(16 * 16 * 4, 0);
             for (int i = 0; i < 16 * 16; ++i) {
                 fallback.tiles[0][i * 4 + 0] = 255;
@@ -117,13 +116,13 @@ namespace Manro {
             }
             fallback.tilePaths.emplace_back();
             fallback.states.resize(32768);
-            CreateMcTiles(fallback);
-            UploadMcTables();
+            CreateBlockTiles(fallback);
+            UploadBlockTables();
         }
 
         // Sun dir normalized once here so the fragment shader (SM-bound at
         // fullscreen) can use it directly with no per-pixel normalize.
-        // Intensity 1.0: vanilla albedo is authored for ~1x daylight; the old
+        // Intensity 1.0: block albedo is authored for ~1x daylight; the old
         // 3.0 blew sand/water to white through the tonemapper.
         Vec4 sun[2] = {Vec4(0.3f, -1.f, 0.2f, 0.f), Vec4(1.f, 0.98f, 0.9f, 1.f)};
         {
@@ -155,11 +154,11 @@ namespace Manro {
         if (device) {
             vkDeviceWaitIdle(device);
         }
-        DestroyMcTiles();
+        DestroyBlockTiles();
         DestroyTileDescriptor();
-        m_McWorld.reset();
-        m_McTileTable.reset();
-        m_McFlagsTable.reset();
+        m_StreamWorld.reset();
+        m_BlockTileTable.reset();
+        m_BlockFlagsTable.reset();
         m_TaskMeshPipeline.reset();
         m_EditPipeline.reset();
         m_GiInjectPipeline.reset();
@@ -206,7 +205,7 @@ namespace Manro {
         meshCfg.pushConstantStages = VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT |
                                       VK_SHADER_STAGE_FRAGMENT_BIT;
         meshCfg.pushConstantSize = sizeof(VoxelFrameRoot_t);
-        // Vanilla tile array (fragment set 0): images can't travel by BDA.
+        // Block tile array (fragment set 0): images can't travel by BDA.
         if (m_TileSetLayout != VK_NULL_HANDLE)
             meshCfg.descriptorSetLayouts = {m_TileSetLayout};
         meshCfg.depthWriteEnable = VK_TRUE;
@@ -318,8 +317,8 @@ namespace Manro {
         }
     } // namespace
 
-    void CVoxelRenderer::CreateMcTiles(const McAssetPack_t &pack) {
-        DestroyMcTiles();
+    void CVoxelRenderer::CreateBlockTiles(const BlockAssetPack_t &pack) {
+        DestroyBlockTiles();
         VkDevice device = m_Context.GetDevice();
         const u32 layers = std::max<u32>(1u, static_cast<u32>(pack.tiles.size()));
         constexpr u32 kMips = 5; // 16 -> 1
@@ -485,7 +484,7 @@ namespace Manro {
         LOG_INFO("[CVoxelRenderer] Tile array: {} layers, {} mips", layers, kMips);
     }
 
-    void CVoxelRenderer::DestroyMcTiles() {
+    void CVoxelRenderer::DestroyBlockTiles() {
         VkDevice device = m_Context.GetDevice();
         if (!device)
             return;
@@ -508,82 +507,77 @@ namespace Manro {
         m_TileLayers = 0;
     }
 
-    void CVoxelRenderer::UploadMcTables() {
+    void CVoxelRenderer::UploadBlockTables() {
         std::vector<u32> tiles(32768u * 6u, 0u), flags(32768u, 0u);
-        const size_t n = std::min(m_McPack.states.size(), static_cast<size_t>(32768u));
+        const size_t n = std::min(m_BlockPack.states.size(), static_cast<size_t>(32768u));
         for (size_t s = 0; s < n; ++s) {
             for (int f = 0; f < 6; ++f)
-                tiles[s * 6u + static_cast<size_t>(f)] = m_McPack.states[s].faces.tile[f];
-            flags[s] = m_McPack.states[s].flags;
+                tiles[s * 6u + static_cast<size_t>(f)] = m_BlockPack.states[s].faces.tile[f];
+            flags[s] = m_BlockPack.states[s].flags;
         }
-        m_McTileTable->LoadData(tiles.data(), tiles.size() * sizeof(u32));
-        m_McFlagsTable->LoadData(flags.data(), flags.size() * sizeof(u32));
+        m_BlockTileTable->LoadData(tiles.data(), tiles.size() * sizeof(u32));
+        m_BlockFlagsTable->LoadData(flags.data(), flags.size() * sizeof(u32));
     }
 
-    Vec3 CVoxelRenderer::McInit(const std::string &worldDir, const std::string &assetsDir,
+    Vec3 CVoxelRenderer::StreamInit(const std::string &worldDir, const std::string &assetsDir,
                                 int radiusSections) {
         // Recreating the tile array while flights may sample it: init-time
         // op, idle is correct and cheap here.
         VkDevice device = m_Context.GetDevice();
         if (device)
             vkDeviceWaitIdle(device);
-        std::string dir = assetsDir;
-        if (dir.empty()) {
-            if (const char *env = std::getenv("MC_ASSETS_DIR"))
-                dir = env;
-            else
-                dir = "/home/laptop/CLionProjects/Manro/.mcassets/assets/minecraft";
-        }
+        // Empty assetsDir falls back to the build-time client-jar assets.
+        const std::string dir = assetsDir.empty() ? MANRO_MC_ASSETS_DIR : assetsDir;
         std::string err;
-        if (!BuildMcAssetPack(dir, m_McPack, err)) {
-            LOG_ERROR("[CVoxelRenderer] Mc assets failed: {}", err);
+        if (!BuildBlockAssetPack(dir, worldDir, m_BlockPack, err)) {
+            LOG_ERROR("[CVoxelRenderer] Block assets failed: {}", err);
             return Vec3(8.f, 80.f, 8.f);
         }
-        if (m_McPack.maxState >= 32768u) {
-            LOG_ERROR("[CVoxelRenderer] State id {} exceeds 15-bit face-cache pack", m_McPack.maxState);
+        if (m_BlockPack.maxState >= 32768u) {
+            LOG_ERROR("[CVoxelRenderer] State id {} exceeds 15-bit face-cache pack", m_BlockPack.maxState);
             return Vec3(8.f, 80.f, 8.f);
         }
-        CreateMcTiles(m_McPack);
-        UploadMcTables();
-        m_McWorld = std::make_unique<CVoxelMcWorld>();
-        McWorldDesc_t desc{};
+        CreateBlockTiles(m_BlockPack);
+        UploadBlockTables();
+        m_StreamWorld = std::make_unique<CVoxelStreamWorld>();
+        VoxelStreamDesc_t desc{};
         desc.worldDir = worldDir;
         desc.radiusSections = radiusSections;
-        return m_McWorld->Init(*m_World, m_McPack, desc);
+        return m_StreamWorld->Init(*m_World, m_BlockPack, desc);
     }
 
-    int CVoxelRenderer::McUpdate(const Vec3 &cameraPos, u32 flightSlot) {
-        if (!m_McWorld)
+    int CVoxelRenderer::StreamUpdate(const Vec3 &cameraPos, u32 flightSlot) {
+        if (!m_StreamWorld)
             return 0;
-        return m_McWorld->Update(*m_World, cameraPos, flightSlot);
+        return m_StreamWorld->Update(*m_World, cameraPos, flightSlot);
     }
 
-    bool CVoxelRenderer::McIsSolid(const Vec3 &p) const {
-        if (!m_McWorld)
+    bool CVoxelRenderer::StreamIsSolid(const Vec3 &p) const {
+        if (!m_StreamWorld)
             return true;
-        return m_McWorld->IsSolidAt(static_cast<i64>(std::floor(p.x)),
+        return m_StreamWorld->IsSolidAt(static_cast<i64>(std::floor(p.x)),
                                     static_cast<i64>(std::floor(p.y)),
                                     static_cast<i64>(std::floor(p.z)));
     }
 
-    bool CVoxelRenderer::McIsFluid(const Vec3 &p) const {
-        if (!m_McWorld)
+    bool CVoxelRenderer::StreamIsFluid(const Vec3 &p) const {
+        if (!m_StreamWorld)
             return false;
-        return m_McWorld->IsFluidAt(static_cast<i64>(std::floor(p.x)),
+        return m_StreamWorld->IsFluidAt(static_cast<i64>(std::floor(p.x)),
                                     static_cast<i64>(std::floor(p.y)),
                                     static_cast<i64>(std::floor(p.z)));
     }
 
-    u32 CVoxelRenderer::McPlaceState() const {
-        if (!m_McWorld)
+    u32 CVoxelRenderer::StreamPlaceState() const {
+        if (!m_StreamWorld)
             return 1u;
-        const i32 st = m_McWorld->PlaceState();
+        const i32 st = m_StreamWorld->PlaceState();
         return st >= 0 ? static_cast<u32>(st) : 1u;
     }
 
-    void CVoxelRenderer::McApplyEdit(const Vec3 &pos, float radius, u32 op) {
-        if (m_McWorld)
-            m_McWorld->ApplyEdit(pos, radius, op);
+    void CVoxelRenderer::StreamApplyEdit(const Vec3 &pos, float radius, u32 op) {
+        if (m_StreamWorld)
+            m_StreamWorld->ApplyEdit(pos, radius, op);
     }
 
     void CVoxelRenderer::DispatchEdits(VkCommandBuffer cb) {
@@ -695,7 +689,7 @@ namespace Manro {
         DispatchEdits(cb);
         DispatchGi(cb);
         m_World->ClearEdits();
-        // Staged streaming fills (buffered by McUpdate into this flight
+        // Staged streaming fills (buffered by StreamUpdate into this flight
         // slot): device copies + transfer barrier, in-frame, no extra sync.
         m_World->FlushStagedUploads(cb, flightSlot);
 
@@ -812,8 +806,8 @@ namespace Manro {
         root.visibilityAddr = visSlot.GetDeviceAddress();
         root.frameAddr = paramsSlot.GetDeviceAddress();
         root.faceCacheAddr = m_FaceCache->GetDeviceAddress();
-        root.tileTableAddr = m_McTileTable ? m_McTileTable->GetDeviceAddress() : 0u;
-        root.mcFlagsAddr = m_McFlagsTable ? m_McFlagsTable->GetDeviceAddress() : 0u;
+        root.tileTableAddr = m_BlockTileTable ? m_BlockTileTable->GetDeviceAddress() : 0u;
+        root.blockFlagsAddr = m_BlockFlagsTable ? m_BlockFlagsTable->GetDeviceAddress() : 0u;
         // DEBUG counters: device-side clear only when capture is enabled.
         // Skipping the Fill + extra barrier saves a full-buffer op/frame.
         if (m_bDebugEnabled)
@@ -907,7 +901,7 @@ namespace Manro {
                            VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT |
                                VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(root), &root);
-        // Vanilla tile array (always valid: magenta fallback before McInit).
+        // Block tile array (always valid: magenta fallback before StreamInit).
         if (m_TileSet != VK_NULL_HANDLE) {
             vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                     m_TaskMeshPipeline->GetLayout(), 0, 1, &m_TileSet, 0, nullptr);

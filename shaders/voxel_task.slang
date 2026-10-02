@@ -102,7 +102,7 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
     vk::BufferPointer<uint> fcache = vk::BufferPointer<uint>(g_TaskRoot.faceCacheAddr);
     uint* fcb = fcache.getPtr() + brickIdx * kVoxelFaceCacheStride;
 
-    // Face-cache fast path (Minecraft rule: static bricks cost ~nothing).
+    // Face-cache fast path (static bricks cost ~nothing).
     // needsScan is uniform — same header for all lanes.
     // bit1 = dirty (a GPU edit touched this brick), bit2 = cache valid.
     // The scan path consumes dirty after storing (see below), so an edited
@@ -148,7 +148,7 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                 // view-dependent culling. The cache must stay valid for all
                 // viewpoints (backface rejection runs per-frame in mesh);
                 // caching a culled list freezes one viewpoint's visibility.
-                // mats[] holds vanilla protocol state ids; mcFlags (root)
+                // mats[] holds block state ids; blockFlags (root)
                 // carries opaque/cutout/skip/inner bits per state.
                 // Emit rule per face of V against neighbor N:
                 // - N skipped/air -> emit; N == V -> emit only for inner
@@ -159,8 +159,8 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                 // when IT fills + dirties us for a re-evaluation). This kills
                 // the doubled hidden boundary faces that otherwise rasterize
                 // inside solid rock on every frame.
-                vk::BufferPointer<uint> mcfl = vk::BufferPointer<uint>(g_TaskRoot.mcFlagsAddr);
-                uint* mcFlags = mcfl.getPtr();
+                vk::BufferPointer<uint> flagPtr = vk::BufferPointer<uint>(g_TaskRoot.blockFlagsAddr);
+                uint* blockFlags = flagPtr.getPtr();
                 vk::BufferPointer<int> nbpt = vk::BufferPointer<int>(g_TaskRoot.pageTableAddr);
                 int* pageTable = nbpt.getPtr();
                 vk::BufferPointer<uint> nbr = vk::BufferPointer<uint>(g_TaskRoot.brickBufferAddr);
@@ -174,7 +174,7 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                     if (!VoxelSolid(occupancy, x, y, z))
                         continue;
                     uint mat = VoxelMaterial(mats, x, y, z);
-                    uint vflags = (mat < kMcStateMax) ? mcFlags[mat] : 0u;
+                    uint vflags = (mat < kBlockStateMax) ? blockFlags[mat] : 0u;
                     if ((vflags & 4u) != 0u)
                         continue; // skip-states never emit (flora/air)
                     for (uint f = 0u; f < 6u; ++f) {
@@ -215,8 +215,8 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                         if (nstate == mat)
                             emit = (vflags & 8u) != 0u; // inner faces only
                         else
-                            emit = (nstate >= kMcStateMax) ||
-                                   ((mcFlags[nstate] & 1u) == 0u);
+                            emit = (nstate >= kBlockStateMax) ||
+                                   ((blockFlags[nstate] & 1u) == 0u);
                         if (!emit)
                             continue;
                         uint slot;

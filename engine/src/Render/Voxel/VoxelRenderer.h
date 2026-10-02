@@ -8,7 +8,7 @@
 // occ~=0, bursty lows).
 
 #include "VoxelTypes.h"
-#include "VoxelMcAssets.h"
+#include "VoxelBlockAssets.h"
 #include <Manro/Core/Types.h>
 #include <volk.h>
 
@@ -26,7 +26,7 @@ namespace Manro {
     class CBuffer;
     class CVoxelWorld;
     class CVoxelSparseBinder;
-    class CVoxelMcWorld;
+    class CVoxelStreamWorld;
 
     struct VoxelFrameStats_t {
         u32 brickCount{0};
@@ -66,27 +66,27 @@ namespace Manro {
                     VkImageView depthView, bool clearColor, u32 flightSlot, const Mat4 &viewProj,
                     const Mat4 &prevViewProj, const Vec3 &cameraPos, float nearZ, float farZ);
 
-        // Minecraft path: builds the vanilla asset pack (textures + per-state
-        // face tiles), uploads the tile array + BDA tables, opens the Anvil
-        // world (or procedural fallback) and allocates the section volume.
-        // Returns the spawn position. worldDir empty = procedural only.
-        Vec3 McInit(const std::string &worldDir, const std::string &assetsDir, int radiusSections);
+        // Streamed path: builds the block pack from the build-time
+        // client-jar assets (textures), uploads the tile array + BDA tables,
+        // and opens the Anvil save under worldDir (required — no fallback).
+        // Returns the spawn position (level.dat, else a default).
+        Vec3 StreamInit(const std::string &worldDir, const std::string &assetsDir, int radiusSections);
         // Streams sections around the camera (nearest-first fill, eviction
         // past the hysteresis ring). Returns unfilled remainder.
         // flightSlot is the frame-in-flight index: staged brick fills are
         // buffered into that slot's staging ring and copied in-frame by
         // Record (same slot), so no extra queue submit or fence wait.
-        int McUpdate(const Vec3 &cameraPos, u32 flightSlot);
+        int StreamUpdate(const Vec3 &cameraPos, u32 flightSlot);
         // Physics queries against the streamed world (block coords floored
-        // from p). Unloaded reads solid (see CVoxelMcWorld).
-        bool McIsSolid(const Vec3 &p) const;
-        bool McIsFluid(const Vec3 &p) const;
-        // Protocol state id for player block placement.
-        u32 McPlaceState() const;
-        // CPU-mirror half of a gameplay edit (see CVoxelMcWorld::ApplyEdit).
+        // from p). Unloaded reads solid (see CVoxelStreamWorld).
+        bool StreamIsSolid(const Vec3 &p) const;
+        bool StreamIsFluid(const Vec3 &p) const;
+        // Block state id for player block placement.
+        u32 StreamPlaceState() const;
+        // CPU-mirror half of a gameplay edit (see CVoxelStreamWorld::ApplyEdit).
         // The GPU half is queued in the world edit ring and consumed by the
         // edit compute dispatch; both must run for visuals + physics to agree.
-        void McApplyEdit(const Vec3 &pos, float radius, u32 op);
+        void StreamApplyEdit(const Vec3 &pos, float radius, u32 op);
 
         [[nodiscard]] CVoxelWorld &GetWorld() { return *m_World; }
         [[nodiscard]] const VoxelFrameStats_t &GetStats() const { return m_Stats; }
@@ -107,9 +107,9 @@ namespace Manro {
         void BuildPipelines(CPipelineCache &cache);
         void CreateTileDescriptor();
         void DestroyTileDescriptor();
-        void UploadMcTables();
-        void CreateMcTiles(const McAssetPack_t &pack);
-        void DestroyMcTiles();
+        void UploadBlockTables();
+        void CreateBlockTiles(const BlockAssetPack_t &pack);
+        void DestroyBlockTiles();
         void DispatchEdits(VkCommandBuffer cb);
         void DispatchGi(VkCommandBuffer cb);
 
@@ -124,11 +124,11 @@ namespace Manro {
 
         Scope<CBuffer> m_TaskIndirectBuffer; // VkDispatchIndirectCommand for pass 2
         Scope<CBuffer> m_TaskCountBuffer;
-        // Vanilla tile tables (BDA): tile layer per (state, face), flags per
+        // Block tile tables (BDA): tile layer per (state, face), flags per
         // state. Sized 32768 so any uint16 state indexes safely.
-        Scope<CBuffer> m_McTileTable;
-        Scope<CBuffer> m_McFlagsTable;
-        // Vanilla tile texture array (descriptor-bound: images can't use
+        Scope<CBuffer> m_BlockTileTable;
+        Scope<CBuffer> m_BlockFlagsTable;
+        // Block tile texture array (descriptor-bound: images can't use
         // BDA). 16x16 sRGB tiles + CPU-generated mip chain, NEAREST mag.
         VkImage m_TileImage{VK_NULL_HANDLE};
         VkDeviceMemory m_TileMemory{VK_NULL_HANDLE};
@@ -138,9 +138,9 @@ namespace Manro {
         VkDescriptorPool m_TilePool{VK_NULL_HANDLE};
         VkDescriptorSet m_TileSet{VK_NULL_HANDLE};
         u32 m_TileLayers{0};
-        // Minecraft world source (Anvil via mcs, procedural fallback).
-        McAssetPack_t m_McPack;
-        std::unique_ptr<CVoxelMcWorld> m_McWorld;
+        // Save-backed world source.
+        BlockAssetPack_t m_BlockPack;
+        std::unique_ptr<CVoxelStreamWorld> m_StreamWorld;
         // Frame-params ring: one host-written buffer per frame in flight
         // (see Record). Must cover the engine's maxFramesInFlight (3).
         static constexpr u32 kFlightSlots = 3;

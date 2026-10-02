@@ -171,9 +171,9 @@ namespace Manro {
             cmd.op = op;
             m_Voxel->GetWorld().QueueEdit(cmd);
             // CPU physics mirrors must follow the GPU edit (see
-            // CVoxelMcWorld::ApplyEdit), or broken blocks keep ghost
+            // CVoxelStreamWorld::ApplyEdit), or broken blocks keep ghost
             // collision and placed blocks have none.
-            m_Voxel->McApplyEdit(pos, radius, op);
+            m_Voxel->StreamApplyEdit(pos, radius, op);
         }
 
         u32 VoxelGetBrickCount() const {
@@ -208,29 +208,29 @@ namespace Manro {
                 m_Voxel->SetFrustumEnabled(enabled);
         }
 
-        Vec3 VoxelMcInit(const std::string &worldDir, const std::string &assetsDir,
-                         int radiusSections) {
+        Vec3 VoxelStreamInit(const std::string &worldDir, const std::string &assetsDir,
+                             int radiusSections) {
             if (!m_bVoxelEnabled || !m_Voxel)
                 return Vec3(8.f, 80.f, 8.f);
-            return m_Voxel->McInit(worldDir, assetsDir, radiusSections);
+            return m_Voxel->StreamInit(worldDir, assetsDir, radiusSections);
         }
 
-        int VoxelMcUpdate() {
+        int VoxelStreamUpdate() {
             if (!m_bVoxelEnabled || !m_Voxel)
                 return 0;
-            return m_Voxel->McUpdate(m_CameraPosition, m_unCurrentFrame);
+            return m_Voxel->StreamUpdate(m_CameraPosition, m_unCurrentFrame);
         }
 
-        bool VoxelMcIsSolid(const Vec3 &p) const {
-            return (m_bVoxelEnabled && m_Voxel) ? m_Voxel->McIsSolid(p) : true;
+        bool VoxelStreamIsSolid(const Vec3 &p) const {
+            return (m_bVoxelEnabled && m_Voxel) ? m_Voxel->StreamIsSolid(p) : true;
         }
 
-        bool VoxelMcIsFluid(const Vec3 &p) const {
-            return (m_bVoxelEnabled && m_Voxel) ? m_Voxel->McIsFluid(p) : false;
+        bool VoxelStreamIsFluid(const Vec3 &p) const {
+            return (m_bVoxelEnabled && m_Voxel) ? m_Voxel->StreamIsFluid(p) : false;
         }
 
-        u32 VoxelMcPlaceState() const {
-            return (m_bVoxelEnabled && m_Voxel) ? m_Voxel->McPlaceState() : 1u;
+        u32 VoxelStreamPlaceState() const {
+            return (m_bVoxelEnabled && m_Voxel) ? m_Voxel->StreamPlaceState() : 1u;
         }
 
         void DrawLine(const Vec3 &a, const Vec3 &b, u32 color, bool depthTest) const;
@@ -1568,25 +1568,25 @@ namespace Manro {
         impl.VoxelSetFrustumEnabled(enabled);
     }
 
-    Vec3 RendererImplVoxelMcInit(CRendererImpl &impl, const std::string &worldDir,
-                                 const std::string &assetsDir, int radiusSections) {
-        return impl.VoxelMcInit(worldDir, assetsDir, radiusSections);
+    Vec3 RendererImplVoxelStreamInit(CRendererImpl &impl, const std::string &worldDir,
+                                     const std::string &assetsDir, int radiusSections) {
+        return impl.VoxelStreamInit(worldDir, assetsDir, radiusSections);
     }
 
-    int RendererImplVoxelMcUpdate(const CRendererImpl &impl) {
-        return const_cast<CRendererImpl &>(impl).VoxelMcUpdate();
+    int RendererImplVoxelStreamUpdate(const CRendererImpl &impl) {
+        return const_cast<CRendererImpl &>(impl).VoxelStreamUpdate();
     }
 
-    bool RendererImplVoxelMcIsSolid(const CRendererImpl &impl, const Vec3 &p) {
-        return impl.VoxelMcIsSolid(p);
+    bool RendererImplVoxelStreamIsSolid(const CRendererImpl &impl, const Vec3 &p) {
+        return impl.VoxelStreamIsSolid(p);
     }
 
-    bool RendererImplVoxelMcIsFluid(const CRendererImpl &impl, const Vec3 &p) {
-        return impl.VoxelMcIsFluid(p);
+    bool RendererImplVoxelStreamIsFluid(const CRendererImpl &impl, const Vec3 &p) {
+        return impl.VoxelStreamIsFluid(p);
     }
 
-    u32 RendererImplVoxelMcPlaceState(const CRendererImpl &impl) {
-        return impl.VoxelMcPlaceState();
+    u32 RendererImplVoxelStreamPlaceState(const CRendererImpl &impl) {
+        return impl.VoxelStreamPlaceState();
     }
 
     CRenderer::CRenderer(CWindow &window, CVirtualFS &vfs, u32 width, u32 height, const RenderSettings_t &settings)

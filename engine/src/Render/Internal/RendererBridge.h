@@ -104,14 +104,14 @@ namespace Manro {
 
     void RendererImplVoxelSetFrustumEnabled(CRendererImpl &impl, bool enabled);
 
-    Vec3 RendererImplVoxelMcInit(CRendererImpl &impl, const std::string &worldDir,
-                                 const std::string &assetsDir, int radiusSections);
+    Vec3 RendererImplVoxelStreamInit(CRendererImpl &impl, const std::string &worldDir,
+                                     const std::string &assetsDir, int radiusSections);
 
-    int RendererImplVoxelMcUpdate(const CRendererImpl &impl);
+    int RendererImplVoxelStreamUpdate(const CRendererImpl &impl);
 
-    bool RendererImplVoxelMcIsSolid(const CRendererImpl &impl, const Vec3 &p);
+    bool RendererImplVoxelStreamIsSolid(const CRendererImpl &impl, const Vec3 &p);
 
-    bool RendererImplVoxelMcIsFluid(const CRendererImpl &impl, const Vec3 &p);
+    bool RendererImplVoxelStreamIsFluid(const CRendererImpl &impl, const Vec3 &p);
 
-    u32 RendererImplVoxelMcPlaceState(const CRendererImpl &impl);
+    u32 RendererImplVoxelStreamPlaceState(const CRendererImpl &impl);
 }

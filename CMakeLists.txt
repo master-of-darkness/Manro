@@ -104,14 +104,6 @@ add_subdirectory("${MANRO_THIRD_PARTY_DIR}/flecs")
 find_package(Freetype REQUIRED)
 find_package(ZLIB REQUIRED)
 
-# mcs (Minecraft server) Anvil world source: McWorld links the prebuilt
-# mcs_core static lib (AnvilWorld/block-state tables) + mcs headers.
-# The lib only needs zlib + libstdc++ for the world path (no uring/curl).
-set(MCS_CORE_LIB "/home/laptop/CLionProjects/mcs/cmake-build-release/libmcs_core.a"
-    CACHE FILEPATH "Prebuilt mcs_core static library")
-set(MCS_INCLUDE_DIR "/home/laptop/CLionProjects/mcs/include"
-    CACHE PATH "mcs public headers")
-
 if(WIN32)
     set(SLANG_OS "windows")
     set(SLANG_ARCH "x86_64")
@@ -157,6 +149,39 @@ else()
     )
 endif()
 FetchContent_MakeAvailable(slang_bin)
+
+# Voxel block assets: downloaded Mojang client jar (never committed).
+# Requires accepting the Mojang EULA; assets land in the FetchContent cache.
+set(MANRO_MC_VERSION "26.2" CACHE STRING "Minecraft client version for voxel block assets")
+set(MANRO_MC_CLIENT_JAR_URL
+    "https://piston-data.mojang.com/v1/objects/2dc72797acbc1b63fc16a11c4ac393605f453754/client.jar"
+    CACHE STRING "Fixed Mojang CDN URL for the Minecraft client jar")
+set(MANRO_MC_CLIENT_JAR_SHA1 "2dc72797acbc1b63fc16a11c4ac393605f453754"
+    CACHE STRING "Expected SHA1 of the Minecraft client jar")
+
+set(MANRO_MC_CLIENT_JAR "${FETCHCONTENT_BASE_DIR}/mc_client/client-${MANRO_MC_VERSION}.jar")
+set(MANRO_MC_ASSETS_DIR "${FETCHCONTENT_BASE_DIR}/mc_client/assets-${MANRO_MC_VERSION}/assets/minecraft")
+if(NOT EXISTS "${MANRO_MC_CLIENT_JAR}")
+    message(STATUS "Downloading Minecraft client ${MANRO_MC_VERSION} ...")
+    file(DOWNLOAD "${MANRO_MC_CLIENT_JAR_URL}" "${MANRO_MC_CLIENT_JAR}"
+        EXPECTED_HASH SHA1=${MANRO_MC_CLIENT_JAR_SHA1}
+        SHOW_PROGRESS)
+endif()
+if(NOT EXISTS "${MANRO_MC_ASSETS_DIR}/blockstates"
+    OR NOT EXISTS "${MANRO_MC_ASSETS_DIR}/textures/block")
+    message(STATUS "Extracting voxel asset dirs from client jar ...")
+    file(REMOVE_RECURSE "${FETCHCONTENT_BASE_DIR}/mc_client/assets-${MANRO_MC_VERSION}")
+    file(ARCHIVE_EXTRACT INPUT "${MANRO_MC_CLIENT_JAR}"
+        DESTINATION "${FETCHCONTENT_BASE_DIR}/mc_client/assets-${MANRO_MC_VERSION}"
+        PATTERNS "assets/minecraft/blockstates/*" "assets/minecraft/models/*"
+                 "assets/minecraft/textures/*")
+endif()
+if(NOT EXISTS "${MANRO_MC_ASSETS_DIR}/textures/block")
+    message(FATAL_ERROR "Minecraft asset extraction failed: ${MANRO_MC_ASSETS_DIR}/textures/block missing")
+endif()
+if(MANRO_MC_ASSETS_DIR STREQUAL "")
+    message(FATAL_ERROR "MANRO_MC_ASSETS_DIR is empty (stale configure? re-run cmake configure)")
+endif()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(shaders)

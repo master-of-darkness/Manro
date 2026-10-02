@@ -1,16 +1,15 @@
 #pragma once
 
-// CVoxelMcWorld: Minecraft-dimension world source for the voxel renderer.
+// CVoxelStreamWorld: save-backed section source for the voxel renderer.
 // Sections are 16^3 blocks (== our bricks). Y spans -64..319 (sections -4..19).
-// Data comes from an mcs AnvilWorld when region files exist, otherwise from
-// an MC-proportioned procedural fallback (sea level, strata, trees), so the
-// renderer runs with or without a save on disk.
+// World data comes from an Anvil save on disk (region files under worldDir,
+// read with the built-in reader — no third-party save libs). There is no
+// procedural fallback: without a save the volume fills as air.
 //
 // Streaming world: sections allocate/fill around the player (Update center)
 // and evict past a hysteresis ring, reusing resident brick indices (no
 // unbind cost). Page-table slots wrap mod-64 against the fixed Init origin
-// (shaders do the same), so the world is unbounded in XZ. Requires C++23
-// (mcs headers).
+// (shaders do the same), so the world is unbounded in XZ.
 
 #include <Manro/Core/Types.h>
 
@@ -20,33 +19,30 @@
 
 namespace Manro {
     class CVoxelWorld;
-    struct McAssetPack_t;
+    struct BlockAssetPack_t;
 
-    struct McWorldDesc_t {
-        // Empty = procedural fallback only.
+    struct VoxelStreamDesc_t {
+        // Save directory holding region files (required; no fallback).
         std::string worldDir;
         // Section radius around spawn in X/Z (full height -4..19 always).
         // R=6 -> 13*24*13 = 4056 bricks (cap 8192).
         int radiusSections{6};
-        // Max sections filled per Update call. Procedural fill is ~0.2ms /
-        // section after column hoisting (Anvil ~1ms); 12 keeps streaming
-        // hitches under ~8ms while filling R=6 in ~0.35s.
+        // Max sections filled per Update call. 12 keeps streaming hitches
+        // small while filling R=6.
         int fillBudgetPerUpdate{12};
     };
 
-    class CVoxelMcWorld {
+    class CVoxelStreamWorld {
     public:
-        CVoxelMcWorld();
-        ~CVoxelMcWorld();
+        CVoxelStreamWorld();
+        ~CVoxelStreamWorld();
 
-        CVoxelMcWorld(const CVoxelMcWorld &) = delete;
-        CVoxelMcWorld &operator=(const CVoxelMcWorld &) = delete;
+        CVoxelStreamWorld(const CVoxelStreamWorld &) = delete;
+        CVoxelStreamWorld &operator=(const CVoxelStreamWorld &) = delete;
 
         // Allocates + fills the section volume. Returns the spawn position
-        // (Anvil level spawn when available, else above procedural terrain).
-        // worldDesc must already be Init'ed with matching worldMin/virtualDim
-        // (see SuggestedWorldMin/SuggestedVirtualDim).
-        Vec3 Init(CVoxelWorld &world, const McAssetPack_t &pack, const McWorldDesc_t &desc);
+        // (level.dat spawn when available, else a default above y=80).
+        Vec3 Init(CVoxelWorld &world, const BlockAssetPack_t &pack, const VoxelStreamDesc_t &desc);
 
         // Fills up to fillBudget sections around the camera (nearest first),
         // evicting sections past the hysteresis ring as the center moves.
@@ -70,10 +66,9 @@ namespace Manro {
         // section isn't filled (the GPU edit no-ops there too).
         // op: 0 = erase (clears occ+fluid), 1 = write (sets occ, clears fluid).
         void ApplyEdit(const Vec3 &pos, float radius, u32 op);
-        // Protocol state id placed by right-click (planks, stone fallback).
+        // Block state id placed by right-click (planks).
         [[nodiscard]] i32 PlaceState() const;
 
-        [[nodiscard]] bool HasAnvil() const;
         [[nodiscard]] int UnfilledCount() const;
 
     private:

@@ -108,17 +108,18 @@ namespace Manro {
         // Culling-stage kill switches (default on).
         void VoxelSetBackfaceEnabled(bool enabled) const;
         void VoxelSetFrustumEnabled(bool enabled) const;
-        // Minecraft path: vanilla tiles + Anvil/procedural section volume.
-        // worldDir empty = procedural fallback. Returns the spawn position.
-        Vec3 VoxelMcInit(const char *worldDir, const char *assetsDir, int radiusSections) const;
+        // Streamed voxel path: client-jar block tiles + Anvil save volume.
+        // worldDir (save with region files) is required; assetsDir defaults
+        // to the build-time client-jar assets. Returns the spawn position.
+        Vec3 VoxelStreamInit(const char *worldDir, const char *assetsDir, int radiusSections) const;
         // Fills section budget near the camera. Returns unfilled remainder.
-        int VoxelMcUpdate() const;
+        int VoxelStreamUpdate() const;
         // Block queries against the streamed voxel world (for players,
         // raycasts). Unloaded reads solid / non-fluid.
-        bool VoxelMcIsSolid(const Vec3 &p) const;
-        bool VoxelMcIsFluid(const Vec3 &p) const;
-        // Protocol state id used for player block placement.
-        u32 VoxelMcPlaceState() const;
+        bool VoxelStreamIsSolid(const Vec3 &p) const;
+        bool VoxelStreamIsFluid(const Vec3 &p) const;
+        // Block state id used for player block placement.
+        u32 VoxelStreamPlaceState() const;
         void VoxelGetDebugCounters(u32 out[6]) const;
 
         void SetSettings(const RenderSettings_t &settings) const;

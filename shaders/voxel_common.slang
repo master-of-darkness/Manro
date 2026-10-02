@@ -23,7 +23,7 @@ struct VoxelFrameRoot {
     uint64_t debugAddr;       // DEBUG: uint counters[8] (taskRuns, visible, faces, meshRuns, ...)
     uint64_t faceCacheAddr;   // uint[2049] per resident brick: [0]=faceCount, [1..2048]=packed faces
     uint64_t tileTableAddr;   // uint32[32768*6]: tile layer per (state, face)
-    uint64_t mcFlagsAddr;     // uint32[32768]: kMcFlag* per protocol state id
+    uint64_t blockFlagsAddr;  // uint32[32768]: kBlockFlag* per block state id
 };
 
 struct VoxelFrameParams {
@@ -89,14 +89,14 @@ static const float3 kFaceNormal[6] = {
 
 // Packed micro-quad vertex: X:6 Y:6 Z:6 (brick-local voxel coords)
 // Normal:3 AO:2 Material:9 — single 32-bit word per vertex.
-// NOTE: materials are now full protocol state ids (up to 32365); the face
-// cache stores (voxelIdx:12 | face:3 | state:15) in one word (state < 32768).
+// NOTE: materials are block state ids; the face cache stores
+// (voxelIdx:12 | face:3 | state:15) in one word (state < 32768).
 static const uint kVoxelVertMaskX = 0x3Fu;
 static const uint kVoxelVertShiftN = 18u;
 static const uint kVoxelVertShiftAO = 21u;
 static const uint kVoxelVertShiftMat = 23u;
-static const uint kMcStateBits = 15u;
-static const uint kMcStateMax = 32768u;
+static const uint kBlockStateBits = 15u;
+static const uint kBlockStateMax = 32768u;
 
 uint PackVoxelVertex(uint x, uint y, uint z, uint n, uint ao, uint mat) {
     return (x & 0x3Fu)

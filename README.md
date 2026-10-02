@@ -38,6 +38,23 @@ cmake -S . -B build -G Ninja
 cmake --build build -j$(nproc)
 ```
 
+> [!NOTE]
+> At configure time CMake downloads the Minecraft 26.2 client jar from the
+> official Mojang CDN (SHA1-verified) into the FetchContent cache and extracts
+> `blockstates/models/textures` for the voxel sample. This requires network
+> access and acceptance of the Mojang EULA. The assets are never committed to
+> git. Override with `-DMANRO_MC_CLIENT_JAR_URL=<url>` (+ `_SHA1`) or pass
+> `--assets-dir <...>/assets/minecraft` at runtime.
+>
+> The voxel sample takes start params instead of env vars:
+>
+> ```bash
+> ./VoxelTest --world-dir <save-with-region-files> [--assets-dir <dir>] [--radius 6]
+>             [--res-scale 1] [--debug] [--chaos]
+> ```
+>
+> Without `--world-dir` the volume fills as air.
+
 The engine builds as a static library (`libManro.a`); samples and tools link
 against it.
 

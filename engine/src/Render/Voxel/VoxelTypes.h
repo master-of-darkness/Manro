@@ -35,7 +35,7 @@ namespace Manro {
         u64 debugAddr{0};
         u64 faceCacheAddr{0}; // uint[2049] per resident brick: [0]=faceCount, [1..]=packed faces
         u64 tileTableAddr{0}; // uint32[32768*6]: tile layer per (state, face)
-        u64 mcFlagsAddr{0}; // uint32[32768]: kMcFlag* per protocol state id
+        u64 blockFlagsAddr{0}; // uint32[32768]: kBlockFlag* per block state id
     };
     static_assert(sizeof(VoxelFrameRoot_t) == 72);
 
