@@ -29,6 +29,11 @@ struct CPlayer {
     static constexpr float kEye = 1.62f;
     static constexpr float kGravity = 28.f;
     static constexpr float kJumpVel = 9.f; // ~1.45 blocks: clears 1-high steps
+    // Ground probe: MoveAxis only reports contact on penetrating frames, so
+    // at high FPS the per-frame fall can't cross kEps and onGround would
+    // flicker AIR while standing. The probe stabilizes the flag; the stick
+    // + snap below keeps the feet glued to contact (no hover, no bob).
+    static constexpr float kGroundProbe = 0.03f;
     static constexpr float kWalk = 4.3f;
     static constexpr float kSprint = 5.7f;
     static constexpr float kFly = 15.f;
@@ -216,13 +221,13 @@ inline void PlayerUpdate(CPlayer &p, Manro::CRenderer &ren, Manro::CInputManager
         p.sprintLatch = false;
     }
     p.wWasDown = wDown;
-    const bool shiftSprint = in.IsKeyDown(K::LeftShift);
+    const bool sprintKey = in.IsKeyDown(K::LeftShift) || in.IsKeyDown(K::LeftCtrl);
     const float wishLen = std::sqrt(wish.x * wish.x + wish.z * wish.z);
     p.sprinting = false;
 
     for (int s = 0; s < steps; ++s) {
         if (p.fly) {
-            const float speed = in.IsKeyDown(K::LeftShift) ? CPlayer::kFlyFast : CPlayer::kFly;
+            const float speed = sprintKey ? CPlayer::kFlyFast : CPlayer::kFly;
             Manro::Vec3 v{0.f};
             if (in.IsKeyDown(K::W))
                 v += fullFwd;
@@ -250,9 +255,9 @@ inline void PlayerUpdate(CPlayer &p, Manro::CRenderer &ren, Manro::CInputManager
             Manro::Vec3(p.pos.x, bodyY, p.pos.z));
 
         float speed = CPlayer::kWalk;
-        if (shiftSprint || p.sprintLatch)
+        if (sprintKey || p.sprintLatch)
             speed = CPlayer::kSprint;
-        if (wishLen > 0.01f && (shiftSprint || p.sprintLatch))
+        if (wishLen > 0.01f && (sprintKey || p.sprintLatch))
             p.sprinting = true;
         Manro::Vec3 hv = wish * speed;
 
@@ -268,19 +273,54 @@ inline void PlayerUpdate(CPlayer &p, Manro::CRenderer &ren, Manro::CInputManager
         } else {
             p.vel.x = hv.x;
             p.vel.z = hv.z;
-            p.vel.y -= CPlayer::kGravity * h;
-            if (p.vel.y < -55.f)
-                p.vel.y = -55.f;
-            if (p.onGround && in.IsKeyDown(K::Space)) {
-                p.vel.y = CPlayer::kJumpVel;
-                p.onGround = false;
+            const bool wasGrounded = p.onGround;
+            const bool jumpHeld = in.IsKeyDown(K::Space);
+            if (wasGrounded && !jumpHeld) {
+                // Grounded stick: no gravity build-up while supported. Without
+                // this the feet sink a fraction of kEps every substep and snap
+                // back on penetration frames (1-2mm sawtooth at 144Hz+, plus
+                // jitter from variable dt at 60Hz) — visible as textures
+                // slowly dragging while standing still.
+                p.vel.y = 0.f;
+            } else {
+                p.vel.y -= CPlayer::kGravity * h;
+                if (p.vel.y < -55.f)
+                    p.vel.y = -55.f;
+                if (wasGrounded && jumpHeld) {
+                    p.vel.y = CPlayer::kJumpVel;
+                    p.onGround = false;
+                }
             }
         }
 
         p.onGround = false;
         const bool hitX = PlayerDetail::MoveAxis(ren, p, 0, p.vel.x * h);
         const bool hitZ = PlayerDetail::MoveAxis(ren, p, 2, p.vel.z * h);
-        PlayerDetail::MoveAxis(ren, p, 1, p.vel.y * h);
+        const bool hitY = PlayerDetail::MoveAxis(ren, p, 1, p.vel.y * h);
+        // Support probe: MoveAxis only reports onGround on penetrating frames,
+        // so at high FPS (per-frame fall can't cross kEps) standing flickers
+        // AIR without this. When landing softly (no penetration this substep
+        // but ground within probe range) snap down to contact so the stick
+        // above never freezes us hovering up to kGroundProbe in the air.
+        if (p.vel.y <= 0.f) {
+            const Manro::Vec3 probePos = p.pos - Manro::Vec3(0.f, CPlayer::kGroundProbe, 0.f);
+            if (PlayerDetail::BoxCollides(ren, probePos)) {
+                p.onGround = true;
+                if (!hitY && p.vel.y < 0.f) {
+                    float snapY = p.pos.y;
+                    for (int i = 0; i < 30; ++i) {
+                        const float cand = snapY - 0.001f;
+                        if (cand <= p.pos.y - CPlayer::kGroundProbe - 0.0005f)
+                            break;
+                        if (PlayerDetail::BoxCollides(ren, Manro::Vec3(p.pos.x, cand, p.pos.z)))
+                            break;
+                        snapY = cand;
+                    }
+                    p.pos.y = snapY;
+                }
+                p.vel.y = 0.f;
+            }
+        }
         // Running into a wall breaks the double-tap latch (Shift re-applies
         // while held).
         if (p.sprintLatch && (hitX || hitZ))

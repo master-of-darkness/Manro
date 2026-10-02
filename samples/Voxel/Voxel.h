@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <string>
 #include <utility>
@@ -252,9 +253,13 @@ public:
 
     void OnRender(Manro::FrameContext_t &frame) override {
         const auto t0 = std::chrono::steady_clock::now();
-        // Sprint FOV kick (90 -> 100, smoothed).
+        // Sprint FOV kick (90 -> 100, smoothed). Snap when close so the
+        // projection stops micro-creeping (variable dt would otherwise keep
+        // it drifting by sub-pixel amounts long after the sprint ends).
         const float fovTarget = m_Player.sprinting ? 100.f : 90.f;
         m_Fov += (fovTarget - m_Fov) * std::min(1.f, frame.DeltaTime * 8.f);
+        if (std::abs(fovTarget - m_Fov) < 0.01f)
+            m_Fov = fovTarget;
         const Manro::Mat4 view = glm::lookAt(m_CamPos, m_CamPos + m_Fwd, Manro::Vec3{0, 1, 0});
         const Manro::Mat4 proj =
             glm::perspective(glm::radians(m_Fov), m_Renderer->GetAspectRatio(), 0.1f, 10000.f);
@@ -331,7 +336,7 @@ public:
             ImGui::TextDisabled("backface=%d frustum=%d", m_UseBackface ? 1 : 0,
                                 m_UseFrustum ? 1 : 0);
             ImGui::TextDisabled(
-                "WASD move | 2xW/Shift sprint | Space jump | F fly | LMB break | RMB place");
+                "WASD move | 2xW/Shift/Ctrl sprint | Space jump | F fly | LMB break | RMB place");
             ImGui::TextDisabled("F11 fullscreen | B/N cull | V vsync | Esc cursor/quit");
         }
         ImGui::End();
