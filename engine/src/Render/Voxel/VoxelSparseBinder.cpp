@@ -23,9 +23,8 @@ namespace Manro {
 
         VkMemoryRequirements req{};
         vkGetBufferMemoryRequirements(ctx.GetDevice(), m_Buffer, &req);
-        m_PageSize = req.alignment; // sparse block size
+        m_PageSize = req.alignment;
 
-        // Device-local type for residency.
         m_MemoryTypeIndex = UINT32_MAX;
         for (u32 i = 0; i < memProps.memoryTypeCount; ++i) {
             if ((req.memoryTypeBits & (1u << i)) &&
@@ -80,12 +79,12 @@ namespace Manro {
 
         for (u32 page = firstPage; page <= lastPage; ++page) {
             if (m_Pages[page].memory)
-                continue; // already resident
+                continue;
             VkMemoryAllocateInfo ai{};
             ai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
             ai.allocationSize = m_PageSize;
             ai.memoryTypeIndex = m_MemoryTypeIndex;
-            // BDA-capable sparse pages need the device-address flag on alloc.
+
             VkMemoryAllocateFlagsInfo flags{};
             flags.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
             flags.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
@@ -118,9 +117,6 @@ namespace Manro {
             bindInfo.bufferBindCount = 1;
             bindInfo.pBufferBinds = &bufBind;
 
-            // Sparse binding requires a queue with VK_QUEUE_SPARSE_BINDING_BIT.
-            // vkb exposes the graphics queue; graphics queues support sparse binding
-            // on all desktop drivers exposing sparseResidencyBuffer.
             if (vkQueueBindSparse(m_Context.GetGraphicsQueue(), 1, &bindInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
                 for (VkDeviceMemory m : freshAllocs)
                     vkFreeMemory(device, m, nullptr);
@@ -185,4 +181,4 @@ namespace Manro {
         info.buffer = m_Buffer;
         return vkGetBufferDeviceAddress(m_Context.GetDevice(), &info);
     }
-} // namespace Manro
+}

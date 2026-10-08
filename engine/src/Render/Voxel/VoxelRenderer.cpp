@@ -28,21 +28,16 @@ namespace Manro {
         desc.maxResidentBricks = 8192;
         m_World->Init(desc);
 
-        // Tile descriptor set layout must exist before the task/mesh PSO
-        // bakes it into its pipeline layout.
         CreateTileDescriptor();
         BuildPipelines(cache);
 
-        // Sorted visible ordinals (uint per brick), host-written every frame.
-        // Ringed per flight slot (see header): sharing one buffer across
-        // in-flight frames tears task reads.
         for (u32 i = 0; i < CVoxelRenderer::kFlightSlots; ++i) {
             m_VisibilityRing[i] = CreateScope<CBuffer>(
                 m_Context, sizeof(u32) * 2 * desc.maxResidentBricks,
                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                 VMA_MEMORY_USAGE_CPU_TO_GPU);
         }
-        // VkDispatchIndirectCommand layout for pass-2 re-dispatch.
+
         m_TaskIndirectBuffer = CreateScope<CBuffer>(
             m_Context, sizeof(VkDispatchIndirectCommand),
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
@@ -79,23 +74,18 @@ namespace Manro {
                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                 VMA_MEMORY_USAGE_CPU_TO_GPU);
         }
-        // Face cache: uint[4096] per resident brick (count + packed faces).
-        // Written by task on first sight / edits, read by task (count) +
-        // mesh (faces) every frame. 8192 bricks x 4096 x 4B = 128MB GPU-only.
+
         m_FaceCache = CreateScope<CBuffer>(
             m_Context, sizeof(u32) * 4096 * desc.maxResidentBricks,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
             VMA_MEMORY_USAGE_GPU_ONLY);
-        // DEBUG counters: uint[8], device-cleared when capture is enabled,
-        // atomically incremented by task/mesh. Host-visible for diagnosis.
+
         m_DebugReadback = CreateScope<CBuffer>(
             m_Context, sizeof(u32) * 8,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
                 VK_BUFFER_USAGE_TRANSFER_DST_BIT,
             VMA_MEMORY_USAGE_CPU_TO_GPU);
-        // Block tables: tile layer per (state, face) + flags per state.
-        // Sized 32768 so any uint16 state id indexes safely. Host-written
-        // once per StreamInit.
+
         m_BlockTileTable = CreateScope<CBuffer>(
             m_Context, sizeof(u32) * 32768 * 6,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
@@ -104,20 +94,17 @@ namespace Manro {
             m_Context, sizeof(u32) * 32768,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
             VMA_MEMORY_USAGE_CPU_TO_GPU);
-        // Per-state shape AABB: 2x uint32 per state (min xyz + max xyz packed
-        // as 0..16 bytes). Same sizing/indexing as the flags table.
+
         m_BlockShapeTable = CreateScope<CBuffer>(
             m_Context, sizeof(u32) * 32768 * 2,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
             VMA_MEMORY_USAGE_CPU_TO_GPU);
-        // Per-(state, face) uv sub-rect: u0|v0<<8|u1<<16|v1<<24 (model
-        // uv/16*255). Same sizing/indexing as the tile table.
+
         m_BlockUvTable = CreateScope<CBuffer>(
             m_Context, sizeof(u32) * 32768 * 6,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
             VMA_MEMORY_USAGE_CPU_TO_GPU);
-        // Fallback 1-magenta-tile array: the descriptor set is always valid,
-        // even before StreamInit uploads the real pack.
+
         {
             BlockAssetPack_t fallback{};
             fallback.tiles.emplace_back(16 * 16 * 4, 0);
@@ -132,10 +119,6 @@ namespace Manro {
             UploadBlockTables();
         }
 
-        // Sun dir normalized once here so the fragment shader (SM-bound at
-        // fullscreen) can use it directly with no per-pixel normalize.
-        // Intensity 1.0: block albedo is authored for ~1x daylight; the old
-        // 3.0 blew sand/water to white through the tonemapper.
         Vec4 sun[2] = {Vec4(0.3f, -1.f, 0.2f, 0.f), Vec4(1.f, 0.98f, 0.9f, 1.f)};
         {
             const float len =
@@ -148,8 +131,6 @@ namespace Manro {
         }
         m_SunBuffer->LoadData(sun, sizeof(sun));
 
-        // Distinct palette entries so the checkerboard is visible: 0 = warm grey,
-        // 1 = teal. Remaining entries default mid-grey.
         {
             std::vector<Vec4> palette(512, Vec4(0.6f, 0.6f, 0.6f, 1.f));
             palette[0] = Vec4(0.85f, 0.25f, 0.15f, 1.f);
@@ -215,11 +196,11 @@ namespace Manro {
         meshCfg.computeEntryPoint = "main";
         meshCfg.colorAttachmentFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
         meshCfg.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
-        meshCfg.msaaSamples = VK_SAMPLE_COUNT_1_BIT; // voxel path is MSAA-free
+        meshCfg.msaaSamples = VK_SAMPLE_COUNT_1_BIT;
         meshCfg.pushConstantStages = VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT |
                                       VK_SHADER_STAGE_FRAGMENT_BIT;
         meshCfg.pushConstantSize = sizeof(VoxelFrameRoot_t);
-        // Block tile array (fragment set 0): images can't travel by BDA.
+
         if (m_TileSetLayout != VK_NULL_HANDLE)
             meshCfg.descriptorSetLayouts = {m_TileSetLayout};
         meshCfg.depthWriteEnable = VK_TRUE;
@@ -235,8 +216,7 @@ namespace Manro {
         meshKey.pushConstantSize = meshCfg.pushConstantSize;
         if (m_TileSetLayout != VK_NULL_HANDLE) {
             meshKey.setLayoutCount = 1;
-            // Stable id for the single tile-array set (FNV-1a of
-            // "voxel_tiles_v1", precomputed).
+
             meshKey.setLayoutHash = 0x7B9B2F4A8C1D3E55ull;
         }
 
@@ -306,7 +286,7 @@ namespace Manro {
         VkDevice device = m_Context.GetDevice();
         if (!device)
             return;
-        // Destroying the pool frees the set.
+
         m_TileSet = VK_NULL_HANDLE;
         if (m_TilePool) {
             vkDestroyDescriptorPool(device, m_TilePool, nullptr);
@@ -329,13 +309,13 @@ namespace Manro {
             }
             throw std::runtime_error("[CVoxelRenderer] No device-local memory type");
         }
-    } // namespace
+    }
 
     void CVoxelRenderer::CreateBlockTiles(const BlockAssetPack_t &pack) {
         DestroyBlockTiles();
         VkDevice device = m_Context.GetDevice();
         const u32 layers = std::max<u32>(1u, static_cast<u32>(pack.tiles.size()));
-        constexpr u32 kMips = 5; // 16 -> 1
+        constexpr u32 kMips = 5;
         m_TileLayers = layers;
 
         VkImageCreateInfo ii{};
@@ -362,8 +342,6 @@ namespace Manro {
             throw std::runtime_error("[CVoxelRenderer] Tile memory failed");
         vkBindImageMemory(device, m_TileImage, m_TileMemory, 0);
 
-        // CPU mip chain (box filter in sRGB bytes — invisible at 16px, and
-        // it avoids 5k GPU blits at init). One staging buffer, one copy.
         constexpr u32 kLevelPx[5] = {256, 64, 16, 4, 1};
         VkDeviceSize layerBytes = 0;
         for (u32 m = 0; m < kMips; ++m)
@@ -524,8 +502,7 @@ namespace Manro {
     void CVoxelRenderer::UploadBlockTables() {
         std::vector<u32> tiles(32768u * 6u, 0u), flags(32768u, 0u), shapes(32768u * 2u, 0u),
             uvs(32768u * 6u, 0xFFFF0000u);
-        // Full-cube + full-rect defaults so states without baked looks
-        // (fallback magenta, pre-stream air) behave exactly like before.
+
         for (size_t s = 0; s < 32768u; ++s) {
             shapes[s * 2u + 0u] = 0u;
             shapes[s * 2u + 1u] = 16u | (16u << 8u) | (16u << 16u);
@@ -553,12 +530,11 @@ namespace Manro {
 
     Vec3 CVoxelRenderer::StreamInit(const std::string &worldDir, const std::string &assetsDir,
                                 int radiusSections) {
-        // Recreating the tile array while flights may sample it: init-time
-        // op, idle is correct and cheap here.
+
         VkDevice device = m_Context.GetDevice();
         if (device)
             vkDeviceWaitIdle(device);
-        // Empty assetsDir falls back to the build-time client-jar assets.
+
         const std::string dir = assetsDir.empty() ? MANRO_MC_ASSETS_DIR : assetsDir;
         std::string err;
         if (!BuildBlockAssetPack(dir, worldDir, m_BlockPack, err)) {
@@ -649,7 +625,6 @@ namespace Manro {
         pc.editCount = static_cast<u32>(edits.size());
         pc.virtualDim = m_World->GetVirtualDim();
 
-        // Host -> compute visibility for the edit ring.
         VkBufferMemoryBarrier2 barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
         barrier.srcStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
@@ -669,8 +644,6 @@ namespace Manro {
                            &pc);
         vkCmdDispatch(cb, (pc.editCount + 63) / 64, 1, 1);
 
-        // Compute writes (brick pages, headers) -> task/mesh/fragment reads.
-        // Global memory barrier since the sparse brick store is not a CBuffer.
         VkMemoryBarrier2 post{};
         post.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
         post.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
@@ -687,8 +660,7 @@ namespace Manro {
     }
 
     void CVoxelRenderer::DispatchGi(VkCommandBuffer cb) {
-        // GI cascade volumes are stubs; skip both dispatches + barrier
-        // unless explicitly enabled (saves 2x 8x8x8 dispatches/frame).
+
         if (!m_bGiEnabled)
             return;
         if (!m_GiInjectPipeline->GetHandle() || !m_GiPropagatePipeline->GetHandle())
@@ -736,14 +708,11 @@ namespace Manro {
         (void)nearZ;
         (void)farZ;
 
-        // All compute + uploads happen OUTSIDE any render pass (VUID
-        // vkCmdDispatch-None-10672 / vkCmdPipelineBarrier2-None-09553).
         m_World->FlushHeaders();
         DispatchEdits(cb);
         DispatchGi(cb);
         m_World->ClearEdits();
-        // Staged streaming fills (buffered by StreamUpdate into this flight
-        // slot): device copies + transfer barrier, in-frame, no extra sync.
+
         m_World->FlushStagedUploads(cb, flightSlot);
 
         const u32 brickCount = m_World->GetBrickCount();
@@ -752,27 +721,16 @@ namespace Manro {
         if (brickCount == 0 || !m_TaskMeshPipeline->GetHandle())
             return;
 
-        // CPU front-to-back sort + frustum compact (the proper overdraw cut):
-        // visible bricks only, nearest first, so hardware ZCULL + early-z
-        // kills hidden pixels instead of shading them. Dispatch gets the
-        // exact visible count — no empty task groups.
-        // - Hidden interior bricks (fully opaque + opaque neighbors) are
-        //   skipped before dispatch: no task/mesh/raster cost for solid rock.
-        // - Frustum test is 6-plane sphere vs the same viewProj the mesh
-        //   shader rasterizes with (plane extraction is exact, unlike an
-        //   8-corner NDC test it can never disagree per corner convention).
         u32 visibleCount = brickCount;
-        // Visibility + params rings share the flight slot so host uploads
-        // can never tear an in-flight frame's task/mesh reads.
+
         CBuffer &visSlot = *m_VisibilityRing[flightSlot % kFlightSlots];
         {
             const float brickSize = m_World->GetBrickSize();
-            const float radius = brickSize * 0.8660254f; // half-diagonal
+            const float radius = brickSize * 0.8660254f;
             const float maxD = 10000.f + radius;
             m_VisibleScratch.clear();
             if (m_bUseFrustum) {
-                // Frustum planes from viewProj rows (glm column-major:
-                // row r = (m[0][r], m[1][r], m[2][r], m[3][r])).
+
                 Vec4 rows[4];
                 for (int r = 0; r < 4; ++r)
                     rows[r] = Vec4(viewProj[0][r], viewProj[1][r], viewProj[2][r], viewProj[3][r]);
@@ -809,7 +767,7 @@ namespace Manro {
                         }
                     }
                     if (!inside)
-                        continue; // culled
+                        continue;
                     m_VisibleScratch.emplace_back(dist2, i);
                 }
                 std::sort(m_VisibleScratch.begin(), m_VisibleScratch.end(),
@@ -830,7 +788,6 @@ namespace Manro {
                 visSlot.LoadData(m_VisibleList.data(), sizeof(u32) * m_VisibleList.size());
         }
 
-        // Push constant is the frame root; frame params live in a BDA buffer.
         VoxelFrameParams_t frame{};
         frame.viewProj = viewProj;
         frame.prevViewProj = prevViewProj;
@@ -839,10 +796,10 @@ namespace Manro {
         frame.worldMin = m_World->GetWorldMin();
         frame.brickSize = m_World->GetBrickSize();
         frame.maxDrawDistance = 10000;
-        frame.enableHiZ = 0; // reserved: software HiZ removed (ZCULL handles it)
+        frame.enableHiZ = 0;
         frame.paletteAddr = m_PaletteBuffer->GetDeviceAddress();
         frame.sunAddr = m_SunBuffer->GetDeviceAddress();
-        frame.giAddr = 0; // GI stub adds light on black; v1 visibility = lambert only
+        frame.giAddr = 0;
         frame.giEnabled = m_bGiEnabled ? 1u : 0u;
         frame.shadowsEnabled = 0;
         frame.debugEnabled = m_bDebugEnabled ? 1u : 0u;
@@ -863,18 +820,11 @@ namespace Manro {
         root.blockFlagsAddr = m_BlockFlagsTable ? m_BlockFlagsTable->GetDeviceAddress() : 0u;
         root.shapeTableAddr = m_BlockShapeTable ? m_BlockShapeTable->GetDeviceAddress() : 0u;
         root.uvTableAddr = m_BlockUvTable ? m_BlockUvTable->GetDeviceAddress() : 0u;
-        // DEBUG counters: device-side clear only when capture is enabled.
-        // Skipping the Fill + extra barrier saves a full-buffer op/frame.
+
         if (m_bDebugEnabled)
             vkCmdFillBuffer(cb, m_DebugReadback->GetHandle(), 0, sizeof(u32) * 8, 0);
         root.debugAddr = m_DebugReadback->GetDeviceAddress();
 
-        // Frame params + visibility list (host uploads) -> task/mesh reads.
-        // Downloaded buffers are read-only downstream: dst access is READ,
-        // not READ|WRITE (the WRITE bit needlessly stalls the pipeline).
-        // Debug-clear barrier appended only when capture is enabled. The
-        // global memory barrier orders prior in-flight frames' shader
-        // writes (face-cache stores, edit writes) before task reads.
         {
             VkBufferMemoryBarrier2 b[3]{};
             u32 barrierCount = 2;
@@ -898,8 +848,7 @@ namespace Manro {
             dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
             dep.bufferMemoryBarrierCount = barrierCount;
             dep.pBufferMemoryBarriers = b;
-            // Cross-frame visibility: prior frames' task/mesh/compute writes
-            // (face cache, brick edits) -> this frame's task/mesh reads.
+
             VkMemoryBarrier2 cross{};
             cross.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
             cross.srcStageMask = VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT |
@@ -916,10 +865,6 @@ namespace Manro {
             vkCmdPipelineBarrier2(cb, &dep);
         }
 
-        // Own voxel-only dynamic-rendering pass (shares the Sponza
-        // offscreen+depth IMAGES but never runs inside the PBR pass).
-        // clearColor=true on the first voxel pass of the frame (nothing drew
-        // before us); false when appending after PBR/skybox.
         VkRenderingAttachmentInfo colorAtt{};
         colorAtt.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
         colorAtt.imageView = colorView;
@@ -956,21 +901,17 @@ namespace Manro {
                            VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT |
                                VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(root), &root);
-        // Block tile array (always valid: magenta fallback before StreamInit).
+
         if (m_TileSet != VK_NULL_HANDLE) {
             vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                     m_TaskMeshPipeline->GetLayout(), 0, 1, &m_TileSet, 0, nullptr);
         }
 
-        // Sorted front-to-back compact list: exact dispatch count, no empty
-        // task groups, early-z order for hidden-pixel rejection.
         m_Stats.taskGroups = visibleCount;
         if (visibleCount > 0)
             vkCmdDrawMeshTasksEXT(cb, visibleCount, 1, 1);
         vkCmdEndRendering(cb);
 
-        // DEBUG host barrier only when capture is enabled; otherwise skip
-        // the extra pipeline stall entirely.
         if (m_bDebugEnabled) {
             VkMemoryBarrier2 mem{};
             mem.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
@@ -990,15 +931,13 @@ namespace Manro {
     }
 
     void CVoxelRenderer::ReadDebugCounters(u32 out[6]) const {
-        // Disabled => return last cached values with NO queue stall.
+
         if (!m_bDebugEnabled || !m_DebugReadback) {
             for (int i = 0; i < 6; ++i)
                 out[i] = m_CachedDebug[i];
             return;
         }
-        // GPU writes land in device memory; the validation app is the only
-        // reader and runs single-frame-in-flight, so a queue idle + mapped
-        // read is the correct (if slow) diagnostic path.
+
         vkQueueWaitIdle(m_Context.GetGraphicsQueue());
         vmaInvalidateAllocation(m_Context.GetAllocator(), m_DebugReadback->GetAllocation(), 0,
                                 sizeof(u32) * 6);
@@ -1008,4 +947,4 @@ namespace Manro {
             m_CachedDebug[i] = src[i];
         }
     }
-} // namespace Manro
+}

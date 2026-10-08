@@ -1,21 +1,19 @@
-// GPU-local voxel edits: mutates brick bitmasks + material words in VRAM.
-// CPU only appends EditCmd records; no mesh re-bake, no re-upload.
 struct VoxelEditCmd {
-    float3 pos;    // world-space center
-    float radius;  // world units (0 = single voxel)
-    uint material; // material to write (ignored for erase)
-    uint op;       // 0 = erase, 1 = write
+    float3 pos;
+    float radius;
+    uint material;
+    uint op;
 };
 
 struct VoxelEditPush {
     uint64_t brickBufferAddr;
     uint64_t headerAddr;
     uint64_t pageTableAddr;
-    uint64_t editAddr; // VoxelEditCmd[editCount]
+    uint64_t editAddr;
     float3 worldMin;
     float brickSize;
     uint editCount;
-    uint virtualDim; // bricks per axis in the page table
+    uint virtualDim;
 };
 
 [[vk::push_constant]]
@@ -31,8 +29,6 @@ void EditMain(uint3 dtid : SV_DispatchThreadID) {
     VoxelEditCmd* cmds = edits.getPtr();
     VoxelEditCmd cmd = cmds[dtid.x];
 
-    // Map world pos -> brick index via the virtual page table (slots wrap
-    // mod-virtualDim; the live set always spans less, so no aliasing).
     float3 local = (cmd.pos - g_Edit.worldMin) / g_Edit.brickSize;
     int3 brickCoord = int3(floor(local));
     int dim = int(g_Edit.virtualDim);
@@ -42,9 +38,8 @@ void EditMain(uint3 dtid : SV_DispatchThreadID) {
     vk::BufferPointer<int> pageTable = vk::BufferPointer<int>(g_Edit.pageTableAddr);
     int* pages = pageTable.getPtr();
     if (pages[brickIdx] < 0)
-        return; // sparse page not resident; streaming pass binds it first
-    // brickIdx above is the VIRTUAL slot; voxel data / headers / face cache
-    // are all indexed by RESIDENT ordinal.
+        return;
+
     uint rBrick = uint(pages[brickIdx]);
 
     vk::BufferPointer<uint> bricks = vk::BufferPointer<uint>(g_Edit.brickBufferAddr);
@@ -52,7 +47,6 @@ void EditMain(uint3 dtid : SV_DispatchThreadID) {
     uint* mats = base + rBrick * 2176u;
     uint* occupancy = mats + 2048u;
 
-    // Sphere edit in brick-local voxel coords.
     float voxelSize = g_Edit.brickSize / 16.0;
     float3 brickMin = g_Edit.worldMin + float3(brickCoord) * g_Edit.brickSize;
     for (uint i = 0u; i < 4096u; ++i) {
@@ -69,9 +63,7 @@ void EditMain(uint3 dtid : SV_DispatchThreadID) {
         } else {
             occupancy[word] |= bit;
             uint matWord = i >> 1u;
-            // 2x uint16 packed per uint: read-modify-write via address arithmetic.
-            // NOTE: concurrent edits to sibling voxels in the same word race;
-            // the edit queue serializes overlapping bricks on the CPU side.
+
             uint cur = mats[matWord];
             if ((i & 1u) == 0u)
                 cur = (cur & 0xFFFF0000u) | (cmd.material & 0xFFFFu);
@@ -81,9 +73,6 @@ void EditMain(uint3 dtid : SV_DispatchThreadID) {
         }
     }
 
-    // Mark dirty so the BLAS refit pass picks it up, and
-    // so the task shader rescans this brick's face cache. Header uint
-    // layout: origin(0-2), pageIndex(3), flags(4) — bit 1 = dirty.
     vk::BufferPointer<uint> headers = vk::BufferPointer<uint>(g_Edit.headerAddr);
     uint* h = headers.getPtr();
     InterlockedOr(h[rBrick * 8u + 4u], 2u);

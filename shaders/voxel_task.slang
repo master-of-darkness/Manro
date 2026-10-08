@@ -1,16 +1,8 @@
-// Task (amplification) shader: per-brick cull + face compaction.
-// One task group per resident brick. Dirty/unseen bricks scan occupancy and
-// store the FULL exposed-face list into the face cache (view-independent —
-// never view-culled here); clean bricks just load the count and dispatch.
-// Mesh fans out to ceil(faceCount/32) groups and backface-filters per frame.
-// Dense thin-block bricks reach ~3500 faces -> 110 mesh groups (cap 4095).
 import voxel_common;
 
 [[vk::push_constant]]
 VoxelFrameRoot g_TaskRoot;
 
-// Module-scope shared staging for face compaction (32 lanes cooperate).
-// s_faceStaging layout: [0] = count, [1..4095] = packed faces.
 groupshared uint s_faceStaging[4096];
 groupshared uint s_hasContent;
 
@@ -21,10 +13,7 @@ VoxelFrameParams LoadFrame() {
 }
 
 bool BrickResidentAndNear(uint brickIdx, VoxelFrameParams frame) {
-    // Residency + distance only. Frustum testing lives in TaskMain as an
-    // 8-corner NDC test using the same mul() as the mesh shader, so culling
-    // can never disagree with what rasterization would draw (analytic plane
-    // extraction is one convention slip away from false culls).
+
     if (brickIdx >= frame.brickCount)
         return false;
 
@@ -45,24 +34,16 @@ bool BrickResidentAndNear(uint brickIdx, VoxelFrameParams frame) {
     return true;
 }
 
-// BISECT DEBUG: synthetic full top-plane faces, bypasses ALL brick-data
-// BDA reads (occupancy/materials). If the full 16x16 top plane appears,
-// task->mesh->raster->composite is proven good and the bug is in brick
-// data reads (sparse upload / BDA / occupancy). Flip to false to revert.
 static const bool kDebugSyntheticFaces = false;
 
 [shader("amplification")]
 [numthreads(32, 1, 1)]
 void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
     VoxelFrameParams frame = LoadFrame();
-    // Dispatch covers the CPU-compacted front-to-back visible list exactly
-    // (no empty groups); remap group -> resident brick ordinal here.
-    // frame.brickCount stays the total for bounds checks below.
+
     vk::BufferPointer<uint> vis = vk::BufferPointer<uint>(g_TaskRoot.visibilityAddr);
     uint brickIdx = vis.getPtr()[gid.x];
 
-    // DEBUG counter helper: debugAddr[0] = task runs, [1] = visible bricks,
-    // [2] = total compacted faces. Skipped unless frame.debugEnabled.
     vk::BufferPointer<uint> dbg = vk::BufferPointer<uint>(g_TaskRoot.debugAddr);
     uint* debug = dbg.getPtr();
     bool wantDbg = frame.debugEnabled != 0u;
@@ -70,12 +51,9 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
         InterlockedAdd(debug[0], 1u);
     }
 
-    // useFrustum=0 disables the residency + distance check here (the CPU
-    // compact + sort that feeds this dispatch is gated by the same flag).
-    // Dense append-only allocation keeps every slot < brickCount resident.
     if (frame.useFrustum != 0u && !BrickResidentAndNear(brickIdx, frame)) {
         if (gidx == 0 && wantDbg) {
-            InterlockedAdd(debug[3], 1u); // culled
+            InterlockedAdd(debug[3], 1u);
         }
         return;
     }
@@ -89,24 +67,12 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
         vk::BufferPointer<VoxelBrickHeader>(g_TaskRoot.headerAddr);
     VoxelBrickHeader bhdr = bheaders.getPtr()[brickIdx];
 
-    // NOTE: no GPU frustum re-test here on purpose. The CPU already
-    // compacted the dispatch to frustum-visible bricks (exact: same NDC test
-    // against the same matrix), so a lane-cooperative re-test with its two
-    // group barriers + shared atomics measured SLOWER than nothing when the
-    // scene is mostly visible. Residency + distance above stay as cheap,
-    // barrier-free belt-and-braces (and cover future sparse eviction).
-    // Survived all culling: this brick will dispatch mesh groups.
     if (gidx == 0 && wantDbg) {
         InterlockedAdd(debug[1], 1u);
     }
     vk::BufferPointer<uint> fcache = vk::BufferPointer<uint>(g_TaskRoot.faceCacheAddr);
     uint* fcb = fcache.getPtr() + brickIdx * kVoxelFaceCacheStride;
 
-    // Face-cache fast path (static bricks cost ~nothing).
-    // needsScan is uniform — same header for all lanes.
-    // bit1 = dirty (a GPU edit touched this brick), bit2 = cache valid.
-    // The scan path consumes dirty after storing (see below), so an edited
-    // brick rescans exactly the frames it needs — no permanent rescan.
     bool needsScan = kDebugSyntheticFaces ||
                      ((bhdr.flags & 4u) == 0u) || ((bhdr.flags & 2u) != 0u);
     uint faceCount = 0u;
@@ -114,8 +80,7 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
         faceCount = fcb[0];
     } else {
         if (kDebugSyntheticFaces) {
-            // 16x16 top faces (+Y, f=2), checkerboard mats, stored straight
-            // into the cache (mesh reads the cache, never the payload).
+
             for (uint i = gidx; i < 256u; i += 32u) {
                 uint x = i & 15u;
                 uint z = (i >> 4u) & 15u;
@@ -128,9 +93,7 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
             }
             faceCount = 256u;
         } else {
-            // Empty-brick early-out: 128 occupancy words, 4 per lane.
-            // Uniform exit after the barrier — all lanes observe s_hasContent.
-            // Empty bricks cache count 0 so they stay on the fast path.
+
             if (gidx == 0) {
                 s_faceStaging[0] = 0u;
                 s_hasContent = 0u;
@@ -144,21 +107,7 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
             }
             GroupMemoryBarrierWithGroupSync();
             if (s_hasContent != 0u) {
-                // State-aware scan: every exposed face is stored, with NO
-                // view-dependent culling. The cache must stay valid for all
-                // viewpoints (backface rejection runs per-frame in mesh);
-                // caching a culled list freezes one viewpoint's visibility.
-                // mats[] holds block state ids; blockFlags (root)
-                // carries opaque/cutout/skip/inner bits per state.
-                // Emit rule per face of V against neighbor N:
-                // - N skipped/air -> emit; N == V -> emit only for inner
-                //   faces (leaves); opaque N -> cull; else emit.
-                // Neighbors outside this brick resolve through the page table
-                // into the adjacent resident brick (missing/unfilled reads as
-                // air, so the face emits and the neighbor emits its own side
-                // when IT fills + dirties us for a re-evaluation). This kills
-                // the doubled hidden boundary faces that otherwise rasterize
-                // inside solid rock on every frame.
+
                 vk::BufferPointer<uint> flagPtr = vk::BufferPointer<uint>(g_TaskRoot.blockFlagsAddr);
                 uint* blockFlags = flagPtr.getPtr();
                 vk::BufferPointer<uint> shapePtr = vk::BufferPointer<uint>(g_TaskRoot.shapeTableAddr);
@@ -178,7 +127,7 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                     uint mat = VoxelMaterial(mats, x, y, z);
                     uint vflags = (mat < kBlockStateMax) ? blockFlags[mat] : 0u;
                     if ((vflags & 4u) != 0u)
-                        continue; // skip-states never emit (flora/air)
+                        continue;
                     for (uint f = 0u; f < 6u; ++f) {
                         int3 n = int3(x, y, z) + kFaceOffset[f];
                         uint nstate = 0u;
@@ -187,16 +136,12 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                             if (VoxelSolid(occupancy, uint(n.x), uint(n.y), uint(n.z)))
                                 nstate = VoxelMaterial(mats, uint(n.x), uint(n.y), uint(n.z));
                         } else {
-                            // Cross-brick neighbor voxel: world pos -> page
-                            // slot -> resident ordinal -> occupancy/material.
+
                             float3 nwc = bhdr.origin +
                                          (float3(float(n.x), float(n.y), float(n.z)) + 0.5) *
                                              voxelSize;
                             int3 nbc = int3(floor((nwc - frame.worldMin) / frame.brickSize));
-                            // Wrap into the page table: CPU slots are
-                            // mod-virtualDim of the same brick coords (the
-                            // live set always spans < virtualDim, so wrapped
-                            // slots never alias live bricks).
+
                             int3 wrapped =
                                 ((nbc % int(vdim)) + int(vdim)) % int(vdim);
                             uint nslot = uint(wrapped.x) + uint(wrapped.y) * vdim +
@@ -213,25 +158,7 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                                     nstate = VoxelMaterial(nnmats, nx, ny, nz);
                             }
                         }
-                        // Shape-aware emit per face of V against neighbor N:
-                        // - N out of range / air-skip -> emit;
-                        // - same-state inner faces (leaves) -> always emit;
-                        // - same-state otherwise -> emit unless N COVERS the
-                        //   face (reaches the shared plane with a containing
-                        //   rect, see VoxelFaceCovered). Thin same-state
-                        //   neighbors set back from the plane (fence posts
-                        //   side-by-side with an air gap) never cover, so the
-                        //   gap-visible side faces still emit; full-cube pairs
-                        //   cover exactly like the old inner-face rule.
-                        // - different-state -> opaque rule only: a full opaque
-                        //   neighbor hides V behind its boundary quad even when
-                        //   V is thin and set back (fence face recessed behind
-                        //   a stone face is occluded from one side and
-                        //   backface-culled from the other -- never visible).
-                        //   Emitting it only wastes face-cache slots and risks
-                        //   overflow holes in dense bricks. Thin (non-opaque)
-                        //   neighbors never hide, so stone faces around fence
-                        //   posts/trapdoors/doors still emit.
+
                         bool emit;
                         if (nstate >= kBlockStateMax) {
                             emit = true;
@@ -241,10 +168,9 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                                 emit = true;
                             } else if (nstate == mat) {
                                 if ((vflags & 8u) != 0u) {
-                                    emit = true; // inner faces only
+                                    emit = true;
                                 } else {
-                                    // Clamp: corrupt state ids (past the table)
-                                    // read as full cubes, never OOB.
+
                                     uint vs = min(mat, kBlockStateMax - 1u);
                                     int3 vMin = VoxelShapeMin(blockShapes, vs);
                                     int3 vMax = VoxelShapeMax(blockShapes, vs);
@@ -269,8 +195,7 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
     GroupMemoryBarrierWithGroupSync();
 
                 faceCount = min(s_faceStaging[0], kVoxelFaceCacheCap);
-                // Cooperative store into the face cache (~12 faces/lane
-                // worst case) — replaces the old per-lane 8KB payload copy.
+
                 if (gidx == 0) {
                     fcb[0] = faceCount;
                 }
@@ -278,24 +203,17 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                     fcb[1u + i] = s_faceStaging[1u + i];
                 }
             } else {
-                // Air brick: cache count 0 so it stays on the fast path.
+
                 if (gidx == 0) {
                     fcb[0] = 0u;
                 }
                 faceCount = 0u;
             }
             GroupMemoryBarrierWithGroupSync();
-            // Task stores -> mesh reads within this draw.
+
             DeviceMemoryBarrier();
             if (gidx == 0) {
-                // Consume dirty + mark cache valid. Header uint layout:
-                // origin(0-2), pageIndex(3), flags(4).
-                // Clearing dirty here (instead of never) stops edited bricks
-                // rescanning forever — the fps death seen after ~50 edits.
-                // Residual race: an edit landing in the same in-flight window
-                // as this clear can lose one dirty flag; the next edit or
-                // alloc re-marks it, so it self-heals. Strictly better than
-                // permanent rescan.
+
                 vk::BufferPointer<uint> hraw = vk::BufferPointer<uint>(g_TaskRoot.headerAddr);
                 uint* hw = hraw.getPtr();
                 InterlockedAnd(hw[brickIdx * 8u + 4u], ~2u);
@@ -303,9 +221,7 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
             }
         }
     }
-    // Common dispatch: fast path and scan path rejoin here with a uniform
-    // faceCount. Divergent DispatchMesh is undefined behavior — every lane
-    // reaches this call with identical args.
+
     if (faceCount == 0u)
         return;
     if (gidx == 0 && wantDbg) {

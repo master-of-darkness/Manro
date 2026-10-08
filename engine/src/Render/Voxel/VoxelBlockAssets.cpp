@@ -1,8 +1,3 @@
-// VoxelBlockAssets: save states -> per-state cube face tiles.
-// Enumerates every distinct block state in the Anvil save, resolves each
-// through the jar blockstates/models, and builds deduplicated 16x16 tiles.
-// No third-party state tables; occlusion comes from model elements.
-
 #include "VoxelBlockAssets.h"
 #include "VoxelAnvilReader.h"
 
@@ -29,7 +24,7 @@ namespace Manro {
                                                             "south", "north"};
 
         template <typename T> static void PermuteY90(std::array<T, 6> &a) {
-            // east<-north, south<-east, west<-south, north<-west
+
             std::array<T, 6> t = a;
             a[0] = std::move(t[5]);
             a[4] = std::move(t[0]);
@@ -37,7 +32,7 @@ namespace Manro {
             a[5] = std::move(t[1]);
         }
         template <typename T> static void PermuteX90(std::array<T, 6> &a) {
-            // up<-north, south<-up, down<-south, north<-down
+
             std::array<T, 6> t = a;
             a[2] = std::move(t[5]);
             a[4] = std::move(t[2]);
@@ -140,7 +135,7 @@ namespace Manro {
                     if (val.is_array()) {
                         if (val.empty())
                             continue;
-                        entry = &val[0]; // deterministic: first rotation
+                        entry = &val[0];
                     }
                     if (!entry->is_object() || !entry->contains("model"))
                         continue;
@@ -271,7 +266,7 @@ namespace Manro {
             FaceTextures out{};
             if (modelPath.empty())
                 return out;
-            const std::string rel = StripPrefix(modelPath); // block/<name>
+            const std::string rel = StripPrefix(modelPath);
             const json *root = LoadModelJson(modelsDir, modelCache, rel);
             std::vector<const json *> chainJson;
             if (root->is_object())
@@ -410,7 +405,7 @@ namespace Manro {
                 for (size_t f : {0u, 1u, 4u, 5u})
                     need(f, "#side");
             } else {
-                // Generic: explicit dir vars, then side/all/end/top/bottom.
+
                 static const std::array<const char *, 6> kDirVars = {"east", "west", "up",
                                                                      "down", "south", "north"};
                 for (size_t f = 0; f < 6; ++f)
@@ -420,7 +415,7 @@ namespace Manro {
                 for (size_t f = 0; f < 6; ++f)
                     need(f, "#all");
             }
-            // Resolve #vars left standing (chains included).
+
             for (size_t f = 0; f < 6; ++f) {
                 if (!out.tex[f].empty() && out.tex[f][0] == '#')
                     out.tex[f] = ResolveVar(vars, out.tex[f]);
@@ -449,7 +444,7 @@ namespace Manro {
             rotX = ((rotX % 360) + 360) % 360;
             rotY = ((rotY % 360) + 360) % 360;
             if ((rotX % 90) != 0 || (rotY % 90) != 0)
-                return; // non-orthogonal: leave unrotated (conservative)
+                return;
             double pts[8][3];
             for (int i = 0; i < 8; ++i) {
                 pts[i][0] = (i & 1) ? b.mx[0] : b.mn[0];
@@ -533,7 +528,7 @@ namespace Manro {
                             }
                         }
                         if (found)
-                            break; // child elements replace the parent's
+                            break;
                         if (j->is_object() && j->contains("parent") &&
                             (*j)["parent"].is_string())
                             rel = StripPrefix((*j)["parent"].get<std::string>());
@@ -581,13 +576,13 @@ namespace Manro {
                                 }
                             }
                             if (planar)
-                                continue; // rails/posts only, no cross-planes
+                                continue;
                             RotateBox(b, ref.x, ref.y);
                             out.push_back(b);
                         }
                     }
                     if (found)
-                        break; // child elements replace the parent's
+                        break;
                     if (j->is_object() && j->contains("parent") &&
                         (*j)["parent"].is_string())
                         rel = StripPrefix((*j)["parent"].get<std::string>());
@@ -629,7 +624,6 @@ namespace Manro {
             return false;
         }
 
-        // Grayscale-ish textures the game tints at render (baked here).
         u32 TintForName(const std::string &name) {
             if (name == "grass_block_top")
                 return 0x91BD59u;
@@ -657,7 +651,7 @@ namespace Manro {
         }
 
         bool IsExplicitSkip(std::string_view name) {
-            // Technical blocks with no usable cube texture.
+
             return name == "end_portal" || name == "end_gateway" || name == "barrier" ||
                    name == "light" || name == "structure_void" || name == "moving_piston" ||
                    name == "bubble_column" || name == "nether_portal";
@@ -665,29 +659,29 @@ namespace Manro {
 
         bool IsSmallDecor(std::string_view name) {
             if (name == "snow")
-                return true; // the layer; snow_block stays solid
+                return true;
             if (name == "fire" || name == "soul_fire")
-                return true; // cross-plane flames, not cubes
+                return true;
             const auto has = [&](const char *sub) {
                 return name.find(sub) != std::string_view::npos;
             };
             if (name == "flower_pot" || has("potted_"))
-                return true; // decorated_pot stays solid
+                return true;
             if (name == "kelp" || name == "kelp_plant")
-                return true; // dried_kelp_block stays solid
+                return true;
             if (name == "red_mushroom" || name == "brown_mushroom")
-                return true; // stems/blocks stay solid
+                return true;
             if (name == "nether_wart")
-                return true; // the crop; nether_wart_block stays solid
+                return true;
             if (name == "chain")
-                return true; // chain_command_block stays solid
+                return true;
             if (has("coral") && name.find("coral_block") == std::string_view::npos)
                 return true;
             if (has("lantern") && name.find("sea_lantern") == std::string_view::npos &&
                 name.find("jack_o_lantern") == std::string_view::npos)
                 return true;
             if (has("flower") && has("leaves"))
-                return false; // flowering azalea leaves stay solid-cutout
+                return false;
             static const char *kKeys[] = {
                 "flower", "tulip", "sapling", "torch", "vine", "sprouts", "roots",
                 "tall_grass", "short_grass", "fern", "bush", "dead_bush", "rail", "redstone_wire",
@@ -754,7 +748,7 @@ namespace Manro {
         std::string OverrideTexture(std::string_view name) {
             if (name.find("_pane") != std::string_view::npos || name == "iron_bars")
                 return "block/glass";
-            // Block-entity / technical blocks with no cube model.
+
             if (name == "chest" || name == "trapped_chest")
                 return "block/oak_planks";
             if (name == "ender_chest")
@@ -771,8 +765,7 @@ namespace Manro {
                 return "block/terracotta";
             if (name == "shulker_box")
                 return "block/purple_wool";
-            // Shulker boxes / skulls / statues / copper chests are
-            // block-entity rendered (no cube model): nearest solid tile.
+
             if (name.size() > 12 && name.compare(name.size() - 12, 12, "_shulker_box") == 0)
                 return "block/" + std::string(name.substr(0, name.size() - 12)) + "_wool";
             if ((name.size() > 5 &&
@@ -851,20 +844,19 @@ namespace Manro {
             }
             return true;
         }
-    } // namespace
+    }
 
     bool BuildBlockAssetPack(const std::string &assetsDir, const std::string &worldDir,
                              BlockAssetPack_t &out, std::string &err) {
         const std::string texDir = assetsDir + "/textures/block";
         const std::string bsDir = assetsDir + "/blockstates";
-        const std::string modelsDir = assetsDir + "/models"; // rel paths include block/...
+        const std::string modelsDir = assetsDir + "/models";
         std::error_code ec;
         if (!fs::is_directory(texDir, ec) || !fs::is_directory(bsDir, ec)) {
             err = "missing block asset dirs under " + assetsDir;
             return false;
         }
 
-        // Enumerate every distinct state in the save (plus always-includes).
         CAnvilWorldReader reader;
         if (!reader.Open(worldDir)) {
             err = "no region data in " + worldDir;
@@ -901,7 +893,7 @@ namespace Manro {
         }
 
         BlockAssetPack_t pack{};
-        // Tile 0: missing-texture magenta.
+
         pack.tiles.emplace_back(16 * 16 * 4, 0);
         pack.tilePaths.emplace_back();
         for (int i = 0; i < 16 * 16; ++i) {
@@ -911,9 +903,7 @@ namespace Manro {
             pack.tiles[0][i * 4 + 3] = 255;
         }
         std::unordered_map<std::string, u16> tileByPath;
-        // Per-tile binary-transparency bit (parallel to pack.tiles; [0] = 0).
-        // tileForPath records it on first load so face resolution below can
-        // promote any state using a transparent tile to cutout.
+
         std::vector<u8> tileCutout{0};
         auto tileForPath = [&](const std::string &path) -> u16 {
             if (path.empty())
@@ -935,7 +925,7 @@ namespace Manro {
             tileByPath[path] = idx;
             return idx;
         };
-        // True when any of the six face tiles carries binary transparency.
+
         auto facesNeedCutout = [&](const BlockFaceTiles_t &faces) -> bool {
             for (size_t f = 0; f < 6; ++f) {
                 const u16 t = faces.tile[f];
@@ -948,7 +938,7 @@ namespace Manro {
             if (origIdx == 0 || origIdx >= pack.tiles.size())
                 return origIdx;
             if (origIdx < tileCutout.size() && !tileCutout[origIdx])
-                return origIdx; // already opaque, no variant needed
+                return origIdx;
             const std::string key = path + "#opaque";
             const auto it = tileByPath.find(key);
             if (it != tileByPath.end())
@@ -956,7 +946,7 @@ namespace Manro {
             const std::vector<u8> &src = pack.tiles[origIdx];
             if (src.size() < 16 * 16 * 4)
                 return origIdx;
-            // Average opaque RGB for filling transparent texels.
+
             double acc[3]{0.0, 0.0, 0.0};
             int opaqueCount = 0;
             for (int i = 0; i < 16 * 16; ++i) {
@@ -990,9 +980,7 @@ namespace Manro {
             tileByPath[key] = idx;
             return idx;
         };
-        // True when the tile's texels covered by the uv rect (0..16 model
-        // units, flips ignored = same pixels) are all opaque. The tile is the
-        // baked 16x16 resample, so uv units map 1:1 to pixels (clamped).
+
         auto rectIsOpaque = [&](const std::vector<u8> &tile, const std::array<float, 4> &uv) -> bool {
             if (tile.size() < 16 * 16 * 4)
                 return false;
@@ -1115,13 +1103,13 @@ namespace Manro {
                                 ft.uv[f][2] = flipU ? unionMin[f][0] : unionMax[f][0];
                                 ft.uv[f][3] = flipV ? unionMin[f][1] : unionMax[f][1];
                             }
-                            // Different texture: keep the first (solid wins).
+
                         }
                         ft.any = true;
                     }
                     if (!ft.any) {
                         look.flags = kBlockFlagOpaque;
-                        ++fallback; // magenta cube, occluding
+                        ++fallback;
                     } else {
                         if (!refs.empty() && refs[0].model.find("cube_column") != std::string::npos) {
                             const auto ait = pmap.find("axis");
@@ -1144,7 +1132,7 @@ namespace Manro {
                                 for (int a = 0; a < 3; ++a) {
                                     long mn = std::lround(std::clamp(shape.mn[a], 0.0, 16.0));
                                     long mx = std::lround(std::clamp(shape.mx[a], 0.0, 16.0));
-                                    if (mx <= mn) { // keep a visible sliver, never degenerate
+                                    if (mx <= mn) {
                                         if (mx < 16)
                                             ++mx;
                                         else
@@ -1176,13 +1164,13 @@ namespace Manro {
                                            static_cast<int>(look.shapeMin[1]);
                             const int sz = static_cast<int>(look.shapeMax[2]) -
                                            static_cast<int>(look.shapeMin[2]);
-                            if (f == 0u || f == 1u) { // +-X: U along Z, V along Y
+                            if (f == 0u || f == 1u) {
                                 faceW = static_cast<float>(sz);
                                 faceH = static_cast<float>(sy);
-                            } else if (f == 2u || f == 3u) { // +-Y: U along X, V along Z
+                            } else if (f == 2u || f == 3u) {
                                 faceW = static_cast<float>(sx);
                                 faceH = static_cast<float>(sz);
-                            } else { // +-Z: U along X, V along Y
+                            } else {
                                 faceW = static_cast<float>(sx);
                                 faceH = static_cast<float>(sy);
                             }
@@ -1193,9 +1181,7 @@ namespace Manro {
                             const bool faceWide = faceW > faceH + 1e-6f;
                             const bool faceTall = faceH > faceW + 1e-6f;
                             if ((rectWide && faceTall) || (rectTall && faceWide)) {
-                                // Swap dimensions, anchored at origin to stay in
-                                // 0..16 (original offsets are edge-anchored wood
-                                // either way, e.g. top rows vs left cols).
+
                                 ft.uv[f][0] = 0.f;
                                 ft.uv[f][1] = 0.f;
                                 ft.uv[f][2] = rectH;
@@ -1226,13 +1212,13 @@ namespace Manro {
                                                         double z) -> bool {
                                 for (const Box3 &b : fenceBoxes) {
                                     bool ok = false;
-                                    if (f == 0u || f == 1u) { // +-X: tangent Y,Z
+                                    if (f == 0u || f == 1u) {
                                         ok = y >= b.mn[1] - 1e-6 && y <= b.mx[1] + 1e-6 &&
                                              z >= b.mn[2] - 1e-6 && z <= b.mx[2] + 1e-6;
-                                    } else if (f == 2u || f == 3u) { // +-Y: tangent X,Z
+                                    } else if (f == 2u || f == 3u) {
                                         ok = x >= b.mn[0] - 1e-6 && x <= b.mx[0] + 1e-6 &&
                                              z >= b.mn[2] - 1e-6 && z <= b.mx[2] + 1e-6;
-                                    } else { // +-Z: tangent X,Y
+                                    } else {
                                         ok = x >= b.mn[0] - 1e-6 && x <= b.mx[0] + 1e-6 &&
                                              y >= b.mn[1] - 1e-6 && y <= b.mx[1] + 1e-6;
                                     }
@@ -1244,19 +1230,17 @@ namespace Manro {
                             const int fSx = sMax[0] - sMin[0];
                             const int fSz = sMax[2] - sMin[2];
                             auto isEndFace = [&](size_t f) -> bool {
-                                if (fSx > fSz + 1e-6) { // length along X: ends are +-X
+                                if (fSx > fSz + 1e-6) {
                                     return f == 0u || f == 1u;
                                 }
-                                if (fSz > fSx + 1e-6) { // length along Z: ends are +-Z
+                                if (fSz > fSx + 1e-6) {
                                     return f == 4u || f == 5u;
                                 }
-                                return false; // square/corner: no ends, all cutout
+                                return false;
                             };
                             for (size_t f = 0; f < 6; ++f) {
                                 if (isEndFace(f)) {
-                                    // Opaque wood (no holes): reuse the plank tile with
-                                    // a full rect (ends read as solid 2x3 rail ends on
-                                    // wood -- same color as the post 6px behind).
+
                                     u16 t = plankTile;
                                     look.faces.tile[f] = t;
                                     look.uvPacked[f] = 0xFFFF0000u;
@@ -1267,27 +1251,27 @@ namespace Manro {
                                 for (int ty = 0; ty < 16; ++ty) {
                                     for (int tx = 0; tx < 16; ++tx) {
                                         double x = 8.0, y = 8.0, z = 8.0;
-                                        if (f == 0u) { // +X: X=max, U=Z, V=Y(flipped top-first)
+                                        if (f == 0u) {
                                             x = static_cast<double>(sMax[0]);
                                             z = sMin[2] + (tx + 0.5) / 16.0 * (sMax[2] - sMin[2]);
                                             y = sMax[1] - (ty + 0.5) / 16.0 * (sMax[1] - sMin[1]);
-                                        } else if (f == 1u) { // -X: X=min
+                                        } else if (f == 1u) {
                                             x = static_cast<double>(sMin[0]);
                                             z = sMin[2] + (tx + 0.5) / 16.0 * (sMax[2] - sMin[2]);
                                             y = sMax[1] - (ty + 0.5) / 16.0 * (sMax[1] - sMin[1]);
-                                        } else if (f == 2u) { // +Y: Y=max, U=X, V=Z
+                                        } else if (f == 2u) {
                                             y = static_cast<double>(sMax[1]);
                                             x = sMin[0] + (tx + 0.5) / 16.0 * (sMax[0] - sMin[0]);
                                             z = sMin[2] + (ty + 0.5) / 16.0 * (sMax[2] - sMin[2]);
-                                        } else if (f == 3u) { // -Y: Y=min
+                                        } else if (f == 3u) {
                                             y = static_cast<double>(sMin[1]);
                                             x = sMin[0] + (tx + 0.5) / 16.0 * (sMax[0] - sMin[0]);
                                             z = sMin[2] + (ty + 0.5) / 16.0 * (sMax[2] - sMin[2]);
-                                        } else if (f == 4u) { // +Z: Z=max, U=X, V=Y(flipped)
+                                        } else if (f == 4u) {
                                             z = static_cast<double>(sMax[2]);
                                             x = sMin[0] + (tx + 0.5) / 16.0 * (sMax[0] - sMin[0]);
                                             y = sMax[1] - (ty + 0.5) / 16.0 * (sMax[1] - sMin[1]);
-                                        } else { // -Z: Z=min
+                                        } else {
                                             z = static_cast<double>(sMin[2]);
                                             x = sMin[0] + (tx + 0.5) / 16.0 * (sMax[0] - sMin[0]);
                                             y = sMax[1] - (ty + 0.5) / 16.0 * (sMax[1] - sMin[1]);
@@ -1305,7 +1289,7 @@ namespace Manro {
                                     }
                                 }
                                 if (!anySolid) {
-                                    // Fully air face (should not happen for fences) -> skip (magenta handled below).
+
                                     look.faces.tile[f] = 0u;
                                     look.uvPacked[f] = 0xFFFF0000u;
                                     continue;
@@ -1324,7 +1308,7 @@ namespace Manro {
                                     tileByPath[skey] = idx;
                                 }
                                 look.faces.tile[f] = idx;
-                                look.uvPacked[f] = 0xFFFF0000u; // full synthetic tile
+                                look.uvPacked[f] = 0xFFFF0000u;
                             }
                         } else {
                         for (size_t f = 0; f < 6; ++f) {
@@ -1346,7 +1330,7 @@ namespace Manro {
                                                  16.f * 255.f);
                                 q[k] = std::clamp(q[k], 0L, 255L);
                             }
-                            if (q[0] == q[2]) { // never sample a texel line
+                            if (q[0] == q[2]) {
                                 if (q[2] < 255)
                                     ++q[2];
                                 else
@@ -1391,7 +1375,7 @@ namespace Manro {
                             ++autoCutout;
                         }
                         if (anyTile == 0u)
-                            ++fallback; // all faces missing: magenta cube
+                            ++fallback;
                         else
                             ++mapped;
                     }
@@ -1405,7 +1389,7 @@ namespace Manro {
             pack.stateKeys[id] = key;
             ++id;
         }
-        // Air-adjacent safety: state 0 is air in every table.
+
         pack.states[0].flags = kBlockFlagSkip;
         pack.fluid[0] = 0;
         pack.maxState = id - 1;
@@ -1423,4 +1407,4 @@ namespace Manro {
                     assetsDir.c_str());
         return true;
     }
-} // namespace Manro
+}

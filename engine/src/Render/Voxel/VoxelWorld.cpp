@@ -16,7 +16,7 @@ namespace Manro {
     CVoxelWorld::~CVoxelWorld() { Shutdown(); }
 
     namespace {
-        // Face-neighbor offsets for hidden-brick recompute + dirty fan-out.
+
         constexpr int kHiddenNb[6][3] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0},
                                          {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
     }
@@ -29,8 +29,7 @@ namespace Manro {
 
         const u64 slotCount = static_cast<u64>(m_VirtualDim) * m_VirtualDim * m_VirtualDim;
         const VkDeviceSize brickBytes = static_cast<VkDeviceSize>(kVoxelBrickWords) * sizeof(u32);
-        // Virtual size capped by resident budget, not the full virtual grid:
-        // the page table sparsely maps slots -> bound pages.
+
         const VkDeviceSize virtualBytes = static_cast<VkDeviceSize>(desc.maxResidentBricks) * brickBytes;
 
         m_Bricks = CreateScope<CVoxelSparseBinder>(
@@ -57,10 +56,6 @@ namespace Manro {
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
             VMA_MEMORY_USAGE_CPU_TO_GPU);
 
-        // Deferred upload staging ring: StageBrickBatch memcpys here (CPU),
-        // FlushStagedUploads copies to the sparse brick store in-frame (GPU).
-        // Sized for the largest per-frame batch with headroom (streaming
-        // budget is <= 32 bricks/frame).
         const VkDeviceSize stageBrickBytes =
             static_cast<VkDeviceSize>(kVoxelBrickWords) * sizeof(u32);
         m_UploadStaging = CreateScope<CBuffer>(
@@ -76,7 +71,6 @@ namespace Manro {
         m_BrickCount = 0;
         FlushHeaders();
 
-        // Default palette: flat mid-grey ramp so visibility mode works pre-GI.
         std::vector<Vec4> palette(512, Vec4(0.6f, 0.6f, 0.6f, 1.f));
         m_Palette->LoadData(palette.data(), sizeof(Vec4) * palette.size());
     }
@@ -125,12 +119,11 @@ namespace Manro {
         h.origin = m_WorldMin + Vec3(static_cast<float>(bx), static_cast<float>(by),
                                      static_cast<float>(bz)) * m_BrickSize;
         h.pageIndex = brickIdx;
-        h.flags = 1u; // resident
+        h.flags = 1u;
         h.paletteBase = 0u;
         h._pad0 = 0u;
         h._pad1 = 0u;
-        // Fresh allocation: no mirror dirty bit, but the header is new to
-        // the GPU — upload it (without touching any other header's valid bit).
+
         m_DirtyHeaders.push_back(brickIdx);
         m_bPagesDirty = true;
         return static_cast<i32>(brickIdx);
@@ -144,12 +137,12 @@ namespace Manro {
             return existing;
         u32 brickIdx = ~0u;
         if (!m_FreeBricks.empty()) {
-            // Reuse: pages stayed bound at evict time, no queue work here.
+
             brickIdx = m_FreeBricks.back();
             m_FreeBricks.pop_back();
         } else {
             if (m_BrickCount >= m_HeaderMirror.size())
-                return -1; // pool exhausted: caller retries after evicting
+                return -1;
             const VkDeviceSize brickBytes =
                 static_cast<VkDeviceSize>(kVoxelBrickWords) * sizeof(u32);
             if (!m_Bricks->BindRange(static_cast<VkDeviceSize>(m_BrickCount) * brickBytes,
@@ -164,11 +157,11 @@ namespace Manro {
         VoxelBrickHeader_t &h = m_HeaderMirror[brickIdx];
         h.origin = origin;
         h.pageIndex = brickIdx;
-        h.flags = 1u; // resident
+        h.flags = 1u;
         h.paletteBase = 0u;
         h._pad0 = 0u;
         h._pad1 = 0u;
-        // Fresh (or reused) allocation: upload this header only (see above).
+
         m_DirtyHeaders.push_back(brickIdx);
         m_bPagesDirty = true;
         return static_cast<i32>(brickIdx);
@@ -184,11 +177,10 @@ namespace Manro {
         if (brickIdx < m_BrickSlots.size())
             m_BrickSlots[brickIdx] = ~0u;
         VoxelBrickHeader_t &h = m_HeaderMirror[brickIdx];
-        h.flags = 0u; // not resident: task culls it, CPU compact skips it
+        h.flags = 0u;
         m_BrickOpaqueFull[brickIdx] = 0u;
         m_BrickHidden[brickIdx] = 0u;
-        // Neighbors of the freed slot may now be exposed: clear their hidden
-        // state and force a face-cache re-evaluation.
+
         if (slot != ~0u) {
             for (const auto &o : kHiddenNb) {
                 const i32 nslot = SlotNeighbor(slot, o[0], o[1], o[2]);
@@ -202,7 +194,7 @@ namespace Manro {
             }
         }
         m_FreeBricks.push_back(brickIdx);
-        // Own header (now non-resident) + remapped slot must reach the GPU.
+
         m_DirtyHeaders.push_back(brickIdx);
         m_bPagesDirty = true;
     }
@@ -215,14 +207,12 @@ namespace Manro {
             return;
         const VkDeviceSize brickBytes = static_cast<VkDeviceSize>(kVoxelBrickWords) * sizeof(u32);
         const VkDeviceSize totalBytes = static_cast<VkDeviceSize>(capped) * brickBytes;
-        // One bind for the whole prefix: BindRange batches every touched
-        // page into a single vkQueueBindSparse + queue wait.
+
         if (!m_Bricks->BindRange(0, totalBytes)) {
             LOG_ERROR("[CVoxelWorld] ReserveResident failed for {} bricks", capped);
             return;
         }
-        // Fresh sparse pages have UNDEFINED content: zero them so bricks
-        // scanned before their fill read as empty (not garbage faces).
+
         ExecuteOneShot(*m_Context, [&](VkCommandBuffer cmd) {
             vkCmdFillBuffer(cmd, m_Bricks->GetBuffer(), 0, totalBytes, 0);
         });
@@ -231,10 +221,9 @@ namespace Manro {
     void CVoxelWorld::MarkBrickDirty(u32 brickIdx) {
         if (brickIdx >= m_HeaderMirror.size())
             return;
-        // Dedup: an index is listed while its mirror bit1 is set, so a
-        // second mark before the next FlushHeaders is a no-op.
+
         if ((m_HeaderMirror[brickIdx].flags & 2u) == 0u) {
-            m_HeaderMirror[brickIdx].flags |= 2u; // task-shader dirty bit
+            m_HeaderMirror[brickIdx].flags |= 2u;
             m_DirtyHeaders.push_back(brickIdx);
         }
     }
@@ -254,7 +243,6 @@ namespace Manro {
         const VkDeviceSize brickBytes = static_cast<VkDeviceSize>(kVoxelBrickWords) * sizeof(u32);
         const VkDeviceSize dstOffset = static_cast<VkDeviceSize>(brickIdx) * brickBytes;
 
-        // Stage via CPU-visible buffer then one-shot device copy (world-gen path only).
         VkBuffer staging = VK_NULL_HANDLE;
         VmaAllocation stagingAlloc = nullptr;
         VmaAllocationInfo stagingInfo{};
@@ -330,7 +318,7 @@ namespace Manro {
             vkCmdCopyBuffer(cmd, staging, m_Bricks->GetBuffer(), count, copies.data());
         });
         vmaDestroyBuffer(m_Context->GetAllocator(), staging, stagingAlloc);
-        // Invalidate the face cache for the filled bricks (see MarkBrickDirty).
+
         for (u32 i = 0; i < count; ++i)
             MarkBrickDirty(indices[i]);
     }
@@ -343,13 +331,11 @@ namespace Manro {
             return false;
         const u32 s = slot % kStageSlots;
         if (m_StageCounts[s] + count > kStageCapacityBricks)
-            return false; // ring full: caller falls back or retries
+            return false;
         const VkDeviceSize brickBytes = static_cast<VkDeviceSize>(kVoxelBrickWords) * sizeof(u32);
         const size_t matBytes = sizeof(u16) * kVoxelBrickVoxels;
         const size_t occBytes = sizeof(u32) * kVoxelBrickOccWords;
-        // Interleaved brick layout in the staging slot: mat words followed by
-        // occupancy words per brick (matches the sparse store layout, so the
-        // frame-CB copy is a single contiguous range per brick).
+
         uint8_t scratch[sizeof(u16) * kVoxelBrickVoxels + sizeof(u32) * kVoxelBrickOccWords];
         for (u32 i = 0; i < count; ++i) {
             std::memcpy(scratch, mats + static_cast<size_t>(i) * kVoxelBrickVoxels, matBytes);
@@ -374,7 +360,7 @@ namespace Manro {
         if (count == 0 || !m_UploadStaging || !m_Bricks)
             return;
         const VkDeviceSize brickBytes = static_cast<VkDeviceSize>(kVoxelBrickWords) * sizeof(u32);
-        // Stack-capped: count <= kStageCapacityBricks by construction.
+
         VkBufferCopy copies[kStageCapacityBricks];
         for (u32 i = 0; i < count; ++i) {
             copies[i].srcOffset =
@@ -384,7 +370,7 @@ namespace Manro {
         }
         vkCmdCopyBuffer(cb, m_UploadStaging->GetHandle(), m_Bricks->GetBuffer(), count, copies);
         m_StageCounts[s] = 0;
-        // Transfer writes (brick pages) -> task/mesh/fragment reads below.
+
         VkBufferMemoryBarrier2 barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
         barrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
@@ -483,9 +469,7 @@ namespace Manro {
                     const i32 b = m_PageMirror[slot];
                     if (b >= 0) {
                         m_BrickHidden[static_cast<u32>(b)] = 0u;
-                        // An erase can reveal previously culled boundary faces
-                        // on adjacent bricks: force their face caches to
-                        // re-evaluate (cross-brick culling correctness).
+
                         MarkBrickAndNeighborsDirty(static_cast<u32>(b));
                     }
                 }
@@ -496,13 +480,11 @@ namespace Manro {
         i32 brick = AllocateBrick(bx, by, bz);
         if (brick < 0)
             return;
-        // Read-modify-write via staging copy of the single brick (gen-time path).
-        // Gameplay edits go through QueueEdit() -> GPU compute instead.
+
         const VkDeviceSize brickBytes = static_cast<VkDeviceSize>(kVoxelBrickWords) * sizeof(u32);
         const VkDeviceSize srcOffset = static_cast<VkDeviceSize>(brick) * brickBytes;
         std::vector<u8> scratch(static_cast<size_t>(brickBytes));
-        // NOTE: device-local sparse pages are not host-visible; world-gen should
-        // batch via UploadBrickData. This path stages through a temp device copy.
+
         (void)scratch;
         (void)srcOffset;
         (void)lx; (void)ly; (void)lz; (void)mat;
@@ -514,9 +496,7 @@ namespace Manro {
             LOG_WARN("[CVoxelWorld] Edit ring full, dropping edit");
             return;
         }
-        // An edit can open a hole into (or out of) solid rock: conservatively
-        // unhide the affected neighborhood so hidden-brick culling can never
-        // hide fresh geometry. Re-hiding happens if the world source refills.
+
         InvalidateHiddenNear(cmd.pos, cmd.radius);
         m_PendingEdits.push_back(cmd);
     }
@@ -538,11 +518,7 @@ namespace Manro {
     void CVoxelWorld::FlushHeaders() {
         if (!m_Headers || !m_PageTable)
             return;
-        // Headers/page-table are host-written into buffers that in-flight
-        // frames are reading: upload only what changed. Uploading a header
-        // rewrites its GPU-side face-cache valid bit (bit2 lives GPU-side
-        // only), so a full re-upload would force every visible brick to
-        // rescan — the fps death seen while streaming and after each edit.
+
         if (m_bHeadersFullUpload) {
             m_Headers->LoadData(m_HeaderMirror.data(),
                                 sizeof(VoxelBrickHeader_t) * m_HeaderMirror.size());
@@ -556,9 +532,7 @@ namespace Manro {
                     continue;
                 m_Headers->LoadData(&m_HeaderMirror[i], sizeof(VoxelBrickHeader_t),
                                     static_cast<size_t>(i) * sizeof(VoxelBrickHeader_t));
-                // Consume the mirror dirty bit: the GPU copy now carries it
-                // and the task shader clears it after rescanning. Keeping it
-                // set would rescan this brick on every later upload.
+
                 m_HeaderMirror[i].flags &= ~2u;
             }
             m_DirtyHeaders.clear();
@@ -570,4 +544,4 @@ namespace Manro {
         if (!m_PendingEdits.empty())
             m_EditRing->LoadData(m_PendingEdits.data(), sizeof(VoxelEditCmd_t) * m_PendingEdits.size());
     }
-} // namespace Manro
+}

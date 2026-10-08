@@ -1,7 +1,3 @@
-// Voxel shade fragment: samples the block tile array per pixel.
-// Varyings carry the quad UV + flat (face, block state); the tile layer
-// and cutout flag resolve here via the BDA tables in the frame root.
-// Lighting is the classic face-shade + sun lambert over the albedo.
 import voxel_common;
 
 [[vk::push_constant]]
@@ -30,7 +26,7 @@ float4 PSMain(VoxelFragIn input) : SV_Target {
     uint mflags = flags.getPtr()[state];
 
     float4 albedo = g_Tiles.Sample(float3(input.uv, float(tile)));
-    // Cutout (leaves): punch holes, keep depth write.
+
     if ((mflags & 2u) != 0u && albedo.a < 0.5) {
         discard;
     }
@@ -38,7 +34,7 @@ float4 PSMain(VoxelFragIn input) : SV_Target {
     float3 nrm = kFaceNormal[f];
     vk::BufferPointer<float4> sun = vk::BufferPointer<float4>(frame.sunAddr);
     float4* sunData = sun.getPtr();
-    float3 toSun = -sunData[0].xyz; // normalized once on upload
+    float3 toSun = -sunData[0].xyz;
     float ndl = saturate(dot(nrm, toSun));
     float an = abs(nrm.y) > 0.5 ? (nrm.y > 0.0 ? 1.0 : 0.5)
              : (abs(nrm.x) > 0.5 ? 0.8 : 0.65);

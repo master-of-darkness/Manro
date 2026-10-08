@@ -1,6 +1,3 @@
-// VoxelAnvilReader: minimal Anvil region + NBT reader (zlib only).
-// Palette unpack matches the reference server reader (padded per-long).
-
 #include "VoxelAnvilReader.h"
 
 #include <zlib.h>
@@ -13,15 +10,15 @@
 
 namespace Manro {
     namespace {
-        // ---------- NBT DOM ----------
+
         struct NbtNode {
-            u8 type{0}; // 0 end,1 byte,2 short,3 int,4 long,5 float,6 double,
-                        // 7 bytearray,8 string,9 list,10 compound,11 intarray,12 longarray
+            u8 type{0};
+
             i64 i{0};
             double d{0.0};
             std::string s;
-            std::vector<NbtNode> items; // list elems, or compound values
-            std::vector<std::string> keys; // compound names, parallel to items
+            std::vector<NbtNode> items;
+            std::vector<std::string> keys;
             u8 listType{0};
         };
 
@@ -209,7 +206,7 @@ namespace Manro {
             const u8 t = c.U8();
             if (t != 10)
                 return false;
-            (void)c.Str(); // root name
+            (void)c.Str();
             if (!c.ok)
                 return false;
             return ParseCompoundBody(c, root);
@@ -225,7 +222,6 @@ namespace Manro {
             return nullptr;
         }
 
-        // ---------- zlib ----------
         bool InflateAuto(const u8 *src, size_t srcLen, std::vector<u8> &dst) {
             dst.clear();
             if (srcLen == 0 || srcLen > (1u << 30u))
@@ -247,7 +243,7 @@ namespace Manro {
                 }
                 dst.insert(dst.end(), chunk.data(),
                            chunk.data() + (chunk.size() - strm.avail_out));
-                if (dst.size() > (64u << 20u)) { // 64MB sanity cap
+                if (dst.size() > (64u << 20u)) {
                     inflateEnd(&strm);
                     return false;
                 }
@@ -290,9 +286,6 @@ namespace Manro {
                    (static_cast<u32>(p[2]) << 8u) | p[3];
         }
 
-        // Palette unpack, identical to the reference server reader: padded
-        // per-long layout — long l holds floor(64/bits) entries LSB-first,
-        // entries never span longs.
         bool UnpackPalette(const std::vector<i64> &words, int bits, i32 out[4096]) {
             if (bits < 4)
                 bits = 4;
@@ -316,14 +309,12 @@ namespace Manro {
         constexpr int kMaxSectionY = 19;
         constexpr int kSectionCount = kMaxSectionY - kMinSectionY + 1;
 
-        // One decoded chunk column: per-section palette + Y-major indices.
         struct CachedChunk {
             bool present[kSectionCount]{false};
             std::vector<FullState> palettes[kSectionCount];
-            std::vector<u16> indices[kSectionCount]; // 4096 each when present
+            std::vector<u16> indices[kSectionCount];
         };
 
-        // Decode one palette entry compound into a FullState.
         bool DecodePaletteEntry(const NbtNode &e, FullState &out) {
             if (e.type != 10)
                 return false;
@@ -344,13 +335,13 @@ namespace Manro {
             }
             return true;
         }
-    } // namespace
+    }
 
     struct CAnvilWorldReader::Impl {
         std::string regionDir;
         std::string worldDir;
-        std::unordered_map<i64, std::vector<u8>> regionCache; // (rx,rz) -> bytes
-        std::unordered_map<i64, CachedChunk> chunkCache; // (cx,cz) -> decoded
+        std::unordered_map<i64, std::vector<u8>> regionCache;
+        std::unordered_map<i64, CachedChunk> chunkCache;
         static constexpr size_t kChunkCacheCap = 64;
 
         static i64 RegionKey(int rx, int rz) {
@@ -376,7 +367,6 @@ namespace Manro {
             return true;
         }
 
-        // Extract + decompress one chunk payload. Empty vector = missing.
         bool LoadChunkPayload(int cx, int cz, std::vector<u8> &payload) {
             payload.clear();
             const int rx = FloorDiv(cx, 32);
@@ -412,8 +402,6 @@ namespace Manro {
             return false;
         }
 
-        // Decode a whole chunk column (all sections) into the cache.
-        // Missing chunk -> all sections absent (still cached as empty).
         const CachedChunk &DecodeColumn(int cx, int cz) {
             const i64 key = (static_cast<i64>(cx) << 32) | (static_cast<u32>(cz));
             auto it = chunkCache.find(key);
@@ -476,7 +464,7 @@ namespace Manro {
                                 i32 idx[4096];
                                 if (!UnpackPalette(words, bits, idx))
                                     continue;
-                                // Clamp out-of-range indices to 0 (reference behavior).
+
                                 for (int k = 0; k < 4096; ++k) {
                                     if (idx[k] < 0 ||
                                         static_cast<size_t>(idx[k]) >= pal.size())
@@ -533,7 +521,7 @@ namespace Manro {
                 }
             }
         }
-        // No region files anywhere: not open.
+
         delete m_Impl;
         m_Impl = nullptr;
         return false;
@@ -552,9 +540,7 @@ namespace Manro {
         if (!col.present[si])
             return false;
         out.palette = col.palettes[si];
-        // Remap packed Y-major order ((ly << 8) | (lz << 4) | lx) into brick
-        // order (lx + ly*16 + lz*256). Never copy linearly: that transposes
-        // Y and Z into beams/walls.
+
         for (int ly = 0; ly < 16; ++ly) {
             for (int lz = 0; lz < 16; ++lz) {
                 for (int lx = 0; lx < 16; ++lx)
@@ -584,7 +570,7 @@ namespace Manro {
         std::sort(regions.begin(), regions.end());
         std::unordered_map<std::string, FullState> seen;
         for (const std::string &path : regions) {
-            // r.<rx>.<rz>.mca
+
             const std::string base = fs::path(path).filename().string();
             int rx = 0, rz = 0;
             if (std::sscanf(base.c_str(), "r.%d.%d.mca", &rx, &rz) != 2)
@@ -632,7 +618,7 @@ namespace Manro {
         const NbtNode *data = Find(root, "Data");
         if (!data)
             data = &root;
-        // Vanilla layout: Data/SpawnX/Y/Z ints.
+
         const NbtNode *x = Find(*data, "SpawnX");
         const NbtNode *y = Find(*data, "SpawnY");
         const NbtNode *z = Find(*data, "SpawnZ");
@@ -641,7 +627,7 @@ namespace Manro {
                 Vec3(static_cast<float>(x->i), static_cast<float>(y->i), static_cast<float>(z->i));
             return true;
         }
-        // Server layout: Data/spawn/pos int array [x, y, z].
+
         if (const NbtNode *sp = Find(*data, "spawn")) {
             if (sp->type == 10) {
                 if (const NbtNode *pos = Find(*sp, "pos")) {
@@ -656,4 +642,4 @@ namespace Manro {
         }
         return false;
     }
-} // namespace Manro
+}
