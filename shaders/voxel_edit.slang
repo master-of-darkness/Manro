@@ -49,6 +49,29 @@ void EditMain(uint3 dtid : SV_DispatchThreadID) {
 
     float voxelSize = g_Edit.brickSize / 16.0;
     float3 brickMin = g_Edit.worldMin + float3(brickCoord) * g_Edit.brickSize;
+    if (cmd.radius < voxelSize * 0.5) {
+        int3 lv = int3(floor((cmd.pos - brickMin) / voxelSize));
+        if (lv.x >= 0 && lv.x < 16 && lv.y >= 0 && lv.y < 16 && lv.z >= 0 && lv.z < 16) {
+            uint i = uint(lv.x) + uint(lv.y) * 16u + uint(lv.z) * 256u;
+            uint word = i >> 5u;
+            uint bit = 1u << (i & 31u);
+            if (cmd.op == 0u) {
+                occupancy[word] &= ~bit;
+            } else {
+                occupancy[word] |= bit;
+                uint matWord = i >> 1u;
+                uint cur = mats[matWord];
+                if ((i & 1u) == 0u)
+                    cur = (cur & 0xFFFF0000u) | (cmd.material & 0xFFFFu);
+                else
+                    cur = (cur & 0x0000FFFFu) | ((cmd.material & 0xFFFFu) << 16u);
+                mats[matWord] = cur;
+            }
+        }
+        vk::BufferPointer<uint> headersFast = vk::BufferPointer<uint>(g_Edit.headerAddr);
+        InterlockedOr(headersFast.getPtr()[rBrick * 8u + 4u], 2u);
+        return;
+    }
     for (uint i = 0u; i < 4096u; ++i) {
         uint x = i & 15u;
         uint y = (i >> 4u) & 15u;

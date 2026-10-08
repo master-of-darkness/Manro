@@ -408,7 +408,7 @@ namespace Manro {
             if (it != chunkCache.end())
                 return it->second;
             if (chunkCache.size() >= kChunkCacheCap)
-                chunkCache.clear();
+                chunkCache.erase(chunkCache.begin());
             CachedChunk col{};
             std::vector<u8> payload;
             if (LoadChunkPayload(cx, cz, payload) && !payload.empty()) {

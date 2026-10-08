@@ -61,6 +61,10 @@ namespace Manro {
         }
     }
 
+    void CBuffer::FlushRange(const size_t offset, const size_t size) const {
+        vmaFlushAllocation(m_Context.GetAllocator(), m_Allocation, offset, size);
+    }
+
     VkDeviceAddress CBuffer::GetDeviceAddress() const {
         VkBufferDeviceAddressInfo info{};
         info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;

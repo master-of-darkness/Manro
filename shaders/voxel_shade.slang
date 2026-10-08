@@ -13,9 +13,8 @@ struct VoxelFragIn {
 };
 
 float4 PSMain(VoxelFragIn input) : SV_Target {
-    vk::BufferPointer<VoxelFrameParams> fp = vk::BufferPointer<VoxelFrameParams>(g_FragRoot.frameAddr);
-    VoxelFrameParams* fpp = fp.getPtr();
-    VoxelFrameParams frame = fpp[0];
+    vk::BufferPointer<VoxelFragParams> frp = vk::BufferPointer<VoxelFragParams>(g_FragRoot.fragParamsAddr);
+    VoxelFragParams fr = frp.getPtr()[0];
 
     uint state = (input.faceState >> 3u) & 0x7FFFu;
     uint f = input.faceState & 0x7u;
@@ -32,16 +31,14 @@ float4 PSMain(VoxelFragIn input) : SV_Target {
     }
 
     float3 nrm = kFaceNormal[f];
-    vk::BufferPointer<float4> sun = vk::BufferPointer<float4>(frame.sunAddr);
-    float4* sunData = sun.getPtr();
-    float3 toSun = -sunData[0].xyz;
+    float3 toSun = -fr.sunDir.xyz;
     float ndl = saturate(dot(nrm, toSun));
     float an = abs(nrm.y) > 0.5 ? (nrm.y > 0.0 ? 1.0 : 0.5)
              : (abs(nrm.x) > 0.5 ? 0.8 : 0.65);
-    float3 lit = albedo.rgb * (0.15 + sunData[1].rgb * (ndl * sunData[1].a)) * an;
+    float3 lit = albedo.rgb * (0.15 + fr.sunColor.rgb * (ndl * fr.sunColor.a)) * an;
 
-    if (frame.giEnabled != 0u) {
-        vk::BufferPointer<float4> gi = vk::BufferPointer<float4>(frame.giAddr);
+    if (fr.giEnabled != 0u) {
+        vk::BufferPointer<float4> gi = vk::BufferPointer<float4>(fr.giAddr);
         float4* cascades = gi.getPtr();
         lit += cascades[0].rgb;
     }

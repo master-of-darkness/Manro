@@ -336,17 +336,33 @@ namespace Manro {
         const size_t matBytes = sizeof(u16) * kVoxelBrickVoxels;
         const size_t occBytes = sizeof(u32) * kVoxelBrickOccWords;
 
-        uint8_t scratch[sizeof(u16) * kVoxelBrickVoxels + sizeof(u32) * kVoxelBrickOccWords];
-        for (u32 i = 0; i < count; ++i) {
-            std::memcpy(scratch, mats + static_cast<size_t>(i) * kVoxelBrickVoxels, matBytes);
-            std::memcpy(scratch + matBytes, occupancy + static_cast<size_t>(i) * kVoxelBrickOccWords,
-                        occBytes);
-            const VkDeviceSize dstOff =
-                (static_cast<VkDeviceSize>(s) * kStageCapacityBricks + m_StageCounts[s] + i) *
-                brickBytes;
-            m_UploadStaging->LoadData(scratch, static_cast<size_t>(brickBytes),
-                                      static_cast<size_t>(dstOff));
-            m_StageIndices[s][m_StageCounts[s] + i] = indices[i];
+        if (void *mapped = m_UploadStaging->GetMappedMutable()) {
+            auto *base = static_cast<u8 *>(mapped);
+            for (u32 i = 0; i < count; ++i) {
+                u8 *dst = base + (static_cast<size_t>(s) * kStageCapacityBricks +
+                                  m_StageCounts[s] + i) * static_cast<size_t>(brickBytes);
+                std::memcpy(dst, mats + static_cast<size_t>(i) * kVoxelBrickVoxels, matBytes);
+                std::memcpy(dst + matBytes,
+                            occupancy + static_cast<size_t>(i) * kVoxelBrickOccWords, occBytes);
+                m_StageIndices[s][m_StageCounts[s] + i] = indices[i];
+            }
+            const size_t flushOff =
+                (static_cast<size_t>(s) * kStageCapacityBricks + m_StageCounts[s]) *
+                static_cast<size_t>(brickBytes);
+            m_UploadStaging->FlushRange(flushOff, static_cast<size_t>(count) * brickBytes);
+        } else {
+            uint8_t scratch[sizeof(u16) * kVoxelBrickVoxels + sizeof(u32) * kVoxelBrickOccWords];
+            for (u32 i = 0; i < count; ++i) {
+                std::memcpy(scratch, mats + static_cast<size_t>(i) * kVoxelBrickVoxels, matBytes);
+                std::memcpy(scratch + matBytes,
+                            occupancy + static_cast<size_t>(i) * kVoxelBrickOccWords, occBytes);
+                const VkDeviceSize dstOff =
+                    (static_cast<VkDeviceSize>(s) * kStageCapacityBricks + m_StageCounts[s] + i) *
+                    brickBytes;
+                m_UploadStaging->LoadData(scratch, static_cast<size_t>(brickBytes),
+                                          static_cast<size_t>(dstOff));
+                m_StageIndices[s][m_StageCounts[s] + i] = indices[i];
+            }
         }
         m_StageCounts[s] += count;
         for (u32 i = 0; i < count; ++i)
@@ -526,6 +542,17 @@ namespace Manro {
                 h.flags &= ~2u;
             m_DirtyHeaders.clear();
             m_bHeadersFullUpload = false;
+        } else if (void *mapped = m_Headers->GetMappedMutable()) {
+            auto *dst = static_cast<u8 *>(mapped);
+            for (const u32 i : m_DirtyHeaders) {
+                if (i >= m_HeaderMirror.size())
+                    continue;
+                std::memcpy(dst + static_cast<size_t>(i) * sizeof(VoxelBrickHeader_t),
+                            &m_HeaderMirror[i], sizeof(VoxelBrickHeader_t));
+                m_HeaderMirror[i].flags &= ~2u;
+            }
+            m_Headers->FlushRange(0, sizeof(VoxelBrickHeader_t) * m_HeaderMirror.size());
+            m_DirtyHeaders.clear();
         } else {
             for (const u32 i : m_DirtyHeaders) {
                 if (i >= m_HeaderMirror.size())

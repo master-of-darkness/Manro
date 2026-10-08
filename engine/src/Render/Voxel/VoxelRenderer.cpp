@@ -55,6 +55,10 @@ namespace Manro {
             m_Context, sizeof(Vec4) * 2,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
             VMA_MEMORY_USAGE_CPU_TO_GPU);
+        m_FragParams = CreateScope<CBuffer>(
+            m_Context, sizeof(VoxelFragParams_t),
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+            VMA_MEMORY_USAGE_CPU_TO_GPU);
         const u32 cascadeRes = 64;
         m_CascadeBuffer = CreateScope<CBuffer>(
             m_Context, sizeof(Vec4) * cascadeRes * cascadeRes * cascadeRes * 3,
@@ -130,6 +134,14 @@ namespace Manro {
             }
         }
         m_SunBuffer->LoadData(sun, sizeof(sun));
+        m_SunDir = sun[0];
+        m_SunColor = sun[1];
+        {
+            VoxelFragParams_t fp{};
+            fp.sunDir = m_SunDir;
+            fp.sunColor = m_SunColor;
+            m_FragParams->LoadData(&fp, sizeof(fp));
+        }
 
         {
             std::vector<Vec4> palette(512, Vec4(0.6f, 0.6f, 0.6f, 1.f));
@@ -164,6 +176,7 @@ namespace Manro {
         m_TaskCountBuffer.reset();
         m_PaletteBuffer.reset();
         m_SunBuffer.reset();
+        m_FragParams.reset();
         m_CascadeBuffer.reset();
         m_EditStaging.reset();
         for (auto &slot : m_FrameParamsRing)
@@ -770,9 +783,21 @@ namespace Manro {
                         continue;
                     m_VisibleScratch.emplace_back(dist2, i);
                 }
-                std::sort(m_VisibleScratch.begin(), m_VisibleScratch.end(),
-                          [](const auto &a, const auto &b) { return a.first < b.first; });
-                visibleCount = static_cast<u32>(m_VisibleScratch.size());
+                u32 check = static_cast<u32>(m_VisibleScratch.size()) * 2654435761u;
+                for (const auto &pr : m_VisibleScratch)
+                    check ^= pr.second + 0x9e3779b9u + (check << 6u) + (check >> 2u);
+                if (m_HasLastVisible && check == m_LastVisibleCheck) {
+                    visibleCount = static_cast<u32>(m_VisibleList.size());
+                } else {
+                    std::sort(m_VisibleScratch.begin(), m_VisibleScratch.end(),
+                              [](const auto &a, const auto &b) { return a.first < b.first; });
+                    visibleCount = static_cast<u32>(m_VisibleScratch.size());
+                    m_VisibleList.resize(m_VisibleScratch.size());
+                    for (size_t k = 0; k < m_VisibleScratch.size(); ++k)
+                        m_VisibleList[k] = m_VisibleScratch[k].second;
+                    m_LastVisibleCheck = check;
+                    m_HasLastVisible = true;
+                }
             } else {
                 for (u32 i = 0; i < brickCount; ++i) {
                     if (m_World->IsBrickHidden(i))
@@ -780,10 +805,11 @@ namespace Manro {
                     m_VisibleScratch.emplace_back(0.f, i);
                 }
                 visibleCount = static_cast<u32>(m_VisibleScratch.size());
+                m_VisibleList.resize(m_VisibleScratch.size());
+                for (size_t k = 0; k < m_VisibleScratch.size(); ++k)
+                    m_VisibleList[k] = m_VisibleScratch[k].second;
+                m_HasLastVisible = false;
             }
-            m_VisibleList.resize(m_VisibleScratch.size());
-            for (size_t k = 0; k < m_VisibleScratch.size(); ++k)
-                m_VisibleList[k] = m_VisibleScratch[k].second;
             if (!m_VisibleList.empty())
                 visSlot.LoadData(m_VisibleList.data(), sizeof(u32) * m_VisibleList.size());
         }
@@ -809,6 +835,13 @@ namespace Manro {
         CBuffer &paramsSlot = *m_FrameParamsRing[flightSlot % kFlightSlots];
         paramsSlot.LoadData(&frame, sizeof(frame));
 
+        VoxelFragParams_t frag{};
+        frag.sunDir = m_SunDir;
+        frag.sunColor = m_SunColor;
+        frag.giAddr = 0;
+        frag.giEnabled = m_bGiEnabled ? 1u : 0u;
+        m_FragParams->LoadData(&frag, sizeof(frag));
+
         VoxelFrameRoot_t root{};
         root.brickBufferAddr = m_World->GetBrickBufferAddr();
         root.headerAddr = m_World->GetHeaderAddr();
@@ -820,14 +853,15 @@ namespace Manro {
         root.blockFlagsAddr = m_BlockFlagsTable ? m_BlockFlagsTable->GetDeviceAddress() : 0u;
         root.shapeTableAddr = m_BlockShapeTable ? m_BlockShapeTable->GetDeviceAddress() : 0u;
         root.uvTableAddr = m_BlockUvTable ? m_BlockUvTable->GetDeviceAddress() : 0u;
+        root.fragParamsAddr = m_FragParams ? m_FragParams->GetDeviceAddress() : 0u;
 
         if (m_bDebugEnabled)
             vkCmdFillBuffer(cb, m_DebugReadback->GetHandle(), 0, sizeof(u32) * 8, 0);
         root.debugAddr = m_DebugReadback->GetDeviceAddress();
 
         {
-            VkBufferMemoryBarrier2 b[3]{};
-            u32 barrierCount = 2;
+            VkBufferMemoryBarrier2 b[4]{};
+            u32 barrierCount = 3;
             b[0].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
             b[0].srcStageMask = VK_PIPELINE_STAGE_2_HOST_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT;
             b[0].srcAccessMask = VK_ACCESS_2_HOST_WRITE_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT;
@@ -839,10 +873,12 @@ namespace Manro {
             b[0].size = VK_WHOLE_SIZE;
             b[1] = b[0];
             b[1].buffer = visSlot.GetHandle();
+            b[2] = b[0];
+            b[2].buffer = m_FragParams->GetHandle();
             if (m_bDebugEnabled) {
-                b[2] = b[0];
-                b[2].buffer = m_DebugReadback->GetHandle();
-                barrierCount = 3;
+                b[3] = b[0];
+                b[3].buffer = m_DebugReadback->GetHandle();
+                barrierCount = 4;
             }
             VkDependencyInfo dep{};
             dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;

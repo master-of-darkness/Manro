@@ -7,6 +7,14 @@ struct VoxelBrickHeader {
     uint _pad1;
 };
 
+struct VoxelFragParams {
+    float4 sunDir;
+    float4 sunColor;
+    uint64_t giAddr;
+    uint giEnabled;
+    uint _pad0;
+};
+
 struct VoxelFrameRoot {
     uint64_t brickBufferAddr;
     uint64_t headerAddr;
@@ -19,6 +27,7 @@ struct VoxelFrameRoot {
     uint64_t blockFlagsAddr;
     uint64_t shapeTableAddr;
     uint64_t uvTableAddr;
+    uint64_t fragParamsAddr;
 };
 
 struct VoxelFrameParams {

@@ -20,6 +20,15 @@ namespace Manro {
     };
     static_assert(sizeof(VoxelBrickHeader_t) == 32);
 
+    struct VoxelFragParams_t {
+        Vec4 sunDir{0.f};
+        Vec4 sunColor{1.f};
+        u64 giAddr{0};
+        u32 giEnabled{0};
+        u32 _pad0{0};
+    };
+    static_assert(sizeof(VoxelFragParams_t) == 48);
+
     struct VoxelFrameRoot_t {
         u64 brickBufferAddr{0};
         u64 headerAddr{0};
@@ -32,8 +41,9 @@ namespace Manro {
         u64 blockFlagsAddr{0};
         u64 shapeTableAddr{0};
         u64 uvTableAddr{0};
+        u64 fragParamsAddr{0};
     };
-    static_assert(sizeof(VoxelFrameRoot_t) == 88);
+    static_assert(sizeof(VoxelFrameRoot_t) == 96);
 
     struct VoxelFrameParams_t {
         Mat4 viewProj{1.f};

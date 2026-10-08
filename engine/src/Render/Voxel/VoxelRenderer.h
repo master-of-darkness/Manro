@@ -121,6 +121,9 @@ namespace Manro {
         std::array<Scope<CBuffer>, kFlightSlots> m_VisibilityRing{};
         Scope<CBuffer> m_PaletteBuffer;
         Scope<CBuffer> m_SunBuffer;
+        Scope<CBuffer> m_FragParams;
+        Vec4 m_SunDir{0.f};
+        Vec4 m_SunColor{1.f};
         Scope<CBuffer> m_CascadeBuffer;
         Scope<CBuffer> m_EditStaging;
         Scope<CBuffer> m_DebugReadback;
@@ -128,6 +131,8 @@ namespace Manro {
 
         std::vector<std::pair<float, u32>> m_VisibleScratch;
         std::vector<u32> m_VisibleList;
+        u32 m_LastVisibleCheck{0};
+        bool m_HasLastVisible{false};
 
         Mat4 m_PrevViewProj{1.f};
         VoxelFrameStats_t m_Stats{};

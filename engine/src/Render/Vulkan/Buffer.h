@@ -23,6 +23,9 @@ namespace Manro {
         [[nodiscard]] VmaAllocation GetAllocation() const { return m_Allocation; }
         [[nodiscard]] const void *GetMapped() const { return m_AllocationInfo.pMappedData; }
 
+        [[nodiscard]] void *GetMappedMutable() const { return m_AllocationInfo.pMappedData; }
+        void FlushRange(size_t offset, size_t size) const;
+
         VkBuffer GetHandle() const { return m_Buffer; }
 
         VkDeviceSize GetSize() const { return m_unSize; }
