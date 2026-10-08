@@ -158,4 +158,16 @@ namespace Manro {
     }
 
     u32 CRenderer::VoxelStreamPlaceState() const { return RendererImplVoxelStreamPlaceState(*m_Impl); }
+
+    i32 CRenderer::VoxelStreamGetStateAt(const Vec3 &p) const {
+        return RendererImplVoxelStreamGetStateAt(*m_Impl, p);
+    }
+
+    std::string CRenderer::VoxelGetStateKey(u32 id) const {
+        return RendererImplVoxelGetStateKey(*m_Impl, id);
+    }
+
+    u32 CRenderer::VoxelFindStateByKey(const std::string &key) const {
+        return RendererImplVoxelFindStateByKey(*m_Impl, key);
+    }
 } // namespace Manro

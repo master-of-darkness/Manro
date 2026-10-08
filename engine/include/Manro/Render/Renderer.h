@@ -92,8 +92,6 @@ namespace Manro {
 
         [[nodiscard]] float GetAspectRatio() const;
 
-        // ---- GPU-driven voxel path (separate from the glTF/PBR path) ----
-        // Task/mesh + BDA + sparse bricks. No InstanceBatcher involvement.
         void VoxelInit(u32 width, u32 height) const;
         void VoxelShutdown() const;
         void VoxelAllocateBrick(u32 bx, u32 by, u32 bz) const;
@@ -101,25 +99,17 @@ namespace Manro {
         void VoxelQueueEdit(const Vec3 &pos, float radius, u32 material, u32 op) const;
         [[nodiscard]] u32 VoxelGetBrickCount() const;
         [[nodiscard]] u32 VoxelGetTaskGroups() const;
-        // DEBUG counters: taskRuns, visible, faces, culled, meshRuns, meshFaces.
-        // Capture is opt-in; when disabled GetDebugCounters returns cached
-        // values with no queue stall and shaders skip the atomics.
         void VoxelSetDebugEnabled(bool enabled) const;
-        // Culling-stage kill switches (default on).
         void VoxelSetBackfaceEnabled(bool enabled) const;
         void VoxelSetFrustumEnabled(bool enabled) const;
-        // Streamed voxel path: client-jar block tiles + Anvil save volume.
-        // worldDir (save with region files) is required; assetsDir defaults
-        // to the build-time client-jar assets. Returns the spawn position.
         Vec3 VoxelStreamInit(const char *worldDir, const char *assetsDir, int radiusSections) const;
-        // Fills section budget near the camera. Returns unfilled remainder.
         int VoxelStreamUpdate() const;
-        // Block queries against the streamed voxel world (for players,
-        // raycasts). Unloaded reads solid / non-fluid.
         bool VoxelStreamIsSolid(const Vec3 &p) const;
         bool VoxelStreamIsFluid(const Vec3 &p) const;
-        // Block state id used for player block placement.
         u32 VoxelStreamPlaceState() const;
+        i32 VoxelStreamGetStateAt(const Vec3 &p) const;
+        std::string VoxelGetStateKey(u32 id) const;
+        u32 VoxelFindStateByKey(const std::string &key) const;
         void VoxelGetDebugCounters(u32 out[6]) const;
 
         void SetSettings(const RenderSettings_t &settings) const;

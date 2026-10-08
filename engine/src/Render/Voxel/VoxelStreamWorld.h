@@ -57,15 +57,10 @@ namespace Manro {
         // Fluids are NOT solid (swimmable); see ApplyEdit.
         [[nodiscard]] bool IsSolidAt(i64 x, i64 y, i64 z) const;
         [[nodiscard]] bool IsFluidAt(i64 x, i64 y, i64 z) const;
-        // Gameplay-edit mirror maintenance: the GPU edit compute mutates
-        // brick occupancy in VRAM, but physics/raycasts read the CPU mirrors
-        // below. Without this, broken blocks keep ghost collision (+ block
-        // the raycast) and placed blocks have none. Home-brick only, mirroring
-        // the GPU edit shader (which touches just the brick containing pos;
-        // radius < 0.5 = the single voxel at floor(pos)). No-op when the home
-        // section isn't filled (the GPU edit no-ops there too).
-        // op: 0 = erase (clears occ+fluid), 1 = write (sets occ, clears fluid).
-        void ApplyEdit(const Vec3 &pos, float radius, u32 op);
+        void ApplyEdit(CVoxelWorld &world, const Vec3 &pos, float radius, u32 op, u32 state = 0u);
+        // Block state id at integer voxel coords, or -1 when the section
+        // isn't filled (pick-block treats unknown as invalid, never air).
+        [[nodiscard]] i32 GetStateAt(i64 x, i64 y, i64 z) const;
         // Block state id placed by right-click (planks).
         [[nodiscard]] i32 PlaceState() const;
 

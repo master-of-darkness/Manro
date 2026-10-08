@@ -2,16 +2,16 @@
 // One task group per resident brick. Dirty/unseen bricks scan occupancy and
 // store the FULL exposed-face list into the face cache (view-independent —
 // never view-culled here); clean bricks just load the count and dispatch.
-// Mesh fans out to ceil(faceCount/16) groups and backface-filters per frame.
-// Dense-brick worst case ~1536 faces -> 96 mesh groups.
+// Mesh fans out to ceil(faceCount/32) groups and backface-filters per frame.
+// Dense thin-block bricks reach ~3500 faces -> 110 mesh groups (cap 4095).
 import voxel_common;
 
 [[vk::push_constant]]
 VoxelFrameRoot g_TaskRoot;
 
 // Module-scope shared staging for face compaction (32 lanes cooperate).
-// s_faceStaging layout: [0] = count, [1..2048] = packed faces.
-groupshared uint s_faceStaging[2049];
+// s_faceStaging layout: [0] = count, [1..4095] = packed faces.
+groupshared uint s_faceStaging[4096];
 groupshared uint s_hasContent;
 
 VoxelFrameParams LoadFrame() {
@@ -161,6 +161,8 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                 // inside solid rock on every frame.
                 vk::BufferPointer<uint> flagPtr = vk::BufferPointer<uint>(g_TaskRoot.blockFlagsAddr);
                 uint* blockFlags = flagPtr.getPtr();
+                vk::BufferPointer<uint> shapePtr = vk::BufferPointer<uint>(g_TaskRoot.shapeTableAddr);
+                uint* blockShapes = shapePtr.getPtr();
                 vk::BufferPointer<int> nbpt = vk::BufferPointer<int>(g_TaskRoot.pageTableAddr);
                 int* pageTable = nbpt.getPtr();
                 vk::BufferPointer<uint> nbr = vk::BufferPointer<uint>(g_TaskRoot.brickBufferAddr);
@@ -211,17 +213,54 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                                     nstate = VoxelMaterial(nnmats, nx, ny, nz);
                             }
                         }
+                        // Shape-aware emit per face of V against neighbor N:
+                        // - N out of range / air-skip -> emit;
+                        // - same-state inner faces (leaves) -> always emit;
+                        // - same-state otherwise -> emit unless N COVERS the
+                        //   face (reaches the shared plane with a containing
+                        //   rect, see VoxelFaceCovered). Thin same-state
+                        //   neighbors set back from the plane (fence posts
+                        //   side-by-side with an air gap) never cover, so the
+                        //   gap-visible side faces still emit; full-cube pairs
+                        //   cover exactly like the old inner-face rule.
+                        // - different-state -> opaque rule only: a full opaque
+                        //   neighbor hides V behind its boundary quad even when
+                        //   V is thin and set back (fence face recessed behind
+                        //   a stone face is occluded from one side and
+                        //   backface-culled from the other -- never visible).
+                        //   Emitting it only wastes face-cache slots and risks
+                        //   overflow holes in dense bricks. Thin (non-opaque)
+                        //   neighbors never hide, so stone faces around fence
+                        //   posts/trapdoors/doors still emit.
                         bool emit;
-                        if (nstate == mat)
-                            emit = (vflags & 8u) != 0u; // inner faces only
-                        else
-                            emit = (nstate >= kBlockStateMax) ||
-                                   ((blockFlags[nstate] & 1u) == 0u);
+                        if (nstate >= kBlockStateMax) {
+                            emit = true;
+                        } else {
+                            uint nflags = blockFlags[nstate];
+                            if ((nflags & 4u) != 0u) {
+                                emit = true;
+                            } else if (nstate == mat) {
+                                if ((vflags & 8u) != 0u) {
+                                    emit = true; // inner faces only
+                                } else {
+                                    // Clamp: corrupt state ids (past the table)
+                                    // read as full cubes, never OOB.
+                                    uint vs = min(mat, kBlockStateMax - 1u);
+                                    int3 vMin = VoxelShapeMin(blockShapes, vs);
+                                    int3 vMax = VoxelShapeMax(blockShapes, vs);
+                                    int3 nMin = VoxelShapeMin(blockShapes, nstate);
+                                    int3 nMax = VoxelShapeMax(blockShapes, nstate);
+                                    emit = !VoxelFaceCovered(vMin, vMax, nMin, nMax, f);
+                                }
+                            } else {
+                                emit = ((nflags & 1u) == 0u);
+                            }
+                        }
                         if (!emit)
                             continue;
                         uint slot;
                         InterlockedAdd(s_faceStaging[0], 1u, slot);
-                        if (slot < 2048u) {
+                        if (slot < kVoxelFaceCacheCap) {
                             s_faceStaging[1u + slot] =
                                 (iter & 0xFFFu) | ((f & 0x7u) << 12u) | ((mat & 0x7FFFu) << 15u);
                         }
@@ -229,7 +268,7 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                 }
     GroupMemoryBarrierWithGroupSync();
 
-                faceCount = min(s_faceStaging[0], 2048u);
+                faceCount = min(s_faceStaging[0], kVoxelFaceCacheCap);
                 // Cooperative store into the face cache (~12 faces/lane
                 // worst case) — replaces the old per-lane 8KB payload copy.
                 if (gidx == 0) {

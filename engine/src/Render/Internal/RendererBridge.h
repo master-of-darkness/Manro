@@ -114,4 +114,10 @@ namespace Manro {
     bool RendererImplVoxelStreamIsFluid(const CRendererImpl &impl, const Vec3 &p);
 
     u32 RendererImplVoxelStreamPlaceState(const CRendererImpl &impl);
+
+    i32 RendererImplVoxelStreamGetStateAt(const CRendererImpl &impl, const Vec3 &p);
+
+    std::string RendererImplVoxelGetStateKey(const CRendererImpl &impl, u32 id);
+
+    u32 RendererImplVoxelFindStateByKey(const CRendererImpl &impl, const std::string &key);
 }

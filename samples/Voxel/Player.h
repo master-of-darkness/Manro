@@ -104,12 +104,11 @@ namespace PlayerDetail {
         return true;
     }
 
-    // DDA raycast against solid voxels. Returns hit voxel + inward face
-    // normal of the entered face (for block placement), if any within maxDist.
     struct RayHit_t {
         bool hit{false};
         int hx{0}, hy{0}, hz{0};
         int nx{0}, ny{0}, nz{0};
+        float t{0.f}; // ray distance to the entered face (hitPos = origin + dir*t)
     };
 
     inline RayHit_t RaycastVoxel(Manro::CRenderer &ren, const Manro::Vec3 &origin,
@@ -163,11 +162,12 @@ namespace PlayerDetail {
             if (t > maxDist)
                 return r;
             if (ren.VoxelStreamIsSolid(Manro::Vec3(static_cast<float>(x), static_cast<float>(y),
-                                               static_cast<float>(z)))) {
+                                                static_cast<float>(z)))) {
                 r.hit = true;
                 r.hx = x;
                 r.hy = y;
                 r.hz = z;
+                r.t = t;
                 return r;
             }
         }

@@ -21,9 +21,11 @@ struct VoxelFrameRoot {
     uint64_t visibilityAddr;  // uint2 visibility[brickCount] (brickID, packedQuadBase)
     uint64_t frameAddr;       // VoxelFrameParams (viewProj, camera, world, palette, sun, GI)
     uint64_t debugAddr;       // DEBUG: uint counters[8] (taskRuns, visible, faces, meshRuns, ...)
-    uint64_t faceCacheAddr;   // uint[2049] per resident brick: [0]=faceCount, [1..2048]=packed faces
+    uint64_t faceCacheAddr;   // uint[4096] per resident brick: [0]=faceCount, [1..4095]=packed faces
     uint64_t tileTableAddr;   // uint32[32768*6]: tile layer per (state, face)
     uint64_t blockFlagsAddr;  // uint32[32768]: kBlockFlag* per block state id
+    uint64_t shapeTableAddr;  // uint32[32768*2]: shapeMin/shapeMax per state (0..16 bytes packed)
+    uint64_t uvTableAddr;     // uint32[32768*6]: uv sub-rect per (state, face) (u0|v0<<8|u1<<16|v1<<24)
 };
 
 struct VoxelFrameParams {
@@ -54,9 +56,16 @@ struct VoxelTaskPayload {
     uint faceCount;
 };
 
-// Face-cache stride: [0] = faceCount, [1..2048] = packed faces
-// (voxelIdx:12 | face:3 | mat:9). Worst-case dense-brick surface ~1536.
-static const uint kVoxelFaceCacheStride = 2049u;
+// Face-cache stride: [0] = faceCount, [1..4095] = packed faces
+// (voxelIdx:12 | face:3 | mat:9). Dense thin-block bricks (slab floors,
+// trapdoor linings, fence rows in rock, mineshaft/trial-chamber timber)
+// emit more than the old 2048 cap: overflow silently drops arbitrary faces
+// = rectangular holes near dense builds. Measured 3501 worst in a real
+// temple/trial world; 4095 covers that with margin (stride 4096 = exactly
+// 16 KiB task shared memory, the guaranteed minimum). Only pathological
+// densities (alternating solid/thin every voxel) still truncate.
+static const uint kVoxelFaceCacheCap = 4095u;
+static const uint kVoxelFaceCacheStride = 4096u;
 
 static const uint kVoxelFacesPerMeshGroup = 32u;
 
@@ -72,6 +81,85 @@ uint VoxelMaterial(uint* mats, uint x, uint y, uint z) {
     uint word = mats[bit >> 1u];
     // mats[] packs 2x uint16 LE: even voxel = low half, odd = high half.
     return ((bit & 1u) == 0u) ? (word & 0xFFFFu) : (word >> 16u);
+}
+
+// Per-state baked shape: union AABB of the resolved model elements in
+// 0..16 voxel units (trapdoor slabs, door panels, bamboo stalks, fence
+// posts+arms, ...; full cube = 0,0,0..16,16,16). Baked on CPU (see
+// CollectStateShape); thin states render shrunken quads and never occlude.
+int3 VoxelShapeMin(uint* shapes, uint state) {
+    uint p = shapes[state * 2u];
+    return int3(p & 0xFFu, (p >> 8u) & 0xFFu, (p >> 16u) & 0xFFu);
+}
+
+int3 VoxelShapeMax(uint* shapes, uint state) {
+    uint p = shapes[state * 2u + 1u];
+    return int3(p & 0xFFu, (p >> 8u) & 0xFFu, (p >> 16u) & 0xFFu);
+}
+
+// Baked per-face uv sub-rect of the block's tile, normalized 0..1
+// (u0,v0,u1,v1; u0>u1 / v0>v1 encode flips). Full-rect faces return
+// (0,0,1,1), reproducing the old full-tile sampling exactly.
+float4 VoxelFaceUv(uint* uvs, uint state, uint f) {
+    uint p = uvs[state * 6u + f];
+    return float4(float(p & 0xFFu), float((p >> 8u) & 0xFFu),
+                  float((p >> 16u) & 0xFFu), float((p >> 24u) & 0xFFu)) / 255.0;
+}
+
+// Does neighbor N (shape nMin/nMax) COVER voxel V's face f (shape
+// vMin/vMax)? Cover = both shapes reach the shared boundary plane AND N's
+// rect contains V's rect on that plane. Thin neighbors set back from the
+// plane (fence posts, stalks) never cover; thin V faces set back from the
+// plane (trapdoor tops) are never covered. Full-cube pairs cover exactly
+// like the old opaque rule.
+bool VoxelFaceCovered(int3 vMin, int3 vMax, int3 nMin, int3 nMax, uint f) {
+    uint ax = f >> 1u; // face order +X,-X,+Y,-Y,+Z,-Z: pair per axis
+    if ((f & 1u) == 0u) { // positive side: V.max touches, N.min touches
+        if ((ax == 0u && (vMax.x != 16 || nMin.x != 0)) ||
+            (ax == 1u && (vMax.y != 16 || nMin.y != 0)) ||
+            (ax == 2u && (vMax.z != 16 || nMin.z != 0)))
+            return false;
+    } else { // negative side: V.min touches, N.max touches
+        if ((ax == 0u && (vMin.x != 0 || nMax.x != 16)) ||
+            (ax == 1u && (vMin.y != 0 || nMax.y != 16)) ||
+            (ax == 2u && (vMin.z != 0 || nMax.z != 16)))
+            return false;
+    }
+    // Containment on the two tangent axes (partial overlap still emits:
+    // the per-frame backface cull hides the coplanar overlap, while
+    // culling on partial overlap would punch holes in the exposed part).
+    if (ax != 0u && (nMin.x > vMin.x || nMax.x < vMax.x))
+        return false;
+    if (ax != 1u && (nMin.y > vMin.y || nMax.y < vMax.y))
+        return false;
+    if (ax != 2u && (nMin.z > vMin.z || nMax.z < vMax.z))
+        return false;
+    return true;
+}
+
+// Base corner + tangent extents of voxel (x,y,z)'s face-f quad for the
+// given shape, in brick-local voxel units. Corner ORDER matches the old
+// full-cube emission ([b, b+e1, b+e1+e2, b+e2] with e1/e2 along the same
+// tangents), so the quad UV mapping below is untouched; full shapes
+// reproduce the old quads exactly.
+void VoxelFaceQuad(uint x, uint y, uint z, uint f, int3 sMin, int3 sMax,
+                   out float3 b, out float3 e1, out float3 e2) {
+    float3 mn = float3(float(x), float(y), float(z)) + float3(sMin) / 16.0;
+    float3 mx = float3(float(x), float(y), float(z)) + float3(sMax) / 16.0;
+    float3 ex = mx - mn;
+    if (f == 0u) { // +X
+        b = float3(mx.x, mn.y, mn.z); e1 = float3(0.0, ex.y, 0.0); e2 = float3(0.0, 0.0, ex.z);
+    } else if (f == 1u) { // -X
+        b = float3(mn.x, mn.y, mn.z); e1 = float3(0.0, ex.y, 0.0); e2 = float3(0.0, 0.0, ex.z);
+    } else if (f == 2u) { // +Y
+        b = float3(mn.x, mx.y, mn.z); e1 = float3(ex.x, 0.0, 0.0); e2 = float3(0.0, 0.0, ex.z);
+    } else if (f == 3u) { // -Y
+        b = float3(mn.x, mn.y, mn.z); e1 = float3(ex.x, 0.0, 0.0); e2 = float3(0.0, 0.0, ex.z);
+    } else if (f == 4u) { // +Z
+        b = float3(mn.x, mn.y, mx.z); e1 = float3(ex.x, 0.0, 0.0); e2 = float3(0.0, ex.y, 0.0);
+    } else { // -Z
+        b = float3(mn.x, mn.y, mn.z); e1 = float3(ex.x, 0.0, 0.0); e2 = float3(0.0, ex.y, 0.0);
+    }
 }
 
 // Face tables: +X,-X,+Y,-Y,+Z,-Z neighbour offsets and outward normals.

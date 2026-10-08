@@ -86,7 +86,15 @@ namespace Manro {
         // CPU-mirror half of a gameplay edit (see CVoxelStreamWorld::ApplyEdit).
         // The GPU half is queued in the world edit ring and consumed by the
         // edit compute dispatch; both must run for visuals + physics to agree.
-        void StreamApplyEdit(const Vec3 &pos, float radius, u32 op);
+        // state is the placed block state id (op == 1 only).
+        void StreamApplyEdit(const Vec3 &pos, float radius, u32 op, u32 state = 0u);
+        // Block state id at a world position, or -1 when unknown/unfilled.
+        i32 StreamGetStateAt(const Vec3 &p) const;
+        // Canonical "name|k=v;..." key for a state id ("" when unknown), and
+        // the reverse lookup (~0u when the key has no state). Powers
+        // pick-block + oriented placement in the sample.
+        std::string GetStateKey(u32 id) const;
+        u32 FindStateByKey(const std::string &key) const;
 
         [[nodiscard]] CVoxelWorld &GetWorld() { return *m_World; }
         [[nodiscard]] const VoxelFrameStats_t &GetStats() const { return m_Stats; }
@@ -125,9 +133,11 @@ namespace Manro {
         Scope<CBuffer> m_TaskIndirectBuffer; // VkDispatchIndirectCommand for pass 2
         Scope<CBuffer> m_TaskCountBuffer;
         // Block tile tables (BDA): tile layer per (state, face), flags per
-        // state. Sized 32768 so any uint16 state indexes safely.
+        // state, shape AABB per state. Sized 32768 so any uint16 state indexes safely.
         Scope<CBuffer> m_BlockTileTable;
         Scope<CBuffer> m_BlockFlagsTable;
+        Scope<CBuffer> m_BlockShapeTable;
+        Scope<CBuffer> m_BlockUvTable;
         // Block tile texture array (descriptor-bound: images can't use
         // BDA). 16x16 sRGB tiles + CPU-generated mip chain, NEAREST mag.
         VkImage m_TileImage{VK_NULL_HANDLE};
@@ -155,7 +165,7 @@ namespace Manro {
         Scope<CBuffer> m_CascadeBuffer; // float4[cascadeRes^3 * cascadeCount]
         Scope<CBuffer> m_EditStaging; // VoxelEditCmd_t ring mirror
         Scope<CBuffer> m_DebugReadback; // DEBUG: host-visible task/mesh counters
-        Scope<CBuffer> m_FaceCache; // uint[2049] per resident brick (faceCount + faces)
+        Scope<CBuffer> m_FaceCache; // uint[4096] per resident brick (faceCount + faces)
         // CPU sort scratch: front-to-back visible ordinals uploaded to the
         // visibility buffer each frame (exact dispatch, early-z order).
         std::vector<std::pair<float, u32>> m_VisibleScratch;

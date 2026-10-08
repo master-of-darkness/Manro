@@ -33,11 +33,13 @@ namespace Manro {
         u64 visibilityAddr{0};
         u64 frameAddr{0};
         u64 debugAddr{0};
-        u64 faceCacheAddr{0}; // uint[2049] per resident brick: [0]=faceCount, [1..]=packed faces
+        u64 faceCacheAddr{0}; // uint[4096] per resident brick: [0]=faceCount, [1..]=packed faces
         u64 tileTableAddr{0}; // uint32[32768*6]: tile layer per (state, face)
         u64 blockFlagsAddr{0}; // uint32[32768]: kBlockFlag* per block state id
+        u64 shapeTableAddr{0}; // uint32[32768*2]: shapeMin/shapeMax per state, 0..16 bytes packed
+        u64 uvTableAddr{0}; // uint32[32768*6]: uv sub-rect per (state, face), u0|v0<<8|u1<<16|v1<<24
     };
-    static_assert(sizeof(VoxelFrameRoot_t) == 72);
+    static_assert(sizeof(VoxelFrameRoot_t) == 88);
 
     // Must match VoxelFrameParams in voxel_common.slang (std430, RowMajor mat4).
     struct VoxelFrameParams_t {

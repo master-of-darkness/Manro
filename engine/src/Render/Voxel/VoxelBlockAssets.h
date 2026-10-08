@@ -21,15 +21,17 @@
 #include <vector>
 
 namespace Manro {
-    // Face order everywhere here: +X, -X, +Y, -Y, +Z, -Z (matches kFaceNormal).
     struct BlockFaceTiles_t {
         u16 tile[6]{0, 0, 0, 0, 0, 0};
     };
 
     struct BlockStateLook_t {
         BlockFaceTiles_t faces{};
-        // Bit flags (see kBlockFlag* below).
         u32 flags{0};
+        u8 shapeMin[3]{0, 0, 0};
+        u8 shapeMax[3]{16, 16, 16};
+        u32 uvPacked[6]{0xFFFF0000u, 0xFFFF0000u, 0xFFFF0000u,
+                        0xFFFF0000u, 0xFFFF0000u, 0xFFFF0000u};
     };
 
     inline constexpr u32 kBlockFlagOpaque = 1u << 0u; // full-cube occluder
@@ -59,15 +61,16 @@ namespace Manro {
         u32 fallbackState{1};
         // name|k=v;... (see MakeStateKey) -> state id.
         std::unordered_map<std::string, u32> stateByKey;
+        // Reverse lookup: state id -> canonical key (size = maxState+1).
+        // Lets gameplay resolve an oriented variant (facing/half/...) of a
+        // picked state at placement time.
+        std::vector<std::string> stateKeys;
         // Diagnostics.
         u32 mappedStates{0};
         u32 fallbackStates{0};
         u32 skippedStates{0};
     };
 
-    // Builds the pack. assetsDir holds the jar block assets, worldDir the
-    // Anvil save whose states get enumerated. Returns false + err when
-    // either dir is unusable (no procedural fallback).
     [[nodiscard]] bool BuildBlockAssetPack(const std::string &assetsDir, const std::string &worldDir,
                                           BlockAssetPack_t &out, std::string &err);
 } // namespace Manro

@@ -170,10 +170,7 @@ namespace Manro {
             cmd.material = material;
             cmd.op = op;
             m_Voxel->GetWorld().QueueEdit(cmd);
-            // CPU physics mirrors must follow the GPU edit (see
-            // CVoxelStreamWorld::ApplyEdit), or broken blocks keep ghost
-            // collision and placed blocks have none.
-            m_Voxel->StreamApplyEdit(pos, radius, op);
+            m_Voxel->StreamApplyEdit(pos, radius, op, material);
         }
 
         u32 VoxelGetBrickCount() const {
@@ -231,6 +228,18 @@ namespace Manro {
 
         u32 VoxelStreamPlaceState() const {
             return (m_bVoxelEnabled && m_Voxel) ? m_Voxel->StreamPlaceState() : 1u;
+        }
+
+        i32 VoxelStreamGetStateAt(const Vec3 &p) const {
+            return (m_bVoxelEnabled && m_Voxel) ? m_Voxel->StreamGetStateAt(p) : -1;
+        }
+
+        std::string VoxelGetStateKey(u32 id) const {
+            return (m_bVoxelEnabled && m_Voxel) ? m_Voxel->GetStateKey(id) : std::string{};
+        }
+
+        u32 VoxelFindStateByKey(const std::string &key) const {
+            return (m_bVoxelEnabled && m_Voxel) ? m_Voxel->FindStateByKey(key) : ~0u;
         }
 
         void DrawLine(const Vec3 &a, const Vec3 &b, u32 color, bool depthTest) const;
@@ -1587,6 +1596,18 @@ namespace Manro {
 
     u32 RendererImplVoxelStreamPlaceState(const CRendererImpl &impl) {
         return impl.VoxelStreamPlaceState();
+    }
+
+    i32 RendererImplVoxelStreamGetStateAt(const CRendererImpl &impl, const Vec3 &p) {
+        return impl.VoxelStreamGetStateAt(p);
+    }
+
+    std::string RendererImplVoxelGetStateKey(const CRendererImpl &impl, u32 id) {
+        return impl.VoxelGetStateKey(id);
+    }
+
+    u32 RendererImplVoxelFindStateByKey(const CRendererImpl &impl, const std::string &key) {
+        return impl.VoxelFindStateByKey(key);
     }
 
     CRenderer::CRenderer(CWindow &window, CVirtualFS &vfs, u32 width, u32 height, const RenderSettings_t &settings)

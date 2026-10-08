@@ -50,6 +50,10 @@ namespace Manro {
         // as solid (players can't fall through unloaded world).
         std::vector<u32> occMirror;
         std::vector<u32> fluidMirror;
+        // CPU state mirror: block state id per voxel (4096 u16 per brick,
+        // indexed brickIdx*4096 + vi). Powers pick-block + oriented
+        // placement; kept in lockstep with occMirror on fill/edit/evict.
+        std::vector<u16> stateMirror;
         Vec3 spawn{8.f, 80.f, 8.f};
 
         static i64 Key(int sx, int sy, int sz) {
@@ -116,6 +120,52 @@ namespace Manro {
             if (w >= fluidMirror.size())
                 return false;
             return ((fluidMirror[w] >> (vi & 31u)) & 1u) != 0u;
+        }
+
+        // Recompute the opaque-full flag from the state mirror after a
+        // gameplay edit. Breaking a block inside solid rock MUST clear it:
+        // a stale 1 poisons later RecomputeHidden calls when neighboring
+        // sections stream in, hiding bricks whose boundary faces are
+        // actually visible through the cavity — whole-block rectangular
+        // see-through holes, visible only from the cavity side and immune
+        // to the B (backface) / N (frustum) kill switches. Predicate matches
+        // the fill-time allOpaque computation exactly.
+        void RecomputeOpaque(CVoxelWorld &world, i32 brickIdx) {
+            if (brickIdx < 0 || !pack)
+                return;
+            const size_t sbase = static_cast<size_t>(brickIdx) * 4096;
+            if (sbase + 4096 > stateMirror.size())
+                return;
+            bool opaque = true;
+            for (size_t vi = 0; vi < 4096; ++vi) {
+                const u32 st = stateMirror[sbase + vi];
+                const bool valid = static_cast<size_t>(st) < pack->states.size();
+                const u32 flags = valid ? pack->states[static_cast<size_t>(st)].flags : 0u;
+                const bool skip = !valid || ((flags & kBlockFlagSkip) != 0);
+                if (skip || (flags & kBlockFlagOpaque) == 0u) {
+                    opaque = false;
+                    break;
+                }
+            }
+            world.SetBrickOpaqueFull(static_cast<u32>(brickIdx), opaque);
+        }
+
+        // Block state id at a voxel, or -1 when the section isn't filled
+        // (pick-block treats unknown as invalid, never as air).
+        i32 StateAt(i64 x, i64 y, i64 z) const {
+            if (y < -64 || y >= 320)
+                return -1;
+            const int sx = static_cast<int>(x >> 4);
+            const int sy = static_cast<int>(y >> 4);
+            const int sz = static_cast<int>(z >> 4);
+            const auto it = slots.find(Key(sx, sy, sz));
+            if (it == slots.end() || !it->second.filled || it->second.brickIdx < 0)
+                return -1;
+            const size_t vi = static_cast<size_t>((x & 15) + (y & 15) * 16 + (z & 15) * 256);
+            const size_t idx = static_cast<size_t>(it->second.brickIdx) * 4096 + vi;
+            if (idx >= stateMirror.size())
+                return -1;
+            return static_cast<i32>(stateMirror[idx]);
         }
     };
 
@@ -204,6 +254,12 @@ namespace Manro {
                                       I.occMirror.begin() + static_cast<ptrdiff_t>(base + 128), 0u);
                             std::fill(I.fluidMirror.begin() + static_cast<ptrdiff_t>(base),
                                       I.fluidMirror.begin() + static_cast<ptrdiff_t>(base + 128),
+                                      0u);
+                        }
+                        const size_t sbase = static_cast<size_t>(b) * 4096;
+                        if (sbase + 4096 <= I.stateMirror.size()) {
+                            std::fill(I.stateMirror.begin() + static_cast<ptrdiff_t>(sbase),
+                                      I.stateMirror.begin() + static_cast<ptrdiff_t>(sbase + 4096),
                                       0u);
                         }
                     }
@@ -368,6 +424,12 @@ namespace Manro {
                             batchOcc.data() + k * 128, sizeof(u32) * 128);
                 std::memcpy(I.fluidMirror.data() + static_cast<size_t>(batchIdx[k]) * 128,
                             batchFluid.data() + k * 128, sizeof(u32) * 128);
+                // State mirror (pick-block + oriented placement).
+                const size_t sneed = (static_cast<size_t>(batchIdx[k]) + 1) * 4096;
+                if (I.stateMirror.size() < sneed)
+                    I.stateMirror.resize(sneed, 0u);
+                std::memcpy(I.stateMirror.data() + static_cast<size_t>(batchIdx[k]) * 4096,
+                            batchMats.data() + k * 4096, sizeof(u16) * 4096);
                 world.SetBrickOpaqueFull(batchIdx[k], batchOpaque[k] != 0u);
                 // Re-evaluate neighbor boundaries too: this fill can hide
                 // (or, for air pockets, reveal) adjacent bricks' faces.
@@ -415,7 +477,8 @@ namespace Manro {
         return static_cast<int>(I.unfilled.size());
     }
 
-    void CVoxelStreamWorld::ApplyEdit(const Vec3 &pos, float radius, u32 op) {
+    void CVoxelStreamWorld::ApplyEdit(CVoxelWorld &world, const Vec3 &pos, float radius, u32 op,
+                                      u32 state) {
         auto &I = *m_Impl;
         // Home brick only (mirrors the GPU edit shader's single-brick span).
         const int bsx = static_cast<int>(std::floor(pos.x / 16.f));
@@ -427,6 +490,8 @@ namespace Manro {
         const size_t base = static_cast<size_t>(it->second.brickIdx) * 128;
         if (base + 128 > I.occMirror.size() || base + 128 > I.fluidMirror.size())
             return;
+        const size_t sbase = static_cast<size_t>(it->second.brickIdx) * 4096;
+        const bool hasState = sbase + 4096 <= I.stateMirror.size();
         const auto applyVoxel = [&](int vx, int vy, int vz) {
             // Clamp to the home brick (out-of-brick voxels belong to a
             // neighbor the GPU edit never touches).
@@ -439,14 +504,19 @@ namespace Manro {
             if (op == 0u) {
                 I.occMirror[w] &= ~bit;
                 I.fluidMirror[w] &= ~bit;
+                if (hasState)
+                    I.stateMirror[sbase + vi] = 0u;
             } else {
                 I.occMirror[w] |= bit;
                 I.fluidMirror[w] &= ~bit; // placed states are solid, never fluid
+                if (hasState)
+                    I.stateMirror[sbase + vi] = static_cast<u16>(state & 0xFFFFu);
             }
         };
         if (radius < 0.5f) {
             applyVoxel(static_cast<int>(std::floor(pos.x)), static_cast<int>(std::floor(pos.y)),
                        static_cast<int>(std::floor(pos.z)));
+            I.RecomputeOpaque(world, it->second.brickIdx);
             return;
         }
         const float reach = radius + 0.5f;
@@ -469,11 +539,14 @@ namespace Manro {
                 }
             }
         }
+        I.RecomputeOpaque(world, it->second.brickIdx);
     }
 
     bool CVoxelStreamWorld::IsSolidAt(i64 x, i64 y, i64 z) const { return m_Impl->IsSolidAt(x, y, z); }
 
     bool CVoxelStreamWorld::IsFluidAt(i64 x, i64 y, i64 z) const { return m_Impl->IsFluidAt(x, y, z); }
+
+    i32 CVoxelStreamWorld::GetStateAt(i64 x, i64 y, i64 z) const { return m_Impl->StateAt(x, y, z); }
 
     i32 CVoxelStreamWorld::PlaceState() const {
         return static_cast<i32>(m_Impl->pack->placeState);

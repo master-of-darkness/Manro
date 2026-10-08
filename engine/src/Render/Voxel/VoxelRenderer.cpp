@@ -79,11 +79,11 @@ namespace Manro {
                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                 VMA_MEMORY_USAGE_CPU_TO_GPU);
         }
-        // Face cache: uint[2049] per resident brick (count + packed faces).
+        // Face cache: uint[4096] per resident brick (count + packed faces).
         // Written by task on first sight / edits, read by task (count) +
-        // mesh (faces) every frame. 8192 bricks x 2049 x 4B = 64MB GPU-only.
+        // mesh (faces) every frame. 8192 bricks x 4096 x 4B = 128MB GPU-only.
         m_FaceCache = CreateScope<CBuffer>(
-            m_Context, sizeof(u32) * 2049 * desc.maxResidentBricks,
+            m_Context, sizeof(u32) * 4096 * desc.maxResidentBricks,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
             VMA_MEMORY_USAGE_GPU_ONLY);
         // DEBUG counters: uint[8], device-cleared when capture is enabled,
@@ -102,6 +102,18 @@ namespace Manro {
             VMA_MEMORY_USAGE_CPU_TO_GPU);
         m_BlockFlagsTable = CreateScope<CBuffer>(
             m_Context, sizeof(u32) * 32768,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+            VMA_MEMORY_USAGE_CPU_TO_GPU);
+        // Per-state shape AABB: 2x uint32 per state (min xyz + max xyz packed
+        // as 0..16 bytes). Same sizing/indexing as the flags table.
+        m_BlockShapeTable = CreateScope<CBuffer>(
+            m_Context, sizeof(u32) * 32768 * 2,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+            VMA_MEMORY_USAGE_CPU_TO_GPU);
+        // Per-(state, face) uv sub-rect: u0|v0<<8|u1<<16|v1<<24 (model
+        // uv/16*255). Same sizing/indexing as the tile table.
+        m_BlockUvTable = CreateScope<CBuffer>(
+            m_Context, sizeof(u32) * 32768 * 6,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
             VMA_MEMORY_USAGE_CPU_TO_GPU);
         // Fallback 1-magenta-tile array: the descriptor set is always valid,
@@ -159,6 +171,8 @@ namespace Manro {
         m_StreamWorld.reset();
         m_BlockTileTable.reset();
         m_BlockFlagsTable.reset();
+        m_BlockShapeTable.reset();
+        m_BlockUvTable.reset();
         m_TaskMeshPipeline.reset();
         m_EditPipeline.reset();
         m_GiInjectPipeline.reset();
@@ -508,15 +522,33 @@ namespace Manro {
     }
 
     void CVoxelRenderer::UploadBlockTables() {
-        std::vector<u32> tiles(32768u * 6u, 0u), flags(32768u, 0u);
+        std::vector<u32> tiles(32768u * 6u, 0u), flags(32768u, 0u), shapes(32768u * 2u, 0u),
+            uvs(32768u * 6u, 0xFFFF0000u);
+        // Full-cube + full-rect defaults so states without baked looks
+        // (fallback magenta, pre-stream air) behave exactly like before.
+        for (size_t s = 0; s < 32768u; ++s) {
+            shapes[s * 2u + 0u] = 0u;
+            shapes[s * 2u + 1u] = 16u | (16u << 8u) | (16u << 16u);
+        }
         const size_t n = std::min(m_BlockPack.states.size(), static_cast<size_t>(32768u));
         for (size_t s = 0; s < n; ++s) {
             for (int f = 0; f < 6; ++f)
                 tiles[s * 6u + static_cast<size_t>(f)] = m_BlockPack.states[s].faces.tile[f];
             flags[s] = m_BlockPack.states[s].flags;
+            const auto &look = m_BlockPack.states[s];
+            shapes[s * 2u + 0u] = static_cast<u32>(look.shapeMin[0]) |
+                                   (static_cast<u32>(look.shapeMin[1]) << 8u) |
+                                   (static_cast<u32>(look.shapeMin[2]) << 16u);
+            shapes[s * 2u + 1u] = static_cast<u32>(look.shapeMax[0]) |
+                                   (static_cast<u32>(look.shapeMax[1]) << 8u) |
+                                   (static_cast<u32>(look.shapeMax[2]) << 16u);
+            for (int f = 0; f < 6; ++f)
+                uvs[s * 6u + static_cast<size_t>(f)] = look.uvPacked[f];
         }
         m_BlockTileTable->LoadData(tiles.data(), tiles.size() * sizeof(u32));
         m_BlockFlagsTable->LoadData(flags.data(), flags.size() * sizeof(u32));
+        m_BlockShapeTable->LoadData(shapes.data(), shapes.size() * sizeof(u32));
+        m_BlockUvTable->LoadData(uvs.data(), uvs.size() * sizeof(u32));
     }
 
     Vec3 CVoxelRenderer::StreamInit(const std::string &worldDir, const std::string &assetsDir,
@@ -575,9 +607,30 @@ namespace Manro {
         return st >= 0 ? static_cast<u32>(st) : 1u;
     }
 
-    void CVoxelRenderer::StreamApplyEdit(const Vec3 &pos, float radius, u32 op) {
+    void CVoxelRenderer::StreamApplyEdit(const Vec3 &pos, float radius, u32 op, u32 state) {
         if (m_StreamWorld)
-            m_StreamWorld->ApplyEdit(pos, radius, op);
+            m_StreamWorld->ApplyEdit(*m_World, pos, radius, op, state);
+    }
+
+    i32 CVoxelRenderer::StreamGetStateAt(const Vec3 &p) const {
+        if (!m_StreamWorld)
+            return -1;
+        return m_StreamWorld->GetStateAt(static_cast<i64>(std::floor(p.x)),
+                                         static_cast<i64>(std::floor(p.y)),
+                                         static_cast<i64>(std::floor(p.z)));
+    }
+
+    std::string CVoxelRenderer::GetStateKey(u32 id) const {
+        if (id < m_BlockPack.stateKeys.size())
+            return m_BlockPack.stateKeys[id];
+        return {};
+    }
+
+    u32 CVoxelRenderer::FindStateByKey(const std::string &key) const {
+        const auto it = m_BlockPack.stateByKey.find(key);
+        if (it != m_BlockPack.stateByKey.end())
+            return it->second;
+        return ~0u;
     }
 
     void CVoxelRenderer::DispatchEdits(VkCommandBuffer cb) {
@@ -808,6 +861,8 @@ namespace Manro {
         root.faceCacheAddr = m_FaceCache->GetDeviceAddress();
         root.tileTableAddr = m_BlockTileTable ? m_BlockTileTable->GetDeviceAddress() : 0u;
         root.blockFlagsAddr = m_BlockFlagsTable ? m_BlockFlagsTable->GetDeviceAddress() : 0u;
+        root.shapeTableAddr = m_BlockShapeTable ? m_BlockShapeTable->GetDeviceAddress() : 0u;
+        root.uvTableAddr = m_BlockUvTable ? m_BlockUvTable->GetDeviceAddress() : 0u;
         // DEBUG counters: device-side clear only when capture is enabled.
         // Skipping the Fill + extra barrier saves a full-buffer op/frame.
         if (m_bDebugEnabled)

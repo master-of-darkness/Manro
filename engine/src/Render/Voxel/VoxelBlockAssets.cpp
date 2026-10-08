@@ -11,48 +11,38 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <map>
 #include <sstream>
 #include <unordered_map>
+#include <vector>
 
 namespace Manro {
     namespace fs = std::filesystem;
     using json = nlohmann::json;
 
     namespace {
-        // Our face order +X,-X,+Y,-Y,+Z,-Z <- model dirs.
         constexpr std::array<const char *, 6> kModelDirs = {"east", "west", "up", "down",
                                                             "south", "north"};
 
-        // Model-space dir permutation under variant rotation. Applies X then
-        // Y. y=90 sends model-north to world-east (furnace rule); x=90
-        // (right-hand about +X) sends up->south, south->down, down->north.
-        void RotateDirs(std::array<std::string, 6> &tex, int rotX, int rotY) {
-            auto rotY90 = [&]() {
-                // east<-north, south<-east, west<-south, north<-west
-                std::array<std::string, 6> t = tex;
-                tex[0] = t[5];
-                tex[4] = t[0];
-                tex[1] = t[4];
-                tex[5] = t[1];
-            };
-            auto rotX90 = [&]() {
-                // up<-north, south<-up, down<-south, north<-down
-                std::array<std::string, 6> t = tex;
-                tex[2] = t[5];
-                tex[4] = t[2];
-                tex[3] = t[4];
-                tex[5] = t[3];
-            };
-            rotX = ((rotX % 360) + 360) % 360;
-            rotY = ((rotY % 360) + 360) % 360;
-            for (int i = 0; i < rotX / 90; ++i)
-                rotX90();
-            for (int i = 0; i < rotY / 90; ++i)
-                rotY90();
+        template <typename T> static void PermuteY90(std::array<T, 6> &a) {
+            // east<-north, south<-east, west<-south, north<-west
+            std::array<T, 6> t = a;
+            a[0] = std::move(t[5]);
+            a[4] = std::move(t[0]);
+            a[1] = std::move(t[4]);
+            a[5] = std::move(t[1]);
+        }
+        template <typename T> static void PermuteX90(std::array<T, 6> &a) {
+            // up<-north, south<-up, down<-south, north<-down
+            std::array<T, 6> t = a;
+            a[2] = std::move(t[5]);
+            a[4] = std::move(t[2]);
+            a[3] = std::move(t[4]);
+            a[5] = std::move(t[3]);
         }
 
         std::map<std::string, std::string> ParsePropList(const std::string &key) {
@@ -122,10 +112,8 @@ namespace Manro {
             int y{0};
         };
 
-        // Pick the model for (blockJson, state props): variants exact/subset
-        // match (most constraints wins), else multipart (unconditional case
-        // first, else first when-match, else first case).
-        ModelRef PickModel(const json &blockJson, const std::map<std::string, std::string> &props) {
+        std::vector<ModelRef> CollectModels(const json &blockJson,
+                                            const std::map<std::string, std::string> &props) {
             if (blockJson.contains("variants") && blockJson["variants"].is_object()) {
                 const auto &vars = blockJson["variants"];
                 const json *bestEntry = nullptr;
@@ -165,10 +153,11 @@ namespace Manro {
                     r.model = (*bestEntry)["model"].get<std::string>();
                     r.x = bestEntry->value("x", 0);
                     r.y = bestEntry->value("y", 0);
-                    return r;
+                    return {r};
                 }
             }
             if (blockJson.contains("multipart") && blockJson["multipart"].is_array()) {
+                std::vector<ModelRef> out;
                 const json *fallback = nullptr;
                 for (const auto &part : blockJson["multipart"]) {
                     const json *apply = nullptr;
@@ -184,28 +173,22 @@ namespace Manro {
                         continue;
                     if (!fallback)
                         fallback = apply;
-                    const bool noWhen = !part.contains("when");
-                    if (noWhen) { // unconditional base piece wins outright
+                    if (!part.contains("when") || WhenMatches(part["when"], props)) {
                         ModelRef r;
                         r.model = (*apply)["model"].get<std::string>();
                         r.x = apply->value("x", 0);
                         r.y = apply->value("y", 0);
-                        return r;
-                    }
-                    if (WhenMatches(part["when"], props)) {
-                        ModelRef r;
-                        r.model = (*apply)["model"].get<std::string>();
-                        r.x = apply->value("x", 0);
-                        r.y = apply->value("y", 0);
-                        return r;
+                        out.push_back(std::move(r));
                     }
                 }
+                if (!out.empty())
+                    return out;
                 if (fallback) {
                     ModelRef r;
                     r.model = (*fallback)["model"].get<std::string>();
                     r.x = fallback->value("x", 0);
                     r.y = fallback->value("y", 0);
-                    return r;
+                    return {r};
                 }
             }
             return {};
@@ -221,8 +204,6 @@ namespace Manro {
             return (b == std::string::npos) ? s : s.substr(0, b);
         }
 
-        // Texture values can be objects ({"sprite": "block/x", ...}):
-        // unwrap to the sprite path, "" when unusable.
         std::string TextureString(const json &v) {
             if (v.is_string())
                 return v.get<std::string>();
@@ -231,8 +212,6 @@ namespace Manro {
             return {};
         }
 
-        // Follow a #var chain to a concrete texture path (vars may reference
-        // other vars, e.g. template parents map up->#end, end->block/x).
         std::string ResolveVar(const std::map<std::string, std::string> &vars,
                                const std::string &v) {
             std::string cur = v;
@@ -263,15 +242,29 @@ namespace Manro {
         }
 
         struct FaceTextures {
-            // texture var-or-path per our face order; empty = unresolved
             std::array<std::string, 6> tex{};
+            std::array<std::array<float, 4>, 6> uv{};
             bool any{false};
+
+            FaceTextures() {
+                for (auto &r : uv)
+                    r = {0.f, 0.f, 16.f, 16.f};
+            }
         };
 
-        // Resolve one model file to per-face texture refs (still "#var" or
-        // "block/name"). Merges parent chain; element faces win per dir in
-        // order (base element first, so tint overlays don't replace bases);
-        // missing dirs fall back to parent-template vars.
+        static void RotateFaces(FaceTextures &ft, int rotX, int rotY) {
+            rotX = ((rotX % 360) + 360) % 360;
+            rotY = ((rotY % 360) + 360) % 360;
+            for (int i = 0; i < rotX / 90; ++i) {
+                PermuteX90(ft.tex);
+                PermuteX90(ft.uv);
+            }
+            for (int i = 0; i < rotY / 90; ++i) {
+                PermuteY90(ft.tex);
+                PermuteY90(ft.uv);
+            }
+        }
+
         FaceTextures ResolveModel(const std::string &modelsDir,
                                   std::unordered_map<std::string, json> &modelCache,
                                   const std::string &modelPath) {
@@ -280,9 +273,6 @@ namespace Manro {
                 return out;
             const std::string rel = StripPrefix(modelPath); // block/<name>
             const json *root = LoadModelJson(modelsDir, modelCache, rel);
-            // Chain: self first, then ancestors. Vars merge root-first
-            // (child overrides); element faces scan leaf-first (base piece
-            // wins over tint overlays AND over parent templates).
             std::vector<const json *> chainJson;
             if (root->is_object())
                 chainJson.push_back(root);
@@ -315,34 +305,78 @@ namespace Manro {
                     }
                 }
             }
-            // Element faces, first definition per dir wins (leaf first).
+
             std::array<bool, 6> have{false, false, false, false, false, false};
             for (const json *ej : chainJson) {
                 if (!ej->contains("elements") || !(*ej)["elements"].is_array())
                     continue;
+                std::array<std::string, 6> unionTex{};
+                std::array<std::array<float, 4>, 6> unionMin{};
+                std::array<std::array<float, 4>, 6> unionMax{};
+                std::array<bool, 6> unionHave{false, false, false, false, false, false};
+                std::array<bool, 6> unionFlipU{false, false, false, false, false, false};
+                std::array<bool, 6> unionFlipV{false, false, false, false, false, false};
+                for (auto &r : unionMin)
+                    r = {16.f, 16.f, 16.f, 16.f};
+                for (auto &r : unionMax)
+                    r = {0.f, 0.f, 0.f, 0.f};
                 for (const auto &el : (*ej)["elements"]) {
                     if (!el.contains("faces") || !el["faces"].is_object())
                         continue;
+                    const auto &faces = el["faces"];
                     for (size_t f = 0; f < 6; ++f) {
-                        if (have[f])
+                        if (!faces.contains(kModelDirs[f]) || !faces[kModelDirs[f]].is_object())
                             continue;
-                        const auto &faces = el["faces"];
-                        if (faces.contains(kModelDirs[f]) && faces[kModelDirs[f]].is_object()) {
-                            const auto &fd = faces[kModelDirs[f]];
-                            if (fd.contains("texture")) {
-                                const std::string t = TextureString(fd["texture"]);
-                                if (!t.empty()) {
-                                    out.tex[f] = t;
-                                    have[f] = true;
-                                    out.any = true;
-                                }
-                            }
+                        const auto &fd = faces[kModelDirs[f]];
+                        if (!fd.contains("texture"))
+                            continue;
+                        const std::string t = TextureString(fd["texture"]);
+                        if (t.empty())
+                            continue;
+                        std::array<float, 4> rect{0.f, 0.f, 16.f, 16.f};
+                        if (fd.contains("uv") && fd["uv"].is_array() && fd["uv"].size() >= 4) {
+                            for (int k = 0; k < 4; ++k)
+                                rect[static_cast<size_t>(k)] =
+                                    fd["uv"][static_cast<size_t>(k)].get<float>();
+                        }
+                        if (!unionHave[f]) {
+                            unionTex[f] = t;
+                            unionHave[f] = true;
+                            unionMin[f][0] = std::min(rect[0], rect[2]);
+                            unionMin[f][1] = std::min(rect[1], rect[3]);
+                            unionMax[f][0] = std::max(rect[0], rect[2]);
+                            unionMax[f][1] = std::max(rect[1], rect[3]);
+                            unionFlipU[f] = rect[0] > rect[2];
+                            unionFlipV[f] = rect[1] > rect[3];
+                        } else if (unionTex[f] == t) {
+                            unionMin[f][0] = std::min(unionMin[f][0], std::min(rect[0], rect[2]));
+                            unionMin[f][1] = std::min(unionMin[f][1], std::min(rect[1], rect[3]));
+                            unionMax[f][0] = std::max(unionMax[f][0], std::max(rect[0], rect[2]));
+                            unionMax[f][1] = std::max(unionMax[f][1], std::max(rect[1], rect[3]));
                         }
                     }
                 }
+                for (size_t f = 0; f < 6; ++f) {
+                    if (have[f] || !unionHave[f])
+                        continue;
+                    out.tex[f] = unionTex[f];
+                    out.uv[f][0] = unionFlipU[f] ? unionMax[f][0] : unionMin[f][0];
+                    out.uv[f][1] = unionFlipV[f] ? unionMax[f][1] : unionMin[f][1];
+                    out.uv[f][2] = unionFlipU[f] ? unionMin[f][0] : unionMax[f][0];
+                    out.uv[f][3] = unionFlipV[f] ? unionMin[f][1] : unionMax[f][1];
+                    have[f] = true;
+                    out.any = true;
+                }
+                bool allHave = true;
+                for (bool h : have) {
+                    if (!h) {
+                        allHave = false;
+                        break;
+                    }
+                }
+                if (allHave)
+                    break;
             }
-            // Parent-template fallback for missing dirs (element-less
-            // parents like cube_column carry only texture vars).
             const json &j = *chainJson.front();
             const std::string leaf = (j.contains("parent") && j["parent"].is_string())
                                          ? StripPrefix(j["parent"].get<std::string>())
@@ -394,10 +428,176 @@ namespace Manro {
             return out;
         }
 
-        // True when the model (or any ancestor) has a full 16^3 element.
-        // Rotation preserves fullness, so rotX/rotY need no handling here.
-        // Kept for diagnostics; occlusion now follows baked-cube solidity
-        // (see IsOpaqueOccluder), not source-model fullness.
+        struct Box3 {
+            double mn[3]{0.0, 0.0, 0.0};
+            double mx[3]{16.0, 16.0, 16.0};
+        };
+
+        static void RotX90Pt(double p[3]) {
+            const double y = p[1], z = p[2];
+            p[1] = 16.0 - z;
+            p[2] = y;
+        }
+
+        static void RotY90Pt(double p[3]) {
+            const double x = p[0], z = p[2];
+            p[0] = 16.0 - z;
+            p[2] = x;
+        }
+
+        static void RotateBox(Box3 &b, int rotX, int rotY) {
+            rotX = ((rotX % 360) + 360) % 360;
+            rotY = ((rotY % 360) + 360) % 360;
+            if ((rotX % 90) != 0 || (rotY % 90) != 0)
+                return; // non-orthogonal: leave unrotated (conservative)
+            double pts[8][3];
+            for (int i = 0; i < 8; ++i) {
+                pts[i][0] = (i & 1) ? b.mx[0] : b.mn[0];
+                pts[i][1] = (i & 2) ? b.mx[1] : b.mn[1];
+                pts[i][2] = (i & 4) ? b.mx[2] : b.mn[2];
+            }
+            for (int k = 0; k < rotX / 90; ++k) {
+                for (auto &p : pts)
+                    RotX90Pt(p);
+            }
+            for (int k = 0; k < rotY / 90; ++k) {
+                for (auto &p : pts)
+                    RotY90Pt(p);
+            }
+            for (int a = 0; a < 3; ++a) {
+                b.mn[a] = b.mx[a] = pts[0][a];
+                for (int i = 1; i < 8; ++i) {
+                    b.mn[a] = std::min(b.mn[a], pts[i][a]);
+                    b.mx[a] = std::max(b.mx[a], pts[i][a]);
+                }
+            }
+        }
+
+        struct StateShape {
+            double mn[3]{0.0, 0.0, 0.0};
+            double mx[3]{16.0, 16.0, 16.0};
+            bool hasElements{false};
+        };
+
+        StateShape CollectStateShape(const std::string &modelsDir,
+                                     std::unordered_map<std::string, json> &modelCache,
+                                     const std::vector<ModelRef> &refs) {
+            StateShape out{};
+            for (int pass = 0; pass < 2; ++pass) {
+                bool first = true;
+                for (const ModelRef &ref : refs) {
+                    if (ref.model.empty())
+                        continue;
+                    std::string rel = StripPrefix(ref.model);
+                    for (int depth = 0; depth < 9 && !rel.empty(); ++depth) {
+                        const json *j = LoadModelJson(modelsDir, modelCache, rel);
+                        bool found = false;
+                        if (j->is_object() && j->contains("elements") &&
+                            (*j)["elements"].is_array() && !(*j)["elements"].empty()) {
+                            found = true;
+                            for (const auto &el : (*j)["elements"]) {
+                                if (!el.contains("from") || !el.contains("to"))
+                                    continue;
+                                const auto &from = el["from"];
+                                const auto &to = el["to"];
+                                if (!from.is_array() || !to.is_array() || from.size() < 3 ||
+                                    to.size() < 3)
+                                    continue;
+                                Box3 b{{from[0].get<double>(), from[1].get<double>(),
+                                        from[2].get<double>()},
+                                       {to[0].get<double>(), to[1].get<double>(),
+                                        to[2].get<double>()}};
+                                bool planar = false;
+                                for (int a = 0; a < 3; ++a) {
+                                    if (std::abs(b.mx[a] - b.mn[a]) < 1e-6) {
+                                        planar = true;
+                                        break;
+                                    }
+                                }
+                                if ((pass == 0) == planar)
+                                    continue;
+                                RotateBox(b, ref.x, ref.y);
+                                if (first) {
+                                    for (int a = 0; a < 3; ++a) {
+                                        out.mn[a] = b.mn[a];
+                                        out.mx[a] = b.mx[a];
+                                    }
+                                    first = false;
+                                } else {
+                                    for (int a = 0; a < 3; ++a) {
+                                        out.mn[a] = std::min(out.mn[a], b.mn[a]);
+                                        out.mx[a] = std::max(out.mx[a], b.mx[a]);
+                                    }
+                                }
+                                out.hasElements = true;
+                            }
+                        }
+                        if (found)
+                            break; // child elements replace the parent's
+                        if (j->is_object() && j->contains("parent") &&
+                            (*j)["parent"].is_string())
+                            rel = StripPrefix((*j)["parent"].get<std::string>());
+                        else
+                            break;
+                    }
+                }
+                if (out.hasElements)
+                    break;
+            }
+            return out;
+        }
+
+        std::vector<Box3> CollectSolidBoxes(const std::string &modelsDir,
+                                            std::unordered_map<std::string, json> &modelCache,
+                                            const std::vector<ModelRef> &refs) {
+            std::vector<Box3> out;
+            for (const ModelRef &ref : refs) {
+                if (ref.model.empty())
+                    continue;
+                std::string rel = StripPrefix(ref.model);
+                for (int depth = 0; depth < 9 && !rel.empty(); ++depth) {
+                    const json *j = LoadModelJson(modelsDir, modelCache, rel);
+                    bool found = false;
+                    if (j->is_object() && j->contains("elements") &&
+                        (*j)["elements"].is_array() && !(*j)["elements"].empty()) {
+                        found = true;
+                        for (const auto &el : (*j)["elements"]) {
+                            if (!el.contains("from") || !el.contains("to"))
+                                continue;
+                            const auto &from = el["from"];
+                            const auto &to = el["to"];
+                            if (!from.is_array() || !to.is_array() || from.size() < 3 ||
+                                to.size() < 3)
+                                continue;
+                            Box3 b{{from[0].get<double>(), from[1].get<double>(),
+                                    from[2].get<double>()},
+                                   {to[0].get<double>(), to[1].get<double>(),
+                                    to[2].get<double>()}};
+                            bool planar = false;
+                            for (int a = 0; a < 3; ++a) {
+                                if (std::abs(b.mx[a] - b.mn[a]) < 1e-6) {
+                                    planar = true;
+                                    break;
+                                }
+                            }
+                            if (planar)
+                                continue; // rails/posts only, no cross-planes
+                            RotateBox(b, ref.x, ref.y);
+                            out.push_back(b);
+                        }
+                    }
+                    if (found)
+                        break; // child elements replace the parent's
+                    if (j->is_object() && j->contains("parent") &&
+                        (*j)["parent"].is_string())
+                        rel = StripPrefix((*j)["parent"].get<std::string>());
+                    else
+                        break;
+                }
+            }
+            return out;
+        }
+
         [[maybe_unused]] bool HasFullCubeElement(const std::string &modelsDir,
                                std::unordered_map<std::string, json> &modelCache,
                                const std::string &modelPath) {
@@ -464,9 +664,6 @@ namespace Manro {
         }
 
         bool IsSmallDecor(std::string_view name) {
-            // Flat/cross-quad decor: render as air. Substring keys must not
-            // swallow solid blocks (snow_block, *_coral_block, *_mushroom_block,
-            // mushroom_stem, sea/jack-o-lanterns, flowering leaves, kelp blocks).
             if (name == "snow")
                 return true; // the layer; snow_block stays solid
             if (name == "fire" || name == "soul_fire")
@@ -480,6 +677,8 @@ namespace Manro {
                 return true; // dried_kelp_block stays solid
             if (name == "red_mushroom" || name == "brown_mushroom")
                 return true; // stems/blocks stay solid
+            if (name == "nether_wart")
+                return true; // the crop; nether_wart_block stays solid
             if (name == "chain")
                 return true; // chain_command_block stays solid
             if (has("coral") && name.find("coral_block") == std::string_view::npos)
@@ -495,9 +694,9 @@ namespace Manro {
                 "tripwire", "carpet", "lever", "pressure_plate", "ladder", "sign", "banner",
                 "candle", "seagrass", "crop", "pitcher", "wheat",
                 "carrots", "potatoes", "beetroots", "beetroot", "seeds", "melon_stem",
-                "pumpkin_stem", "cocoa", "nether_wart", "button", "hook", "lily_pad", "frogspawn",
+                "pumpkin_stem", "cocoa", "button", "hook", "lily_pad", "frogspawn",
                 "dripleaf", "spore_blossom", "glow_lichen", "sculk_vein", "pointed_dripstone",
-                "amethyst_bud", "_cluster", "chorus_", "sea_pickle", "egg", "_rod", "campfire",
+                "amethyst_bud", "_cluster", "chorus_", "sea_pickle", "campfire",
                 "berries", "string", "eyeblossom", "leaf_litter", "hanging_moss", "dry_grass",
                 "fungus", "propagule", "petals", "poppy", "dandelion", "allium", "bluet", "orchid",
                 "cornflower", "daisy", "valley", "lilac", "peony", "rose", "sugar_cane", "potted_",
@@ -523,11 +722,6 @@ namespace Manro {
         }
 
         bool IsInnerFaces(std::string_view name) {
-            // Same-state interior faces are culled (fast leaves). Emitting
-            // them (fancy) blows the 2048-face per-brick cache in dense
-            // leaves/jungle: the task shader truncates the list and the
-            // brick loses arbitrary faces = rectangular see-through holes.
-            // Fast leaves look solid from outside with no holes.
             (void)name;
             return false;
         }
@@ -537,8 +731,6 @@ namespace Manro {
         }
 
         bool IsNonOccluding(std::string_view name) {
-            // Full-cube models that still let neighbors render. Stained
-            // glass variants count (only tinted glass truly occludes).
             if (IsFluidName(name))
                 return true;
             if (name == "ice" || name == "slime_block" || name == "honey_block" ||
@@ -550,16 +742,6 @@ namespace Manro {
         }
 
         bool IsOpaqueOccluder(std::string_view name) {
-            // We bake every non-skipped block as a FULL cube (stairs/slabs/
-            // doors/chests render as full quads), so occlusion must follow
-            // the baked shape, not the source model: any solid-looking cube
-            // occludes its neighbors. The old fullCube-only rule left
-            // stairs/slabs/doors non-opaque, so every hidden interior face
-            // between two solid-looking cubes emitted -> dense temple bricks
-            // blew the 2048-face cache and lost arbitrary faces (holes).
-            // Cutout/transparent cubes (glass/leaves/ice/scaffolding/...)
-            // must stay non-opaque: they discard in the fragment shader, so
-            // culling a neighbor behind them would punch a see-through hole.
             if (IsNonOccluding(name))
                 return false;
             if (IsCutout(name))
@@ -570,8 +752,6 @@ namespace Manro {
         }
 
         std::string OverrideTexture(std::string_view name) {
-            // Thin multipart blocks (panes/bars have per-arm models that never
-            // cover all six faces): bake them as glass cubes with cutout.
             if (name.find("_pane") != std::string_view::npos || name == "iron_bars")
                 return "block/glass";
             // Block-entity / technical blocks with no cube model.
@@ -621,12 +801,6 @@ namespace Manro {
             return {};
         }
 
-        // Load one texture, resampled to a 16x16 RGBA tile. Animated strips
-        // (water/lava) use the top width x width frame only. Reports via
-        // outHasCutout whether any texel is fully transparent (alpha < 128,
-        // matching the shader's `albedo.a < 0.5` discard): transparent texels
-        // are black RGB, so baking such a tile on an opaque cube renders a
-        // black background instead of a hole.
         bool LoadTile(const std::string &texDir, const std::string &path, std::vector<u8> &tile,
                       bool &outHasCutout) {
             outHasCutout = false;
@@ -652,11 +826,6 @@ namespace Manro {
                 }
             }
             stbi_image_free(px);
-            // Binary transparency scan on the resampled tile (alpha channel
-            // survives the tint above untouched). Threshold matches the
-            // fragment discard (`albedo.a < 0.5`); semi-transparent texels
-            // (water 180, ice 190, slime 180) intentionally stay opaque here —
-            // true translucency needs blending, a separate feature.
             for (int i = 0; i < 16 * 16; ++i) {
                 if (tile[i * 4 + 3] < 128u) {
                     outHasCutout = true;
@@ -775,6 +944,78 @@ namespace Manro {
             }
             return false;
         };
+        auto tileForOpaque = [&](const std::string &path, u16 origIdx) -> u16 {
+            if (origIdx == 0 || origIdx >= pack.tiles.size())
+                return origIdx;
+            if (origIdx < tileCutout.size() && !tileCutout[origIdx])
+                return origIdx; // already opaque, no variant needed
+            const std::string key = path + "#opaque";
+            const auto it = tileByPath.find(key);
+            if (it != tileByPath.end())
+                return it->second;
+            const std::vector<u8> &src = pack.tiles[origIdx];
+            if (src.size() < 16 * 16 * 4)
+                return origIdx;
+            // Average opaque RGB for filling transparent texels.
+            double acc[3]{0.0, 0.0, 0.0};
+            int opaqueCount = 0;
+            for (int i = 0; i < 16 * 16; ++i) {
+                if (src[i * 4 + 3] >= 128u) {
+                    acc[0] += src[i * 4 + 0];
+                    acc[1] += src[i * 4 + 1];
+                    acc[2] += src[i * 4 + 2];
+                    ++opaqueCount;
+                }
+            }
+            u8 fill[3]{139, 139, 139};
+            if (opaqueCount > 0) {
+                for (int c = 0; c < 3; ++c)
+                    fill[c] = static_cast<u8>(acc[c] / opaqueCount + 0.5);
+            }
+            std::vector<u8> dst = src;
+            for (int i = 0; i < 16 * 16; ++i) {
+                if (dst[i * 4 + 3] < 128u) {
+                    dst[i * 4 + 0] = fill[0];
+                    dst[i * 4 + 1] = fill[1];
+                    dst[i * 4 + 2] = fill[2];
+                    dst[i * 4 + 3] = 255;
+                } else {
+                    dst[i * 4 + 3] = 255;
+                }
+            }
+            const u16 idx = static_cast<u16>(pack.tiles.size());
+            pack.tiles.push_back(std::move(dst));
+            pack.tilePaths.push_back(key);
+            tileCutout.push_back(0u);
+            tileByPath[key] = idx;
+            return idx;
+        };
+        // True when the tile's texels covered by the uv rect (0..16 model
+        // units, flips ignored = same pixels) are all opaque. The tile is the
+        // baked 16x16 resample, so uv units map 1:1 to pixels (clamped).
+        auto rectIsOpaque = [&](const std::vector<u8> &tile, const std::array<float, 4> &uv) -> bool {
+            if (tile.size() < 16 * 16 * 4)
+                return false;
+            const float u0 = std::clamp(std::min(uv[0], uv[2]), 0.f, 16.f);
+            const float u1 = std::clamp(std::max(uv[0], uv[2]), 0.f, 16.f);
+            const float v0 = std::clamp(std::min(uv[1], uv[3]), 0.f, 16.f);
+            const float v1 = std::clamp(std::max(uv[1], uv[3]), 0.f, 16.f);
+            int x0 = std::clamp(static_cast<int>(std::floor(u0)), 0, 16);
+            int x1 = std::clamp(static_cast<int>(std::ceil(u1)), 0, 16);
+            int y0 = std::clamp(static_cast<int>(std::floor(v0)), 0, 16);
+            int y1 = std::clamp(static_cast<int>(std::ceil(v1)), 0, 16);
+            if (x1 <= x0 || y1 <= y0)
+                return false;
+            for (int y = y0; y < y1; ++y) {
+                for (int x = x0; x < x1; ++x) {
+                    const int px = std::min(x, 15);
+                    const int py = std::min(y, 15);
+                    if (tile[(py * 16 + px) * 4 + 3] < 128u)
+                        return false;
+                }
+            }
+            return true;
+        };
 
         pack.states.resize(kBlockStateMax);
         for (auto &s : pack.states)
@@ -798,7 +1039,7 @@ namespace Manro {
             return &blockCache.emplace(name, std::move(j)).first->second;
         };
 
-        u32 mapped = 0, fallback = 0, skipped = 0, autoCutout = 0;
+        u32 mapped = 0, fallback = 0, skipped = 0, autoCutout = 0, shapedStates = 0;
         u32 id = 0;
         for (const FullState &fs : ordered) {
             const std::string key = MakeStateKey(fs.name, fs.props);
@@ -822,19 +1063,11 @@ namespace Manro {
                         ++mapped;
                     for (size_t f = 0; f < 6; ++f)
                         look.faces.tile[f] = t;
-                    // Baked stand-ins are full cubes: solid-looking ones
-                    // (chests/skulls/pots) occlude like stone; cutout ones
-                    // (panes/bars -> glass tile) must stay transparent or
-                    // the neighbor cull + fragment discard punches holes.
                     look.flags = IsOpaqueOccluder(bname) ? kBlockFlagOpaque : 0u;
                     if (IsCutout(bname))
                         look.flags |= kBlockFlagCutout;
                     if (IsInnerFaces(bname))
                         look.flags |= kBlockFlagInner;
-                    // Texture-driven cutout: a transparent tile on an opaque
-                    // cube renders black (transparent texels are black RGB),
-                    // so promote to alpha-tested and drop occlusion — a
-                    // discarding cube must let neighbors emit.
                     if ((look.flags & kBlockFlagCutout) == 0u && facesNeedCutout(look.faces)) {
                         look.flags |= kBlockFlagCutout;
                         look.flags &= ~kBlockFlagOpaque;
@@ -842,59 +1075,315 @@ namespace Manro {
                     }
                 } else {
                     const json *bj = blockJson(bname);
-                    const ModelRef ref =
-                        (bj && bj->is_object()) ? PickModel(*bj, pmap) : ModelRef{};
+                    const std::vector<ModelRef> refs =
+                        (bj && bj->is_object()) ? CollectModels(*bj, pmap) : std::vector<ModelRef>{};
                     FaceTextures ft{};
-                    if (!ref.model.empty())
-                        ft = ResolveModel(modelsDir, modelCache, ref.model);
+                    std::array<std::array<float, 4>, 6> unionMin{};
+                    std::array<std::array<float, 4>, 6> unionMax{};
+                    std::array<bool, 6> unionHave{false, false, false, false, false, false};
+                    for (const ModelRef &ref : refs) {
+                        if (ref.model.empty())
+                            continue;
+                        FaceTextures part = ResolveModel(modelsDir, modelCache, ref.model);
+                        if (!part.any)
+                            continue;
+                        RotateFaces(part, ref.x, ref.y);
+                        for (size_t f = 0; f < 6; ++f) {
+                            if (part.tex[f].empty())
+                                continue;
+                            if (ft.tex[f].empty()) {
+                                ft.tex[f] = part.tex[f];
+                                ft.uv[f] = part.uv[f];
+                                unionMin[f][0] = std::min(part.uv[f][0], part.uv[f][2]);
+                                unionMin[f][1] = std::min(part.uv[f][1], part.uv[f][3]);
+                                unionMax[f][0] = std::max(part.uv[f][0], part.uv[f][2]);
+                                unionMax[f][1] = std::max(part.uv[f][1], part.uv[f][3]);
+                                unionHave[f] = true;
+                            } else if (ft.tex[f] == part.tex[f] && unionHave[f]) {
+                                unionMin[f][0] =
+                                    std::min(unionMin[f][0], std::min(part.uv[f][0], part.uv[f][2]));
+                                unionMin[f][1] =
+                                    std::min(unionMin[f][1], std::min(part.uv[f][1], part.uv[f][3]));
+                                unionMax[f][0] =
+                                    std::max(unionMax[f][0], std::max(part.uv[f][0], part.uv[f][2]));
+                                unionMax[f][1] =
+                                    std::max(unionMax[f][1], std::max(part.uv[f][1], part.uv[f][3]));
+                                const bool flipU = ft.uv[f][0] > ft.uv[f][2];
+                                const bool flipV = ft.uv[f][1] > ft.uv[f][3];
+                                ft.uv[f][0] = flipU ? unionMax[f][0] : unionMin[f][0];
+                                ft.uv[f][1] = flipV ? unionMax[f][1] : unionMin[f][1];
+                                ft.uv[f][2] = flipU ? unionMin[f][0] : unionMax[f][0];
+                                ft.uv[f][3] = flipV ? unionMin[f][1] : unionMax[f][1];
+                            }
+                            // Different texture: keep the first (solid wins).
+                        }
+                        ft.any = true;
+                    }
                     if (!ft.any) {
-                        // Missing model -> magenta cube. It is solid and
-                        // opaque (no alpha discard), so it must occlude;
-                        // non-occluding here doubles hidden interior faces.
                         look.flags = kBlockFlagOpaque;
                         ++fallback; // magenta cube, occluding
                     } else {
-                        RotateDirs(ft.tex, ref.x, ref.y);
-                        // cube_column_horizontal: ends face the axis.
-                        if (ref.model.find("cube_column") != std::string::npos) {
+                        if (!refs.empty() && refs[0].model.find("cube_column") != std::string::npos) {
                             const auto ait = pmap.find("axis");
                             if (ait != pmap.end() && ait->second != "y") {
                                 const size_t ax = (ait->second == "x") ? 0u : 4u;
                                 const std::string endT = ft.tex[2];
                                 const std::string sideT = ft.tex[ax];
+                                const auto endUv = ft.uv[2];
+                                const auto sideUv = ft.uv[ax];
                                 ft.tex[2] = ft.tex[3] = sideT;
+                                ft.uv[2] = ft.uv[3] = sideUv;
                                 ft.tex[ax] = ft.tex[ax + 1] = endT;
+                                ft.uv[ax] = ft.uv[ax + 1] = endUv;
                             }
                         }
-                        for (size_t f = 0; f < 6; ++f)
-                            look.faces.tile[f] = tileForPath(ft.tex[f]);
-                        // Partial models (doors, bells): reuse a resolved
-                        // sibling face instead of magenta for missing dirs.
+                        bool fullShape = true;
+                        if (!refs.empty()) {
+                            const StateShape shape = CollectStateShape(modelsDir, modelCache, refs);
+                            if (shape.hasElements) {
+                                for (int a = 0; a < 3; ++a) {
+                                    long mn = std::lround(std::clamp(shape.mn[a], 0.0, 16.0));
+                                    long mx = std::lround(std::clamp(shape.mx[a], 0.0, 16.0));
+                                    if (mx <= mn) { // keep a visible sliver, never degenerate
+                                        if (mx < 16)
+                                            ++mx;
+                                        else
+                                            --mn;
+                                    }
+                                    look.shapeMin[a] = static_cast<u8>(mn);
+                                    look.shapeMax[a] = static_cast<u8>(mx);
+                                }
+                                fullShape = look.shapeMin[0] == 0 && look.shapeMin[1] == 0 &&
+                                            look.shapeMin[2] == 0 && look.shapeMax[0] == 16 &&
+                                            look.shapeMax[1] == 16 && look.shapeMax[2] == 16;
+                                if (!fullShape)
+                                    ++shapedStates;
+                            }
+                        }
+                        for (size_t f = 0; f < 6; ++f) {
+                            if (ft.tex[f].empty())
+                                continue;
+                            const float u0 = ft.uv[f][0], v0 = ft.uv[f][1];
+                            const float u1 = ft.uv[f][2], v1 = ft.uv[f][3];
+                            const float rectW = std::abs(u1 - u0);
+                            const float rectH = std::abs(v1 - v0);
+                            if (rectW < 1e-6f || rectH < 1e-6f)
+                                continue;
+                            float faceW = 16.f, faceH = 16.f;
+                            const int sx = static_cast<int>(look.shapeMax[0]) -
+                                           static_cast<int>(look.shapeMin[0]);
+                            const int sy = static_cast<int>(look.shapeMax[1]) -
+                                           static_cast<int>(look.shapeMin[1]);
+                            const int sz = static_cast<int>(look.shapeMax[2]) -
+                                           static_cast<int>(look.shapeMin[2]);
+                            if (f == 0u || f == 1u) { // +-X: U along Z, V along Y
+                                faceW = static_cast<float>(sz);
+                                faceH = static_cast<float>(sy);
+                            } else if (f == 2u || f == 3u) { // +-Y: U along X, V along Z
+                                faceW = static_cast<float>(sx);
+                                faceH = static_cast<float>(sz);
+                            } else { // +-Z: U along X, V along Y
+                                faceW = static_cast<float>(sx);
+                                faceH = static_cast<float>(sy);
+                            }
+                            if (faceW < 1e-6f || faceH < 1e-6f)
+                                continue;
+                            const bool rectWide = rectW > rectH + 1e-6f;
+                            const bool rectTall = rectH > rectW + 1e-6f;
+                            const bool faceWide = faceW > faceH + 1e-6f;
+                            const bool faceTall = faceH > faceW + 1e-6f;
+                            if ((rectWide && faceTall) || (rectTall && faceWide)) {
+                                // Swap dimensions, anchored at origin to stay in
+                                // 0..16 (original offsets are edge-anchored wood
+                                // either way, e.g. top rows vs left cols).
+                                ft.uv[f][0] = 0.f;
+                                ft.uv[f][1] = 0.f;
+                                ft.uv[f][2] = rectH;
+                                ft.uv[f][3] = rectW;
+                            }
+                        }
+                        const bool isFence =
+                            bname.size() > 6 &&
+                            bname.compare(bname.size() - 6, 6, "_fence") == 0;
+                        bool useSyntheticFence = false;
+                        std::vector<Box3> fenceBoxes;
+                        if (isFence && !refs.empty()) {
+                            fenceBoxes = CollectSolidBoxes(modelsDir, modelCache, refs);
+                            useSyntheticFence = fenceBoxes.size() > 1;
+                        }
+                        if (useSyntheticFence) {
+                            u16 plankTile = tileForPath(ft.tex[0].empty() ? ft.tex[2] : ft.tex[0]);
+                            if (plankTile == 0u || plankTile >= pack.tiles.size())
+                                plankTile = tileForPath("block/oak_planks");
+                            if (plankTile >= pack.tiles.size())
+                                plankTile = 0u;
+                            std::vector<u8> plankPx = pack.tiles[plankTile];
+                            if (plankPx.size() < 16u * 16u * 4u)
+                                plankPx = pack.tiles[0];
+                            const int sMin[3]{look.shapeMin[0], look.shapeMin[1], look.shapeMin[2]};
+                            const int sMax[3]{look.shapeMax[0], look.shapeMax[1], look.shapeMax[2]};
+                            auto insideAnyBoxProj = [&](size_t f, double x, double y,
+                                                        double z) -> bool {
+                                for (const Box3 &b : fenceBoxes) {
+                                    bool ok = false;
+                                    if (f == 0u || f == 1u) { // +-X: tangent Y,Z
+                                        ok = y >= b.mn[1] - 1e-6 && y <= b.mx[1] + 1e-6 &&
+                                             z >= b.mn[2] - 1e-6 && z <= b.mx[2] + 1e-6;
+                                    } else if (f == 2u || f == 3u) { // +-Y: tangent X,Z
+                                        ok = x >= b.mn[0] - 1e-6 && x <= b.mx[0] + 1e-6 &&
+                                             z >= b.mn[2] - 1e-6 && z <= b.mx[2] + 1e-6;
+                                    } else { // +-Z: tangent X,Y
+                                        ok = x >= b.mn[0] - 1e-6 && x <= b.mx[0] + 1e-6 &&
+                                             y >= b.mn[1] - 1e-6 && y <= b.mx[1] + 1e-6;
+                                    }
+                                    if (ok)
+                                        return true;
+                                }
+                                return false;
+                            };
+                            const int fSx = sMax[0] - sMin[0];
+                            const int fSz = sMax[2] - sMin[2];
+                            auto isEndFace = [&](size_t f) -> bool {
+                                if (fSx > fSz + 1e-6) { // length along X: ends are +-X
+                                    return f == 0u || f == 1u;
+                                }
+                                if (fSz > fSx + 1e-6) { // length along Z: ends are +-Z
+                                    return f == 4u || f == 5u;
+                                }
+                                return false; // square/corner: no ends, all cutout
+                            };
+                            for (size_t f = 0; f < 6; ++f) {
+                                if (isEndFace(f)) {
+                                    // Opaque wood (no holes): reuse the plank tile with
+                                    // a full rect (ends read as solid 2x3 rail ends on
+                                    // wood -- same color as the post 6px behind).
+                                    u16 t = plankTile;
+                                    look.faces.tile[f] = t;
+                                    look.uvPacked[f] = 0xFFFF0000u;
+                                    continue;
+                                }
+                                std::vector<u8> synth(16 * 16 * 4, 0);
+                                bool anySolid = false, anyHole = false;
+                                for (int ty = 0; ty < 16; ++ty) {
+                                    for (int tx = 0; tx < 16; ++tx) {
+                                        double x = 8.0, y = 8.0, z = 8.0;
+                                        if (f == 0u) { // +X: X=max, U=Z, V=Y(flipped top-first)
+                                            x = static_cast<double>(sMax[0]);
+                                            z = sMin[2] + (tx + 0.5) / 16.0 * (sMax[2] - sMin[2]);
+                                            y = sMax[1] - (ty + 0.5) / 16.0 * (sMax[1] - sMin[1]);
+                                        } else if (f == 1u) { // -X: X=min
+                                            x = static_cast<double>(sMin[0]);
+                                            z = sMin[2] + (tx + 0.5) / 16.0 * (sMax[2] - sMin[2]);
+                                            y = sMax[1] - (ty + 0.5) / 16.0 * (sMax[1] - sMin[1]);
+                                        } else if (f == 2u) { // +Y: Y=max, U=X, V=Z
+                                            y = static_cast<double>(sMax[1]);
+                                            x = sMin[0] + (tx + 0.5) / 16.0 * (sMax[0] - sMin[0]);
+                                            z = sMin[2] + (ty + 0.5) / 16.0 * (sMax[2] - sMin[2]);
+                                        } else if (f == 3u) { // -Y: Y=min
+                                            y = static_cast<double>(sMin[1]);
+                                            x = sMin[0] + (tx + 0.5) / 16.0 * (sMax[0] - sMin[0]);
+                                            z = sMin[2] + (ty + 0.5) / 16.0 * (sMax[2] - sMin[2]);
+                                        } else if (f == 4u) { // +Z: Z=max, U=X, V=Y(flipped)
+                                            z = static_cast<double>(sMax[2]);
+                                            x = sMin[0] + (tx + 0.5) / 16.0 * (sMax[0] - sMin[0]);
+                                            y = sMax[1] - (ty + 0.5) / 16.0 * (sMax[1] - sMin[1]);
+                                        } else { // -Z: Z=min
+                                            z = static_cast<double>(sMin[2]);
+                                            x = sMin[0] + (tx + 0.5) / 16.0 * (sMax[0] - sMin[0]);
+                                            y = sMax[1] - (ty + 0.5) / 16.0 * (sMax[1] - sMin[1]);
+                                        }
+                                        const bool solid = insideAnyBoxProj(f, x, y, z);
+                                        u8 *d = &synth[(ty * 16 + tx) * 4];
+                                        const u8 *s = &plankPx[(ty * 16 + tx) * 4];
+                                        if (solid) {
+                                            d[0] = s[0]; d[1] = s[1]; d[2] = s[2]; d[3] = 255;
+                                            anySolid = true;
+                                        } else {
+                                            d[0] = 0; d[1] = 0; d[2] = 0; d[3] = 0;
+                                            anyHole = true;
+                                        }
+                                    }
+                                }
+                                if (!anySolid) {
+                                    // Fully air face (should not happen for fences) -> skip (magenta handled below).
+                                    look.faces.tile[f] = 0u;
+                                    look.uvPacked[f] = 0xFFFF0000u;
+                                    continue;
+                                }
+                                const std::string skey =
+                                    "fence/synth/" + bname + "/" + key + "/" + std::to_string(f);
+                                auto it = tileByPath.find(skey);
+                                u16 idx;
+                                if (it != tileByPath.end()) {
+                                    idx = it->second;
+                                } else {
+                                    idx = static_cast<u16>(pack.tiles.size());
+                                    pack.tiles.push_back(std::move(synth));
+                                    pack.tilePaths.push_back(skey);
+                                    tileCutout.push_back(anyHole ? 1u : 0u);
+                                    tileByPath[skey] = idx;
+                                }
+                                look.faces.tile[f] = idx;
+                                look.uvPacked[f] = 0xFFFF0000u; // full synthetic tile
+                            }
+                        } else {
+                        for (size_t f = 0; f < 6; ++f) {
+                            u16 t = tileForPath(ft.tex[f]);
+                            if (t != 0u && t < pack.tiles.size() && t < tileCutout.size() &&
+                                tileCutout[t] && !ft.tex[f].empty()) {
+                                if (rectIsOpaque(pack.tiles[t], ft.uv[f]))
+                                    t = tileForOpaque(ft.tex[f], t);
+                            }
+                            look.faces.tile[f] = t;
+                        }
+                        }
+                        if (!useSyntheticFence) {
+                        for (size_t f = 0; f < 6; ++f) {
+                            long q[4];
+                            for (int k = 0; k < 4; ++k) {
+                                q[k] = std::lround(std::clamp(ft.uv[f][static_cast<size_t>(k)],
+                                                             0.f, 16.f) /
+                                                 16.f * 255.f);
+                                q[k] = std::clamp(q[k], 0L, 255L);
+                            }
+                            if (q[0] == q[2]) { // never sample a texel line
+                                if (q[2] < 255)
+                                    ++q[2];
+                                else
+                                    --q[0];
+                            }
+                            if (q[1] == q[3]) {
+                                if (q[3] < 255)
+                                    ++q[3];
+                                else
+                                    --q[1];
+                            }
+                            look.uvPacked[f] = static_cast<u32>(q[0]) |
+                                               (static_cast<u32>(q[1]) << 8u) |
+                                               (static_cast<u32>(q[2]) << 16u) |
+                                               (static_cast<u32>(q[3]) << 24u);
+                        }
+                        }
                         u16 anyTile = 0;
+                        u32 anyUv = 0xFFFF0000u;
                         for (size_t f = 0; f < 6; ++f) {
                             if (look.faces.tile[f] != 0u) {
                                 anyTile = look.faces.tile[f];
+                                anyUv = look.uvPacked[f];
                                 break;
                             }
                         }
                         for (size_t f = 0; f < 6; ++f) {
-                            if (look.faces.tile[f] == 0u)
+                            if (look.faces.tile[f] == 0u) {
                                 look.faces.tile[f] = anyTile;
+                                look.uvPacked[f] = anyUv;
+                            }
                         }
-                        // Baked cubes occlude by tile solidity, not by source
-                        // model fullness (see IsOpaqueOccluder): stairs/slabs
-                        // are full quads here, so they must cull hidden
-                        // interior faces or dense bricks overflow the
-                        // 2048-face cache (holes).
-                        look.flags = IsOpaqueOccluder(bname) ? kBlockFlagOpaque : 0u;
+                        look.flags = (fullShape && IsOpaqueOccluder(bname)) ? kBlockFlagOpaque : 0u;
                         if (IsCutout(bname))
                             look.flags |= kBlockFlagCutout;
                         if (IsInnerFaces(bname))
                             look.flags |= kBlockFlagInner;
-                        // Texture-driven cutout (trapdoors/doors/...): any
-                        // face tile with binary transparency must alpha-test,
-                        // else its transparent texels (black RGB) render as
-                        // a black background. A discarding cube can't occlude.
                         if ((look.flags & kBlockFlagCutout) == 0u &&
                             facesNeedCutout(look.faces)) {
                             look.flags |= kBlockFlagCutout;
@@ -911,6 +1400,9 @@ namespace Manro {
             }
             pack.states[id] = look;
             pack.stateByKey.emplace(key, id);
+            if (pack.stateKeys.size() <= id)
+                pack.stateKeys.resize(static_cast<size_t>(id) + 1);
+            pack.stateKeys[id] = key;
             ++id;
         }
         // Air-adjacent safety: state 0 is air in every table.
@@ -926,8 +1418,9 @@ namespace Manro {
         pack.fallbackState = (stoneIt != pack.stateByKey.end()) ? stoneIt->second : 1u;
         out = std::move(pack);
         std::printf("[BlockAssets] states=%u mapped=%u fallback=%u skipped=%u autoCutout=%u "
-                    "tiles=%zu (%s)\n",
-                    id, mapped, fallback, skipped, autoCutout, out.tiles.size(), assetsDir.c_str());
+                    "shaped=%u tiles=%zu (%s)\n",
+                    id, mapped, fallback, skipped, autoCutout, shapedStates, out.tiles.size(),
+                    assetsDir.c_str());
         return true;
     }
 } // namespace Manro

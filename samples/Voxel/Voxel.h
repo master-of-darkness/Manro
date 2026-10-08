@@ -17,6 +17,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <map>
 #include <string>
 #include <utility>
 
@@ -83,6 +84,9 @@ public:
         printf("[Voxel] stream spawn=(%.1f,%.1f,%.1f) world=%s\n", m_Spawn.x, m_Spawn.y, m_Spawn.z,
                m_Params.worldDir.empty() ? "<no-save>" : m_Params.worldDir.c_str());
 
+        // Default placement state (planks) until the first MMB pick.
+        m_PlaceState = m_Renderer->VoxelStreamPlaceState();
+        m_PlaceKey = m_Renderer->VoxelGetStateKey(m_PlaceState);
         // Player starts at spawn (falls to the ground once it streams in);
         // camera is the eye, driven by mouse look below.
         m_Player.pos = m_Spawn;
@@ -211,14 +215,42 @@ public:
                                          static_cast<float>(hit.hy + hit.ny),
                                          static_cast<float>(hit.hz + hit.nz));
                 if (!m_Renderer->VoxelStreamIsSolid(target)) {
-                    m_Renderer->VoxelQueueEdit(
-                        target + Manro::Vec3(0.5f),
-                        0.f, m_Renderer->VoxelStreamPlaceState(), 1);
+                    // State-aware placement: orient the picked state from the
+                    // view (facing/half/axis) instead of always dropping the
+                    // same default variant. Unknown combos fall back inside.
+                    const Manro::Vec3 hitPos = eye + fwd * hit.t;
+                    const bool fluid = m_Renderer->VoxelStreamIsFluid(target);
+                    const Manro::u32 state =
+                        OrientPlaceState(m_PlaceState, hitPos.y, hit.nx, hit.ny, hit.nz, fluid);
+                    m_Renderer->VoxelQueueEdit(target + Manro::Vec3(0.5f), 0.f, state, 1);
                     ++m_EditCount;
                 }
             }
         } else if (!m_InputManager.IsMouseButtonDown(MB::Right)) {
             m_bRMBHeld = false;
+        }
+        // Pick-block: MMB copies the targeted voxel's exact state (variant
+        // included) for RMB placement. Skip/air cells (flowers, torches)
+        // aren't solid so the ray passes through them — not pickable.
+        if (m_bGrabbed && !justGrabbed && m_InputManager.IsMouseButtonDown(MB::Middle) &&
+            !m_bMMBHeld) {
+            m_bMMBHeld = true;
+            const auto hit = PlayerDetail::RaycastVoxel(*m_Renderer, eye, fwd, 8.f);
+            if (hit.hit) {
+                const Manro::i32 st = m_Renderer->VoxelStreamGetStateAt(
+                    Manro::Vec3(static_cast<float>(hit.hx) + 0.5f,
+                                static_cast<float>(hit.hy) + 0.5f,
+                                static_cast<float>(hit.hz) + 0.5f));
+                if (st > 0) {
+                    m_PlaceState = static_cast<Manro::u32>(st);
+                    m_PlaceKey = m_Renderer->VoxelGetStateKey(m_PlaceState);
+                    printf("[Voxel] pick state=%u %s\n", m_PlaceState, m_PlaceKey.c_str());
+                } else {
+                    printf("[Voxel] pick: no state (air/unloaded)\n");
+                }
+            }
+        } else if (!m_InputManager.IsMouseButtonDown(MB::Middle)) {
+            m_bMMBHeld = false;
         }
 
         // Culling-stage kill switches for bisection: B = mesh backface,
@@ -335,9 +367,11 @@ public:
                                 dbg[2], dbg[3], dbg[4], dbg[5]);
             ImGui::TextDisabled("backface=%d frustum=%d", m_UseBackface ? 1 : 0,
                                 m_UseFrustum ? 1 : 0);
+            ImGui::TextDisabled("placing: %s",
+                               m_PlaceKey.empty() ? "?" : m_PlaceKey.c_str());
             ImGui::TextDisabled(
                 "WASD move | 2xW/Shift/Ctrl sprint | Space jump | F fly | LMB break | RMB place");
-            ImGui::TextDisabled("F11 fullscreen | B/N cull | V vsync | Esc cursor/quit");
+            ImGui::TextDisabled("MMB pick block | F11 fullscreen | B/N cull | V vsync | Esc cursor/quit");
         }
         ImGui::End();
 
@@ -364,6 +398,137 @@ public:
 
     Manro::CInputManager *GetInputManager() override { return &m_InputManager; }
   private:
+    // Placement helpers (state-aware, cube-mesher constraints).
+    static void SplitStateKey(const std::string &key, std::string &nameOut,
+                              std::map<std::string, std::string> &propsOut) {
+        const size_t bar = key.find('|');
+        nameOut = (bar == std::string::npos) ? key : key.substr(0, bar);
+        propsOut.clear();
+        if (bar == std::string::npos)
+            return;
+        size_t i = bar + 1;
+        while (i < key.size()) {
+            const size_t eq = key.find('=', i);
+            if (eq == std::string::npos)
+                break;
+            const size_t sc = key.find(';', eq + 1);
+            if (sc == std::string::npos)
+                break;
+            propsOut[key.substr(i, eq - i)] = key.substr(eq + 1, sc - eq - 1);
+            i = sc + 1;
+        }
+    }
+
+    static std::string JoinStateKey(const std::string &name,
+                                    const std::map<std::string, std::string> &props) {
+        std::string key = name;
+        key += '|';
+        for (const auto &p : props) {
+            key += p.first;
+            key += '=';
+            key += p.second;
+            key += ';';
+        }
+        return key;
+    }
+
+    // Resolve the state to place for a picked base state: orient from the
+    // player view (facing/half/axis), reset dynamic props (open=false),
+    // set waterlogged from the target cell. Every substitution is
+    // try-and-fall-back: unknown combinations keep the picked state, so a
+    // partial rule set can never produce magenta/fallback blocks.
+    Manro::u32 OrientPlaceState(Manro::u32 base, float hitY, int nx, int ny, int nz,
+                               bool targetFluid) const {
+        const std::string baseKey = m_Renderer->VoxelGetStateKey(base);
+        if (baseKey.empty())
+            return base;
+        std::string name;
+        std::map<std::string, std::string> props;
+        SplitStateKey(baseKey, name, props);
+        if (props.empty())
+            return base;
+
+        // Facing (trapdoor/stairs/furnace/...): block faces the player,
+        // i.e. opposite the horizontal look direction. m_Yaw convention:
+        // fwd = (cos yr, *, sin yr); north = -Z, south = +Z, east = +X.
+        auto it = props.find("facing");
+        if (it != props.end()) {
+            const float fx = -m_Fwd.x, fz = -m_Fwd.z;
+            const std::string want =
+                (std::fabs(fx) > std::fabs(fz)) ? (fx > 0.f ? "east" : "west")
+                                               : (fz > 0.f ? "south" : "north");
+            if (it->second != want) {
+                auto trial = props;
+                trial["facing"] = want;
+                const Manro::u32 id = m_Renderer->VoxelFindStateByKey(JoinStateKey(name, trial));
+                if (id != ~0u)
+                    props = std::move(trial);
+            }
+        }
+        // Half / slab type from the hit: top/bottom faces decide directly,
+        // side faces use the hit height within the target cell.
+        // ny>0 = hit a top face (placing on top) -> bottom half;
+        // ny<0 = hit a bottom face (placing underneath) -> top half.
+        const bool wantTop =
+            (ny > 0) ? false : (ny < 0) ? true : (hitY - std::floor(hitY) > 0.5f);
+        it = props.find("half");
+        if (it != props.end()) {
+            const std::string want = wantTop ? "top" : "bottom";
+            if (it->second != want) {
+                auto trial = props;
+                trial["half"] = want;
+                const Manro::u32 id = m_Renderer->VoxelFindStateByKey(JoinStateKey(name, trial));
+                if (id != ~0u)
+                    props = std::move(trial);
+            }
+        }
+        it = props.find("type");
+        if (it != props.end() && (it->second == "top" || it->second == "bottom")) {
+            const std::string want = wantTop ? "top" : "bottom";
+            if (it->second != want) {
+                auto trial = props;
+                trial["type"] = want;
+                const Manro::u32 id = m_Renderer->VoxelFindStateByKey(JoinStateKey(name, trial));
+                if (id != ~0u)
+                    props = std::move(trial);
+            }
+        }
+        // Pillar axis from the face normal.
+        it = props.find("axis");
+        if (it != props.end()) {
+            const std::string want = (ny != 0) ? "y" : (nx != 0 ? "x" : "z");
+            if (it->second != want) {
+                auto trial = props;
+                trial["axis"] = want;
+                const Manro::u32 id = m_Renderer->VoxelFindStateByKey(JoinStateKey(name, trial));
+                if (id != ~0u)
+                    props = std::move(trial);
+            }
+        }
+        // Dynamic props reset to placed defaults.
+        it = props.find("open");
+        if (it != props.end() && it->second != "false") {
+            auto trial = props;
+            trial["open"] = "false";
+            const Manro::u32 id = m_Renderer->VoxelFindStateByKey(JoinStateKey(name, trial));
+            if (id != ~0u)
+                props = std::move(trial);
+        }
+        it = props.find("waterlogged");
+        if (it != props.end()) {
+            const std::string want = targetFluid ? "true" : "false";
+            if (it->second != want) {
+                auto trial = props;
+                trial["waterlogged"] = want;
+                const Manro::u32 id = m_Renderer->VoxelFindStateByKey(JoinStateKey(name, trial));
+                if (id != ~0u)
+                    props = std::move(trial);
+            }
+        }
+        const Manro::u32 resolved = m_Renderer->VoxelFindStateByKey(JoinStateKey(name, props));
+        return (resolved != ~0u) ? resolved : base;
+    }
+
     Params m_Params;
     Manro::CRenderer *m_Renderer{nullptr};
     Manro::CWindow *m_Window{nullptr};
@@ -382,6 +547,12 @@ public:
     bool m_bGrabbed{true};
     bool m_bLMBHeld{false};
     bool m_bRMBHeld{false};
+    bool m_bMMBHeld{false};
+    // State-aware placement: MMB pick-block copies the targeted voxel's
+    // state id (exact variant), RMB places it oriented from the view.
+    // Defaults to planks until the first pick.
+    Manro::u32 m_PlaceState{1};
+    std::string m_PlaceKey;
     bool m_bEscHeld{false};
     bool m_bF11Held{false};
     bool m_bBHeld{false};
