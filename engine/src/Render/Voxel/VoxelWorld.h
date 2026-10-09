@@ -88,6 +88,7 @@ namespace Manro {
         void RecomputeHidden(u32 brickIdx);
 
         void InvalidateHiddenNear(const Vec3 &pos, float radius);
+        void InvalidateSingleVoxel(const Vec3 &pos);
 
         CVulkanContext *m_Context{nullptr};
         Scope<CVoxelSparseBinder> m_Bricks;

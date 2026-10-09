@@ -492,6 +492,43 @@ namespace Manro {
             }
         }
     }
+    void CVoxelWorld::InvalidateSingleVoxel(const Vec3 &pos) {
+        if (m_BrickSize <= 0.f || m_BrickHidden.empty())
+            return;
+        const Vec3 local = (pos - m_WorldMin) / m_BrickSize;
+        const int dim = static_cast<int>(m_VirtualDim);
+        const int bx = static_cast<int>(std::floor(local.x));
+        const int by = static_cast<int>(std::floor(local.y));
+        const int bz = static_cast<int>(std::floor(local.z));
+        if (bx < 0 || by < 0 || bz < 0 || bx >= dim || by >= dim || bz >= dim)
+            return;
+        const size_t slot = static_cast<size_t>(bx) + static_cast<size_t>(by) * dim +
+                            static_cast<size_t>(bz) * dim * dim;
+        if (slot >= m_PageMirror.size())
+            return;
+        const i32 home = m_PageMirror[slot];
+        if (home < 0)
+            return;
+        const u32 h = static_cast<u32>(home);
+        m_BrickHidden[h] = 0u;
+        MarkBrickDirty(h);
+        int lx = static_cast<int>(std::floor((local.x - bx) * 16.f));
+        int ly = static_cast<int>(std::floor((local.y - by) * 16.f));
+        int lz = static_cast<int>(std::floor((local.z - bz) * 16.f));
+        lx = std::max(0, std::min(15, lx));
+        ly = std::max(0, std::min(15, ly));
+        lz = std::max(0, std::min(15, lz));
+        const int touches[6] = {lx == 15, lx == 0, ly == 15, ly == 0, lz == 15, lz == 0};
+        for (int a = 0; a < 6; ++a) {
+            if (!touches[a])
+                continue;
+            const i32 n = NeighborBrick(h, kHiddenNb[a][0], kHiddenNb[a][1], kHiddenNb[a][2]);
+            if (n >= 0) {
+                m_BrickHidden[static_cast<u32>(n)] = 0u;
+                MarkBrickDirty(static_cast<u32>(n));
+            }
+        }
+    }
     void CVoxelWorld::SetVoxel(u32 bx, u32 by, u32 bz, u32 lx, u32 ly, u32 lz, u16 mat) {
         i32 brick = AllocateBrick(bx, by, bz);
         if (brick < 0)
@@ -513,7 +550,10 @@ namespace Manro {
             return;
         }
 
-        InvalidateHiddenNear(cmd.pos, cmd.radius);
+        if (cmd.radius < m_VoxelSize * 0.5f)
+            InvalidateSingleVoxel(cmd.pos);
+        else
+            InvalidateHiddenNear(cmd.pos, cmd.radius);
         m_PendingEdits.push_back(cmd);
     }
 

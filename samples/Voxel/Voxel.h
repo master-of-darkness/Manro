@@ -21,23 +21,15 @@
 #include <string>
 #include <utility>
 
-// CVoxel: playable block-world sample on the GPU-driven voxel path.
-// - First-person player (walk/sprint/jump/swim, noclip fly on F) with AABB
-//   collision against the streamed world; chunks stream + evict around the
-//   player with no preallocated volume limit.
-// - LMB breaks (raycast), RMB places, F11 toggles fullscreen, Esc frees the
-//   mouse (click re-grabs, Esc again quits). B/N are culling kill switches,
-//   V toggles vsync.
 class CVoxel final : public Manro::IApplication {
 public:
-    // Startup parameters (parsed from argv in main.cpp). No env vars.
     struct Params {
-        std::string worldDir; // Anvil save dir (required; no fallback)
-        std::string assetsDir; // empty = build-time client-jar assets
-        int radius{6}; // section radius, clamped to [1, 10]
-        float resScale{1.f}; // offscreen resolution scale, clamped to [0.25, 1]
-        bool debug{false}; // GPU debug counters (costs a readback)
-        bool chaos{false}; // streaming-torture teleports
+        std::string worldDir;
+        std::string assetsDir;
+        int radius{6};
+        float resScale{1.f};
+        bool debug{false};
+        bool chaos{false};
     };
 
     explicit CVoxel(Params params);
@@ -58,14 +50,10 @@ public:
         m_InputManager.SetBackend(&m_InputBackend);
         m_Renderer->SetDebugUIEnabled(false);
 
-        // Voxel task/mesh PSO is MSAA-free (1X); force single-sample so the
-        // shared color+depth pass matches rasterizationSamples.
         {
             Manro::RenderSettings_t s = m_Renderer->GetSettings();
             s.aaMode = Manro::AntiAliasingMode::None;
             s.msaaSamples = Manro::MSAASampleCount::MSAA_1X;
-            // Fill-bound probe: --res-scale=0.5 renders the offscreen at
-            // half res (composite upscales to the swapchain).
             if (m_Params.resScale < 1.f) {
                 s.resolutionScale = m_Params.resScale;
                 printf("[Voxel] resolutionScale=%.2f\n", static_cast<double>(m_Params.resScale));
@@ -73,36 +61,25 @@ public:
             m_Renderer->SetSettings(s);
         }
 
-        // Voxel path first: sparse world + PSOs.
         m_Renderer->VoxelInit(1280, 720);
 
-        // Streamed path: block tiles from the build-time client-jar assets
-        // (--assets-dir overrides the default) plus the Anvil save under
-        // --world-dir (required — without a save the volume fills as air).
         m_Spawn = m_Renderer->VoxelStreamInit(m_Params.worldDir.c_str(), m_Params.assetsDir.c_str(),
                                               m_Params.radius);
         printf("[Voxel] stream spawn=(%.1f,%.1f,%.1f) world=%s\n", m_Spawn.x, m_Spawn.y, m_Spawn.z,
                m_Params.worldDir.empty() ? "<no-save>" : m_Params.worldDir.c_str());
 
-        // Default placement state (planks) until the first MMB pick.
         m_PlaceState = m_Renderer->VoxelStreamPlaceState();
         m_PlaceKey = m_Renderer->VoxelGetStateKey(m_PlaceState);
-        // Player starts at spawn (falls to the ground once it streams in);
-        // camera is the eye, driven by mouse look below.
         m_Player.pos = m_Spawn;
         m_CamPos = m_Player.pos + Manro::Vec3(0.f, CPlayer::kEye, 0.f);
         m_Fwd = Manro::Vec3(0, 0, -1);
         m_Yaw = -90.f;
         m_Pitch = -10.f;
 
-        // Captured mouse for first-person look (Esc releases, click re-grabs).
         m_Window->CaptureMouse(true);
         m_Window->ShowCursor(false);
         m_bGrabbed = true;
 
-        // GPU debug counters cost a vkQueueWaitIdle readback on capture
-        // frames: opt-in via --debug, off by default so the steady
-        // log/HUD numbers measure the renderer, not the diagnostic stall.
         m_DbgAllowed = m_Params.debug;
         m_Chaos = m_Params.chaos;
     }
@@ -116,7 +93,6 @@ public:
         using K = Manro::Key;
         using MB = Manro::MouseButton;
 
-        // Escape: release the mouse first, quit when already released.
         if (m_InputManager.IsKeyDown(K::Escape) && !m_bEscHeld) {
             m_bEscHeld = true;
             if (m_bGrabbed) {
@@ -130,7 +106,6 @@ public:
             m_bEscHeld = false;
         }
 
-        // Click re-grabs a released cursor (that click never edits).
         bool justGrabbed = false;
         if (!m_bGrabbed && m_InputManager.IsMouseButtonDown(MB::Left)) {
             m_Window->CaptureMouse(true);
@@ -139,7 +114,6 @@ public:
             justGrabbed = true;
         }
 
-        // Fullscreen toggle.
         if (m_InputManager.IsKeyDown(K::F11) && !m_bF11Held) {
             m_bF11Held = true;
             m_Window->ToggleFullscreen();
@@ -147,7 +121,6 @@ public:
             m_bF11Held = false;
         }
 
-        // Mouse look (drained always so no jump on re-grab).
         auto [mx, my] = m_InputManager.ConsumeMouseDelta();
         if (m_bGrabbed) {
             m_Yaw += mx * 0.1f;
@@ -163,14 +136,9 @@ public:
         Manro::Vec3 yawRight = glm::normalize(glm::cross(yawFwd, Manro::Vec3{0, 1, 0}));
         m_Fwd = fwd;
 
-        // Player physics (walk/swim/fly, collision, gravity substeps).
         PlayerUpdate(m_Player, *m_Renderer, m_InputManager, yawFwd, yawRight, fwd, ctx.DeltaTime,
                      ctx.TotalTime);
 
-        // Streaming-torture teleports (repro for the streaming-bug
-        // bisection): opt-in via --chaos, OFF by default — when on,
-        // the world perpetually restreams and most of the view is unfilled
-        // holes while it catches up.
         if (m_Chaos) {
             if (m_Frame == 700)
                 m_Player.pos += Manro::Vec3(80.f, 0.f, 0.f);
@@ -180,14 +148,12 @@ public:
                 m_Player.pos -= Manro::Vec3(80.f, 0.f, 80.f);
         }
 
-        // Fell out of the world (broken save edge): back to spawn.
         if (m_Player.pos.y < -80.f) {
             m_Player.pos = m_Spawn;
             m_Player.vel = Manro::Vec3(0.f);
         }
         m_CamPos = m_Player.pos + Manro::Vec3(0.f, CPlayer::kEye, 0.f);
 
-        // Block edit: LMB breaks, RMB places (raycast from the eye).
         m_BreakCd -= ctx.DeltaTime;
         const Manro::Vec3 eye = m_CamPos;
         if (m_bGrabbed && !justGrabbed && m_InputManager.IsMouseButtonDown(MB::Left) &&
@@ -215,9 +181,6 @@ public:
                                          static_cast<float>(hit.hy + hit.ny),
                                          static_cast<float>(hit.hz + hit.nz));
                 if (!m_Renderer->VoxelStreamIsSolid(target)) {
-                    // State-aware placement: orient the picked state from the
-                    // view (facing/half/axis) instead of always dropping the
-                    // same default variant. Unknown combos fall back inside.
                     const Manro::Vec3 hitPos = eye + fwd * hit.t;
                     const bool fluid = m_Renderer->VoxelStreamIsFluid(target);
                     const Manro::u32 state =
@@ -229,9 +192,6 @@ public:
         } else if (!m_InputManager.IsMouseButtonDown(MB::Right)) {
             m_bRMBHeld = false;
         }
-        // Pick-block: MMB copies the targeted voxel's exact state (variant
-        // included) for RMB placement. Skip/air cells (flowers, torches)
-        // aren't solid so the ray passes through them — not pickable.
         if (m_bGrabbed && !justGrabbed && m_InputManager.IsMouseButtonDown(MB::Middle) &&
             !m_bMMBHeld) {
             m_bMMBHeld = true;
@@ -253,8 +213,6 @@ public:
             m_bMMBHeld = false;
         }
 
-        // Culling-stage kill switches for bisection: B = mesh backface,
-        // N = task frustum. Both default on.
         if (m_InputManager.IsKeyDown(K::B) && !m_bBHeld) {
             m_bBHeld = true;
             m_UseBackface = !m_UseBackface;
@@ -285,9 +243,6 @@ public:
 
     void OnRender(Manro::FrameContext_t &frame) override {
         const auto t0 = std::chrono::steady_clock::now();
-        // Sprint FOV kick (90 -> 100, smoothed). Snap when close so the
-        // projection stops micro-creeping (variable dt would otherwise keep
-        // it drifting by sub-pixel amounts long after the sprint ends).
         const float fovTarget = m_Player.sprinting ? 100.f : 90.f;
         m_Fov += (fovTarget - m_Fov) * std::min(1.f, frame.DeltaTime * 8.f);
         if (std::abs(fovTarget - m_Fov) < 0.01f)
@@ -298,13 +253,9 @@ public:
         m_Renderer->SetViewProjection(view, proj);
         m_Renderer->SetCameraPosition(m_CamPos);
 
-        // Section streaming follows the player eye.
         m_Unfilled = m_Renderer->VoxelStreamUpdate();
         const auto t1 = std::chrono::steady_clock::now();
 
-        // DEBUG capture only on opted-in log frames: skips per-frame Fill,
-        // shader atomics, extra barriers and the WaitIdle readback otherwise.
-        // The fps printf below stays on every 120th frame regardless.
         const bool wantLog = (m_Frame % 120) == 0;
         m_Renderer->VoxelSetDebugEnabled(wantLog && m_DbgAllowed);
 
@@ -312,9 +263,6 @@ public:
         m_Renderer->RenderQueue();
         m_Renderer->EndRendering();
         const auto t2 = std::chrono::steady_clock::now();
-        // CPU share of the frame: streaming + command recording (t0->t2 is
-        // CPU-only; the GPU works the submitted CB asynchronously, so
-        // dt - cpuMs is queue/present/compositor + GPU time).
         const float streamMs =
             std::chrono::duration<float, std::milli>(t1 - t0).count();
         const float cpuMs =
@@ -323,7 +271,6 @@ public:
         m_StreamEma =
             (m_StreamEma <= 0.f) ? streamMs : m_StreamEma + (streamMs - m_StreamEma) * 0.05f;
 
-        // On-screen FPS: EMA of frame dt + 1%/0.1% lows over a rolling window.
         const float dtMs = frame.DeltaTime * 1000.f;
         m_FpsEma = (m_FpsEma <= 0.f) ? dtMs : m_FpsEma + (dtMs - m_FpsEma) * 0.05f;
         m_FrameTimes[m_FrameTimeIdx] = dtMs;
@@ -378,8 +325,6 @@ public:
         const float fps = frame.DeltaTime > 0.f ? 1.f / frame.DeltaTime : 0.f;
         (void)fps;
         if (wantLog && m_Frame > 0) {
-            // EMA, not the instantaneous sample: a single WaitIdle / upload
-            // stall frame would otherwise dominate the reported number.
             printf("[Voxel] fps=%.0f (%.2f ms) 1%%low=%.2fms 0.1%%low=%.2fms bricks=%u "
                    "taskGroups=%u edits=%u unfilled=%d cpu=%.2fms stream=%.2fms cam=(%.1f,%.1f,%.1f)\n",
                    static_cast<double>(emaFps), static_cast<double>(m_FpsEma),
@@ -387,7 +332,6 @@ public:
                    m_Renderer->VoxelGetBrickCount(), m_Renderer->VoxelGetTaskGroups(), m_EditCount,
                    m_Unfilled, static_cast<double>(m_CpuEma), static_cast<double>(m_StreamEma),
                    m_CamPos.x, m_CamPos.y, m_CamPos.z);
-            // DEBUG: [0]=taskRuns [1]=visible [2]=faces [3]=culled [4]=meshRuns [5]=meshFaces
             if (m_DbgAllowed)
                 printf("[VoxelDbg] taskRuns=%u visible=%u faces=%u culled=%u meshRuns=%u "
                        "meshFaces=%u\n",
@@ -398,7 +342,6 @@ public:
 
     Manro::CInputManager *GetInputManager() override { return &m_InputManager; }
   private:
-    // Placement helpers (state-aware, cube-mesher constraints).
     static void SplitStateKey(const std::string &key, std::string &nameOut,
                               std::map<std::string, std::string> &propsOut) {
         const size_t bar = key.find('|');
@@ -432,11 +375,6 @@ public:
         return key;
     }
 
-    // Resolve the state to place for a picked base state: orient from the
-    // player view (facing/half/axis), reset dynamic props (open=false),
-    // set waterlogged from the target cell. Every substitution is
-    // try-and-fall-back: unknown combinations keep the picked state, so a
-    // partial rule set can never produce magenta/fallback blocks.
     Manro::u32 OrientPlaceState(Manro::u32 base, float hitY, int nx, int ny, int nz,
                                bool targetFluid) const {
         const std::string baseKey = m_Renderer->VoxelGetStateKey(base);
@@ -448,9 +386,6 @@ public:
         if (props.empty())
             return base;
 
-        // Facing (trapdoor/stairs/furnace/...): block faces the player,
-        // i.e. opposite the horizontal look direction. m_Yaw convention:
-        // fwd = (cos yr, *, sin yr); north = -Z, south = +Z, east = +X.
         auto it = props.find("facing");
         if (it != props.end()) {
             const float fx = -m_Fwd.x, fz = -m_Fwd.z;
@@ -465,10 +400,6 @@ public:
                     props = std::move(trial);
             }
         }
-        // Half / slab type from the hit: top/bottom faces decide directly,
-        // side faces use the hit height within the target cell.
-        // ny>0 = hit a top face (placing on top) -> bottom half;
-        // ny<0 = hit a bottom face (placing underneath) -> top half.
         const bool wantTop =
             (ny > 0) ? false : (ny < 0) ? true : (hitY - std::floor(hitY) > 0.5f);
         it = props.find("half");
@@ -493,7 +424,6 @@ public:
                     props = std::move(trial);
             }
         }
-        // Pillar axis from the face normal.
         it = props.find("axis");
         if (it != props.end()) {
             const std::string want = (ny != 0) ? "y" : (nx != 0 ? "x" : "z");
@@ -505,7 +435,6 @@ public:
                     props = std::move(trial);
             }
         }
-        // Dynamic props reset to placed defaults.
         it = props.find("open");
         if (it != props.end() && it->second != "false") {
             auto trial = props;
@@ -548,9 +477,6 @@ public:
     bool m_bLMBHeld{false};
     bool m_bRMBHeld{false};
     bool m_bMMBHeld{false};
-    // State-aware placement: MMB pick-block copies the targeted voxel's
-    // state id (exact variant), RMB places it oriented from the view.
-    // Defaults to planks until the first pick.
     Manro::u32 m_PlaceState{1};
     std::string m_PlaceKey;
     bool m_bEscHeld{false};
@@ -564,7 +490,6 @@ public:
     bool m_Chaos{false};
     int m_Unfilled{0};
 
-    // On-screen FPS state: EMA of frame dt + rolling window for lows.
     static constexpr Manro::u32 kFrameTimeWindow = 240;
     float m_FrameTimes[kFrameTimeWindow]{};
     Manro::u32 m_FrameTimeIdx{0};

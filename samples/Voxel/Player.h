@@ -1,10 +1,5 @@
 #pragma once
 
-// First-person block-world character controller for the voxel sample.
-// Kinematic AABB vs the streamed CPU occupancy mirror (CRenderer voxel
-// queries): walk/sprint/jump, swim, noclip fly. Unloaded sections read
-// solid, so the player can never fall through not-yet-streamed world.
-
 #include <Manro/Core/Types.h>
 #include <Manro/Input/InputManager.h>
 #include <Manro/Render/Renderer.h>
@@ -12,13 +7,11 @@
 #include <cmath>
 
 struct CPlayer {
-    Manro::Vec3 pos{0.f}; // feet center
+    Manro::Vec3 pos{0.f};
     Manro::Vec3 vel{0.f};
     bool onGround{false};
     bool fly{false};
     bool fWasDown{false};
-    // Sprint: double-tap W latches sprint while W is held (Shift
-    // also forces it). sprinting mirrors the live state for FOV/HUD.
     bool sprinting{false};
     bool sprintLatch{false};
     bool wWasDown{false};
@@ -28,11 +21,7 @@ struct CPlayer {
     static constexpr float kHeight = 1.8f;
     static constexpr float kEye = 1.62f;
     static constexpr float kGravity = 28.f;
-    static constexpr float kJumpVel = 9.f; // ~1.45 blocks: clears 1-high steps
-    // Ground probe: MoveAxis only reports contact on penetrating frames, so
-    // at high FPS the per-frame fall can't cross kEps and onGround would
-    // flicker AIR while standing. The probe stabilizes the flag; the stick
-    // + snap below keeps the feet glued to contact (no hover, no bob).
+    static constexpr float kJumpVel = 9.f;
     static constexpr float kGroundProbe = 0.03f;
     static constexpr float kWalk = 4.3f;
     static constexpr float kSprint = 5.7f;
@@ -59,7 +48,6 @@ namespace PlayerDetail {
         return false;
     }
 
-    // Move along one axis with contact clamp. Returns true on hit.
     inline bool MoveAxis(Manro::CRenderer &ren, CPlayer &p, int axis, float delta) {
         if (delta == 0.f)
             return false;
@@ -108,7 +96,7 @@ namespace PlayerDetail {
         bool hit{false};
         int hx{0}, hy{0}, hz{0};
         int nx{0}, ny{0}, nz{0};
-        float t{0.f}; // ray distance to the entered face (hitPos = origin + dir*t)
+        float t{0.f};
     };
 
     inline RayHit_t RaycastVoxel(Manro::CRenderer &ren, const Manro::Vec3 &origin,
@@ -173,11 +161,8 @@ namespace PlayerDetail {
         }
         return r;
     }
-} // namespace PlayerDetail
+}
 
-// Advance the player. yawFwd/right are yaw-only (walk plane), fullFwd
-// includes pitch (fly). Reads WASD/Space/Shift/C/F directly. nowSec is a
-// steadily increasing clock (frame total time) for double-tap detection.
 inline void PlayerUpdate(CPlayer &p, Manro::CRenderer &ren, Manro::CInputManager &in,
                          const Manro::Vec3 &yawFwd, const Manro::Vec3 &right,
                          const Manro::Vec3 &fullFwd, float dt, float nowSec) {
@@ -197,13 +182,11 @@ inline void PlayerUpdate(CPlayer &p, Manro::CRenderer &ren, Manro::CInputManager
     if (in.IsKeyDown(K::A))
         wish -= right;
     {
-        // Keep diagonal speed == axial speed (keys are binary).
         const float wl = std::sqrt(wish.x * wish.x + wish.z * wish.z);
         if (wl > 1.f)
             wish = wish * (1.f / wl);
     }
 
-    // Fixed-substep integration (engine dt clamps at 0.1s; 6 substeps max).
     int steps = static_cast<int>(std::ceil(dt / (1.f / 120.f)));
     if (steps < 1)
         steps = 1;
@@ -211,7 +194,6 @@ inline void PlayerUpdate(CPlayer &p, Manro::CRenderer &ren, Manro::CInputManager
         steps = 12;
     const float h = dt / static_cast<float>(steps);
 
-    // Sprint: double-tap W latches sprint while W stays held.
     const bool wDown = in.IsKeyDown(K::W);
     if (wDown && !p.wWasDown && (nowSec - p.lastWRelease) < 0.30f)
         p.sprintLatch = true;
@@ -262,7 +244,6 @@ inline void PlayerUpdate(CPlayer &p, Manro::CRenderer &ren, Manro::CInputManager
         Manro::Vec3 hv = wish * speed;
 
         if (inFluid) {
-            // Swim: heavy drag, slow sink, Space to rise.
             p.vel.x = hv.x * 0.5f;
             p.vel.z = hv.z * 0.5f;
             p.vel.y -= CPlayer::kGravity * 0.25f * h;
@@ -276,11 +257,6 @@ inline void PlayerUpdate(CPlayer &p, Manro::CRenderer &ren, Manro::CInputManager
             const bool wasGrounded = p.onGround;
             const bool jumpHeld = in.IsKeyDown(K::Space);
             if (wasGrounded && !jumpHeld) {
-                // Grounded stick: no gravity build-up while supported. Without
-                // this the feet sink a fraction of kEps every substep and snap
-                // back on penetration frames (1-2mm sawtooth at 144Hz+, plus
-                // jitter from variable dt at 60Hz) — visible as textures
-                // slowly dragging while standing still.
                 p.vel.y = 0.f;
             } else {
                 p.vel.y -= CPlayer::kGravity * h;
@@ -297,11 +273,6 @@ inline void PlayerUpdate(CPlayer &p, Manro::CRenderer &ren, Manro::CInputManager
         const bool hitX = PlayerDetail::MoveAxis(ren, p, 0, p.vel.x * h);
         const bool hitZ = PlayerDetail::MoveAxis(ren, p, 2, p.vel.z * h);
         const bool hitY = PlayerDetail::MoveAxis(ren, p, 1, p.vel.y * h);
-        // Support probe: MoveAxis only reports onGround on penetrating frames,
-        // so at high FPS (per-frame fall can't cross kEps) standing flickers
-        // AIR without this. When landing softly (no penetration this substep
-        // but ground within probe range) snap down to contact so the stick
-        // above never freezes us hovering up to kGroundProbe in the air.
         if (p.vel.y <= 0.f) {
             const Manro::Vec3 probePos = p.pos - Manro::Vec3(0.f, CPlayer::kGroundProbe, 0.f);
             if (PlayerDetail::BoxCollides(ren, probePos)) {
@@ -321,8 +292,6 @@ inline void PlayerUpdate(CPlayer &p, Manro::CRenderer &ren, Manro::CInputManager
                 p.vel.y = 0.f;
             }
         }
-        // Running into a wall breaks the double-tap latch (Shift re-applies
-        // while held).
         if (p.sprintLatch && (hitX || hitZ))
             p.sprintLatch = false;
     }
