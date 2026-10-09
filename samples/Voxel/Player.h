@@ -203,7 +203,7 @@ inline void PlayerUpdate(CPlayer &p, Manro::CRenderer &ren, Manro::CInputManager
         p.sprintLatch = false;
     }
     p.wWasDown = wDown;
-    const bool sprintKey = in.IsKeyDown(K::LeftShift) || in.IsKeyDown(K::LeftCtrl);
+    const bool sprintKey = in.IsKeyDown(K::LeftCtrl);
     const float wishLen = std::sqrt(wish.x * wish.x + wish.z * wish.z);
     p.sprinting = false;
 
