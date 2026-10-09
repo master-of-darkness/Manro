@@ -25,8 +25,16 @@ namespace Manro {
         u32 triangleCount = 0;
         u32 instanceCount = 0;
         u32 lightCount = 0;
+        float paceFenceMs = 0.f;
+        float paceAcquireMs = 0.f;
+        float pacePresentMs = 0.f;
 
-        void Reset() { drawCalls = triangleCount = instanceCount = lightCount = 0; }
+        void Reset() {
+            drawCalls = triangleCount = instanceCount = lightCount = 0;
+            paceFenceMs = 0.f;
+            paceAcquireMs = 0.f;
+            pacePresentMs = 0.f;
+        }
     };
 
     class CRenderer {
@@ -99,6 +107,8 @@ namespace Manro {
         void VoxelQueueEdit(const Vec3 &pos, float radius, u32 material, u32 op) const;
         [[nodiscard]] u32 VoxelGetBrickCount() const;
         [[nodiscard]] u32 VoxelGetTaskGroups() const;
+        void VoxelGetGpuTimes(float &xferMs, float &drawMs, float &postMs) const;
+        void VoxelGetGpuInstantTimes(float &xferMs, float &drawMs, float &postMs) const;
         void VoxelSetDebugEnabled(bool enabled) const;
         void VoxelSetBackfaceEnabled(bool enabled) const;
         void VoxelSetFrustumEnabled(bool enabled) const;
@@ -108,6 +118,7 @@ namespace Manro {
         bool VoxelStreamIsFluid(const Vec3 &p) const;
         u32 VoxelStreamPlaceState() const;
         i32 VoxelStreamGetStateAt(const Vec3 &p) const;
+        bool VoxelStreamGetCollisionBox(const Vec3 &p, Vec3 &mn, Vec3 &mx) const;
         std::string VoxelGetStateKey(u32 id) const;
         u32 VoxelFindStateByKey(const std::string &key) const;
         void VoxelGetDebugCounters(u32 out[6]) const;

@@ -657,6 +657,13 @@ namespace Manro {
                    name == "bubble_column" || name == "nether_portal";
         }
 
+        bool IsChainName(std::string_view name) {
+            if (name == "chain_command_block")
+                return false;
+            return name.size() > 6 &&
+                   name.compare(name.size() - 6, 6, "_chain") == 0;
+        }
+
         bool IsSmallDecor(std::string_view name) {
             if (name == "snow")
                 return true;
@@ -672,8 +679,6 @@ namespace Manro {
             if (name == "red_mushroom" || name == "brown_mushroom")
                 return true;
             if (name == "nether_wart")
-                return true;
-            if (name == "chain")
                 return true;
             if (has("coral") && name.find("coral_block") == std::string_view::npos)
                 return true;
@@ -905,6 +910,10 @@ namespace Manro {
         std::unordered_map<std::string, u16> tileByPath;
 
         std::vector<u8> tileCutout{0};
+        pack.tiles.emplace_back(16 * 16 * 4, 0);
+        pack.tilePaths.emplace_back("manro/transparent");
+        tileCutout.push_back(1u);
+        const u16 kClearTile = 1;
         auto tileForPath = [&](const std::string &path) -> u16 {
             if (path.empty())
                 return 0;
@@ -1148,6 +1157,43 @@ namespace Manro {
                                     ++shapedStates;
                             }
                         }
+                        if (IsChainName(bname)) {
+                            const auto ait = pmap.find("axis");
+                            const std::string &ax = (ait != pmap.end()) ? ait->second : "y";
+                            float mn[3]{6.5f, 0.f, 6.5f};
+                            float mx[3]{9.5f, 16.f, 9.5f};
+                            if (ax == "x") {
+                                mn[0] = 0.f;
+                                mx[0] = 16.f;
+                            } else if (ax == "z") {
+                                mn[2] = 0.f;
+                                mx[2] = 16.f;
+                            }
+                            for (int a = 0; a < 3; ++a) {
+                                long qmn = static_cast<long>(
+                                    std::floor(std::clamp(mn[a], 0.f, 16.f)));
+                                long qmx = static_cast<long>(
+                                    std::ceil(std::clamp(mx[a], 0.f, 16.f)));
+                                if (qmx <= qmn) {
+                                    if (qmx < 16)
+                                        ++qmx;
+                                    else
+                                        --qmn;
+                                }
+                                look.shapeMin[a] = static_cast<u8>(qmn);
+                                look.shapeMax[a] = static_cast<u8>(qmx);
+                                look.collMin[a] = mn[a] / 16.f;
+                                look.collMax[a] = mx[a] / 16.f;
+                            }
+                            fullShape = false;
+                        } else {
+                            for (int a = 0; a < 3; ++a) {
+                                look.collMin[a] =
+                                    static_cast<float>(look.shapeMin[a]) / 16.f;
+                                look.collMax[a] =
+                                    static_cast<float>(look.shapeMax[a]) / 16.f;
+                            }
+                        }
                         for (size_t f = 0; f < 6; ++f) {
                             if (ft.tex[f].empty())
                                 continue;
@@ -1362,6 +1408,16 @@ namespace Manro {
                                 look.faces.tile[f] = anyTile;
                                 look.uvPacked[f] = anyUv;
                             }
+                        }
+                        if (IsChainName(bname)) {
+                            const auto ait = pmap.find("axis");
+                            const std::string &ax =
+                                (ait != pmap.end()) ? ait->second : "y";
+                            const size_t c0 = (ax == "x") ? 0u : ((ax == "z") ? 4u : 2u);
+                            look.faces.tile[c0] = kClearTile;
+                            look.faces.tile[c0 + 1u] = kClearTile;
+                            look.uvPacked[c0] = 0xFFFF0000u;
+                            look.uvPacked[c0 + 1u] = 0xFFFF0000u;
                         }
                         look.flags = (fullShape && IsOpaqueOccluder(bname)) ? kBlockFlagOpaque : 0u;
                         if (IsCutout(bname))

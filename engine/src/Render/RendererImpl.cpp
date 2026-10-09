@@ -39,6 +39,7 @@
 #include <stdexcept>
 #include <algorithm>
 #include <array>
+#include <chrono>
 
 namespace Manro {
     class CRendererImpl final {
@@ -181,6 +182,30 @@ namespace Manro {
             return (m_bVoxelEnabled && m_Voxel) ? m_Voxel->GetStats().taskGroups : 0;
         }
 
+        void VoxelGetGpuTimes(float &xferMs, float &drawMs, float &postMs) const {
+            if (m_bVoxelEnabled && m_Voxel) {
+                xferMs = m_Voxel->GetStats().gpuXferMs;
+                drawMs = m_Voxel->GetStats().gpuDrawMs;
+                postMs = m_Voxel->GetStats().gpuPostMs;
+            } else {
+                xferMs = 0.f;
+                drawMs = 0.f;
+                postMs = 0.f;
+            }
+        }
+
+        void VoxelGetGpuInstantTimes(float &xferMs, float &drawMs, float &postMs) const {
+            if (m_bVoxelEnabled && m_Voxel) {
+                xferMs = m_Voxel->GetStats().gpuXferInstMs;
+                drawMs = m_Voxel->GetStats().gpuDrawInstMs;
+                postMs = m_Voxel->GetStats().gpuPostInstMs;
+            } else {
+                xferMs = 0.f;
+                drawMs = 0.f;
+                postMs = 0.f;
+            }
+        }
+
         void VoxelGetDebugCounters(u32 out[6]) const {
             if (!m_bVoxelEnabled || !m_Voxel) {
                 for (int i = 0; i < 6; ++i)
@@ -232,6 +257,10 @@ namespace Manro {
 
         i32 VoxelStreamGetStateAt(const Vec3 &p) const {
             return (m_bVoxelEnabled && m_Voxel) ? m_Voxel->StreamGetStateAt(p) : -1;
+        }
+
+        bool VoxelStreamGetCollisionBox(const Vec3 &p, Vec3 &mn, Vec3 &mx) const {
+            return (m_bVoxelEnabled && m_Voxel) ? m_Voxel->StreamGetCollisionBox(p, mn, mx) : false;
         }
 
         std::string VoxelGetStateKey(u32 id) const {
@@ -430,14 +459,14 @@ namespace Manro {
         m_InstanceBatcher.Init(GetMaxInstances());
         m_PendingLights.reserve(GetMaxLights());
 
-        // Display refresh rate: explains observed fps caps (fifo vsync,
-        // compositor throttling) in perf reports.
         if (SDL_Window *sdlWin = static_cast<SDL_Window *>(window.GetNativeHandle())) {
             const SDL_DisplayID did = SDL_GetDisplayForWindow(sdlWin);
             const SDL_DisplayMode *dm = SDL_GetDesktopDisplayMode(did);
             if (dm)
                 LOG_INFO("[Display] desktop refresh: {:.1f}Hz ({}x{})", dm->refresh_rate, dm->w,
                          dm->h);
+            const char *drv = SDL_GetCurrentVideoDriver();
+            LOG_INFO("[Display] video driver: {}", drv ? drv : "?");
         }
 
         OverlayInfo_t guiInfo{};
@@ -817,7 +846,11 @@ namespace Manro {
         presentInfo.pSwapchains = swapchains;
         presentInfo.pImageIndices = &m_unCurrentImageIndex;
 
+        const auto presentT0 = std::chrono::steady_clock::now();
         VkResult presentResult = vkQueuePresentKHR(m_Context.GetGraphicsQueue(), &presentInfo);
+        m_CurrentFrameStats.pacePresentMs =
+            std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - presentT0)
+                .count();
         if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR) {
             m_Swapchain.SetNeedsRecreate(true);
         } else if (presentResult != VK_SUCCESS) {
@@ -855,15 +888,23 @@ namespace Manro {
 
         {
             MNR_PROFILE_SCOPE("WaitForFence");
+            const auto fenceT0 = std::chrono::steady_clock::now();
             VkFence inFlightFence = m_Swapchain.GetInFlightFence(m_unCurrentFrame);
             vkWaitForFences(device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
+            const auto fenceT1 = std::chrono::steady_clock::now();
+            m_CurrentFrameStats.paceFenceMs =
+                std::chrono::duration<float, std::milli>(fenceT1 - fenceT0).count();
         }
 
         {
             MNR_PROFILE_SCOPE("AcquireSwapchainImage");
+            const auto acqT0 = std::chrono::steady_clock::now();
             VkResult acquireResult = vkAcquireNextImageKHR(device, m_Swapchain.GetHandle(), UINT64_MAX,
                                                            m_Swapchain.GetImageAvailableSemaphore(m_unCurrentFrame),
                                                            VK_NULL_HANDLE, &m_unCurrentImageIndex);
+            const auto acqT1 = std::chrono::steady_clock::now();
+            m_CurrentFrameStats.paceAcquireMs =
+                std::chrono::duration<float, std::milli>(acqT1 - acqT0).count();
             if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR) {
                 m_Swapchain.SetNeedsRecreate(true);
                 return false;
@@ -1209,6 +1250,7 @@ namespace Manro {
                             m_RenderTargets.GetDepthView(), clearColor, m_unCurrentFrame, viewProj,
                             m_PrevVoxelViewProj, m_CameraPosition, m_Settings.nearZ,
                             m_Settings.farZ);
+            m_Voxel->CmdWriteTimestamp(cb, m_unCurrentFrame, 3);
             m_PrevVoxelViewProj = viewProj;
         }
 
@@ -1359,6 +1401,8 @@ namespace Manro {
 
             m_SceneRenderer->SetCompositePassState(&compositeState);
             m_SceneRenderer->Flush(cb);
+            if (m_Voxel)
+                m_Voxel->CmdWriteTimestamp(cb, m_unCurrentFrame, 4);
         }
 
         {
@@ -1379,6 +1423,8 @@ namespace Manro {
             vkCmdBeginRendering(cb, &guiRi);
             m_Overlay->Render(cb);
             vkCmdEndRendering(cb);
+            if (m_Voxel)
+                m_Voxel->CmdWriteTimestamp(cb, m_unCurrentFrame, 5);
         }
 
         FinalizeFrameAndPresent(cb);
@@ -1561,6 +1607,16 @@ namespace Manro {
 
     u32 RendererImplVoxelGetTaskGroups(const CRendererImpl &impl) { return impl.VoxelGetTaskGroups(); }
 
+    void RendererImplVoxelGetGpuTimes(const CRendererImpl &impl, float &xferMs, float &drawMs,
+                                        float &postMs) {
+        impl.VoxelGetGpuTimes(xferMs, drawMs, postMs);
+    }
+
+    void RendererImplVoxelGetGpuInstantTimes(const CRendererImpl &impl, float &xferMs, float &drawMs,
+                                               float &postMs) {
+        impl.VoxelGetGpuInstantTimes(xferMs, drawMs, postMs);
+    }
+
     void RendererImplVoxelGetDebugCounters(const CRendererImpl &impl, u32 out[6]) {
         impl.VoxelGetDebugCounters(out);
     }
@@ -1600,6 +1656,11 @@ namespace Manro {
 
     i32 RendererImplVoxelStreamGetStateAt(const CRendererImpl &impl, const Vec3 &p) {
         return impl.VoxelStreamGetStateAt(p);
+    }
+
+    bool RendererImplVoxelStreamGetCollisionBox(const CRendererImpl &impl, const Vec3 &p, Vec3 &mn,
+                                                Vec3 &mx) {
+        return impl.VoxelStreamGetCollisionBox(p, mn, mx);
     }
 
     std::string RendererImplVoxelGetStateKey(const CRendererImpl &impl, u32 id) {

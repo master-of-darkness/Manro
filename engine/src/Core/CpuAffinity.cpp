@@ -123,12 +123,54 @@ namespace Manro {
             file >> freq;
             return freq;
         }
+
+        u64 ReadCpuCoreId(u32 cpu, bool &ok) {
+            std::string path = "/sys/devices/system/cpu/cpu" + std::to_string(cpu) +
+                               "/topology/core_id";
+            std::ifstream file(path);
+            u64 id = 0;
+            ok = static_cast<bool>(file >> id);
+            return id;
+        }
     } // namespace
 
     CpuTopology_t QueryCpuTopology() {
         CpuTopology_t topo;
 
         const u32 count = std::max(1u, std::thread::hardware_concurrency());
+
+        {
+            std::map<u64, std::vector<u32> > byCore;
+            bool haveCoreIds = true;
+            for (u32 cpu = 0; cpu < count; ++cpu) {
+                bool ok = false;
+                const u64 id = ReadCpuCoreId(cpu, ok);
+                if (!ok) {
+                    haveCoreIds = false;
+                    break;
+                }
+                byCore[id].push_back(cpu);
+            }
+            bool anyMulti = false, anySingle = false;
+            for (const auto &[id, cpus]: byCore) {
+                (void)id;
+                if (cpus.size() > 1)
+                    anyMulti = true;
+                else
+                    anySingle = true;
+            }
+            if (haveCoreIds && anyMulti && anySingle) {
+                for (const auto &[id, cpus]: byCore) {
+                    (void)id;
+                    auto &dst = (cpus.size() > 1) ? topo.m_PerformanceCores
+                                                 : topo.m_EfficiencyCores;
+                    dst.insert(dst.end(), cpus.begin(), cpus.end());
+                }
+                std::sort(topo.m_PerformanceCores.begin(), topo.m_PerformanceCores.end());
+                std::sort(topo.m_EfficiencyCores.begin(), topo.m_EfficiencyCores.end());
+                return topo;
+            }
+        }
 
         // Group logical CPUs by their advertised max frequency
         std::map<u64, std::vector<u32> > byFreq;

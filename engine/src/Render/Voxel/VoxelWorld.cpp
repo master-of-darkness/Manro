@@ -46,11 +46,6 @@ namespace Manro {
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
             VMA_MEMORY_USAGE_CPU_TO_GPU);
 
-        m_Palette = CreateScope<CBuffer>(
-            *m_Context, sizeof(Vec4) * 512,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-            VMA_MEMORY_USAGE_CPU_TO_GPU);
-
         m_EditRing = CreateScope<CBuffer>(
             *m_Context, sizeof(VoxelEditCmd_t) * 1024,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
@@ -69,17 +64,15 @@ namespace Manro {
         m_BrickOpaqueFull.assign(desc.maxResidentBricks, 0u);
         m_BrickHidden.assign(desc.maxResidentBricks, 0u);
         m_BrickCount = 0;
+        m_DirtyHeaders.reserve(desc.maxResidentBricks);
+        m_FreeBricks.reserve(desc.maxResidentBricks);
         FlushHeaders();
-
-        std::vector<Vec4> palette(512, Vec4(0.6f, 0.6f, 0.6f, 1.f));
-        m_Palette->LoadData(palette.data(), sizeof(Vec4) * palette.size());
     }
 
     void CVoxelWorld::Shutdown() {
         m_Bricks.reset();
         m_Headers.reset();
         m_PageTable.reset();
-        m_Palette.reset();
         m_EditRing.reset();
         m_UploadStaging.reset();
         m_HeaderMirror.clear();
@@ -92,6 +85,8 @@ namespace Manro {
         m_StageCounts.fill(0);
         m_DirtyHeaders.clear();
         m_bPagesDirty = true;
+        m_PageDirtyLo = ~0u;
+        m_PageDirtyHi = 0u;
         m_bHeadersFullUpload = true;
         m_BrickCount = 0;
     }
@@ -112,6 +107,7 @@ namespace Manro {
 
         const u32 brickIdx = m_BrickCount++;
         m_PageMirror[slot] = static_cast<i32>(brickIdx);
+        TouchPageSlot(slot);
         m_BrickSlots[brickIdx] = slot;
         m_BrickOpaqueFull[brickIdx] = 0u;
         m_BrickHidden[brickIdx] = 0u;
@@ -151,6 +147,7 @@ namespace Manro {
             brickIdx = m_BrickCount++;
         }
         m_PageMirror[slot] = static_cast<i32>(brickIdx);
+        TouchPageSlot(slot);
         m_BrickSlots[brickIdx] = slot;
         m_BrickOpaqueFull[brickIdx] = 0u;
         m_BrickHidden[brickIdx] = 0u;
@@ -172,8 +169,10 @@ namespace Manro {
             return;
         const u32 slot = (brickIdx < m_BrickSlots.size()) ? m_BrickSlots[brickIdx] : ~0u;
         if (slot != ~0u && slot < m_PageMirror.size() &&
-            m_PageMirror[slot] == static_cast<i32>(brickIdx))
+            m_PageMirror[slot] == static_cast<i32>(brickIdx)) {
             m_PageMirror[slot] = -1;
+            TouchPageSlot(slot);
+        }
         if (brickIdx < m_BrickSlots.size())
             m_BrickSlots[brickIdx] = ~0u;
         VoxelBrickHeader_t &h = m_HeaderMirror[brickIdx];
@@ -567,6 +566,10 @@ namespace Manro {
         return m_Headers ? m_Headers->GetDeviceAddress() : 0;
     }
 
+    VkBuffer CVoxelWorld::GetHeaderHandle() const {
+        return m_Headers ? m_Headers->GetHandle() : VK_NULL_HANDLE;
+    }
+
     VkDeviceAddress CVoxelWorld::GetPageTableAddr() const {
         return m_PageTable ? m_PageTable->GetDeviceAddress() : 0;
     }
@@ -584,14 +587,21 @@ namespace Manro {
             m_bHeadersFullUpload = false;
         } else if (void *mapped = m_Headers->GetMappedMutable()) {
             auto *dst = static_cast<u8 *>(mapped);
+            u32 lo = ~0u, hi = 0u;
             for (const u32 i : m_DirtyHeaders) {
                 if (i >= m_HeaderMirror.size())
                     continue;
                 std::memcpy(dst + static_cast<size_t>(i) * sizeof(VoxelBrickHeader_t),
                             &m_HeaderMirror[i], sizeof(VoxelBrickHeader_t));
                 m_HeaderMirror[i].flags &= ~2u;
+                lo = std::min(lo, i);
+                hi = std::max(hi, i);
             }
-            m_Headers->FlushRange(0, sizeof(VoxelBrickHeader_t) * m_HeaderMirror.size());
+            if (hi >= lo && lo != ~0u) {
+                const size_t off = static_cast<size_t>(lo) * sizeof(VoxelBrickHeader_t);
+                const size_t sz = (static_cast<size_t>(hi - lo) + 1u) * sizeof(VoxelBrickHeader_t);
+                m_Headers->FlushRange(off, sz);
+            }
             m_DirtyHeaders.clear();
         } else {
             for (const u32 i : m_DirtyHeaders) {
@@ -605,7 +615,16 @@ namespace Manro {
             m_DirtyHeaders.clear();
         }
         if (m_bPagesDirty) {
-            m_PageTable->LoadData(m_PageMirror.data(), sizeof(i32) * m_PageMirror.size());
+            if (m_PageDirtyLo <= m_PageDirtyHi && m_PageDirtyHi < m_PageMirror.size()) {
+                const size_t off = static_cast<size_t>(m_PageDirtyLo) * sizeof(i32);
+                const size_t sz =
+                    (static_cast<size_t>(m_PageDirtyHi - m_PageDirtyLo) + 1u) * sizeof(i32);
+                m_PageTable->LoadData(m_PageMirror.data() + m_PageDirtyLo, sz, off);
+            } else {
+                m_PageTable->LoadData(m_PageMirror.data(), sizeof(i32) * m_PageMirror.size());
+            }
+            m_PageDirtyLo = ~0u;
+            m_PageDirtyHi = 0u;
             m_bPagesDirty = false;
         }
         if (!m_PendingEdits.empty())

@@ -1,5 +1,6 @@
 #include <Manro/Core/EngineLoop.h>
 #include <Manro/Interfaces/IApplication.h>
+#include <Manro/Core/CpuAffinity.h>
 #include <Manro/Core/Logger.h>
 #include <Manro/Core/JobSystem.h>
 #include <Manro/Core/VirtualFS.h>
@@ -33,6 +34,11 @@ namespace Manro {
 #endif
 
         CJobSystem jobs;
+        {
+            const CpuTopology_t topo = QueryCpuTopology();
+            if (!topo.m_PerformanceCores.empty())
+                SetThreadAffinity(topo.m_PerformanceCores);
+        }
         CPlatformContext platform;
         CVirtualFS vfs;
         RegisterEmbeddedShaders(vfs);

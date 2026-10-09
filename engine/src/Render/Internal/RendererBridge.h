@@ -95,6 +95,10 @@ namespace Manro {
     u32 RendererImplVoxelGetBrickCount(const CRendererImpl &impl);
 
     u32 RendererImplVoxelGetTaskGroups(const CRendererImpl &impl);
+    void RendererImplVoxelGetGpuTimes(const CRendererImpl &impl, float &xferMs, float &drawMs,
+                                        float &postMs);
+    void RendererImplVoxelGetGpuInstantTimes(const CRendererImpl &impl, float &xferMs, float &drawMs,
+                                               float &postMs);
 
     void RendererImplVoxelGetDebugCounters(const CRendererImpl &impl, u32 out[6]);
 
@@ -116,6 +120,9 @@ namespace Manro {
     u32 RendererImplVoxelStreamPlaceState(const CRendererImpl &impl);
 
     i32 RendererImplVoxelStreamGetStateAt(const CRendererImpl &impl, const Vec3 &p);
+
+    bool RendererImplVoxelStreamGetCollisionBox(const CRendererImpl &impl, const Vec3 &p, Vec3 &mn,
+                                                Vec3 &mx);
 
     std::string RendererImplVoxelGetStateKey(const CRendererImpl &impl, u32 id);
 

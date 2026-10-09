@@ -32,6 +32,13 @@ namespace Manro {
         u32 dbgCulled{0};
         u32 dbgMeshRuns{0};
         u32 dbgMeshFaces{0};
+
+        float gpuXferMs{0.f};
+        float gpuDrawMs{0.f};
+        float gpuPostMs{0.f};
+        float gpuXferInstMs{0.f};
+        float gpuDrawInstMs{0.f};
+        float gpuPostInstMs{0.f};
     };
 
     class CVoxelRenderer {
@@ -62,6 +69,7 @@ namespace Manro {
 
         i32 StreamGetStateAt(const Vec3 &p) const;
 
+        bool StreamGetCollisionBox(const Vec3 &p, Vec3 &mn, Vec3 &mx) const;
         std::string GetStateKey(u32 id) const;
         u32 FindStateByKey(const std::string &key) const;
 
@@ -76,6 +84,8 @@ namespace Manro {
 
         void ReadDebugCounters(u32 out[6]) const;
 
+        void CmdWriteTimestamp(VkCommandBuffer cb, u32 flightSlot, u32 subIdx);
+
     private:
         void BuildPipelines(CPipelineCache &cache);
         void CreateTileDescriptor();
@@ -85,6 +95,7 @@ namespace Manro {
         void DestroyBlockTiles();
         void DispatchEdits(VkCommandBuffer cb);
         void DispatchGi(VkCommandBuffer cb);
+        [[nodiscard]] VkDeviceAddress GetGiSampleAddr() const;
 
         CVulkanContext &m_Context;
         CVirtualFS &m_Vfs;
@@ -94,9 +105,6 @@ namespace Manro {
         Scope<CPipeline> m_EditPipeline;
         Scope<CPipeline> m_GiInjectPipeline;
         Scope<CPipeline> m_GiPropagatePipeline;
-
-        Scope<CBuffer> m_TaskIndirectBuffer;
-        Scope<CBuffer> m_TaskCountBuffer;
 
         Scope<CBuffer> m_BlockTileTable;
         Scope<CBuffer> m_BlockFlagsTable;
@@ -129,10 +137,12 @@ namespace Manro {
         Scope<CBuffer> m_DebugReadback;
         Scope<CBuffer> m_FaceCache;
 
-        std::vector<std::pair<float, u32>> m_VisibleScratch;
         std::vector<u32> m_VisibleList;
-        u32 m_LastVisibleCheck{0};
-        bool m_HasLastVisible{false};
+        std::vector<std::pair<float, u32>> m_SortScratch;
+
+        static constexpr u32 kQueriesPerSlot = 6;
+        VkQueryPool m_TimestampPool{VK_NULL_HANDLE};
+        float m_TimestampPeriodNs{0.f};
 
         Mat4 m_PrevViewProj{1.f};
         VoxelFrameStats_t m_Stats{};

@@ -17,6 +17,8 @@ namespace Manro {
         u32 flags{0};
         u8 shapeMin[3]{0, 0, 0};
         u8 shapeMax[3]{16, 16, 16};
+        float collMin[3]{0.f, 0.f, 0.f};
+        float collMax[3]{1.f, 1.f, 1.f};
         u32 uvPacked[6]{0xFFFF0000u, 0xFFFF0000u, 0xFFFF0000u,
                         0xFFFF0000u, 0xFFFF0000u, 0xFFFF0000u};
     };

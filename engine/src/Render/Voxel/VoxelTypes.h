@@ -89,13 +89,18 @@ namespace Manro {
         u64 brickBufferAddr{0};
         u64 headerAddr{0};
         u64 cascadeAddr{0};
+        u64 cascadeDstAddr{0};
         u64 sunAddr{0};
         u32 brickCount{0};
         u32 cascadeRes{64};
-        u32 cascadeCount{3};
+        u32 cascadeCount{1};
         float brickSize{16.f};
+        u32 _pad0{0};
+        u32 _pad1{0};
         Vec3 worldMin{0.f};
     };
+    static_assert(sizeof(VoxelGiPushConstants_t) >= 76,
+                  "GI push constants must cover the shader block [0,76)");
 
     static inline u32 PackVoxelVertex(u32 x, u32 y, u32 z, u32 n, u32 ao, u32 mat) {
         return (x & 0x3Fu) | ((y & 0x3Fu) << 6u) | ((z & 0x3Fu) << 12u) |

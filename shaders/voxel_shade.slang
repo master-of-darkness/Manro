@@ -10,19 +10,18 @@ struct VoxelFragIn {
     float4 pos : SV_Position;
     float2 uv : TEXCOORD0;
     nointerpolation uint faceState : TEXCOORD1;
+    nointerpolation uint tile : TEXCOORD2;
+    nointerpolation uint mflags : TEXCOORD3;
 };
 
+[earlydepthstencil]
 float4 PSMain(VoxelFragIn input) : SV_Target {
     vk::BufferPointer<VoxelFragParams> frp = vk::BufferPointer<VoxelFragParams>(g_FragRoot.fragParamsAddr);
     VoxelFragParams fr = frp.getPtr()[0];
 
-    uint state = (input.faceState >> 3u) & 0x7FFFu;
     uint f = input.faceState & 0x7u;
-
-    vk::BufferPointer<uint> tiles = vk::BufferPointer<uint>(g_FragRoot.tileTableAddr);
-    vk::BufferPointer<uint> flags = vk::BufferPointer<uint>(g_FragRoot.blockFlagsAddr);
-    uint tile = tiles.getPtr()[state * 6u + f];
-    uint mflags = flags.getPtr()[state];
+    uint tile = input.tile;
+    uint mflags = input.mflags;
 
     float4 albedo = g_Tiles.Sample(float3(input.uv, float(tile)));
 
@@ -39,8 +38,7 @@ float4 PSMain(VoxelFragIn input) : SV_Target {
 
     if (fr.giEnabled != 0u) {
         vk::BufferPointer<float4> gi = vk::BufferPointer<float4>(fr.giAddr);
-        float4* cascades = gi.getPtr();
-        lit += cascades[0].rgb;
+        lit += gi.getPtr()[0].rgb;
     }
     return float4(lit, 1.0);
 }

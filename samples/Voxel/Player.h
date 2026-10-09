@@ -6,6 +6,8 @@
 
 #include <cmath>
 
+#include <algorithm>
+
 struct CPlayer {
     Manro::Vec3 pos{0.f};
     Manro::Vec3 vel{0.f};
@@ -31,20 +33,39 @@ struct CPlayer {
 };
 
 namespace PlayerDetail {
+    inline void PlayerAABB(const Manro::Vec3 &feet, Manro::Vec3 &mn, Manro::Vec3 &mx) {
+        mn = Manro::Vec3(feet.x - CPlayer::kHalfWidth, feet.y, feet.z - CPlayer::kHalfWidth);
+        mx = Manro::Vec3(feet.x + CPlayer::kHalfWidth, feet.y + CPlayer::kHeight,
+                         feet.z + CPlayer::kHalfWidth);
+    }
+
+    inline bool AABBsOverlap(const Manro::Vec3 &aMn, const Manro::Vec3 &aMx,
+                             const Manro::Vec3 &bMn, const Manro::Vec3 &bMx) {
+        return aMn.x < bMx.x && aMx.x > bMn.x && aMn.y < bMx.y && aMx.y > bMn.y &&
+               aMn.z < bMx.z && aMx.z > bMn.z;
+    }
+
     inline bool BoxCollides(Manro::CRenderer &ren, const Manro::Vec3 &feet) {
-        const int x0 = static_cast<int>(std::floor(feet.x - CPlayer::kHalfWidth));
-        const int x1 = static_cast<int>(std::floor(feet.x + CPlayer::kHalfWidth));
-        const int y0 = static_cast<int>(std::floor(feet.y));
-        const int y1 = static_cast<int>(std::floor(feet.y + CPlayer::kHeight));
-        const int z0 = static_cast<int>(std::floor(feet.z - CPlayer::kHalfWidth));
-        const int z1 = static_cast<int>(std::floor(feet.z + CPlayer::kHalfWidth));
+        Manro::Vec3 pMn, pMx;
+        PlayerAABB(feet, pMn, pMx);
+        const int x0 = static_cast<int>(std::floor(pMn.x));
+        const int x1 = static_cast<int>(std::floor(pMx.x));
+        const int y0 = static_cast<int>(std::floor(pMn.y));
+        const int y1 = static_cast<int>(std::floor(pMx.y));
+        const int z0 = static_cast<int>(std::floor(pMn.z));
+        const int z1 = static_cast<int>(std::floor(pMx.z));
         for (int y = y0; y <= y1; ++y)
             for (int z = z0; z <= z1; ++z)
-                for (int x = x0; x <= x1; ++x)
-                    if (ren.VoxelStreamIsSolid(Manro::Vec3(static_cast<float>(x),
-                                                       static_cast<float>(y),
-                                                       static_cast<float>(z))))
+                for (int x = x0; x <= x1; ++x) {
+                    Manro::Vec3 bMn, bMx;
+                    if (!ren.VoxelStreamGetCollisionBox(
+                            Manro::Vec3(static_cast<float>(x), static_cast<float>(y),
+                                        static_cast<float>(z)),
+                            bMn, bMx))
+                        continue;
+                    if (AABBsOverlap(pMn, pMx, bMn, bMx))
                         return true;
+                }
         return false;
     }
 
@@ -62,29 +83,61 @@ namespace PlayerDetail {
             p.pos = np;
             return false;
         }
+        Manro::Vec3 nMn, nMx;
+        PlayerAABB(np, nMn, nMx);
+        const int x0 = static_cast<int>(std::floor(nMn.x));
+        const int x1 = static_cast<int>(std::floor(nMx.x));
+        const int y0 = static_cast<int>(std::floor(nMn.y));
+        const int y1 = static_cast<int>(std::floor(nMx.y));
+        const int z0 = static_cast<int>(std::floor(nMn.z));
+        const int z1 = static_cast<int>(std::floor(nMx.z));
+        bool haveBlock = false;
+        float stopMin = 0.f, stopMax = 0.f;
+        for (int y = y0; y <= y1; ++y)
+            for (int z = z0; z <= z1; ++z)
+                for (int x = x0; x <= x1; ++x) {
+                    Manro::Vec3 bMn, bMx;
+                    if (!ren.VoxelStreamGetCollisionBox(
+                            Manro::Vec3(static_cast<float>(x), static_cast<float>(y),
+                                        static_cast<float>(z)),
+                            bMn, bMx))
+                        continue;
+                    if (!AABBsOverlap(nMn, nMx, bMn, bMx))
+                        continue;
+                    const float lo = (axis == 0) ? bMn.x : ((axis == 1) ? bMn.y : bMn.z);
+                    const float hi = (axis == 0) ? bMx.x : ((axis == 1) ? bMx.y : bMx.z);
+                    if (!haveBlock) {
+                        stopMin = lo;
+                        stopMax = hi;
+                        haveBlock = true;
+                    } else {
+                        stopMin = std::min(stopMin, lo);
+                        stopMax = std::max(stopMax, hi);
+                    }
+                }
+        if (!haveBlock) {
+            p.pos = np;
+            return false;
+        }
         if (axis == 0) {
             if (delta > 0.f)
-                p.pos.x = std::floor(np.x + CPlayer::kHalfWidth) - CPlayer::kHalfWidth -
-                          CPlayer::kEps;
+                p.pos.x = stopMin - CPlayer::kHalfWidth - CPlayer::kEps;
             else
-                p.pos.x = std::floor(np.x - CPlayer::kHalfWidth) + 1.f + CPlayer::kHalfWidth +
-                          CPlayer::kEps;
+                p.pos.x = stopMax + CPlayer::kHalfWidth + CPlayer::kEps;
             p.vel.x = 0.f;
         } else if (axis == 2) {
             if (delta > 0.f)
-                p.pos.z = std::floor(np.z + CPlayer::kHalfWidth) - CPlayer::kHalfWidth -
-                          CPlayer::kEps;
+                p.pos.z = stopMin - CPlayer::kHalfWidth - CPlayer::kEps;
             else
-                p.pos.z = std::floor(np.z - CPlayer::kHalfWidth) + 1.f + CPlayer::kHalfWidth +
-                          CPlayer::kEps;
+                p.pos.z = stopMax + CPlayer::kHalfWidth + CPlayer::kEps;
             p.vel.z = 0.f;
         } else {
             if (delta > 0.f) {
-                p.pos.y = std::floor(np.y + CPlayer::kHeight) - CPlayer::kHeight - CPlayer::kEps;
+                p.pos.y = stopMin - CPlayer::kHeight - CPlayer::kEps;
                 if (p.vel.y > 0.f)
                     p.vel.y = 0.f;
             } else {
-                p.pos.y = std::floor(np.y) + 1.f + CPlayer::kEps;
+                p.pos.y = stopMax + CPlayer::kEps;
                 p.vel.y = 0.f;
                 p.onGround = true;
             }
@@ -149,15 +202,41 @@ namespace PlayerDetail {
             }
             if (t > maxDist)
                 return r;
-            if (ren.VoxelStreamIsSolid(Manro::Vec3(static_cast<float>(x), static_cast<float>(y),
-                                                static_cast<float>(z)))) {
-                r.hit = true;
-                r.hx = x;
-                r.hy = y;
-                r.hz = z;
-                r.t = t;
-                return r;
+            Manro::Vec3 bMn, bMx;
+            if (!ren.VoxelStreamGetCollisionBox(Manro::Vec3(static_cast<float>(x),
+                                                            static_cast<float>(y),
+                                                            static_cast<float>(z)),
+                                                bMn, bMx))
+                continue;
+            float t0 = 0.f, t1 = maxDist;
+            bool miss = false;
+            {
+                const float o[3]{origin.x, origin.y, origin.z};
+                const float d[3]{dir.x, dir.y, dir.z};
+                const float mn[3]{bMn.x, bMn.y, bMn.z};
+                const float mx[3]{bMx.x, bMx.y, bMx.z};
+                for (int a = 0; a < 3; ++a) {
+                    float inv = (d[a] != 0.f) ? (1.f / d[a]) : 1e30f;
+                    float ta = (mn[a] - o[a]) * inv;
+                    float tb = (mx[a] - o[a]) * inv;
+                    if (ta > tb)
+                        std::swap(ta, tb);
+                    t0 = std::max(t0, ta);
+                    t1 = std::min(t1, tb);
+                    if (t0 > t1) {
+                        miss = true;
+                        break;
+                    }
+                }
             }
+            if (miss || t0 > maxDist)
+                continue;
+            r.hit = true;
+            r.hx = x;
+            r.hy = y;
+            r.hz = z;
+            r.t = std::max(t, t0);
+            return r;
         }
         return r;
     }

@@ -33,20 +33,11 @@ namespace Manro {
 
         for (u32 i = 0; i < CVoxelRenderer::kFlightSlots; ++i) {
             m_VisibilityRing[i] = CreateScope<CBuffer>(
-                m_Context, sizeof(u32) * 2 * desc.maxResidentBricks,
+                m_Context, sizeof(u32) * desc.maxResidentBricks,
                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                 VMA_MEMORY_USAGE_CPU_TO_GPU);
         }
 
-        m_TaskIndirectBuffer = CreateScope<CBuffer>(
-            m_Context, sizeof(VkDispatchIndirectCommand),
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
-            VMA_MEMORY_USAGE_CPU_TO_GPU);
-        m_TaskCountBuffer = CreateScope<CBuffer>(
-            m_Context, sizeof(u32),
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
-                VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-            VMA_MEMORY_USAGE_GPU_ONLY);
         m_PaletteBuffer = CreateScope<CBuffer>(
             m_Context, sizeof(Vec4) * 512,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
@@ -61,7 +52,7 @@ namespace Manro {
             VMA_MEMORY_USAGE_CPU_TO_GPU);
         const u32 cascadeRes = 64;
         m_CascadeBuffer = CreateScope<CBuffer>(
-            m_Context, sizeof(Vec4) * cascadeRes * cascadeRes * cascadeRes * 3,
+            m_Context, sizeof(Vec4) * cascadeRes * cascadeRes * cascadeRes * 2,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
             VMA_MEMORY_USAGE_GPU_ONLY);
         m_EditStaging = CreateScope<CBuffer>(
@@ -110,6 +101,27 @@ namespace Manro {
             VMA_MEMORY_USAGE_CPU_TO_GPU);
 
         {
+            VkPhysicalDeviceProperties props{};
+            vkGetPhysicalDeviceProperties(m_Context.GetPhysicalDevice(), &props);
+            m_TimestampPeriodNs = props.limits.timestampPeriod;
+            if (m_TimestampPeriodNs > 0.f) {
+                VkQueryPoolCreateInfo qi{};
+                qi.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+                qi.queryType = VK_QUERY_TYPE_TIMESTAMP;
+                qi.queryCount = kFlightSlots * kQueriesPerSlot;
+                if (vkCreateQueryPool(m_Context.GetDevice(), &qi, nullptr,
+                                      &m_TimestampPool) != VK_SUCCESS)
+                    m_TimestampPool = VK_NULL_HANDLE;
+                if (m_TimestampPool) {
+                    ExecuteOneShot(m_Context, [&](VkCommandBuffer cmd) {
+                        vkCmdResetQueryPool(cmd, m_TimestampPool, 0,
+                                            kFlightSlots * kQueriesPerSlot);
+                    });
+                }
+            }
+        }
+
+        {
             BlockAssetPack_t fallback{};
             fallback.tiles.emplace_back(16 * 16 * 4, 0);
             for (int i = 0; i < 16 * 16; ++i) {
@@ -150,6 +162,9 @@ namespace Manro {
             m_PaletteBuffer->LoadData(palette.data(), sizeof(Vec4) * palette.size());
         }
 
+        m_VisibleList.reserve(desc.maxResidentBricks);
+        m_SortScratch.reserve(desc.maxResidentBricks);
+
         m_bInitialized = true;
         LOG_INFO("[CVoxelRenderer] Initialized (sparse bricks, task/mesh PSO, {}x{})", width, height);
     }
@@ -172,8 +187,6 @@ namespace Manro {
         m_GiPropagatePipeline.reset();
         for (auto &slot : m_VisibilityRing)
             slot.reset();
-        m_TaskIndirectBuffer.reset();
-        m_TaskCountBuffer.reset();
         m_PaletteBuffer.reset();
         m_SunBuffer.reset();
         m_FragParams.reset();
@@ -183,6 +196,10 @@ namespace Manro {
             slot.reset();
         m_DebugReadback.reset();
         m_FaceCache.reset();
+        if (m_TimestampPool && m_Context.GetDevice()) {
+            vkDestroyQueryPool(m_Context.GetDevice(), m_TimestampPool, nullptr);
+            m_TimestampPool = VK_NULL_HANDLE;
+        }
         if (m_World)
             m_World->Shutdown();
         m_bInitialized = false;
@@ -548,6 +565,8 @@ namespace Manro {
         if (device)
             vkDeviceWaitIdle(device);
 
+        m_StreamWorld.reset();
+
         const std::string dir = assetsDir.empty() ? MANRO_MC_ASSETS_DIR : assetsDir;
         std::string err;
         if (!BuildBlockAssetPack(dir, worldDir, m_BlockPack, err)) {
@@ -609,6 +628,14 @@ namespace Manro {
                                          static_cast<i64>(std::floor(p.z)));
     }
 
+    bool CVoxelRenderer::StreamGetCollisionBox(const Vec3 &p, Vec3 &mn, Vec3 &mx) const {
+        if (!m_StreamWorld)
+            return false;
+        return m_StreamWorld->GetCollisionBoxAt(static_cast<i64>(std::floor(p.x)),
+                                                static_cast<i64>(std::floor(p.y)),
+                                                static_cast<i64>(std::floor(p.z)), mn, mx);
+    }
+
     std::string CVoxelRenderer::GetStateKey(u32 id) const {
         if (id < m_BlockPack.stateKeys.size())
             return m_BlockPack.stateKeys[id];
@@ -655,15 +682,14 @@ namespace Manro {
         vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, m_EditPipeline->GetHandle());
         vkCmdPushConstants(cb, m_EditPipeline->GetLayout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(pc),
                            &pc);
-        vkCmdDispatch(cb, (pc.editCount + 63) / 64, 1, 1);
+        vkCmdDispatch(cb, pc.editCount, 1, 1);
 
         VkMemoryBarrier2 post{};
         post.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
         post.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
         post.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
         post.dstStageMask = VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT |
-                            VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT |
-                            VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+                            VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT;
         post.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
         VkDependencyInfo postDep{};
         postDep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
@@ -678,21 +704,26 @@ namespace Manro {
             return;
         if (!m_GiInjectPipeline->GetHandle() || !m_GiPropagatePipeline->GetHandle())
             return;
+        const u32 cascadeRes = 64;
+        const VkDeviceSize cascadeBytes =
+            sizeof(Vec4) * cascadeRes * cascadeRes * cascadeRes;
         VoxelGiPushConstants_t pc{};
         pc.brickBufferAddr = m_World->GetBrickBufferAddr();
         pc.headerAddr = m_World->GetHeaderAddr();
         pc.cascadeAddr = m_CascadeBuffer->GetDeviceAddress();
+        pc.cascadeDstAddr = m_CascadeBuffer->GetDeviceAddress() + cascadeBytes;
         pc.sunAddr = m_SunBuffer->GetDeviceAddress();
         pc.brickCount = m_World->GetBrickCount();
-        pc.cascadeRes = 64;
-        pc.cascadeCount = 3;
+        pc.cascadeRes = cascadeRes;
+        pc.cascadeCount = 1;
         pc.brickSize = m_World->GetBrickSize();
         pc.worldMin = m_World->GetWorldMin();
 
+        const u32 groups = (cascadeRes + 7u) / 8u;
         vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, m_GiInjectPipeline->GetHandle());
         vkCmdPushConstants(cb, m_GiInjectPipeline->GetLayout(), VK_SHADER_STAGE_COMPUTE_BIT, 0,
                            sizeof(pc), &pc);
-        vkCmdDispatch(cb, 8, 8, 8);
+        vkCmdDispatch(cb, groups, groups, groups);
 
         VkMemoryBarrier2 mem{};
         mem.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
@@ -709,7 +740,28 @@ namespace Manro {
         vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, m_GiPropagatePipeline->GetHandle());
         vkCmdPushConstants(cb, m_GiPropagatePipeline->GetLayout(), VK_SHADER_STAGE_COMPUTE_BIT, 0,
                            sizeof(pc), &pc);
-        vkCmdDispatch(cb, 8, 8, 8);
+        vkCmdDispatch(cb, groups, groups, groups);
+
+        VkMemoryBarrier2 toFrag{};
+        toFrag.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+        toFrag.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        toFrag.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+        toFrag.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+        toFrag.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+        VkDependencyInfo toFragDep{};
+        toFragDep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        toFragDep.memoryBarrierCount = 1;
+        toFragDep.pMemoryBarriers = &toFrag;
+        vkCmdPipelineBarrier2(cb, &toFragDep);
+    }
+
+    VkDeviceAddress CVoxelRenderer::GetGiSampleAddr() const {
+        if (!m_bGiEnabled || !m_CascadeBuffer)
+            return 0;
+        const u32 cascadeRes = 64;
+        const VkDeviceSize cascadeBytes =
+            sizeof(Vec4) * cascadeRes * cascadeRes * cascadeRes;
+        return m_CascadeBuffer->GetDeviceAddress() + cascadeBytes;
     }
 
     void CVoxelRenderer::Record(VkCommandBuffer cb, VkExtent2D extent, VkImageView colorView,
@@ -720,6 +772,30 @@ namespace Manro {
             return;
         (void)nearZ;
         (void)farZ;
+
+        const u32 qslot = flightSlot % kFlightSlots;
+        const u32 qbase = qslot * kQueriesPerSlot;
+        if (m_TimestampPool && m_TimestampPeriodNs > 0.f) {
+            u64 ticks[kQueriesPerSlot]{0, 0, 0, 0, 0, 0};
+            if (vkGetQueryPoolResults(m_Context.GetDevice(), m_TimestampPool, qbase,
+                                      kQueriesPerSlot, sizeof(ticks), ticks, sizeof(u64),
+                                      VK_QUERY_RESULT_64_BIT) == VK_SUCCESS) {
+                const float msPerTick = m_TimestampPeriodNs / 1000000.f;
+                const float xfer = static_cast<float>(ticks[1] - ticks[0]) * msPerTick;
+                const float draw = static_cast<float>(ticks[2] - ticks[1]) * msPerTick;
+                const float post = static_cast<float>(ticks[5] - ticks[3]) * msPerTick;
+                if (xfer >= 0.f && xfer < 100.f && draw >= 0.f && draw < 100.f &&
+                    post >= 0.f && post < 100.f) {
+                    constexpr float kTsAlpha = 0.1f;
+                    m_Stats.gpuXferMs += (xfer - m_Stats.gpuXferMs) * kTsAlpha;
+                    m_Stats.gpuDrawMs += (draw - m_Stats.gpuDrawMs) * kTsAlpha;
+                    m_Stats.gpuPostMs += (post - m_Stats.gpuPostMs) * kTsAlpha;
+                    m_Stats.gpuXferInstMs = xfer;
+                    m_Stats.gpuDrawInstMs = draw;
+                    m_Stats.gpuPostInstMs = post;
+                }
+            }
+        }
 
         m_World->FlushHeaders();
         DispatchEdits(cb);
@@ -734,16 +810,20 @@ namespace Manro {
         if (brickCount == 0 || !m_TaskMeshPipeline->GetHandle())
             return;
 
+        if (m_TimestampPool) {
+            vkCmdResetQueryPool(cb, m_TimestampPool, qbase, kQueriesPerSlot);
+            vkCmdWriteTimestamp(cb, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, m_TimestampPool,
+                                qbase + 0);
+        }
+
         u32 visibleCount = brickCount;
 
         CBuffer &visSlot = *m_VisibilityRing[flightSlot % kFlightSlots];
         {
             const float brickSize = m_World->GetBrickSize();
             const float radius = brickSize * 0.8660254f;
-            const float maxD = 10000.f + radius;
-            m_VisibleScratch.clear();
+            m_VisibleList.clear();
             if (m_bUseFrustum) {
-
                 Vec4 rows[4];
                 for (int r = 0; r < 4; ++r)
                     rows[r] = Vec4(viewProj[0][r], viewProj[1][r], viewProj[2][r], viewProj[3][r]);
@@ -766,11 +846,9 @@ namespace Manro {
                     const VoxelBrickHeader_t &h = mirror[i];
                     if ((h.flags & 1u) == 0u)
                         continue;
-                    const Vec3 center = h.origin + Vec3(brickSize * 0.5f);
-                    const Vec3 toC = center - cameraPos;
-                    const float dist2 = glm::dot(toC, toC);
-                    if (dist2 > maxD * maxD)
+                    if (m_StreamWorld && !m_StreamWorld->BrickHasContent(i))
                         continue;
+                    const Vec3 center = h.origin + Vec3(brickSize * 0.5f);
                     bool inside = true;
                     for (const auto &pl : planes) {
                         const float d = pl.x * center.x + pl.y * center.y + pl.z * center.z + pl.w;
@@ -781,34 +859,33 @@ namespace Manro {
                     }
                     if (!inside)
                         continue;
-                    m_VisibleScratch.emplace_back(dist2, i);
+                    m_VisibleList.push_back(i);
                 }
-                u32 check = static_cast<u32>(m_VisibleScratch.size()) * 2654435761u;
-                for (const auto &pr : m_VisibleScratch)
-                    check ^= pr.second + 0x9e3779b9u + (check << 6u) + (check >> 2u);
-                if (m_HasLastVisible && check == m_LastVisibleCheck) {
-                    visibleCount = static_cast<u32>(m_VisibleList.size());
-                } else {
-                    std::sort(m_VisibleScratch.begin(), m_VisibleScratch.end(),
-                              [](const auto &a, const auto &b) { return a.first < b.first; });
-                    visibleCount = static_cast<u32>(m_VisibleScratch.size());
-                    m_VisibleList.resize(m_VisibleScratch.size());
-                    for (size_t k = 0; k < m_VisibleScratch.size(); ++k)
-                        m_VisibleList[k] = m_VisibleScratch[k].second;
-                    m_LastVisibleCheck = check;
-                    m_HasLastVisible = true;
-                }
+                visibleCount = static_cast<u32>(m_VisibleList.size());
             } else {
                 for (u32 i = 0; i < brickCount; ++i) {
                     if (m_World->IsBrickHidden(i))
                         continue;
-                    m_VisibleScratch.emplace_back(0.f, i);
+                    if (m_StreamWorld && !m_StreamWorld->BrickHasContent(i))
+                        continue;
+                    m_VisibleList.push_back(i);
                 }
-                visibleCount = static_cast<u32>(m_VisibleScratch.size());
-                m_VisibleList.resize(m_VisibleScratch.size());
-                for (size_t k = 0; k < m_VisibleScratch.size(); ++k)
-                    m_VisibleList[k] = m_VisibleScratch[k].second;
-                m_HasLastVisible = false;
+                visibleCount = static_cast<u32>(m_VisibleList.size());
+            }
+            const size_t nvis = m_VisibleList.size();
+            if (nvis >= 2 && nvis <= 1500) {
+                const auto &mirror2 = m_World->GetHeaderMirror();
+                m_SortScratch.clear();
+                m_SortScratch.reserve(nvis);
+                for (const u32 bi : m_VisibleList) {
+                    const Vec3 center = mirror2[bi].origin + Vec3(brickSize * 0.5f);
+                    const Vec3 toC = center - cameraPos;
+                    m_SortScratch.emplace_back(glm::dot(toC, toC), bi);
+                }
+                std::sort(m_SortScratch.begin(), m_SortScratch.end(),
+                          [](const auto &a, const auto &b) { return a.first < b.first; });
+                for (size_t k = 0; k < nvis; ++k)
+                    m_VisibleList[k] = m_SortScratch[k].second;
             }
             if (!m_VisibleList.empty())
                 visSlot.LoadData(m_VisibleList.data(), sizeof(u32) * m_VisibleList.size());
@@ -825,7 +902,7 @@ namespace Manro {
         frame.enableHiZ = 0;
         frame.paletteAddr = m_PaletteBuffer->GetDeviceAddress();
         frame.sunAddr = m_SunBuffer->GetDeviceAddress();
-        frame.giAddr = 0;
+        frame.giAddr = GetGiSampleAddr();
         frame.giEnabled = m_bGiEnabled ? 1u : 0u;
         frame.shadowsEnabled = 0;
         frame.debugEnabled = m_bDebugEnabled ? 1u : 0u;
@@ -838,7 +915,7 @@ namespace Manro {
         VoxelFragParams_t frag{};
         frag.sunDir = m_SunDir;
         frag.sunColor = m_SunColor;
-        frag.giAddr = 0;
+        frag.giAddr = GetGiSampleAddr();
         frag.giEnabled = m_bGiEnabled ? 1u : 0u;
         m_FragParams->LoadData(&frag, sizeof(frag));
 
@@ -860,44 +937,66 @@ namespace Manro {
         root.debugAddr = m_DebugReadback->GetDeviceAddress();
 
         {
-            VkBufferMemoryBarrier2 b[4]{};
-            u32 barrierCount = 3;
-            b[0].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
-            b[0].srcStageMask = VK_PIPELINE_STAGE_2_HOST_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-            b[0].srcAccessMask = VK_ACCESS_2_HOST_WRITE_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT;
-            b[0].dstStageMask = VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT |
-                                VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT |
-                                VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-            b[0].dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
-            b[0].buffer = paramsSlot.GetHandle();
-            b[0].size = VK_WHOLE_SIZE;
-            b[1] = b[0];
-            b[1].buffer = visSlot.GetHandle();
-            b[2] = b[0];
-            b[2].buffer = m_FragParams->GetHandle();
+            VkBufferMemoryBarrier2 b[7]{};
+            u32 barrierCount = 0;
+            auto pushBuf = [&](VkBuffer buf, VkPipelineStageFlags2 srcStage,
+                               VkAccessFlags2 srcAccess, VkPipelineStageFlags2 dstStage,
+                               VkAccessFlags2 dstAccess) {
+                VkBufferMemoryBarrier2 &e = b[barrierCount++];
+                e.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+                e.srcStageMask = srcStage;
+                e.srcAccessMask = srcAccess;
+                e.dstStageMask = dstStage;
+                e.dstAccessMask = dstAccess;
+                e.buffer = buf;
+                e.size = VK_WHOLE_SIZE;
+            };
+            pushBuf(paramsSlot.GetHandle(), VK_PIPELINE_STAGE_2_HOST_BIT,
+                    VK_ACCESS_2_HOST_WRITE_BIT,
+                    VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT |
+                        VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT,
+                    VK_ACCESS_2_SHADER_READ_BIT);
+            pushBuf(visSlot.GetHandle(), VK_PIPELINE_STAGE_2_HOST_BIT,
+                    VK_ACCESS_2_HOST_WRITE_BIT, VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT,
+                    VK_ACCESS_2_SHADER_READ_BIT);
+            pushBuf(m_FragParams->GetHandle(), VK_PIPELINE_STAGE_2_HOST_BIT,
+                    VK_ACCESS_2_HOST_WRITE_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                    VK_ACCESS_2_SHADER_READ_BIT);
+            if (VkBuffer hdr = m_World->GetHeaderHandle()) {
+                pushBuf(hdr,
+                        VK_PIPELINE_STAGE_2_HOST_BIT |
+                            VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT,
+                        VK_ACCESS_2_HOST_WRITE_BIT | VK_ACCESS_2_SHADER_WRITE_BIT,
+                        VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT,
+                        VK_ACCESS_2_SHADER_READ_BIT);
+            }
+            if (VkBuffer bricks = m_World->GetBrickStoreHandle()) {
+                pushBuf(bricks, VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                        VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                        VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT |
+                            VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT,
+                        VK_ACCESS_2_SHADER_READ_BIT);
+            }
+            if (m_FaceCache) {
+                pushBuf(m_FaceCache->GetHandle(),
+                        VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT,
+                        VK_ACCESS_2_SHADER_WRITE_BIT,
+                        VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT |
+                            VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT,
+                        VK_ACCESS_2_SHADER_READ_BIT);
+            }
             if (m_bDebugEnabled) {
-                b[3] = b[0];
-                b[3].buffer = m_DebugReadback->GetHandle();
-                barrierCount = 4;
+                pushBuf(m_DebugReadback->GetHandle(),
+                        VK_PIPELINE_STAGE_2_HOST_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                        VK_ACCESS_2_HOST_WRITE_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                        VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT |
+                            VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT,
+                        VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT);
             }
             VkDependencyInfo dep{};
             dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
             dep.bufferMemoryBarrierCount = barrierCount;
             dep.pBufferMemoryBarriers = b;
-
-            VkMemoryBarrier2 cross{};
-            cross.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-            cross.srcStageMask = VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT |
-                                 VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT |
-                                 VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT |
-                                 VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-            cross.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT;
-            cross.dstStageMask = VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT |
-                                 VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT |
-                                 VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-            cross.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
-            dep.memoryBarrierCount = 1;
-            dep.pMemoryBarriers = &cross;
             vkCmdPipelineBarrier2(cb, &dep);
         }
 
@@ -925,6 +1024,9 @@ namespace Manro {
         ri.pColorAttachments = &colorAtt;
         ri.pDepthAttachment = &depthAtt;
         vkCmdBeginRendering(cb, &ri);
+        if (m_TimestampPool)
+            vkCmdWriteTimestamp(cb, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, m_TimestampPool,
+                                qbase + 1);
 
         VkViewport vp{0.f, 0.f, static_cast<float>(extent.width), static_cast<float>(extent.height),
                       0.f, 1.f};
@@ -947,6 +1049,9 @@ namespace Manro {
         if (visibleCount > 0)
             vkCmdDrawMeshTasksEXT(cb, visibleCount, 1, 1);
         vkCmdEndRendering(cb);
+        if (m_TimestampPool)
+            vkCmdWriteTimestamp(cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, m_TimestampPool,
+                                qbase + 2);
 
         if (m_bDebugEnabled) {
             VkMemoryBarrier2 mem{};
@@ -966,6 +1071,13 @@ namespace Manro {
         m_PrevViewProj = viewProj;
     }
 
+    void CVoxelRenderer::CmdWriteTimestamp(VkCommandBuffer cb, u32 flightSlot, u32 subIdx) {
+        if (!m_TimestampPool || subIdx >= kQueriesPerSlot)
+            return;
+        vkCmdWriteTimestamp(cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, m_TimestampPool,
+                            (flightSlot % kFlightSlots) * kQueriesPerSlot + subIdx);
+    }
+
     void CVoxelRenderer::ReadDebugCounters(u32 out[6]) const {
 
         if (!m_bDebugEnabled || !m_DebugReadback) {
@@ -974,7 +1086,6 @@ namespace Manro {
             return;
         }
 
-        vkQueueWaitIdle(m_Context.GetGraphicsQueue());
         vmaInvalidateAllocation(m_Context.GetAllocator(), m_DebugReadback->GetAllocation(), 0,
                                 sizeof(u32) * 6);
         const auto *src = static_cast<const u32 *>(m_DebugReadback->GetMapped());

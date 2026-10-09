@@ -355,6 +355,9 @@ namespace Manro {
                 bytes = &it->second;
                 return true;
             }
+            static constexpr size_t kRegionCacheCap = 8;
+            if (regionCache.size() >= kRegionCacheCap)
+                regionCache.erase(regionCache.begin());
             char name[64];
             std::snprintf(name, sizeof(name), "/r.%d.%d.mca", rx, rz);
             std::vector<u8> data;

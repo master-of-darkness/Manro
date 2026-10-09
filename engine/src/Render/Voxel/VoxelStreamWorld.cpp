@@ -3,11 +3,20 @@
 #include "VoxelBlockAssets.h"
 #include "VoxelWorld.h"
 
+#include <Manro/Core/CpuAffinity.h>
+
 #include <algorithm>
+#include <array>
+#include <atomic>
 #include <cmath>
+#include <condition_variable>
 #include <cstdio>
 #include <cstring>
+#include <memory>
+#include <mutex>
+#include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -15,6 +24,42 @@ namespace Manro {
     namespace {
         constexpr int kMinSectionY = -4;
         constexpr int kMaxSectionY = 19;
+
+        template <typename T, size_t kCap>
+        struct SpscQueue {
+            static_assert((kCap & (kCap - 1)) == 0, "capacity must be a power of two");
+            std::array<T, kCap> m_Buf{};
+            alignas(64) std::atomic<size_t> m_Head{0};
+            alignas(64) std::atomic<size_t> m_Tail{0};
+
+            bool Push(T &&v) {
+                const size_t tail = m_Tail.load(std::memory_order_relaxed);
+                if (tail - m_Head.load(std::memory_order_acquire) >= kCap)
+                    return false;
+                m_Buf[tail & (kCap - 1)] = std::move(v);
+                m_Tail.store(tail + 1, std::memory_order_release);
+                return true;
+            }
+
+            bool Pop(T &out) {
+                const size_t head = m_Head.load(std::memory_order_relaxed);
+                if (m_Tail.load(std::memory_order_acquire) == head)
+                    return false;
+                out = std::move(m_Buf[head & (kCap - 1)]);
+                m_Head.store(head + 1, std::memory_order_release);
+                return true;
+            }
+
+            [[nodiscard]] bool Empty() const {
+                return m_Tail.load(std::memory_order_acquire) ==
+                       m_Head.load(std::memory_order_acquire);
+            }
+
+            [[nodiscard]] size_t Size() const {
+                return m_Tail.load(std::memory_order_acquire) -
+                       m_Head.load(std::memory_order_acquire);
+            }
+        };
     }
 
     struct CVoxelStreamWorld::Impl {
@@ -30,10 +75,117 @@ namespace Manro {
         std::unordered_map<i64, SlotInfo> slots;
 
         std::vector<i64> unfilled;
+        std::vector<std::pair<float, i64>> unfilledScratch;
+
+        struct ParseJob {
+            i64 key{-1};
+            int sx{0}, sy{0}, sz{0};
+            u32 brickIdx{~0u};
+        };
+        struct ParseDone {
+            i64 key{-1};
+            u32 brickIdx{~0u};
+            std::vector<u16> mats;
+            std::vector<u32> occ;
+            std::vector<u32> fluid;
+            bool opaque{false};
+        };
+        struct WorkerState {
+            SpscQueue<ParseJob, 64> jobs;
+            SpscQueue<ParseDone, 64> done;
+        };
+        std::vector<std::unique_ptr<WorkerState>> workerStates;
+        std::vector<std::thread> workers;
+        std::mutex sleepMutex;
+        std::condition_variable queueCv;
+        std::unordered_set<i64> pending;
+        std::atomic<bool> stopWorker{false};
+        size_t maxPending{64};
+
+        void ParseLoop(size_t wi) {
+            const CpuTopology_t topo = QueryCpuTopology();
+            if (topo.IsHybrid() && !topo.m_EfficiencyCores.empty())
+                SetThreadAffinity(topo.m_EfficiencyCores);
+            CAnvilWorldReader localReader;
+            const bool localHasSave =
+                !desc.worldDir.empty() && localReader.Open(desc.worldDir);
+            std::vector<u32> palLocal;
+            AnvilSectionStates saveSec{};
+            WorkerState &st = *workerStates[wi];
+            for (;;) {
+                ParseJob job;
+                if (!st.jobs.Pop(job)) {
+                    std::unique_lock<std::mutex> lk(sleepMutex);
+                    queueCv.wait(lk, [&] {
+                        return stopWorker.load(std::memory_order_acquire) ||
+                               !st.jobs.Empty();
+                    });
+                    if (stopWorker.load(std::memory_order_acquire))
+                        return;
+                    continue;
+                }
+                ParseDone out;
+                out.key = job.key;
+                out.brickIdx = job.brickIdx;
+                out.mats.assign(4096, 0);
+                out.occ.assign(128, 0u);
+                out.fluid.assign(128, 0u);
+                bool allOpaque = true;
+                palLocal.clear();
+                bool haveData = false;
+                if (localHasSave &&
+                    localReader.ReadSectionStates(job.sx, job.sy, job.sz, saveSec) &&
+                    saveSec.present) {
+                    haveData = true;
+                    palLocal.reserve(saveSec.palette.size());
+                    for (const FullState &fs : saveSec.palette) {
+                        const auto it =
+                            pack->stateByKey.find(MakeStateKey(fs.name, fs.props));
+                        palLocal.push_back(it != pack->stateByKey.end()
+                                                ? it->second
+                                                : pack->fallbackState);
+                    }
+                }
+                for (int vi = 0; vi < 4096; ++vi) {
+                    const u32 st = haveData ? palLocal[saveSec.pal[vi]] : 0u;
+                    const bool valid = static_cast<size_t>(st) < pack->states.size();
+                    const u32 flags = valid ? pack->states[static_cast<size_t>(st)].flags : 0u;
+                    const bool skip = !valid || ((flags & kBlockFlagSkip) != 0);
+                    out.mats[static_cast<size_t>(vi)] = skip ? 0 : static_cast<u16>(st);
+                    if (!skip) {
+                        const bool fluid = static_cast<size_t>(st) < pack->fluid.size() &&
+                                           pack->fluid[static_cast<size_t>(st)] != 0u;
+                        if (fluid)
+                            out.fluid[vi >> 5u] |= (1u << (vi & 31u));
+                        else
+                            out.occ[vi >> 5u] |= (1u << (vi & 31u));
+                    }
+                    if (skip || (flags & kBlockFlagOpaque) == 0u)
+                        allOpaque = false;
+                }
+                out.opaque = allOpaque;
+                while (!st.done.Push(std::move(out))) {
+                    if (stopWorker.load(std::memory_order_acquire))
+                        return;
+                    std::this_thread::yield();
+                }
+            }
+        }
+
+        ~Impl() {
+            stopWorker.store(true, std::memory_order_release);
+            queueCv.notify_all();
+            for (auto &t : workers) {
+                if (t.joinable())
+                    t.join();
+            }
+        }
 
         int centerCx{0}, centerCz{0};
         bool hasCenter{false};
         int evictRadius{7};
+        std::vector<i64> evictPending;
+        static constexpr int kEvictPerUpdate = 64;
 
         int minBX{0}, minBZ{0};
 
@@ -41,6 +193,7 @@ namespace Manro {
         std::vector<u32> fluidMirror;
 
         std::vector<u16> stateMirror;
+        std::vector<u8> brickContent;
         Vec3 spawn{8.f, 80.f, 8.f};
 
         static i64 Key(int sx, int sy, int sz) {
@@ -139,6 +292,53 @@ namespace Manro {
                 return -1;
             return static_cast<i32>(stateMirror[idx]);
         }
+
+        bool CollisionBoxAt(i64 x, i64 y, i64 z, Vec3 &mn, Vec3 &mx) const {
+            if (y >= 320)
+                return false;
+            if (y < -64) {
+                mn = Vec3(static_cast<float>(x), static_cast<float>(y),
+                          static_cast<float>(z));
+                mx = mn + Vec3(1.f, 1.f, 1.f);
+                return true;
+            }
+            if (!pack)
+                return false;
+            const int sx = static_cast<int>(x >> 4);
+            const int sy = static_cast<int>(y >> 4);
+            const int sz = static_cast<int>(z >> 4);
+            const auto it = slots.find(Key(sx, sy, sz));
+            if (it == slots.end() || !it->second.filled || it->second.brickIdx < 0) {
+                mn = Vec3(static_cast<float>(x), static_cast<float>(y),
+                          static_cast<float>(z));
+                mx = mn + Vec3(1.f, 1.f, 1.f);
+                return true;
+            }
+            const size_t vi = static_cast<size_t>((x & 15) + (y & 15) * 16 + (z & 15) * 256);
+            const size_t idx = static_cast<size_t>(it->second.brickIdx) * 4096 + vi;
+            if (idx >= stateMirror.size()) {
+                mn = Vec3(static_cast<float>(x), static_cast<float>(y),
+                          static_cast<float>(z));
+                mx = mn + Vec3(1.f, 1.f, 1.f);
+                return true;
+            }
+            const u16 st = stateMirror[idx];
+            const size_t si = static_cast<size_t>(st);
+            if (si >= pack->states.size() || si >= pack->fluid.size())
+                return false;
+            if (pack->fluid[si] != 0u)
+                return false;
+            const BlockStateLook_t &look = pack->states[si];
+            if ((look.flags & kBlockFlagSkip) != 0u)
+                return false;
+            mn = Vec3(static_cast<float>(x) + look.collMin[0],
+                      static_cast<float>(y) + look.collMin[1],
+                      static_cast<float>(z) + look.collMin[2]);
+            mx = Vec3(static_cast<float>(x) + look.collMax[0],
+                      static_cast<float>(y) + look.collMax[1],
+                      static_cast<float>(z) + look.collMax[2]);
+            return mx.x > mn.x && mx.y > mn.y && mx.z > mn.z;
+        }
     };
 
     CVoxelStreamWorld::CVoxelStreamWorld() : m_Impl(std::make_unique<Impl>()) {}
@@ -177,11 +377,52 @@ namespace Manro {
 
         const int wantLive =
             (2 * (R + 1) + 1) * (kMaxSectionY - kMinSectionY + 1) * (2 * (R + 1) + 1);
-        I.evictRadius = (wantLive <= 8192) ? (R + 1) : R;
+        const int wantEvict2 =
+            (2 * (R + 2) + 1) * (kMaxSectionY - kMinSectionY + 1) * (2 * (R + 2) + 1);
+        if (wantEvict2 <= 8192)
+            I.evictRadius = R + 2;
+        else if (wantLive <= 8192)
+            I.evictRadius = R + 1;
+        else
+            I.evictRadius = R;
 
         world.ReserveResident(8192);
         std::printf("[StreamWorld] streaming R=%d evict=%d save=%d spawn=(%.1f,%.1f,%.1f)\n", R,
                     I.evictRadius, I.hasSave ? 1 : 0, I.spawn.x, I.spawn.y, I.spawn.z);
+        {
+            constexpr size_t kReserveBricks = 8192;
+            I.slots.reserve(kReserveBricks * 2);
+            I.pending.reserve(128);
+            const size_t window =
+                static_cast<size_t>(2 * R + 1) * 24 * (2 * R + 1);
+            I.unfilled.reserve(window);
+            I.unfilledScratch.reserve(window);
+            I.evictPending.reserve(1024);
+            I.occMirror.assign(kReserveBricks * 128, 0u);
+            I.fluidMirror.assign(kReserveBricks * 128, 0u);
+            I.stateMirror.assign(kReserveBricks * 4096, 0u);
+            I.brickContent.assign(kReserveBricks, 1u);
+        }
+        {
+            const CpuTopology_t topo = QueryCpuTopology();
+            int numWorkers = 1;
+            if (topo.IsHybrid() && !topo.m_EfficiencyCores.empty())
+                numWorkers = std::min<int>(
+                    4, static_cast<int>(topo.m_EfficiencyCores.size()));
+            numWorkers = std::max(1, numWorkers);
+            I.desc.fillBudgetPerUpdate = 6 * numWorkers;
+            I.maxPending = static_cast<size_t>(48 * numWorkers);
+            I.pending.reserve(I.maxPending * 2);
+            std::printf("[StreamWorld] parse workers=%d fillBudget=%d maxPending=%zu\n",
+                        numWorkers, I.desc.fillBudgetPerUpdate, I.maxPending);
+            I.workerStates.reserve(static_cast<size_t>(numWorkers));
+            I.workers.reserve(static_cast<size_t>(numWorkers));
+            for (int w = 0; w < numWorkers; ++w) {
+                I.workerStates.push_back(std::make_unique<Impl::WorkerState>());
+                I.workers.emplace_back(&Impl::ParseLoop, &I,
+                                       static_cast<size_t>(w));
+            }
+        }
         return I.spawn;
     }
 
@@ -202,144 +443,202 @@ namespace Manro {
             I.centerCz = pcz;
             I.hasCenter = true;
             const int E = I.evictRadius;
-            for (auto it = I.slots.begin(); it != I.slots.end();) {
+            const int W = 2 * R + 1;
+            const int H = kMaxSectionY - kMinSectionY + 1;
+            thread_local std::vector<u8> cell;
+            cell.assign(static_cast<size_t>(W) * H * W, 0u);
+            I.evictPending.clear();
+            for (const auto &kv : I.slots) {
                 int sx, sy, sz;
-                Impl::DecodeKey(it->first, sx, sy, sz);
+                Impl::DecodeKey(kv.first, sx, sy, sz);
                 if (std::max(std::abs(sx - pcx), std::abs(sz - pcz)) > E) {
-                    const i32 b = it->second.brickIdx;
-                    if (b >= 0) {
-                        world.EvictBrick(static_cast<u32>(b));
-                        const size_t base = static_cast<size_t>(b) * 128;
-                        if (base + 128 <= I.occMirror.size()) {
-                            std::fill(I.occMirror.begin() + static_cast<ptrdiff_t>(base),
-                                      I.occMirror.begin() + static_cast<ptrdiff_t>(base + 128), 0u);
-                            std::fill(I.fluidMirror.begin() + static_cast<ptrdiff_t>(base),
-                                      I.fluidMirror.begin() + static_cast<ptrdiff_t>(base + 128),
-                                      0u);
-                        }
-                        const size_t sbase = static_cast<size_t>(b) * 4096;
-                        if (sbase + 4096 <= I.stateMirror.size()) {
-                            std::fill(I.stateMirror.begin() + static_cast<ptrdiff_t>(sbase),
-                                      I.stateMirror.begin() + static_cast<ptrdiff_t>(sbase + 4096),
-                                      0u);
-                        }
-                    }
-                    it = I.slots.erase(it);
-                } else {
-                    ++it;
+                    I.evictPending.push_back(kv.first);
+                    continue;
                 }
+                const int lx = sx - (pcx - R);
+                const int ly = sy - kMinSectionY;
+                const int lz = sz - (pcz - R);
+                if (static_cast<unsigned>(lx) >= static_cast<unsigned>(W) ||
+                    ly < 0 || ly >= H ||
+                    static_cast<unsigned>(lz) >= static_cast<unsigned>(W))
+                    continue;
+                cell[(static_cast<size_t>(lz) * H + ly) * W + lx] =
+                    kv.second.filled ? 2u : 1u;
             }
-            I.unfilled.clear();
-            I.unfilled.reserve(static_cast<size_t>(2 * R + 1) * 24 * (2 * R + 1));
-            for (int sz = pcz - R; sz <= pcz + R; ++sz) {
-                for (int sy = kMinSectionY; sy <= kMaxSectionY; ++sy) {
-                    for (int sx = pcx - R; sx <= pcx + R; ++sx) {
-                        const i64 key = Impl::Key(sx, sy, sz);
-                        const auto it = I.slots.find(key);
-                        if (it == I.slots.end() || !it->second.filled)
-                            I.unfilled.push_back(key);
+            I.unfilledScratch.clear();
+            for (int lz = 0; lz < W; ++lz) {
+                for (int ly = 0; ly < H; ++ly) {
+                    for (int lx = 0; lx < W; ++lx) {
+                        if (cell[(static_cast<size_t>(lz) * H + ly) * W + lx] == 2u)
+                            continue;
+                        const int sx = pcx - R + lx;
+                        const int sy = kMinSectionY + ly;
+                        const int sz = pcz - R + lz;
+                        const float dx = static_cast<float>(sx - pcx);
+                        const float dy = static_cast<float>(sy - pcy);
+                        const float dz = static_cast<float>(sz - pcz);
+                        I.unfilledScratch.emplace_back(
+                            dx * dx + dy * dy + dz * dz, Impl::Key(sx, sy, sz));
                     }
                 }
             }
 
-            std::sort(I.unfilled.begin(), I.unfilled.end(), [&](i64 a, i64 b) {
-                int ax, ay, az, bx, by, bz;
-                Impl::DecodeKey(a, ax, ay, az);
-                Impl::DecodeKey(b, bx, by, bz);
-                const float adx = static_cast<float>(ax - pcx), ady = static_cast<float>(ay - pcy),
-                            adz = static_cast<float>(az - pcz);
-                const float bdx = static_cast<float>(bx - pcx), bdy = static_cast<float>(by - pcy),
-                            bdz = static_cast<float>(bz - pcz);
-                return adx * adx + ady * ady + adz * adz < bdx * bdx + bdy * bdy + bdz * bdz;
-            });
+            std::sort(I.unfilledScratch.begin(), I.unfilledScratch.end(),
+                      [](const auto &a, const auto &b) { return a.first < b.first; });
+            I.unfilled.resize(I.unfilledScratch.size());
+            for (size_t k = 0; k < I.unfilledScratch.size(); ++k)
+                I.unfilled[k] = I.unfilledScratch[k].second;
         }
 
-        if (I.unfilled.empty())
-            return 0;
+        {
+            const int E = I.evictRadius;
+            const int ccx = I.centerCx, ccz = I.centerCz;
+            int evicted = 0, scanned = 0;
+            const int kMaxScans = Impl::kEvictPerUpdate * 4;
+            while (!I.evictPending.empty() && evicted < Impl::kEvictPerUpdate &&
+                   scanned < kMaxScans) {
+                const i64 key = I.evictPending.back();
+                I.evictPending.pop_back();
+                ++scanned;
+                const auto it = I.slots.find(key);
+                if (it == I.slots.end())
+                    continue;
+                int sx, sy, sz;
+                Impl::DecodeKey(key, sx, sy, sz);
+                if (std::max(std::abs(sx - ccx), std::abs(sz - ccz)) <= E)
+                    continue;
+                const i32 b = it->second.brickIdx;
+                if (b >= 0) {
+                    world.EvictBrick(static_cast<u32>(b));
+                    if (static_cast<size_t>(b) < I.brickContent.size())
+                        I.brickContent[static_cast<size_t>(b)] = 0u;
+                }
+                I.slots.erase(it);
+                ++evicted;
+            }
+        }
 
-        const int budget = std::min<int>(I.desc.fillBudgetPerUpdate,
-                                         static_cast<int>(I.unfilled.size()));
+        {
+            bool anyDone = false;
+            for (const auto &s : I.workerStates) {
+                if (!s->done.Empty()) {
+                    anyDone = true;
+                    break;
+                }
+            }
+            if (I.unfilled.empty() && I.evictPending.empty() && !anyDone)
+                return 0;
+        }
+
+        const int budget = I.desc.fillBudgetPerUpdate;
 
         thread_local std::vector<u16> batchMats;
         thread_local std::vector<u32> batchOcc;
         thread_local std::vector<u32> batchFluid;
         thread_local std::vector<u32> batchGpuOcc;
         thread_local std::vector<i64> filledKeys;
+        thread_local std::vector<u32> batchIdx;
+        thread_local std::vector<u8> batchOpaque;
         batchMats.resize(static_cast<size_t>(budget) * 4096);
         batchOcc.resize(static_cast<size_t>(budget) * 128);
         batchFluid.resize(static_cast<size_t>(budget) * 128);
         batchGpuOcc.resize(static_cast<size_t>(budget) * 128);
-        std::vector<u32> batchIdx;
-        batchIdx.reserve(static_cast<size_t>(budget));
-        std::vector<u8> batchOpaque;
-        batchOpaque.reserve(static_cast<size_t>(budget));
+        batchIdx.clear();
+        batchOpaque.clear();
         filledKeys.clear();
-        AnvilSectionStates saveSec{};
 
-        std::vector<u32> palLocal;
-        for (int i = 0; i < budget; ++i) {
-            const i64 key = I.unfilled[static_cast<size_t>(i)];
-            int sx, sy, sz;
-            Impl::DecodeKey(key, sx, sy, sz);
-            auto sit = I.slots.find(key);
-            u32 bidx = ~0u;
-            if (sit == I.slots.end()) {
+        if (!I.unfilled.empty()) {
+            size_t inFlight = I.pending.size();
+            for (const auto &s : I.workerStates)
+                inFlight += s->jobs.Size() + s->done.Size();
+            if (inFlight < I.maxPending) {
+                int enqueued = 0;
+                const size_t numW = I.workerStates.size();
+                for (const i64 key : I.unfilled) {
+                    if (enqueued >= budget || inFlight >= I.maxPending)
+                        break;
+                    int sx, sy, sz;
+                    Impl::DecodeKey(key, sx, sy, sz);
+                    auto sit = I.slots.find(key);
+                    u32 bidx = ~0u;
+                    if (sit == I.slots.end()) {
+                        const i32 nb = world.AllocateBrickSlot(
+                            I.SlotFor(sx, sy, sz), Impl::OriginFor(sx, sy, sz));
+                        if (nb < 0)
+                            break;
+                        sit = I.slots.emplace(key, Impl::SlotInfo{nb, false}).first;
+                        bidx = static_cast<u32>(nb);
+                    } else if (sit->second.filled || sit->second.brickIdx < 0) {
+                        continue;
+                    } else {
+                        bidx = static_cast<u32>(sit->second.brickIdx);
+                    }
+                    if (I.pending.find(key) != I.pending.end())
+                        continue;
+                    Impl::ParseJob job;
+                    job.key = key;
+                    job.sx = sx;
+                    job.sy = sy;
+                    job.sz = sz;
+                    job.brickIdx = bidx;
+                    const u64 colHash =
+                        static_cast<u64>(static_cast<u32>(sx)) * 73856093ull ^
+                        static_cast<u64>(static_cast<u32>(sz)) * 19349663ull;
+                    bool pushed = false;
+                    for (size_t t = 0; t < numW; ++t) {
+                        if (I.workerStates[(colHash + t) %
+                                           static_cast<u64>(numW)]
+                                ->jobs.Push(std::move(job))) {
+                            pushed = true;
+                            break;
+                        }
+                    }
+                    if (!pushed)
+                        break;
+                    I.pending.insert(key);
+                    ++enqueued;
+                    ++inFlight;
+                }
+                if (enqueued > 0)
+                    I.queueCv.notify_all();
+            }
+        }
 
-                const i32 nb =
-                    world.AllocateBrickSlot(I.SlotFor(sx, sy, sz), Impl::OriginFor(sx, sy, sz));
-                if (nb < 0)
+        {
+            int drained = 0;
+            while (drained < budget) {
+                bool progress = false;
+                for (const auto &s : I.workerStates) {
+                    if (drained >= budget)
+                        break;
+                    Impl::ParseDone d;
+                    if (!s->done.Pop(d))
+                        continue;
+                    progress = true;
+                    const auto sit = I.slots.find(d.key);
+                    const bool stale =
+                        (sit == I.slots.end() ||
+                         sit->second.brickIdx != static_cast<i32>(d.brickIdx) ||
+                         sit->second.filled);
+                    I.pending.erase(d.key);
+                    if (stale)
+                        continue;
+                    const size_t k = batchIdx.size();
+                    std::memcpy(batchMats.data() + k * 4096, d.mats.data(),
+                                sizeof(u16) * 4096);
+                    std::memcpy(batchOcc.data() + k * 128, d.occ.data(),
+                                sizeof(u32) * 128);
+                    std::memcpy(batchFluid.data() + k * 128, d.fluid.data(),
+                                sizeof(u32) * 128);
+                    batchIdx.push_back(d.brickIdx);
+                    batchOpaque.push_back(d.opaque ? 1u : 0u);
+                sit->second.filled = true;
+                filledKeys.push_back(d.key);
+                ++drained;
+                }
+                if (!progress)
                     break;
-                sit = I.slots.emplace(key, Impl::SlotInfo{nb, false}).first;
-                bidx = static_cast<u32>(nb);
-            } else if (sit->second.filled || sit->second.brickIdx < 0) {
-                continue;
-            } else {
-                bidx = static_cast<u32>(sit->second.brickIdx);
             }
-            u16 *mats = batchMats.data() + static_cast<size_t>(batchIdx.size()) * 4096;
-            u32 *occ = batchOcc.data() + static_cast<size_t>(batchIdx.size()) * 128;
-            u32 *fld = batchFluid.data() + static_cast<size_t>(batchIdx.size()) * 128;
-            std::fill(occ, occ + 128, 0u);
-            std::fill(fld, fld + 128, 0u);
-            bool allOpaque = true;
-
-            palLocal.clear();
-            bool haveData = false;
-            if (I.hasSave && I.reader.ReadSectionStates(sx, sy, sz, saveSec) &&
-                saveSec.present) {
-                haveData = true;
-                palLocal.reserve(saveSec.palette.size());
-                for (const FullState &fs : saveSec.palette) {
-                    const auto it =
-                        I.pack->stateByKey.find(MakeStateKey(fs.name, fs.props));
-                    palLocal.push_back(it != I.pack->stateByKey.end()
-                                            ? it->second
-                                            : I.pack->fallbackState);
-                }
-            }
-            for (int vi = 0; vi < 4096; ++vi) {
-                const u32 st = haveData ? palLocal[saveSec.pal[vi]] : 0u;
-                const bool valid = static_cast<size_t>(st) < I.pack->states.size();
-                const u32 flags = valid ? I.pack->states[static_cast<size_t>(st)].flags : 0u;
-                const bool skip = !valid || ((flags & kBlockFlagSkip) != 0);
-                mats[vi] = skip ? 0 : static_cast<u16>(st);
-                if (!skip) {
-
-                    const bool fluid = static_cast<size_t>(st) < I.pack->fluid.size() &&
-                                       I.pack->fluid[static_cast<size_t>(st)] != 0u;
-                    if (fluid)
-                        fld[vi >> 5u] |= (1u << (vi & 31u));
-                    else
-                        occ[vi >> 5u] |= (1u << (vi & 31u));
-                }
-
-                if (skip || (flags & kBlockFlagOpaque) == 0u)
-                    allOpaque = false;
-            }
-            batchIdx.push_back(bidx);
-            batchOpaque.push_back(allOpaque ? 1u : 0u);
-            sit->second.filled = true;
-            filledKeys.push_back(key);
         }
         if (!batchIdx.empty()) {
 
@@ -347,8 +646,15 @@ namespace Manro {
                 const u32 *occ = batchOcc.data() + k * 128;
                 const u32 *fld = batchFluid.data() + k * 128;
                 u32 *gpu = batchGpuOcc.data() + k * 128;
-                for (int w = 0; w < 128; ++w)
+                u32 any = 0u;
+                for (int w = 0; w < 128; ++w) {
                     gpu[w] = occ[w] | fld[w];
+                    any |= gpu[w];
+                }
+                const size_t bi = static_cast<size_t>(batchIdx[k]);
+                if (I.brickContent.size() <= bi)
+                    I.brickContent.resize(bi + 1, 1u);
+                I.brickContent[bi] = (any != 0u) ? 1u : 0u;
             }
             if (!world.StageBrickBatch(flightSlot, batchIdx.data(), batchMats.data(),
                                        batchGpuOcc.data(), static_cast<u32>(batchIdx.size()))) {
@@ -389,32 +695,6 @@ namespace Manro {
             I.unfilled.resize(w);
         }
 
-        {
-            static u32 probeSeq = 0;
-            if ((++probeSeq % 90) == 1) {
-                const int px = static_cast<int>(std::floor(cameraPos.x));
-                const int pz = static_cast<int>(std::floor(cameraPos.z));
-                int mirrorTop = -999;
-                for (int y = 100; y >= -64; --y) {
-                    if (I.IsSolidAt(px, y, pz)) {
-                        mirrorTop = y;
-                        break;
-                    }
-                }
-                std::printf("[StreamWorld][probe] cam=(%d,%d) mirrorTop=%d unfilled=%zu\n", px,
-                            pz, mirrorTop, I.unfilled.size());
-                if (!I.unfilled.empty() && I.unfilled.size() <= 12) {
-                    for (const i64 k : I.unfilled) {
-                        int a, b, c;
-                        Impl::DecodeKey(k, a, b, c);
-                        const auto it2 = I.slots.find(k);
-                        std::printf("[StreamWorld][stuck] key=(%d,%d,%d) slotEntry=%d filled=%d\n",
-                                    a, b, c, it2 == I.slots.end() ? -2 : it2->second.brickIdx,
-                                    it2 == I.slots.end() ? 0 : (it2->second.filled ? 1 : 0));
-                    }
-                }
-            }
-        }
         return static_cast<int>(I.unfilled.size());
     }
 
@@ -457,29 +737,38 @@ namespace Manro {
             applyVoxel(static_cast<int>(std::floor(pos.x)), static_cast<int>(std::floor(pos.y)),
                        static_cast<int>(std::floor(pos.z)));
             I.RecomputeOpaque(world, it->second.brickIdx);
-            return;
-        }
-        const float reach = radius + 0.5f;
-        const int x0 = static_cast<int>(std::floor(pos.x - reach));
-        const int x1 = static_cast<int>(std::floor(pos.x + reach));
-        const int y0 = static_cast<int>(std::floor(pos.y - reach));
-        const int y1 = static_cast<int>(std::floor(pos.y + reach));
-        const int z0 = static_cast<int>(std::floor(pos.z - reach));
-        const int z1 = static_cast<int>(std::floor(pos.z + reach));
-        for (int vz = z0; vz <= z1; ++vz) {
-            for (int vy = y0; vy <= y1; ++vy) {
-                for (int vx = x0; vx <= x1; ++vx) {
+        } else {
+            const float reach = radius + 0.5f;
+            const int x0 = static_cast<int>(std::floor(pos.x - reach));
+            const int x1 = static_cast<int>(std::floor(pos.x + reach));
+            const int y0 = static_cast<int>(std::floor(pos.y - reach));
+            const int y1 = static_cast<int>(std::floor(pos.y + reach));
+            const int z0 = static_cast<int>(std::floor(pos.z - reach));
+            const int z1 = static_cast<int>(std::floor(pos.z + reach));
+            for (int vz = z0; vz <= z1; ++vz) {
+                for (int vy = y0; vy <= y1; ++vy) {
+                    for (int vx = x0; vx <= x1; ++vx) {
 
-                    const float dx = static_cast<float>(vx) + 0.5f - pos.x;
-                    const float dy = static_cast<float>(vy) + 0.5f - pos.y;
-                    const float dz = static_cast<float>(vz) + 0.5f - pos.z;
-                    if (std::sqrt(dx * dx + dy * dy + dz * dz) > reach)
-                        continue;
-                    applyVoxel(vx, vy, vz);
+                        const float dx = static_cast<float>(vx) + 0.5f - pos.x;
+                        const float dy = static_cast<float>(vy) + 0.5f - pos.y;
+                        const float dz = static_cast<float>(vz) + 0.5f - pos.z;
+                        if (std::sqrt(dx * dx + dy * dy + dz * dz) > reach)
+                            continue;
+                        applyVoxel(vx, vy, vz);
+                    }
                 }
             }
+            I.RecomputeOpaque(world, it->second.brickIdx);
         }
-        I.RecomputeOpaque(world, it->second.brickIdx);
+        {
+            const size_t bi = static_cast<size_t>(it->second.brickIdx);
+            u32 any = 0u;
+            for (size_t w = 0; w < 128; ++w)
+                any |= (I.occMirror[base + w] | I.fluidMirror[base + w]);
+            if (I.brickContent.size() <= bi)
+                I.brickContent.resize(bi + 1, 1u);
+            I.brickContent[bi] = (any != 0u) ? 1u : 0u;
+        }
     }
 
     bool CVoxelStreamWorld::IsSolidAt(i64 x, i64 y, i64 z) const { return m_Impl->IsSolidAt(x, y, z); }
@@ -487,6 +776,18 @@ namespace Manro {
     bool CVoxelStreamWorld::IsFluidAt(i64 x, i64 y, i64 z) const { return m_Impl->IsFluidAt(x, y, z); }
 
     i32 CVoxelStreamWorld::GetStateAt(i64 x, i64 y, i64 z) const { return m_Impl->StateAt(x, y, z); }
+
+    bool CVoxelStreamWorld::GetCollisionBoxAt(i64 x, i64 y, i64 z, Vec3 &mn,
+                                               Vec3 &mx) const {
+        return m_Impl->CollisionBoxAt(x, y, z, mn, mx);
+    }
+
+    bool CVoxelStreamWorld::BrickHasContent(u32 brickIdx) const {
+        auto &I = *m_Impl;
+        if (static_cast<size_t>(brickIdx) >= I.brickContent.size())
+            return true;
+        return I.brickContent[static_cast<size_t>(brickIdx)] != 0u;
+    }
 
     i32 CVoxelStreamWorld::PlaceState() const {
         return static_cast<i32>(m_Impl->pack->placeState);

@@ -64,6 +64,7 @@ namespace Manro {
         [[nodiscard]] VkDeviceAddress GetBrickBufferAddr() const;
         [[nodiscard]] VkDeviceAddress GetHeaderAddr() const;
         [[nodiscard]] VkDeviceAddress GetPageTableAddr() const;
+        [[nodiscard]] VkBuffer GetHeaderHandle() const;
 
         [[nodiscard]] u32 GetBrickCount() const { return m_BrickCount; }
         [[nodiscard]] float GetBrickSize() const { return m_BrickSize; }
@@ -94,7 +95,6 @@ namespace Manro {
         Scope<CVoxelSparseBinder> m_Bricks;
         Scope<CBuffer> m_Headers;
         Scope<CBuffer> m_PageTable;
-        Scope<CBuffer> m_Palette;
         Scope<CBuffer> m_EditRing;
 
         std::vector<VoxelBrickHeader_t> m_HeaderMirror;
@@ -122,6 +122,12 @@ namespace Manro {
         std::vector<u32> m_DirtyHeaders;
 
         bool m_bPagesDirty{true};
+        u32 m_PageDirtyLo{~0u};
+        u32 m_PageDirtyHi{0u};
+        void TouchPageSlot(u32 slot) {
+            if (slot < m_PageDirtyLo) m_PageDirtyLo = slot;
+            if (slot > m_PageDirtyHi) m_PageDirtyHi = slot;
+        }
 
         bool m_bHeadersFullUpload{true};
     };

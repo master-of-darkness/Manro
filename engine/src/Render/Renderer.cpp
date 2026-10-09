@@ -124,6 +124,12 @@ namespace Manro {
     u32 CRenderer::VoxelGetBrickCount() const { return RendererImplVoxelGetBrickCount(*m_Impl); }
 
     u32 CRenderer::VoxelGetTaskGroups() const { return RendererImplVoxelGetTaskGroups(*m_Impl); }
+    void CRenderer::VoxelGetGpuTimes(float &xferMs, float &drawMs, float &postMs) const {
+        RendererImplVoxelGetGpuTimes(*m_Impl, xferMs, drawMs, postMs);
+    }
+    void CRenderer::VoxelGetGpuInstantTimes(float &xferMs, float &drawMs, float &postMs) const {
+        RendererImplVoxelGetGpuInstantTimes(*m_Impl, xferMs, drawMs, postMs);
+    }
 
     void CRenderer::VoxelGetDebugCounters(u32 out[6]) const {
         RendererImplVoxelGetDebugCounters(*m_Impl, out);
@@ -161,6 +167,10 @@ namespace Manro {
 
     i32 CRenderer::VoxelStreamGetStateAt(const Vec3 &p) const {
         return RendererImplVoxelStreamGetStateAt(*m_Impl, p);
+    }
+
+    bool CRenderer::VoxelStreamGetCollisionBox(const Vec3 &p, Vec3 &mn, Vec3 &mx) const {
+        return RendererImplVoxelStreamGetCollisionBox(*m_Impl, p, mn, mx);
     }
 
     std::string CRenderer::VoxelGetStateKey(u32 id) const {

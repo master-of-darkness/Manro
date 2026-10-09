@@ -16,7 +16,7 @@ namespace Manro {
 
         int radiusSections{6};
 
-        int fillBudgetPerUpdate{12};
+        int fillBudgetPerUpdate{6};
     };
 
     class CVoxelStreamWorld {
@@ -37,6 +37,9 @@ namespace Manro {
 
         [[nodiscard]] i32 GetStateAt(i64 x, i64 y, i64 z) const;
 
+        [[nodiscard]] bool GetCollisionBoxAt(i64 x, i64 y, i64 z, Vec3 &mn,
+                                             Vec3 &mx) const;
+        [[nodiscard]] bool BrickHasContent(u32 brickIdx) const;
         [[nodiscard]] i32 PlaceState() const;
 
         [[nodiscard]] int UnfilledCount() const;

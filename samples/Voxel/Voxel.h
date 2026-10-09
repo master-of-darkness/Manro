@@ -256,7 +256,7 @@ public:
         m_Unfilled = m_Renderer->VoxelStreamUpdate();
         const auto t1 = std::chrono::steady_clock::now();
 
-        const bool wantLog = (m_Frame % 120) == 0;
+        const bool wantLog = (m_Frame % 600) == 0;
         m_Renderer->VoxelSetDebugEnabled(wantLog && m_DbgAllowed);
 
         m_Renderer->BeginRendering();
@@ -276,6 +276,18 @@ public:
         m_FrameTimes[m_FrameTimeIdx] = dtMs;
         m_FrameTimeIdx = (m_FrameTimeIdx + 1) % kFrameTimeWindow;
         if (m_FramesSeen < kFrameTimeWindow) ++m_FramesSeen;
+
+        {
+            const Manro::FrameStats_t &fst = m_Renderer->GetLastFrameStats();
+            float ix = 0.f, id = 0.f, ip = 0.f;
+            m_Renderer->VoxelGetGpuInstantTimes(ix, id, ip);
+            (void)ix;
+            (void)ip;
+            if (fst.paceFenceMs > m_PaceFenceMax) m_PaceFenceMax = fst.paceFenceMs;
+            if (fst.paceAcquireMs > m_PaceAcquireMax) m_PaceAcquireMax = fst.paceAcquireMs;
+            if (fst.pacePresentMs > m_PacePresentMax) m_PacePresentMax = fst.pacePresentMs;
+            if (id > m_GpuDrawMax) m_GpuDrawMax = id;
+        }
 
         Manro::u32 dbg[6] = {};
         m_Renderer->VoxelGetDebugCounters(dbg);
@@ -304,6 +316,10 @@ public:
             ImGui::Text("Bricks: %u  TaskGroups: %u  Edits: %u  Unfilled: %d",
                         m_Renderer->VoxelGetBrickCount(), m_Renderer->VoxelGetTaskGroups(),
                         m_EditCount, m_Unfilled);
+            float gx = 0.f, gd = 0.f, gp = 0.f;
+            m_Renderer->VoxelGetGpuTimes(gx, gd, gp);
+            ImGui::Text("GPU xfer: %.2f ms  draw: %.2f ms  post: %.2f ms", static_cast<double>(gx),
+                        static_cast<double>(gd), static_cast<double>(gp));
             ImGui::Text("Player: (%.1f,%.1f,%.1f) %s%s", static_cast<double>(m_Player.pos.x),
                         static_cast<double>(m_Player.pos.y), static_cast<double>(m_Player.pos.z),
                         m_Player.fly ? "FLY"
@@ -325,13 +341,24 @@ public:
         const float fps = frame.DeltaTime > 0.f ? 1.f / frame.DeltaTime : 0.f;
         (void)fps;
         if (wantLog && m_Frame > 0) {
+            float lgx = 0.f, lgd = 0.f, lgp = 0.f;
+            m_Renderer->VoxelGetGpuTimes(lgx, lgd, lgp);
             printf("[Voxel] fps=%.0f (%.2f ms) 1%%low=%.2fms 0.1%%low=%.2fms bricks=%u "
-                   "taskGroups=%u edits=%u unfilled=%d cpu=%.2fms stream=%.2fms cam=(%.1f,%.1f,%.1f)\n",
-                   static_cast<double>(emaFps), static_cast<double>(m_FpsEma),
-                   static_cast<double>(worst1), static_cast<double>(worst01),
-                   m_Renderer->VoxelGetBrickCount(), m_Renderer->VoxelGetTaskGroups(), m_EditCount,
-                   m_Unfilled, static_cast<double>(m_CpuEma), static_cast<double>(m_StreamEma),
-                   m_CamPos.x, m_CamPos.y, m_CamPos.z);
+                    "taskGroups=%u edits=%u unfilled=%d cpu=%.2fms stream=%.2fms gpuxfer=%.2fms "
+                    "gpudraw=%.2fms gpupost=%.2fms paceF=%.2fms paceA=%.2fms paceP=%.2fms gpuMax=%.2fms "
+                    "cam=(%.1f,%.1f,%.1f)\n",
+                    static_cast<double>(emaFps), static_cast<double>(m_FpsEma),
+                    static_cast<double>(worst1), static_cast<double>(worst01),
+                    m_Renderer->VoxelGetBrickCount(), m_Renderer->VoxelGetTaskGroups(), m_EditCount,
+                    m_Unfilled, static_cast<double>(m_CpuEma), static_cast<double>(m_StreamEma),
+                    static_cast<double>(lgx), static_cast<double>(lgd), static_cast<double>(lgp),
+                    static_cast<double>(m_PaceFenceMax), static_cast<double>(m_PaceAcquireMax),
+                    static_cast<double>(m_PacePresentMax), static_cast<double>(m_GpuDrawMax),
+                    m_CamPos.x, m_CamPos.y, m_CamPos.z);
+            m_PaceFenceMax = 0.f;
+            m_PaceAcquireMax = 0.f;
+            m_PacePresentMax = 0.f;
+            m_GpuDrawMax = 0.f;
             if (m_DbgAllowed)
                 printf("[VoxelDbg] taskRuns=%u visible=%u faces=%u culled=%u meshRuns=%u "
                        "meshFaces=%u\n",
@@ -497,6 +524,10 @@ public:
     float m_FpsEma{0.f};
     float m_CpuEma{0.f};
     float m_StreamEma{0.f};
+    float m_PaceFenceMax{0.f};
+    float m_PaceAcquireMax{0.f};
+    float m_PacePresentMax{0.f};
+    float m_GpuDrawMax{0.f};
 };
 
 inline CVoxel::CVoxel(Params params) : m_Params(std::move(params)) {}
