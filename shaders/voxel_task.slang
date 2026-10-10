@@ -205,7 +205,16 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                                     emit = !VoxelFaceCovered(vMin, vMax, nMin, nMax, f);
                                 }
                             } else {
-                                emit = ((nflags & 1u) == 0u);
+                                if ((nflags & 1u) == 0u) {
+                                    emit = true;
+                                } else {
+                                    uint vs = min(mat, kBlockStateMax - 1u);
+                                    int3 vMin = VoxelShapeMin(blockShapes, vs);
+                                    int3 vMax = VoxelShapeMax(blockShapes, vs);
+                                    int3 nMin = VoxelShapeMin(blockShapes, nstate);
+                                    int3 nMax = VoxelShapeMax(blockShapes, nstate);
+                                    emit = !VoxelFaceCovered(vMin, vMax, nMin, nMax, f);
+                                }
                             }
                         }
                         if (!emit)
