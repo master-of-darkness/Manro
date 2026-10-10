@@ -26,6 +26,11 @@ namespace Manro {
         [[nodiscard]] VkDeviceSize GetPageSize() const { return m_PageSize; }
         [[nodiscard]] VkDeviceSize GetVirtualSize() const { return m_VirtualSize; }
         [[nodiscard]] u32 GetBoundPageCount() const { return m_BoundPages; }
+        [[nodiscard]] u64 TakeBindSubmitCount() {
+            const u64 n = m_BindSubmitCount;
+            m_BindSubmitCount = 0;
+            return n;
+        }
 
     private:
         struct BoundPage_t {
@@ -39,6 +44,7 @@ namespace Manro {
         VkDeviceSize m_PageSize{65536};
         u32 m_BoundPages{0};
         u32 m_MemoryTypeIndex{0};
+        u64 m_BindSubmitCount{0};
         std::vector<BoundPage_t> m_Pages;
     };
 }

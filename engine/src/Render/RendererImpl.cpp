@@ -243,6 +243,11 @@ namespace Manro {
             return m_Voxel->StreamUpdate(m_CameraPosition, m_unCurrentFrame);
         }
 
+        const VoxelStreamStats_t &VoxelStreamGetStats() const {
+            static const VoxelStreamStats_t kEmpty{};
+            return (m_bVoxelEnabled && m_Voxel) ? m_Voxel->GetStreamStats() : kEmpty;
+        }
+
         bool VoxelStreamIsSolid(const Vec3 &p) const {
             return (m_bVoxelEnabled && m_Voxel) ? m_Voxel->StreamIsSolid(p) : true;
         }
@@ -1640,6 +1645,10 @@ namespace Manro {
 
     int RendererImplVoxelStreamUpdate(const CRendererImpl &impl) {
         return const_cast<CRendererImpl &>(impl).VoxelStreamUpdate();
+    }
+
+    void RendererImplVoxelStreamGetStats(const CRendererImpl &impl, VoxelStreamStats_t &out) {
+        out = impl.VoxelStreamGetStats();
     }
 
     bool RendererImplVoxelStreamIsSolid(const CRendererImpl &impl, const Vec3 &p) {

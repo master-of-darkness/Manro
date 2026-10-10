@@ -40,11 +40,20 @@ namespace Manro {
 
         void UploadBrickBatch(const u32 *indices, const u16 *mats, const u32 *occupancy, u32 count);
 
-        bool StageBrickBatch(u32 slot, const u32 *indices, const u16 *mats, const u32 *occupancy,
-                             u32 count);
+        bool StageBrickBatch(u32 slot, const u32 *indices, const u16 *mats,
+                              const u32 *occupancy, u32 count);
+
+        [[nodiscard]] u32 GetStageFree(u32 slot) const;
+
+        struct VoxelUploadStats_t {
+            u64 blockingUploads{0};
+            u32 highWater[3]{0, 0, 0};
+        };
+        VoxelUploadStats_t TakeUploadStats();
 
         void FlushStagedUploads(VkCommandBuffer cb, u32 slot);
         [[nodiscard]] VkBuffer GetBrickStoreHandle() const;
+        [[nodiscard]] u64 TakeBindSubmitCount();
 
         void SetVoxel(u32 bx, u32 by, u32 bz, u32 lx, u32 ly, u32 lz, u16 mat);
 
@@ -108,9 +117,11 @@ namespace Manro {
         std::vector<u32> m_FreeBricks;
 
         static constexpr u32 kStageSlots = 3;
-        static constexpr u32 kStageCapacityBricks = 64;
+        static constexpr u32 kStageCapacityBricks = 256;
         Scope<CBuffer> m_UploadStaging;
         std::array<u32, kStageSlots> m_StageCounts{};
+        std::array<u32, kStageSlots> m_StageHighWater{};
+        u64 m_BlockingUploadCount{0};
         std::array<std::array<u32, kStageCapacityBricks>, kStageSlots> m_StageIndices{};
 
         u32 m_VirtualDim{64};

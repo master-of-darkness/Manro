@@ -117,13 +117,26 @@ namespace Manro {
             bindInfo.bufferBindCount = 1;
             bindInfo.pBufferBinds = &bufBind;
 
-            if (vkQueueBindSparse(m_Context.GetGraphicsQueue(), 1, &bindInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
+            VkFence fence{VK_NULL_HANDLE};
+            VkFenceCreateInfo fci{};
+            fci.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+            bool ok = vkCreateFence(device, &fci, nullptr, &fence) == VK_SUCCESS;
+            if (ok) {
+                ok = vkQueueBindSparse(m_Context.GetGraphicsQueue(), 1, &bindInfo, fence) ==
+                     VK_SUCCESS;
+            }
+            if (ok) {
+                ok = vkWaitForFences(device, 1, &fence, VK_TRUE, 1000000000ull) == VK_SUCCESS;
+            }
+            if (fence)
+                vkDestroyFence(device, fence, nullptr);
+            if (!ok) {
                 for (VkDeviceMemory m : freshAllocs)
                     vkFreeMemory(device, m, nullptr);
-                LOG_ERROR("[CVoxelSparseBinder] vkQueueBindSparse failed");
+                LOG_ERROR("[CVoxelSparseBinder] sparse bind failed/timed out");
                 return false;
             }
-            vkQueueWaitIdle(m_Context.GetGraphicsQueue());
+            ++m_BindSubmitCount;
 
             size_t fresh = 0;
             for (u32 page = firstPage; page <= lastPage; ++page) {
@@ -163,8 +176,23 @@ namespace Manro {
             bindInfo.sType = VK_STRUCTURE_TYPE_BIND_SPARSE_INFO;
             bindInfo.bufferBindCount = 1;
             bindInfo.pBufferBinds = &bufBind;
-            if (vkQueueBindSparse(m_Context.GetGraphicsQueue(), 1, &bindInfo, VK_NULL_HANDLE) == VK_SUCCESS)
-                vkQueueWaitIdle(m_Context.GetGraphicsQueue());
+            VkFence fence{VK_NULL_HANDLE};
+            VkFenceCreateInfo fci{};
+            fci.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+            bool ok = vkCreateFence(device, &fci, nullptr, &fence) == VK_SUCCESS;
+            if (ok) {
+                ok = vkQueueBindSparse(m_Context.GetGraphicsQueue(), 1, &bindInfo, fence) ==
+                     VK_SUCCESS;
+            }
+            if (ok) {
+                ok = vkWaitForFences(device, 1, &fence, VK_TRUE, 1000000000ull) == VK_SUCCESS;
+            }
+            if (fence)
+                vkDestroyFence(device, fence, nullptr);
+            if (ok)
+                ++m_BindSubmitCount;
+            else
+                LOG_ERROR("[CVoxelSparseBinder] sparse unbind failed/timed out");
         }
         for (u32 page = firstPage; page <= lastPage; ++page) {
             if (m_Pages[page].memory) {

@@ -3,6 +3,7 @@
 #include "VoxelTypes.h"
 #include "VoxelBlockAssets.h"
 #include <Manro/Core/Types.h>
+#include <Manro/Render/VoxelStreamStats.h>
 #include <volk.h>
 
 #include <array>
@@ -59,6 +60,8 @@ namespace Manro {
         Vec3 StreamInit(const std::string &worldDir, const std::string &assetsDir, int radiusSections);
 
         int StreamUpdate(const Vec3 &cameraPos, u32 flightSlot);
+
+        [[nodiscard]] const VoxelStreamStats_t &GetStreamStats() const;
 
         bool StreamIsSolid(const Vec3 &p) const;
         bool StreamIsFluid(const Vec3 &p) const;

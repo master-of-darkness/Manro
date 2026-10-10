@@ -57,6 +57,8 @@ namespace Manro {
             *m_Context, stageBrickBytes * kStageCapacityBricks * kStageSlots,
             VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
         m_StageCounts.fill(0);
+        m_StageHighWater.fill(0);
+        m_BlockingUploadCount = 0;
 
         m_HeaderMirror.assign(desc.maxResidentBricks, VoxelBrickHeader_t{});
         m_PageMirror.assign(static_cast<size_t>(slotCount), -1);
@@ -83,6 +85,8 @@ namespace Manro {
         m_BrickHidden.clear();
         m_FreeBricks.clear();
         m_StageCounts.fill(0);
+        m_StageHighWater.fill(0);
+        m_BlockingUploadCount = 0;
         m_DirtyHeaders.clear();
         m_bPagesDirty = true;
         m_PageDirtyLo = ~0u;
@@ -215,6 +219,7 @@ namespace Manro {
         ExecuteOneShot(*m_Context, [&](VkCommandBuffer cmd) {
             vkCmdFillBuffer(cmd, m_Bricks->GetBuffer(), 0, totalBytes, 0);
         });
+        (void)m_Bricks->TakeBindSubmitCount();
     }
 
     void CVoxelWorld::MarkBrickDirty(u32 brickIdx) {
@@ -239,6 +244,7 @@ namespace Manro {
     }
 
     void CVoxelWorld::UploadBrickData(u32 brickIdx, const u16 *mats, const u32 *occupancy) {
+        ++m_BlockingUploadCount;
         const VkDeviceSize brickBytes = static_cast<VkDeviceSize>(kVoxelBrickWords) * sizeof(u32);
         const VkDeviceSize dstOffset = static_cast<VkDeviceSize>(brickIdx) * brickBytes;
 
@@ -278,6 +284,7 @@ namespace Manro {
                                        u32 count) {
         if (count == 0 || !indices || !mats || !occupancy)
             return;
+        ++m_BlockingUploadCount;
         const VkDeviceSize brickBytes = static_cast<VkDeviceSize>(kVoxelBrickWords) * sizeof(u32);
         const VkDeviceSize totalBytes = brickBytes * count;
 
@@ -364,9 +371,31 @@ namespace Manro {
             }
         }
         m_StageCounts[s] += count;
+        if (m_StageCounts[s] > m_StageHighWater[s])
+            m_StageHighWater[s] = m_StageCounts[s];
         for (u32 i = 0; i < count; ++i)
             MarkBrickDirty(indices[i]);
         return true;
+    }
+
+    u32 CVoxelWorld::GetStageFree(u32 slot) const {
+        if (!m_UploadStaging || !m_Bricks)
+            return 0;
+        const u32 s = slot % kStageSlots;
+        return (m_StageCounts[s] >= kStageCapacityBricks)
+                   ? 0
+                   : (kStageCapacityBricks - m_StageCounts[s]);
+    }
+
+    CVoxelWorld::VoxelUploadStats_t CVoxelWorld::TakeUploadStats() {
+        VoxelUploadStats_t out;
+        out.blockingUploads = m_BlockingUploadCount;
+        m_BlockingUploadCount = 0;
+        for (u32 s = 0; s < kStageSlots; ++s) {
+            out.highWater[s] = m_StageHighWater[s];
+            m_StageHighWater[s] = m_StageCounts[s];
+        }
+        return out;
     }
 
     void CVoxelWorld::FlushStagedUploads(VkCommandBuffer cb, u32 slot) {
@@ -405,6 +434,10 @@ namespace Manro {
 
     VkBuffer CVoxelWorld::GetBrickStoreHandle() const {
         return m_Bricks ? m_Bricks->GetBuffer() : VK_NULL_HANDLE;
+    }
+
+    u64 CVoxelWorld::TakeBindSubmitCount() {
+        return m_Bricks ? m_Bricks->TakeBindSubmitCount() : 0;
     }
 
     i32 CVoxelWorld::SlotNeighbor(u32 slot, int dx, int dy, int dz) const {

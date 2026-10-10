@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <condition_variable>
 #include <cstdio>
@@ -101,6 +102,21 @@ namespace Manro {
         std::unordered_set<i64> pending;
         std::atomic<bool> stopWorker{false};
         size_t maxPending{64};
+
+        struct DeferredUpload_t {
+            i64 key{-1};
+            u32 brickIdx{~0u};
+            u8 opaque{0};
+            std::vector<u16> mats;
+            std::vector<u32> occ;
+            std::vector<u32> fluid;
+        };
+        std::vector<DeferredUpload_t> deferQueue;
+        static constexpr size_t kMaxDeferred = 4096;
+
+        VoxelStreamStats_t lastStats{};
+        u64 totalBlockingUploads{0};
+        u64 totalDeferredDropped{0};
 
         void ParseLoop(size_t wi) {
             const CpuTopology_t topo = QueryCpuTopology();
@@ -430,8 +446,20 @@ namespace Manro {
         return static_cast<int>(m_Impl->unfilled.size());
     }
 
+    const VoxelStreamStats_t &CVoxelStreamWorld::GetLastStats() const {
+        return m_Impl->lastStats;
+    }
+
     int CVoxelStreamWorld::Update(CVoxelWorld &world, const Vec3 &cameraPos, u32 flightSlot) {
         auto &I = *m_Impl;
+        using Clock = std::chrono::steady_clock;
+        const auto tAll = Clock::now();
+        auto tPhase = tAll;
+        auto &ST = I.lastStats;
+        ST = VoxelStreamStats_t{};
+        const auto snapMs = [](const auto &t0) {
+            return std::chrono::duration<float, std::milli>(Clock::now() - t0).count();
+        };
         const int R = I.desc.radiusSections;
         const auto secOf = [](float v) { return static_cast<int>(std::floor(v / 16.f)); };
         const int pcx = secOf(cameraPos.x);
@@ -489,6 +517,8 @@ namespace Manro {
             for (size_t k = 0; k < I.unfilledScratch.size(); ++k)
                 I.unfilled[k] = I.unfilledScratch[k].second;
         }
+        ST.rebuildMs = snapMs(tPhase);
+        tPhase = Clock::now();
 
         {
             const int E = I.evictRadius;
@@ -517,6 +547,8 @@ namespace Manro {
                 ++evicted;
             }
         }
+        ST.evictMs = snapMs(tPhase);
+        tPhase = Clock::now();
 
         {
             bool anyDone = false;
@@ -526,8 +558,11 @@ namespace Manro {
                     break;
                 }
             }
-            if (I.unfilled.empty() && I.evictPending.empty() && !anyDone)
+            if (I.unfilled.empty() && I.evictPending.empty() && !anyDone) {
+                ST.totalMs = snapMs(tAll);
+                ST.deferredBricks = static_cast<u32>(I.deferQueue.size());
                 return 0;
+            }
         }
 
         const int budget = I.desc.fillBudgetPerUpdate;
@@ -537,6 +572,7 @@ namespace Manro {
         thread_local std::vector<u32> batchFluid;
         thread_local std::vector<u32> batchGpuOcc;
         thread_local std::vector<i64> filledKeys;
+        thread_local std::vector<i64> freshKeys;
         thread_local std::vector<u32> batchIdx;
         thread_local std::vector<u8> batchOpaque;
         batchMats.resize(static_cast<size_t>(budget) * 4096);
@@ -546,6 +582,7 @@ namespace Manro {
         batchIdx.clear();
         batchOpaque.clear();
         filledKeys.clear();
+        freshKeys.clear();
 
         if (!I.unfilled.empty()) {
             size_t inFlight = I.pending.size();
@@ -603,6 +640,8 @@ namespace Manro {
                     I.queueCv.notify_all();
             }
         }
+        ST.enqueueMs = snapMs(tPhase);
+        tPhase = Clock::now();
 
         {
             int drained = 0;
@@ -620,9 +659,10 @@ namespace Manro {
                         (sit == I.slots.end() ||
                          sit->second.brickIdx != static_cast<i32>(d.brickIdx) ||
                          sit->second.filled);
-                    I.pending.erase(d.key);
-                    if (stale)
+                    if (stale) {
+                        I.pending.erase(d.key);
                         continue;
+                    }
                     const size_t k = batchIdx.size();
                     std::memcpy(batchMats.data() + k * 4096, d.mats.data(),
                                 sizeof(u16) * 4096);
@@ -632,16 +672,93 @@ namespace Manro {
                                 sizeof(u32) * 128);
                     batchIdx.push_back(d.brickIdx);
                     batchOpaque.push_back(d.opaque ? 1u : 0u);
-                sit->second.filled = true;
-                filledKeys.push_back(d.key);
-                ++drained;
+                    freshKeys.push_back(d.key);
+                    ++drained;
                 }
                 if (!progress)
                     break;
             }
         }
-        if (!batchIdx.empty()) {
+        ST.drainMs = snapMs(tPhase);
+        tPhase = Clock::now();
+        thread_local std::vector<u16> stageMats;
+        thread_local std::vector<u32> stageOcc;
+        thread_local std::vector<u32> stageIdx;
+        const auto commitOne = [&](u32 brickIdx, const u32 *occ, const u32 *fluid,
+                                   const u16 *mats, u8 opaque, i64 key) {
+            const size_t need = (static_cast<size_t>(brickIdx) + 1) * 128;
+            if (I.occMirror.size() < need) {
+                I.occMirror.resize(need, 0u);
+                I.fluidMirror.resize(need, 0u);
+            }
+            std::memcpy(I.occMirror.data() + static_cast<size_t>(brickIdx) * 128, occ,
+                        sizeof(u32) * 128);
+            std::memcpy(I.fluidMirror.data() + static_cast<size_t>(brickIdx) * 128, fluid,
+                        sizeof(u32) * 128);
 
+            const size_t sneed = (static_cast<size_t>(brickIdx) + 1) * 4096;
+            if (I.stateMirror.size() < sneed)
+                I.stateMirror.resize(sneed, 0u);
+            std::memcpy(I.stateMirror.data() + static_cast<size_t>(brickIdx) * 4096, mats,
+                        sizeof(u16) * 4096);
+            world.SetBrickOpaqueFull(brickIdx, opaque != 0u);
+
+            world.MarkBrickAndNeighborsDirty(brickIdx);
+            const auto sit = I.slots.find(key);
+            if (sit != I.slots.end() &&
+                sit->second.brickIdx == static_cast<i32>(brickIdx) && !sit->second.filled) {
+                sit->second.filled = true;
+                filledKeys.push_back(key);
+            }
+            I.pending.erase(key);
+        };
+
+        if (!I.deferQueue.empty()) {
+            {
+                size_t kept = 0;
+                for (size_t r = 0; r < I.deferQueue.size(); ++r) {
+                    auto &df = I.deferQueue[r];
+                    const auto sit = I.slots.find(df.key);
+                    if (sit == I.slots.end() ||
+                        sit->second.brickIdx != static_cast<i32>(df.brickIdx) ||
+                        sit->second.filled) {
+                        I.pending.erase(df.key);
+                        continue;
+                    }
+                    if (kept != r)
+                        I.deferQueue[kept] = std::move(df);
+                    ++kept;
+                }
+                I.deferQueue.resize(kept);
+            }
+            const u32 free = world.GetStageFree(flightSlot);
+            const size_t n = std::min<size_t>(I.deferQueue.size(), free);
+            if (n > 0) {
+                stageMats.resize(n * 4096);
+                stageOcc.resize(n * 128);
+                stageIdx.resize(n);
+                for (size_t k = 0; k < n; ++k) {
+                    const auto &df = I.deferQueue[k];
+                    std::memcpy(stageMats.data() + k * 4096, df.mats.data(),
+                                sizeof(u16) * 4096);
+                    for (int w = 0; w < 128; ++w)
+                        stageOcc[k * 128 + w] = df.occ[w] | df.fluid[w];
+                    stageIdx[k] = df.brickIdx;
+                }
+                if (world.StageBrickBatch(flightSlot, stageIdx.data(), stageMats.data(),
+                                          stageOcc.data(), static_cast<u32>(n))) {
+                    for (size_t k = 0; k < n; ++k) {
+                        const auto &df = I.deferQueue[k];
+                        commitOne(df.brickIdx, df.occ.data(), df.fluid.data(), df.mats.data(),
+                                  df.opaque, df.key);
+                    }
+                    I.deferQueue.erase(I.deferQueue.begin(),
+                                       I.deferQueue.begin() + static_cast<ptrdiff_t>(n));
+                }
+            }
+        }
+
+        if (!batchIdx.empty()) {
             for (size_t k = 0; k < batchIdx.size(); ++k) {
                 const u32 *occ = batchOcc.data() + k * 128;
                 const u32 *fld = batchFluid.data() + k * 128;
@@ -656,32 +773,39 @@ namespace Manro {
                     I.brickContent.resize(bi + 1, 1u);
                 I.brickContent[bi] = (any != 0u) ? 1u : 0u;
             }
-            if (!world.StageBrickBatch(flightSlot, batchIdx.data(), batchMats.data(),
-                                       batchGpuOcc.data(), static_cast<u32>(batchIdx.size()))) {
-
-                world.UploadBrickBatch(batchIdx.data(), batchMats.data(), batchGpuOcc.data(),
-                                       static_cast<u32>(batchIdx.size()));
-            }
-            for (size_t k = 0; k < batchIdx.size(); ++k) {
-
-                const size_t need = (static_cast<size_t>(batchIdx[k]) + 1) * 128;
-                if (I.occMirror.size() < need) {
-                    I.occMirror.resize(need, 0u);
-                    I.fluidMirror.resize(need, 0u);
+            const u32 free = world.GetStageFree(flightSlot);
+            const u32 nStage =
+                std::min<u32>(static_cast<u32>(batchIdx.size()), free);
+            u32 nStaged = 0;
+            if (nStage > 0 &&
+                world.StageBrickBatch(flightSlot, batchIdx.data(), batchMats.data(),
+                                      batchGpuOcc.data(), nStage)) {
+                for (u32 k = 0; k < nStage; ++k) {
+                    commitOne(batchIdx[k], batchOcc.data() + static_cast<size_t>(k) * 128,
+                              batchFluid.data() + static_cast<size_t>(k) * 128,
+                              batchMats.data() + static_cast<size_t>(k) * 4096,
+                              batchOpaque[k], freshKeys[k]);
                 }
-                std::memcpy(I.occMirror.data() + static_cast<size_t>(batchIdx[k]) * 128,
-                            batchOcc.data() + k * 128, sizeof(u32) * 128);
-                std::memcpy(I.fluidMirror.data() + static_cast<size_t>(batchIdx[k]) * 128,
-                            batchFluid.data() + k * 128, sizeof(u32) * 128);
-
-                const size_t sneed = (static_cast<size_t>(batchIdx[k]) + 1) * 4096;
-                if (I.stateMirror.size() < sneed)
-                    I.stateMirror.resize(sneed, 0u);
-                std::memcpy(I.stateMirror.data() + static_cast<size_t>(batchIdx[k]) * 4096,
-                            batchMats.data() + k * 4096, sizeof(u16) * 4096);
-                world.SetBrickOpaqueFull(batchIdx[k], batchOpaque[k] != 0u);
-
-                world.MarkBrickAndNeighborsDirty(batchIdx[k]);
+                nStaged = nStage;
+            }
+            for (size_t k = nStaged; k < batchIdx.size(); ++k) {
+                if (I.deferQueue.size() >= Impl::kMaxDeferred) {
+                    ++I.totalDeferredDropped;
+                    std::printf("[StreamWorld] deferral cap hit, dropping oldest (%zu queued)\n",
+                                I.deferQueue.size());
+                    I.deferQueue.erase(I.deferQueue.begin());
+                }
+                Impl::DeferredUpload_t df;
+                df.key = freshKeys[k];
+                df.brickIdx = batchIdx[k];
+                df.opaque = batchOpaque[k];
+                df.mats.assign(batchMats.begin() + static_cast<ptrdiff_t>(k * 4096),
+                               batchMats.begin() + static_cast<ptrdiff_t>((k + 1) * 4096));
+                df.occ.assign(batchOcc.begin() + static_cast<ptrdiff_t>(k * 128),
+                              batchOcc.begin() + static_cast<ptrdiff_t>((k + 1) * 128));
+                df.fluid.assign(batchFluid.begin() + static_cast<ptrdiff_t>(k * 128),
+                                batchFluid.begin() + static_cast<ptrdiff_t>((k + 1) * 128));
+                I.deferQueue.push_back(std::move(df));
             }
         }
         if (!filledKeys.empty()) {
@@ -695,6 +819,16 @@ namespace Manro {
             I.unfilled.resize(w);
         }
 
+        ST.commitMs = snapMs(tPhase);
+        ST.totalMs = snapMs(tAll);
+        const auto up = world.TakeUploadStats();
+        I.totalBlockingUploads += up.blockingUploads;
+        ST.blockingUploads = I.totalBlockingUploads;
+        ST.deferredBricks = static_cast<u32>(I.deferQueue.size());
+        ST.deferredDropped = I.totalDeferredDropped;
+        for (u32 s = 0; s < 3; ++s)
+            ST.stageHighWater[s] = up.highWater[s];
+        ST.midFrameBinds = static_cast<u32>(world.TakeBindSubmitCount());
         return static_cast<int>(I.unfilled.size());
     }
 

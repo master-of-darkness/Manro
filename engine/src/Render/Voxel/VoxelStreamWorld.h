@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Manro/Core/Types.h>
+#include <Manro/Render/VoxelStreamStats.h>
 
 #include <cstdint>
 #include <memory>
@@ -43,6 +44,8 @@ namespace Manro {
         [[nodiscard]] i32 PlaceState() const;
 
         [[nodiscard]] int UnfilledCount() const;
+
+        [[nodiscard]] const VoxelStreamStats_t &GetLastStats() const;
 
     private:
         struct Impl;

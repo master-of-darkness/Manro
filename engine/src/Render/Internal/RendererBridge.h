@@ -113,6 +113,8 @@ namespace Manro {
 
     int RendererImplVoxelStreamUpdate(const CRendererImpl &impl);
 
+    void RendererImplVoxelStreamGetStats(const CRendererImpl &impl, VoxelStreamStats_t &out);
+
     bool RendererImplVoxelStreamIsSolid(const CRendererImpl &impl, const Vec3 &p);
 
     bool RendererImplVoxelStreamIsFluid(const CRendererImpl &impl, const Vec3 &p);

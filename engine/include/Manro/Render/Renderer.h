@@ -5,6 +5,7 @@
 #include <Manro/Render/Material/MaterialInstance.h>
 #include <Manro/Render/RendererConfig.h>
 #include <Manro/Render/RenderSettings.h>
+#include <Manro/Render/VoxelStreamStats.h>
 #include <Manro/Resource/ModelLoader.h>
 #include <Manro/Resource/TextureLoader.h>
 #include <Manro/Render/LightData.h>
@@ -114,6 +115,7 @@ namespace Manro {
         void VoxelSetFrustumEnabled(bool enabled) const;
         Vec3 VoxelStreamInit(const char *worldDir, const char *assetsDir, int radiusSections) const;
         int VoxelStreamUpdate() const;
+        void VoxelStreamGetStats(VoxelStreamStats_t &out) const;
         bool VoxelStreamIsSolid(const Vec3 &p) const;
         bool VoxelStreamIsFluid(const Vec3 &p) const;
         u32 VoxelStreamPlaceState() const;

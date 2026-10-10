@@ -592,6 +592,11 @@ namespace Manro {
         return m_StreamWorld->Update(*m_World, cameraPos, flightSlot);
     }
 
+    const VoxelStreamStats_t &CVoxelRenderer::GetStreamStats() const {
+        static const VoxelStreamStats_t kEmpty{};
+        return m_StreamWorld ? m_StreamWorld->GetLastStats() : kEmpty;
+    }
+
     bool CVoxelRenderer::StreamIsSolid(const Vec3 &p) const {
         if (!m_StreamWorld)
             return true;

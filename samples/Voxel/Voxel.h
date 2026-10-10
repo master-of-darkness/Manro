@@ -238,6 +238,13 @@ public:
         } else if (!m_InputManager.IsKeyDown(K::V)) {
             m_bVHeld = false;
         }
+        m_Renderer->SetCameraPosition(m_CamPos);
+        const auto streamT0 = std::chrono::steady_clock::now();
+        m_Unfilled = m_Renderer->VoxelStreamUpdate();
+        m_StreamMs = std::chrono::duration<float, std::milli>(
+                         std::chrono::steady_clock::now() - streamT0)
+                         .count();
+        m_Renderer->VoxelStreamGetStats(m_StreamStats);
         return true;
     }
 
@@ -253,8 +260,6 @@ public:
         m_Renderer->SetViewProjection(view, proj);
         m_Renderer->SetCameraPosition(m_CamPos);
 
-        m_Unfilled = m_Renderer->VoxelStreamUpdate();
-        const auto t1 = std::chrono::steady_clock::now();
 
         const bool wantLog = (m_Frame % 600) == 0;
         m_Renderer->VoxelSetDebugEnabled(wantLog && m_DbgAllowed);
@@ -263,8 +268,7 @@ public:
         m_Renderer->RenderQueue();
         m_Renderer->EndRendering();
         const auto t2 = std::chrono::steady_clock::now();
-        const float streamMs =
-            std::chrono::duration<float, std::milli>(t1 - t0).count();
+        const float streamMs = m_StreamMs;
         const float cpuMs =
             std::chrono::duration<float, std::milli>(t2 - t0).count();
         m_CpuEma = (m_CpuEma <= 0.f) ? cpuMs : m_CpuEma + (cpuMs - m_CpuEma) * 0.05f;
@@ -316,6 +320,20 @@ public:
             ImGui::Text("Bricks: %u  TaskGroups: %u  Edits: %u  Unfilled: %d",
                         m_Renderer->VoxelGetBrickCount(), m_Renderer->VoxelGetTaskGroups(),
                         m_EditCount, m_Unfilled);
+            ImGui::Text("Stream: %.2f ms (r%.2f/e%.2f/n%.2f/d%.2f/c%.2f)",
+                        static_cast<double>(m_StreamEma),
+                        static_cast<double>(m_StreamStats.rebuildMs),
+                        static_cast<double>(m_StreamStats.evictMs),
+                        static_cast<double>(m_StreamStats.enqueueMs),
+                        static_cast<double>(m_StreamStats.drainMs),
+                        static_cast<double>(m_StreamStats.commitMs));
+            ImGui::TextDisabled("defer=%u drop=%llu blk=%llu stageHW=%u/%u/%u binds=%u",
+                                m_StreamStats.deferredBricks,
+                                static_cast<unsigned long long>(m_StreamStats.deferredDropped),
+                                static_cast<unsigned long long>(m_StreamStats.blockingUploads),
+                                m_StreamStats.stageHighWater[0],
+                                m_StreamStats.stageHighWater[1],
+                                m_StreamStats.stageHighWater[2], m_StreamStats.midFrameBinds);
             float gx = 0.f, gd = 0.f, gp = 0.f;
             m_Renderer->VoxelGetGpuTimes(gx, gd, gp);
             ImGui::Text("GPU xfer: %.2f ms  draw: %.2f ms  post: %.2f ms", static_cast<double>(gx),
@@ -355,6 +373,18 @@ public:
                     static_cast<double>(m_PaceFenceMax), static_cast<double>(m_PaceAcquireMax),
                     static_cast<double>(m_PacePresentMax), static_cast<double>(m_GpuDrawMax),
                     m_CamPos.x, m_CamPos.y, m_CamPos.z);
+            printf("[VoxelStream] total=%.2fms rebuild=%.2fms evict=%.2fms enqueue=%.2fms "
+                   "drain=%.2fms commit=%.2fms defer=%u drop=%llu blk=%llu stageHW=%u/%u/%u binds=%u\n",
+                   static_cast<double>(m_StreamStats.totalMs),
+                   static_cast<double>(m_StreamStats.rebuildMs),
+                   static_cast<double>(m_StreamStats.evictMs),
+                   static_cast<double>(m_StreamStats.enqueueMs),
+                   static_cast<double>(m_StreamStats.drainMs),
+                   static_cast<double>(m_StreamStats.commitMs), m_StreamStats.deferredBricks,
+                   static_cast<unsigned long long>(m_StreamStats.deferredDropped),
+                   static_cast<unsigned long long>(m_StreamStats.blockingUploads),
+                   m_StreamStats.stageHighWater[0], m_StreamStats.stageHighWater[1],
+                   m_StreamStats.stageHighWater[2], m_StreamStats.midFrameBinds);
             m_PaceFenceMax = 0.f;
             m_PaceAcquireMax = 0.f;
             m_PacePresentMax = 0.f;
@@ -516,6 +546,8 @@ public:
     bool m_DbgAllowed{false};
     bool m_Chaos{false};
     int m_Unfilled{0};
+    float m_StreamMs{0.f};
+    Manro::VoxelStreamStats_t m_StreamStats{};
 
     static constexpr Manro::u32 kFrameTimeWindow = 240;
     float m_FrameTimes[kFrameTimeWindow]{};
