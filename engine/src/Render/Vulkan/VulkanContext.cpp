@@ -70,7 +70,10 @@ namespace Manro {
                 .use_default_debug_messenger()
                 .build();
 
-        if (!inst_ret) return;
+        if (!inst_ret) {
+            throw std::runtime_error(
+                std::string("Failed to create Vulkan instance: ") + inst_ret.error().message());
+        }
 
         vkb_Instance = inst_ret.value();
         m_Instance = vkb_Instance.instance;
@@ -80,7 +83,8 @@ namespace Manro {
     void CVulkanContext::CreateSurface(const CWindow &window) {
         if (const auto sdlWindow = static_cast<SDL_Window *>(window.GetNativeHandle()); !SDL_Vulkan_CreateSurface(
             sdlWindow, m_Instance, nullptr, &m_Surface)) {
-            LOG_ERROR("Failed to create SDL3 Vulkan surface: {}", SDL_GetError());
+            throw std::runtime_error(
+                std::string("Failed to create SDL3 Vulkan surface: ") + SDL_GetError());
         }
     }
 
@@ -177,7 +181,9 @@ namespace Manro {
 
         if (!phys_ret) {
             LOG_ERROR("Failed to select physical device: {}", phys_ret.error().message());
-            return;
+            throw std::runtime_error(
+                std::string("Failed to select physical device (no GPU satisfies engine requirements): ") +
+                phys_ret.error().message());
         }
 
         vkb_PhysDev = phys_ret.value();
@@ -202,8 +208,8 @@ namespace Manro {
 
         auto dev_ret = device_builder.build();
         if (!dev_ret) {
-            LOG_ERROR("Failed to create Vulkan logical device!");
-            return;
+            throw std::runtime_error(
+                std::string("Failed to create Vulkan logical device: ") + dev_ret.error().message());
         }
 
         vkb_Device = dev_ret.value();

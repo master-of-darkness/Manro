@@ -88,6 +88,11 @@ int main(int argc, char *argv[]) {
     if (params.worldDir.empty())
         std::printf("[Voxel] warning: no --world-dir given, volume fills as air\n");
     CVoxel app(std::move(params));
-    Manro::CEngineLoop::Run(app);
+    try {
+        Manro::CEngineLoop::Run(app);
+    } catch (const std::exception &e) {
+        std::fprintf(stderr, "[Voxel] fatal: %s\n", e.what());
+        return 1;
+    }
     return 0;
 }
