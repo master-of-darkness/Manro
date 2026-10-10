@@ -93,6 +93,7 @@ namespace Manro {
         m_PageDirtyHi = 0u;
         m_bHeadersFullUpload = true;
         m_BrickCount = 0;
+        ++m_HeaderVersion;
     }
 
     i32 CVoxelWorld::AllocateBrick(u32 bx, u32 by, u32 bz) {
@@ -126,6 +127,7 @@ namespace Manro {
 
         m_DirtyHeaders.push_back(brickIdx);
         m_bPagesDirty = true;
+        ++m_HeaderVersion;
         return static_cast<i32>(brickIdx);
     }
 
@@ -165,6 +167,7 @@ namespace Manro {
 
         m_DirtyHeaders.push_back(brickIdx);
         m_bPagesDirty = true;
+        ++m_HeaderVersion;
         return static_cast<i32>(brickIdx);
     }
 
@@ -200,6 +203,7 @@ namespace Manro {
 
         m_DirtyHeaders.push_back(brickIdx);
         m_bPagesDirty = true;
+        ++m_HeaderVersion;
     }
 
     void CVoxelWorld::ReserveResident(u32 brickCount) {
@@ -229,6 +233,7 @@ namespace Manro {
         if ((m_HeaderMirror[brickIdx].flags & 2u) == 0u) {
             m_HeaderMirror[brickIdx].flags |= 2u;
             m_DirtyHeaders.push_back(brickIdx);
+            ++m_HeaderVersion;
         }
     }
 

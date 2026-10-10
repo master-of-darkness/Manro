@@ -87,6 +87,8 @@ namespace Manro {
             return m_HeaderMirror;
         }
 
+        [[nodiscard]] u64 GetHeaderVersion() const { return m_HeaderVersion; }
+
         void FlushHeaders();
 
     private:
@@ -141,5 +143,7 @@ namespace Manro {
         }
 
         bool m_bHeadersFullUpload{true};
+
+        u64 m_HeaderVersion{0};
     };
 }

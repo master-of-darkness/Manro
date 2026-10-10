@@ -775,12 +775,14 @@ namespace Manro {
                                 const Vec3 &cameraPos, float nearZ, float farZ) {
         if (!m_bInitialized)
             return;
-        (void)nearZ;
-        (void)farZ;
 
+        (void)nearZ;
+        const float maxDrawDist = farZ > 0.f ? farZ : 10000.f;
+
+        ++m_RecordTick;
         const u32 qslot = flightSlot % kFlightSlots;
         const u32 qbase = qslot * kQueriesPerSlot;
-        if (m_TimestampPool && m_TimestampPeriodNs > 0.f) {
+        if (m_TimestampPool && m_TimestampPeriodNs > 0.f && (m_RecordTick & 1u) == 0u) {
             u64 ticks[kQueriesPerSlot]{0, 0, 0, 0, 0, 0};
             if (vkGetQueryPoolResults(m_Context.GetDevice(), m_TimestampPool, qbase,
                                       kQueriesPerSlot, sizeof(ticks), ticks, sizeof(u64),
@@ -827,70 +829,99 @@ namespace Manro {
         {
             const float brickSize = m_World->GetBrickSize();
             const float radius = brickSize * 0.8660254f;
-            m_VisibleList.clear();
-            if (m_bUseFrustum) {
-                Vec4 rows[4];
-                for (int r = 0; r < 4; ++r)
-                    rows[r] = Vec4(viewProj[0][r], viewProj[1][r], viewProj[2][r], viewProj[3][r]);
-                Vec4 planes[6] = {rows[3] + rows[0], rows[3] - rows[0], rows[3] + rows[1],
-                                  rows[3] - rows[1], rows[3] + rows[2], rows[3] - rows[2]};
-                for (auto &pl : planes) {
-                    const float len = std::sqrt(pl.x * pl.x + pl.y * pl.y + pl.z * pl.z);
-                    if (len > 1e-6f) {
-                        const float inv = 1.f / len;
-                        pl.x *= inv;
-                        pl.y *= inv;
-                        pl.z *= inv;
-                        pl.w *= inv;
-                    }
-                }
-                const auto &mirror = m_World->GetHeaderMirror();
-                for (u32 i = 0; i < brickCount; ++i) {
-                    if (m_World->IsBrickHidden(i))
-                        continue;
-                    const VoxelBrickHeader_t &h = mirror[i];
-                    if ((h.flags & 1u) == 0u)
-                        continue;
-                    if (m_StreamWorld && !m_StreamWorld->BrickHasContent(i))
-                        continue;
-                    const Vec3 center = h.origin + Vec3(brickSize * 0.5f);
-                    bool inside = true;
-                    for (const auto &pl : planes) {
-                        const float d = pl.x * center.x + pl.y * center.y + pl.z * center.z + pl.w;
-                        if (d < -radius) {
-                            inside = false;
-                            break;
+            const u64 headerVersion = m_World->GetHeaderVersion();
+            const bool cacheHit =
+                m_VisCacheValid && m_CachedUseFrustum == m_bUseFrustum &&
+                m_CachedBrickCount == brickCount && m_CachedHeaderVersion == headerVersion &&
+                m_CachedCameraPos == cameraPos && m_CachedViewProj == viewProj;
+            if (!cacheHit) {
+                const float maxDistWithRadius = maxDrawDist + radius;
+                const float maxDistSq = maxDistWithRadius * maxDistWithRadius;
+                m_VisibleList.clear();
+                if (m_bUseFrustum) {
+                    Vec4 rows[4];
+                    for (int r = 0; r < 4; ++r)
+                        rows[r] = Vec4(viewProj[0][r], viewProj[1][r], viewProj[2][r], viewProj[3][r]);
+                    Vec4 planes[6] = {rows[3] + rows[0], rows[3] - rows[0], rows[3] + rows[1],
+                                      rows[3] - rows[1], rows[3] + rows[2], rows[3] - rows[2]};
+                    for (auto &pl : planes) {
+                        const float len = std::sqrt(pl.x * pl.x + pl.y * pl.y + pl.z * pl.z);
+                        if (len > 1e-6f) {
+                            const float inv = 1.f / len;
+                            pl.x *= inv;
+                            pl.y *= inv;
+                            pl.z *= inv;
+                            pl.w *= inv;
                         }
                     }
-                    if (!inside)
-                        continue;
-                    m_VisibleList.push_back(i);
+                    const auto &mirror = m_World->GetHeaderMirror();
+                    for (u32 i = 0; i < brickCount; ++i) {
+                        if (m_World->IsBrickHidden(i))
+                            continue;
+                        const VoxelBrickHeader_t &h = mirror[i];
+                        if ((h.flags & 1u) == 0u)
+                            continue;
+                        if (m_StreamWorld && !m_StreamWorld->BrickHasContent(i))
+                            continue;
+                        const Vec3 center = h.origin + Vec3(brickSize * 0.5f);
+                        const Vec3 toC = center - cameraPos;
+                        if (glm::dot(toC, toC) > maxDistSq)
+                            continue;
+                        bool inside = true;
+                        for (const auto &pl : planes) {
+                            const float d =
+                                pl.x * center.x + pl.y * center.y + pl.z * center.z + pl.w;
+                            if (d < -radius) {
+                                inside = false;
+                                break;
+                            }
+                        }
+                        if (!inside)
+                            continue;
+                        m_VisibleList.push_back(i);
+                    }
+                    visibleCount = static_cast<u32>(m_VisibleList.size());
+                } else {
+                    const auto &mirrorNF = m_World->GetHeaderMirror();
+                    for (u32 i = 0; i < brickCount; ++i) {
+                        if (m_World->IsBrickHidden(i))
+                            continue;
+                        if (m_StreamWorld && !m_StreamWorld->BrickHasContent(i))
+                            continue;
+                        const VoxelBrickHeader_t &h = mirrorNF[i];
+                        if ((h.flags & 1u) == 0u)
+                            continue;
+                        const Vec3 center = h.origin + Vec3(brickSize * 0.5f);
+                        const Vec3 toC = center - cameraPos;
+                        if (glm::dot(toC, toC) > maxDistSq)
+                            continue;
+                        m_VisibleList.push_back(i);
+                    }
+                    visibleCount = static_cast<u32>(m_VisibleList.size());
                 }
-                visibleCount = static_cast<u32>(m_VisibleList.size());
+                const size_t nvis = m_VisibleList.size();
+                if (nvis >= 2) {
+                    const auto &mirror2 = m_World->GetHeaderMirror();
+                    m_SortScratch.clear();
+                    m_SortScratch.reserve(nvis);
+                    for (const u32 bi : m_VisibleList) {
+                        const Vec3 center = mirror2[bi].origin + Vec3(brickSize * 0.5f);
+                        const Vec3 toC = center - cameraPos;
+                        m_SortScratch.emplace_back(glm::dot(toC, toC), bi);
+                    }
+                    std::sort(m_SortScratch.begin(), m_SortScratch.end(),
+                              [](const auto &a, const auto &b) { return a.first < b.first; });
+                    for (size_t k = 0; k < nvis; ++k)
+                        m_VisibleList[k] = m_SortScratch[k].second;
+                }
+                m_CachedViewProj = viewProj;
+                m_CachedCameraPos = cameraPos;
+                m_CachedBrickCount = brickCount;
+                m_CachedHeaderVersion = headerVersion;
+                m_CachedUseFrustum = m_bUseFrustum;
+                m_VisCacheValid = true;
             } else {
-                for (u32 i = 0; i < brickCount; ++i) {
-                    if (m_World->IsBrickHidden(i))
-                        continue;
-                    if (m_StreamWorld && !m_StreamWorld->BrickHasContent(i))
-                        continue;
-                    m_VisibleList.push_back(i);
-                }
                 visibleCount = static_cast<u32>(m_VisibleList.size());
-            }
-            const size_t nvis = m_VisibleList.size();
-            if (nvis >= 2 && nvis <= 1500) {
-                const auto &mirror2 = m_World->GetHeaderMirror();
-                m_SortScratch.clear();
-                m_SortScratch.reserve(nvis);
-                for (const u32 bi : m_VisibleList) {
-                    const Vec3 center = mirror2[bi].origin + Vec3(brickSize * 0.5f);
-                    const Vec3 toC = center - cameraPos;
-                    m_SortScratch.emplace_back(glm::dot(toC, toC), bi);
-                }
-                std::sort(m_SortScratch.begin(), m_SortScratch.end(),
-                          [](const auto &a, const auto &b) { return a.first < b.first; });
-                for (size_t k = 0; k < nvis; ++k)
-                    m_VisibleList[k] = m_SortScratch[k].second;
             }
             if (!m_VisibleList.empty())
                 visSlot.LoadData(m_VisibleList.data(), sizeof(u32) * m_VisibleList.size());
@@ -903,7 +934,7 @@ namespace Manro {
         frame.brickCount = brickCount;
         frame.worldMin = m_World->GetWorldMin();
         frame.brickSize = m_World->GetBrickSize();
-        frame.maxDrawDistance = 10000;
+        frame.maxDrawDistance = static_cast<u32>(maxDrawDist);
         frame.enableHiZ = 0;
         frame.paletteAddr = m_PaletteBuffer->GetDeviceAddress();
         frame.sunAddr = m_SunBuffer->GetDeviceAddress();
@@ -946,7 +977,8 @@ namespace Manro {
             u32 barrierCount = 0;
             auto pushBuf = [&](VkBuffer buf, VkPipelineStageFlags2 srcStage,
                                VkAccessFlags2 srcAccess, VkPipelineStageFlags2 dstStage,
-                               VkAccessFlags2 dstAccess) {
+                               VkAccessFlags2 dstAccess, VkDeviceSize offset = 0,
+                               VkDeviceSize size = VK_WHOLE_SIZE) {
                 VkBufferMemoryBarrier2 &e = b[barrierCount++];
                 e.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
                 e.srcStageMask = srcStage;
@@ -954,19 +986,21 @@ namespace Manro {
                 e.dstStageMask = dstStage;
                 e.dstAccessMask = dstAccess;
                 e.buffer = buf;
-                e.size = VK_WHOLE_SIZE;
+                e.offset = offset;
+                e.size = size;
             };
             pushBuf(paramsSlot.GetHandle(), VK_PIPELINE_STAGE_2_HOST_BIT,
                     VK_ACCESS_2_HOST_WRITE_BIT,
                     VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT |
                         VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT,
-                    VK_ACCESS_2_SHADER_READ_BIT);
+                    VK_ACCESS_2_SHADER_READ_BIT, 0, sizeof(VoxelFrameParams_t));
             pushBuf(visSlot.GetHandle(), VK_PIPELINE_STAGE_2_HOST_BIT,
                     VK_ACCESS_2_HOST_WRITE_BIT, VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT,
-                    VK_ACCESS_2_SHADER_READ_BIT);
+                    VK_ACCESS_2_SHADER_READ_BIT, 0,
+                    sizeof(u32) * (m_VisibleList.empty() ? 1u : visibleCount));
             pushBuf(m_FragParams->GetHandle(), VK_PIPELINE_STAGE_2_HOST_BIT,
                     VK_ACCESS_2_HOST_WRITE_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-                    VK_ACCESS_2_SHADER_READ_BIT);
+                    VK_ACCESS_2_SHADER_READ_BIT, 0, sizeof(VoxelFragParams_t));
             if (VkBuffer hdr = m_World->GetHeaderHandle()) {
                 pushBuf(hdr,
                         VK_PIPELINE_STAGE_2_HOST_BIT |

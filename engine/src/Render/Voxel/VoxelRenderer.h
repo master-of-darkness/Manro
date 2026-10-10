@@ -143,6 +143,15 @@ namespace Manro {
         std::vector<u32> m_VisibleList;
         std::vector<std::pair<float, u32>> m_SortScratch;
 
+        Mat4 m_CachedViewProj{0.f};
+        Vec3 m_CachedCameraPos{0.f};
+        u32 m_CachedBrickCount{~0u};
+        u64 m_CachedHeaderVersion{~0ull};
+        bool m_CachedUseFrustum{false};
+        bool m_VisCacheValid{false};
+
+        u64 m_RecordTick{0};
+
         static constexpr u32 kQueriesPerSlot = 6;
         VkQueryPool m_TimestampPool{VK_NULL_HANDLE};
         float m_TimestampPeriodNs{0.f};
