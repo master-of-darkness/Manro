@@ -9,6 +9,7 @@ struct VoxelMeshVertex {
     nointerpolation uint faceState : TEXCOORD1;
     nointerpolation uint tile : TEXCOORD2;
     nointerpolation uint mflags : TEXCOORD3;
+    float3 vLight : TEXCOORD4;
 };
 
 groupshared float4x4 s_viewProj;
@@ -70,6 +71,8 @@ void MeshMain(
     uint* fcb = fcache.getPtr() + payload.brickIdx * kVoxelFaceCacheStride;
 
     uint packed = 0u;
+    uint lightW1 = 0u;
+    uint lightW2 = 0u;
     uint f = 0u;
     uint mat = 0u;
     uint iter = 0u;
@@ -77,7 +80,10 @@ void MeshMain(
     bool vis = false;
     float3 nrm = float3(0.0);
     if (hasFace) {
-        packed = fcb[1u + base + gidx];
+        uint faceIdx = base + gidx;
+        packed = fcb[1u + faceIdx * 3u];
+        lightW1 = fcb[1u + faceIdx * 3u + 1u];
+        lightW2 = fcb[1u + faceIdx * 3u + 2u];
         iter = packed & 0xFFFu;
         f = (packed >> 12u) & 0x7u;
         mat = (packed >> 15u) & 0x7FFFu;
@@ -156,6 +162,24 @@ void MeshMain(
             mflags = flagPtr.getPtr()[ms2];
         }
 
+        // Smooth per-vertex light + AO baked by the task shader:
+        // w1 = v0[sky4,blk4,ao2] | v1<<10 | v2<<20, w2 = v3[sky4,blk4,ao2].
+        float vSky[4];
+        float vBlk[4];
+        float vAo[4];
+        {
+            uint w[4];
+            w[0] = lightW1 & 0x3FFu;
+            w[1] = (lightW1 >> 10u) & 0x3FFu;
+            w[2] = (lightW1 >> 20u) & 0x3FFu;
+            w[3] = lightW2 & 0x3FFu;
+            for (uint ci = 0u; ci < 4u; ++ci) {
+                vSky[ci] = float(w[ci] & 0xFu);
+                vBlk[ci] = float((w[ci] >> 4u) & 0xFu);
+                vAo[ci] = kAoCurve[(w[ci] >> 8u) & 0x3u];
+            }
+        }
+
         float3 corners0 = b;
         float3 corners1 = b + e1w;
         float3 corners2 = b + e1w + e2w;
@@ -206,6 +230,10 @@ void MeshMain(
         verts[vtx + 1].mflags = mflags;
         verts[vtx + 2].mflags = mflags;
         verts[vtx + 3].mflags = mflags;
+        verts[vtx + 0].vLight = float3(vSky[0], vBlk[0], vAo[0]);
+        verts[vtx + 1].vLight = float3(vSky[1], vBlk[1], vAo[1]);
+        verts[vtx + 2].vLight = float3(vSky[2], vBlk[2], vAo[2]);
+        verts[vtx + 3].vLight = float3(vSky[3], vBlk[3], vAo[3]);
         tris[writeIdx * 2u] = uint3(vtx, vtx + 1, vtx + 2);
         tris[writeIdx * 2u + 1u] = uint3(vtx, vtx + 2u, vtx + 3u);
     }

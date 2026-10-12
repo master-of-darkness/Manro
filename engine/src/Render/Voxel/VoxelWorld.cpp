@@ -28,7 +28,7 @@ namespace Manro {
         m_WorldMin = desc.worldMin;
 
         const u64 slotCount = static_cast<u64>(m_VirtualDim) * m_VirtualDim * m_VirtualDim;
-        const VkDeviceSize brickBytes = static_cast<VkDeviceSize>(kVoxelBrickWords) * sizeof(u32);
+        const VkDeviceSize brickBytes = static_cast<VkDeviceSize>(kVoxelBrickExWords) * sizeof(u32);
 
         const VkDeviceSize virtualBytes = static_cast<VkDeviceSize>(desc.maxResidentBricks) * brickBytes;
 
@@ -51,8 +51,10 @@ namespace Manro {
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
             VMA_MEMORY_USAGE_CPU_TO_GPU);
 
+        // Flat packed light (sky<<4|block) is stored inline after mats+occ
+        // in the same brick; uploaded with the same staging copy.
         const VkDeviceSize stageBrickBytes =
-            static_cast<VkDeviceSize>(kVoxelBrickWords) * sizeof(u32);
+            static_cast<VkDeviceSize>(kVoxelBrickExWords) * sizeof(u32);
         m_UploadStaging = CreateScope<CBuffer>(
             *m_Context, stageBrickBytes * kStageCapacityBricks * kStageSlots,
             VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
@@ -106,7 +108,7 @@ namespace Manro {
             LOG_ERROR("[CVoxelWorld] Resident brick budget exhausted");
             return -1;
         }
-        const VkDeviceSize brickBytes = static_cast<VkDeviceSize>(kVoxelBrickWords) * sizeof(u32);
+        const VkDeviceSize brickBytes = static_cast<VkDeviceSize>(kVoxelBrickExWords) * sizeof(u32);
         if (!m_Bricks->BindRange(static_cast<VkDeviceSize>(m_BrickCount) * brickBytes, brickBytes))
             return -1;
 
@@ -146,7 +148,7 @@ namespace Manro {
             if (m_BrickCount >= m_HeaderMirror.size())
                 return -1;
             const VkDeviceSize brickBytes =
-                static_cast<VkDeviceSize>(kVoxelBrickWords) * sizeof(u32);
+                static_cast<VkDeviceSize>(kVoxelBrickExWords) * sizeof(u32);
             if (!m_Bricks->BindRange(static_cast<VkDeviceSize>(m_BrickCount) * brickBytes,
                                      brickBytes))
                 return -1;
@@ -212,7 +214,7 @@ namespace Manro {
         const u32 capped = std::min<u32>(brickCount, static_cast<u32>(m_HeaderMirror.size()));
         if (capped == 0)
             return;
-        const VkDeviceSize brickBytes = static_cast<VkDeviceSize>(kVoxelBrickWords) * sizeof(u32);
+        const VkDeviceSize brickBytes = static_cast<VkDeviceSize>(kVoxelBrickExWords) * sizeof(u32);
         const VkDeviceSize totalBytes = static_cast<VkDeviceSize>(capped) * brickBytes;
 
         if (!m_Bricks->BindRange(0, totalBytes)) {
@@ -250,7 +252,7 @@ namespace Manro {
 
     void CVoxelWorld::UploadBrickData(u32 brickIdx, const u16 *mats, const u32 *occupancy) {
         ++m_BlockingUploadCount;
-        const VkDeviceSize brickBytes = static_cast<VkDeviceSize>(kVoxelBrickWords) * sizeof(u32);
+        const VkDeviceSize brickBytes = static_cast<VkDeviceSize>(kVoxelBrickExWords) * sizeof(u32);
         const VkDeviceSize dstOffset = static_cast<VkDeviceSize>(brickIdx) * brickBytes;
 
         VkBuffer staging = VK_NULL_HANDLE;
@@ -272,6 +274,10 @@ namespace Manro {
         std::memcpy(mapped, mats, sizeof(u16) * kVoxelBrickVoxels);
         std::memcpy(mapped + sizeof(u16) * kVoxelBrickVoxels, occupancy,
                     sizeof(u32) * kVoxelBrickOccWords);
+        // Blocking debug path has no light: leave the attached flat-light
+        // region zeroed (dark) so the stride stays consistent.
+        std::memset(mapped + sizeof(u16) * kVoxelBrickVoxels + sizeof(u32) * kVoxelBrickOccWords,
+                    0, kVoxelBrickLightBytes);
         vmaFlushAllocation(m_Context->GetAllocator(), stagingAlloc, 0, static_cast<VkDeviceSize>(brickBytes));
 
         ExecuteOneShot(*m_Context, [&](VkCommandBuffer cmd) {
@@ -290,7 +296,7 @@ namespace Manro {
         if (count == 0 || !indices || !mats || !occupancy)
             return;
         ++m_BlockingUploadCount;
-        const VkDeviceSize brickBytes = static_cast<VkDeviceSize>(kVoxelBrickWords) * sizeof(u32);
+        const VkDeviceSize brickBytes = static_cast<VkDeviceSize>(kVoxelBrickExWords) * sizeof(u32);
         const VkDeviceSize totalBytes = brickBytes * count;
 
         VkBuffer staging = VK_NULL_HANDLE;
@@ -316,6 +322,7 @@ namespace Manro {
             std::memcpy(dst, mats + static_cast<size_t>(i) * kVoxelBrickVoxels, matBytes);
             std::memcpy(dst + matBytes, occupancy + static_cast<size_t>(i) * kVoxelBrickOccWords,
                         occBytes);
+            std::memset(dst + matBytes + occBytes, 0, kVoxelBrickLightBytes);
         }
         vmaFlushAllocation(m_Context->GetAllocator(), stagingAlloc, 0, totalBytes);
 
@@ -335,26 +342,29 @@ namespace Manro {
     }
 
     bool CVoxelWorld::StageBrickBatch(u32 slot, const u32 *indices, const u16 *mats,
-                                       const u32 *occupancy, u32 count) {
-        if (count == 0 || !indices || !mats || !occupancy)
+                                       const u32 *occupancy, const u8 *light, u32 count) {
+        if (count == 0 || !indices || !mats || !occupancy || !light)
             return true;
         if (!m_UploadStaging || !m_Bricks)
             return false;
         const u32 s = slot % kStageSlots;
         if (m_StageCounts[s] + count > kStageCapacityBricks)
             return false;
-        const VkDeviceSize brickBytes = static_cast<VkDeviceSize>(kVoxelBrickWords) * sizeof(u32);
+        const VkDeviceSize brickBytes = static_cast<VkDeviceSize>(kVoxelBrickExWords) * sizeof(u32);
         const size_t matBytes = sizeof(u16) * kVoxelBrickVoxels;
         const size_t occBytes = sizeof(u32) * kVoxelBrickOccWords;
+        constexpr size_t kLightBytes = static_cast<size_t>(kVoxelBrickLightBytes);
 
         if (void *mapped = m_UploadStaging->GetMappedMutable()) {
             auto *base = static_cast<u8 *>(mapped);
             for (u32 i = 0; i < count; ++i) {
                 u8 *dst = base + (static_cast<size_t>(s) * kStageCapacityBricks +
-                                  m_StageCounts[s] + i) * static_cast<size_t>(brickBytes);
+                                   m_StageCounts[s] + i) * static_cast<size_t>(brickBytes);
                 std::memcpy(dst, mats + static_cast<size_t>(i) * kVoxelBrickVoxels, matBytes);
                 std::memcpy(dst + matBytes,
                             occupancy + static_cast<size_t>(i) * kVoxelBrickOccWords, occBytes);
+                std::memcpy(dst + matBytes + occBytes,
+                            light + static_cast<size_t>(i) * kLightBytes, kLightBytes);
                 m_StageIndices[s][m_StageCounts[s] + i] = indices[i];
             }
             const size_t flushOff =
@@ -362,11 +372,14 @@ namespace Manro {
                 static_cast<size_t>(brickBytes);
             m_UploadStaging->FlushRange(flushOff, static_cast<size_t>(count) * brickBytes);
         } else {
-            uint8_t scratch[sizeof(u16) * kVoxelBrickVoxels + sizeof(u32) * kVoxelBrickOccWords];
+            uint8_t scratch[sizeof(u16) * kVoxelBrickVoxels + sizeof(u32) * kVoxelBrickOccWords +
+                            kVoxelBrickLightBytes];
             for (u32 i = 0; i < count; ++i) {
                 std::memcpy(scratch, mats + static_cast<size_t>(i) * kVoxelBrickVoxels, matBytes);
                 std::memcpy(scratch + matBytes,
                             occupancy + static_cast<size_t>(i) * kVoxelBrickOccWords, occBytes);
+                std::memcpy(scratch + matBytes + occBytes,
+                            light + static_cast<size_t>(i) * kLightBytes, kLightBytes);
                 const VkDeviceSize dstOff =
                     (static_cast<VkDeviceSize>(s) * kStageCapacityBricks + m_StageCounts[s] + i) *
                     brickBytes;
@@ -408,7 +421,7 @@ namespace Manro {
         const u32 count = m_StageCounts[s];
         if (count == 0 || !m_UploadStaging || !m_Bricks)
             return;
-        const VkDeviceSize brickBytes = static_cast<VkDeviceSize>(kVoxelBrickWords) * sizeof(u32);
+        const VkDeviceSize brickBytes = static_cast<VkDeviceSize>(kVoxelBrickExWords) * sizeof(u32);
 
         VkBufferCopy copies[kStageCapacityBricks];
         for (u32 i = 0; i < count; ++i) {
@@ -571,7 +584,7 @@ namespace Manro {
         if (brick < 0)
             return;
 
-        const VkDeviceSize brickBytes = static_cast<VkDeviceSize>(kVoxelBrickWords) * sizeof(u32);
+        const VkDeviceSize brickBytes = static_cast<VkDeviceSize>(kVoxelBrickExWords) * sizeof(u32);
         const VkDeviceSize srcOffset = static_cast<VkDeviceSize>(brick) * brickBytes;
         std::vector<u8> scratch(static_cast<size_t>(brickBytes));
 

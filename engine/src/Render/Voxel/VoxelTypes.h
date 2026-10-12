@@ -9,6 +9,20 @@ namespace Manro {
     static constexpr u32 kVoxelBrickMatWords = 2048u;
     static constexpr u32 kVoxelBrickOccWords = 128u;
     static constexpr u32 kVoxelBrickWords = 2176u;
+    // Packed flat light attached to the brick: 1 byte/voxel
+    // (sky high nibble, block low), 4096 bytes = 1024 u32 words.
+    static constexpr u32 kVoxelBrickLightWords = 1024u;
+    static constexpr u32 kVoxelBrickLightBytes = 4096u;
+    // Full brick stride on GPU: mats + occ + flat light. Single sparse
+    // buffer, single staging copy, single barrier (no light bricks).
+    static constexpr u32 kVoxelBrickExWords = 3200u;
+    // Face cache: word0 = face count, then 3 words per face:
+    //   w0 = iter(12b) | face(3b) | mat(15b)
+    //   w1 = v0[sky4,blk4,ao2] | v1[...]<<10 | v2[...]<<20  (30b)
+    //   w2 = v3[sky4,blk4,ao2]
+    // (Baked once by the task shader on rebuild: smooth light + AO.)
+    // Must match kVoxelFaceCacheStride in shaders/voxel_common.slang.
+    static constexpr u32 kVoxelFaceCacheStride = 12288u;
 
     struct VoxelBrickHeader_t {
         Vec3 origin{};

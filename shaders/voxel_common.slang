@@ -56,7 +56,12 @@ struct VoxelTaskPayload {
 };
 
 static const uint kVoxelFaceCacheCap = 4095u;
-static const uint kVoxelFaceCacheStride = 4096u;
+// Per brick: word0 = face count, then 3 words per face:
+//   w0 = iter(12b) | face(3b) | mat(15b)
+//   w1 = v0[sky4,blk4,ao2] | v1[...]<<10 | v2[...]<<20  (30b)
+//   w2 = v3[sky4,blk4,ao2]
+// (Baked once by the task shader on rebuild: smooth per-vertex light + AO.)
+static const uint kVoxelFaceCacheStride = 12288u;
 
 static const uint kVoxelFacesPerMeshGroup = 32u;
 
@@ -151,6 +156,37 @@ static const uint kVoxelVertShiftAO = 21u;
 static const uint kVoxelVertShiftMat = 23u;
 static const uint kBlockStateBits = 15u;
 static const uint kBlockStateMax = 32768u;
+
+static const float kAoCurve[4] = { 0.5, 0.6, 0.8, 1.0 };
+
+// ---- Flat per-face light sampling (v1): 1 fetch per face from the
+// brickEx buffer (mats+occ at [0,2176), packed flat light at [2176,3200)).
+// No separate light bricks, no per-vertex bake. v2 restores smooth + AO.
+uint VoxelSampleFlatLight(int gx, int gy, int gz, uint* bricksEx, int* pageTable,
+                          int minBX, int minBZ, uint vdim) {
+    if (gy >= 320)
+        return (15u << 4u);
+    if (gy < -64)
+        return 0u;
+    int sx = gx >> 4;
+    int sy = gy >> 4;
+    int sz = gz >> 4;
+    int D = int(vdim);
+    int bx = (sx - minBX) % D; if (bx < 0) bx += D;
+    int by = (sy + 4) % D; if (by < 0) by += D;
+    int bz = (sz - minBZ) % D; if (bz < 0) bz += D;
+    uint slot = uint(bx) + uint(by) * vdim + uint(bz) * vdim * vdim;
+    int brick = pageTable[slot];
+    if (brick < 0)
+        return 0u;
+    uint lx = uint(gx & 15);
+    uint ly = uint(gy & 15);
+    uint lz = uint(gz & 15);
+    uint vi = lx + ly * 16u + lz * 256u;
+    uint* lightWords = bricksEx + uint(brick) * 3200u + 2176u;
+    uint word = lightWords[vi >> 2u];
+    return (word >> ((vi & 3u) * 8u)) & 0xFFu;
+}
 
 uint PackVoxelVertex(uint x, uint y, uint z, uint n, uint ao, uint mat) {
     return (x & 0x3Fu)

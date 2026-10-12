@@ -41,6 +41,10 @@ namespace Manro {
         std::vector<BlockStateLook_t> states;
 
         std::vector<u8> fluid;
+        // Vanilla lighting: per-state block-light emission (0-15) and sky-light
+        // opacity (0 transparent, 1 filtering, 15 opaque). Sized kBlockStateMax.
+        std::vector<u8> emission;
+        std::vector<u8> skyOpacity;
         u32 maxState{0};
 
         u32 placeState{1};

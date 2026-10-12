@@ -729,6 +729,152 @@ namespace Manro {
             return name == "water" || name == "lava";
         }
 
+        // Vanilla block-light emission (0-15) for a state. Covers common
+        // light sources; rare blocks default to 0.
+        u8 EmissionForState(std::string_view bname,
+                            const std::map<std::string, std::string> &props) {
+            auto get = [&](const char *k) -> std::string_view {
+                auto it = props.find(k);
+                return it == props.end() ? std::string_view{} : std::string_view(it->second);
+            };
+            const auto lit = get("lit");
+            const bool litFalse = lit == "false";
+            const bool litTrue = lit == "true";
+
+            if (bname == "lava" || bname == "lava_cauldron")
+                return 15;
+            if (bname == "beacon" || bname == "conduit" || bname == "copper_lantern")
+                return 15;
+            if (bname == "fire")
+                return 15;
+            if (bname == "glowstone" || bname == "jack_o_lantern" || bname == "lantern")
+                return 15;
+            if (bname == "sea_lantern" || bname == "shroomlight")
+                return 15;
+            if (bname == "ochre_froglight" || bname == "verdant_froglight" ||
+                bname == "pearlescent_froglight")
+                return 15;
+            if (bname == "campfire")
+                return litFalse ? 0 : 15;
+            if (bname == "soul_campfire")
+                return litFalse ? 0 : 10;
+            if (bname == "redstone_lamp")
+                return litTrue ? 15 : 0;
+            if (bname == "copper_bulb")
+                return litTrue ? 15 : 0;
+            if (bname == "exposed_copper_bulb")
+                return litTrue ? 12 : 0;
+            if (bname == "weathered_copper_bulb")
+                return litTrue ? 8 : 0;
+            if (bname == "oxidized_copper_bulb")
+                return litTrue ? 4 : 0;
+            if (bname == "respawn_anchor") {
+                const auto c = get("charges");
+                if (c == "4")
+                    return 15;
+                if (c == "3")
+                    return 11;
+                if (c == "2")
+                    return 7;
+                if (c == "1")
+                    return 3;
+                return 0;
+            }
+            if (bname == "sea_pickle") {
+                const auto p = get("pickles");
+                if (p == "4")
+                    return 15;
+                if (p == "3")
+                    return 12;
+                if (p == "2")
+                    return 9;
+                return 6;
+            }
+            if (bname == "cave_vines" || bname == "cave_vines_plant")
+                return (get("berries") == "true") ? 14 : 0;
+            if (bname == "torch" || bname == "wall_torch" || bname == "copper_torch" ||
+                bname == "copper_wall_torch" || bname == "end_rod" || bname == "end_rod_wall")
+                return 14;
+            if (bname == "furnace" || bname == "blast_furnace" || bname == "smoker")
+                return litTrue ? 13 : 0;
+            if (bname == "nether_portal")
+                return 11;
+            if (bname == "crying_obsidian")
+                return 10;
+            if (bname == "soul_fire" || bname == "soul_lantern" || bname == "soul_torch" ||
+                bname == "soul_wall_torch")
+                return 10;
+            if (bname == "redstone_ore" || bname == "deepslate_redstone_ore")
+                return litTrue ? 9 : 0;
+            if (bname.find("candle_cake") != std::string_view::npos)
+                return litTrue ? 3 : 0;
+            if (bname.find("candle") != std::string_view::npos) {
+                if (!litTrue && props.count("lit"))
+                    return 0;
+                const auto n = get("candles");
+                if (n == "4")
+                    return 12;
+                if (n == "3")
+                    return 9;
+                if (n == "2")
+                    return 6;
+                return 3;
+            }
+            if (bname == "enchanting_table" || bname == "ender_chest" ||
+                bname == "glow_lichen")
+                return 7;
+            if (bname == "redstone_torch" || bname == "redstone_wall_torch")
+                return litFalse ? 0 : 7;
+            if (bname == "sculk_catalyst" || bname == "vault")
+                return 6;
+            if (bname == "amethyst_cluster")
+                return 5;
+            if (bname == "large_amethyst_bud")
+                return 4;
+            if (bname == "magma_block")
+                return 3;
+            if (bname == "medium_amethyst_bud")
+                return 2;
+            if (bname == "brewing_stand" || bname == "brown_mushroom" ||
+                bname == "dragon_egg" || bname == "end_portal_frame" ||
+                bname == "sculk_sensor" || bname == "calibrated_sculk_sensor" ||
+                bname == "small_amethyst_bud")
+                return 1;
+            if (bname == "light") {
+                const auto l = get("level");
+                if (!l.empty()) {
+                    int v = 0;
+                    for (char ch : l) {
+                        if (ch >= '0' && ch <= '9')
+                            v = v * 10 + (ch - '0');
+                    }
+                    if (v < 0)
+                        v = 0;
+                    if (v > 15)
+                        v = 15;
+                    return static_cast<u8>(v);
+                }
+                return 15;
+            }
+            return 0;
+        }
+
+        // Vanilla sky-light opacity: 15 opaque, 1 filtering (leaves/water/slabs...),
+        // 0 transparent (air/glass/bars/panes...).
+        u8 SkyOpacityForState(std::string_view bname, u32 flags) {
+            if ((flags & kBlockFlagOpaque) != 0u)
+                return 15;
+            if ((flags & kBlockFlagSkip) != 0u)
+                return 0;
+            if (bname.find("glass") != std::string_view::npos && bname != "tinted_glass")
+                return 0;
+            if (bname.find("_pane") != std::string_view::npos || bname == "iron_bars")
+                return 0;
+            if (bname.find("bars") != std::string_view::npos)
+                return 0;
+            return 1;
+        }
+
         bool IsNonOccluding(std::string_view name) {
             if (IsFluidName(name))
                 return true;
@@ -1018,6 +1164,8 @@ namespace Manro {
         for (auto &s : pack.states)
             s.flags = kBlockFlagSkip;
         pack.fluid.assign(kBlockStateMax, 0);
+        pack.emission.assign(kBlockStateMax, 0);
+        pack.skyOpacity.assign(kBlockStateMax, 0);
 
         std::unordered_map<std::string, json> blockCache;
         std::unordered_map<std::string, json> modelCache;
@@ -1439,6 +1587,8 @@ namespace Manro {
                 pack.fluid[id] = static_cast<u8>(fluid);
             }
             pack.states[id] = look;
+            pack.emission[id] = EmissionForState(bview, pmap);
+            pack.skyOpacity[id] = SkyOpacityForState(bview, look.flags);
             pack.stateByKey.emplace(key, id);
             if (pack.stateKeys.size() <= id)
                 pack.stateKeys.resize(static_cast<size_t>(id) + 1);
@@ -1448,6 +1598,8 @@ namespace Manro {
 
         pack.states[0].flags = kBlockFlagSkip;
         pack.fluid[0] = 0;
+        pack.emission[0] = 0;
+        pack.skyOpacity[0] = 0;
         pack.maxState = id - 1;
         pack.mappedStates = mapped;
         pack.fallbackStates = fallback;

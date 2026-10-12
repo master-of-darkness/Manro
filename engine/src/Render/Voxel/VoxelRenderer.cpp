@@ -71,7 +71,7 @@ namespace Manro {
         }
 
         m_FaceCache = CreateScope<CBuffer>(
-            m_Context, sizeof(u32) * 4096 * desc.maxResidentBricks,
+            m_Context, sizeof(u32) * kVoxelFaceCacheStride * desc.maxResidentBricks,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
             VMA_MEMORY_USAGE_GPU_ONLY);
 
@@ -1024,6 +1024,8 @@ namespace Manro {
                             VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT,
                         VK_ACCESS_2_SHADER_READ_BIT);
             }
+            // Flat packed light rides the brick buffer copy above; no
+            // separate light barrier needed here.
             if (m_bDebugEnabled) {
                 pushBuf(m_DebugReadback->GetHandle(),
                         VK_PIPELINE_STAGE_2_HOST_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT,

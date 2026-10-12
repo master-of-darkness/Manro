@@ -40,8 +40,10 @@ namespace Manro {
 
         void UploadBrickBatch(const u32 *indices, const u16 *mats, const u32 *occupancy, u32 count);
 
+        // Stage bricks with attached flat packed light (sky<<4|block per
+        // voxel, 4096 bytes). Light rides the same copy as voxels.
         bool StageBrickBatch(u32 slot, const u32 *indices, const u16 *mats,
-                              const u32 *occupancy, u32 count);
+                             const u32 *occupancy, const u8 *light, u32 count);
 
         [[nodiscard]] u32 GetStageFree(u32 slot) const;
 
@@ -107,6 +109,8 @@ namespace Manro {
         Scope<CBuffer> m_Headers;
         Scope<CBuffer> m_PageTable;
         Scope<CBuffer> m_EditRing;
+        // (Flat packed light lives inside the brick buffer after mats+occ;
+        // no separate light bricks, staging, or barriers.)
 
         std::vector<VoxelBrickHeader_t> m_HeaderMirror;
         std::vector<i32> m_PageMirror;

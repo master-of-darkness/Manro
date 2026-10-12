@@ -76,7 +76,7 @@ void EditMain(uint3 dtid : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint gid
                 float3 brickMin = g_Edit.worldMin + float3(brickCoord) * g_Edit.brickSize;
                 int3 lv = int3(floor((cmd.pos - brickMin) / voxelSize));
                 if (lv.x >= 0 && lv.x < 16 && lv.y >= 0 && lv.y < 16 && lv.z >= 0 && lv.z < 16) {
-                    uint* mats = bstore + rBrick * 2176u;
+                    uint* mats = bstore + rBrick * 3200u;
                     uint* occupancy = mats + 2048u;
                     uint i = uint(lv.x) + uint(lv.y) * 16u + uint(lv.z) * 256u;
                     uint word = i >> 5u;
@@ -115,7 +115,7 @@ void EditMain(uint3 dtid : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint gid
                 if (prb < 0)
                     continue;
                 uint rBrick = uint(prb);
-                uint* mats = bstore + rBrick * 2176u;
+                uint* mats = bstore + rBrick * 3200u;
                 uint* occupancy = mats + 2048u;
                 float3 brickMin = g_Edit.worldMin + float3(float(bx), float(by), float(bz)) * g_Edit.brickSize;
                 bool touched = false;

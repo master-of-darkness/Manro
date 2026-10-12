@@ -11,6 +11,13 @@ namespace Manro {
         float commitMs{0.f};
         float totalMs{0.f};
 
+        // Vanilla light flood-fill (CPU) diagnostics, per Update.
+        float lightMs{0.f};
+        u32 lightBricks{0};
+        u32 lightDirtyBricks{0};
+        u64 lightVisits{0};
+        u32 lightQueuePeak{0};
+
         u64 blockingUploads{0};
         u32 deferredBricks{0};
         u64 deferredDropped{0};

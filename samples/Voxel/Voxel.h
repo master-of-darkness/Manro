@@ -334,6 +334,12 @@ public:
                                 m_StreamStats.stageHighWater[0],
                                 m_StreamStats.stageHighWater[1],
                                 m_StreamStats.stageHighWater[2], m_StreamStats.midFrameBinds);
+            ImGui::TextDisabled("light=%.2fms bricks=%u visits=%llu peakQ=%u dirty=%u",
+                                static_cast<double>(m_StreamStats.lightMs),
+                                m_StreamStats.lightBricks,
+                                static_cast<unsigned long long>(m_StreamStats.lightVisits),
+                                m_StreamStats.lightQueuePeak,
+                                m_StreamStats.lightDirtyBricks);
             float gx = 0.f, gd = 0.f, gp = 0.f;
             m_Renderer->VoxelGetGpuTimes(gx, gd, gp);
             ImGui::Text("GPU xfer: %.2f ms  draw: %.2f ms  post: %.2f ms", static_cast<double>(gx),
@@ -385,6 +391,10 @@ public:
                    static_cast<unsigned long long>(m_StreamStats.blockingUploads),
                    m_StreamStats.stageHighWater[0], m_StreamStats.stageHighWater[1],
                    m_StreamStats.stageHighWater[2], m_StreamStats.midFrameBinds);
+            printf("[VoxelStream][light] ms=%.2f bricks=%u visits=%llu peakQ=%u dirty=%u\n",
+                   static_cast<double>(m_StreamStats.lightMs), m_StreamStats.lightBricks,
+                   static_cast<unsigned long long>(m_StreamStats.lightVisits),
+                   m_StreamStats.lightQueuePeak, m_StreamStats.lightDirtyBricks);
             m_PaceFenceMax = 0.f;
             m_PaceAcquireMax = 0.f;
             m_PacePresentMax = 0.f;

@@ -12,7 +12,18 @@ struct VoxelFragIn {
     nointerpolation uint faceState : TEXCOORD1;
     nointerpolation uint tile : TEXCOORD2;
     nointerpolation uint mflags : TEXCOORD3;
+    float3 vLight : TEXCOORD4;
 };
+
+float VanillaBrightness(float level) {
+    // Exact vanilla lightmap curve: level in 0..1 (light/15).
+    return level / (4.0 - 3.0 * level);
+}
+
+float VanillaParabolic(float level) {
+    float d = 2.0 * level - 1.0;
+    return d * d;
+}
 
 [earlydepthstencil]
 float4 PSMain(VoxelFragIn input) : SV_Target {
@@ -30,11 +41,38 @@ float4 PSMain(VoxelFragIn input) : SV_Target {
     }
 
     float3 nrm = kFaceNormal[f];
-    float3 toSun = -fr.sunDir.xyz;
-    float ndl = saturate(dot(nrm, toSun));
-    float an = abs(nrm.y) > 0.5 ? (nrm.y > 0.0 ? 1.0 : 0.5)
-             : (abs(nrm.x) > 0.5 ? 0.8 : 0.65);
-    float3 lit = albedo.rgb * (0.15 + fr.sunColor.rgb * (ndl * fr.sunColor.a)) * an;
+
+    // Vanilla directional face shading (top 1.0, bottom 0.5, north/south 0.8, east/west 0.6).
+    float faceShade = 1.0;
+    if (abs(nrm.y) > 0.5) {
+        faceShade = (nrm.y > 0.0) ? 1.0 : 0.5;
+    } else if (abs(nrm.x) > 0.5) {
+        faceShade = 0.6;
+    } else {
+        faceShade = 0.8;
+    }
+
+    // Interpolated smooth lighting from mesh (sky/block 0..15, ao brightness 0.5..1.0).
+    float sky = clamp(input.vLight.x, 0.0, 15.0);
+    float blk = clamp(input.vLight.y, 0.0, 15.0);
+    float ao = clamp(input.vLight.z, 0.0, 1.0);
+
+    float skyLevel = sky / 15.0;
+    float blockLevel = blk / 15.0;
+    float skyBright = VanillaBrightness(skyLevel);
+    float blockBright = VanillaBrightness(blockLevel);
+
+    // Vanilla day lightmap uniforms (Overworld, clear noon).
+    float3 ambient = float3(0.02, 0.02, 0.02);
+    float3 skyColor = float3(1.0, 1.0, 1.0);
+    float3 blockTint = float3(1.0, 0.62, 0.32);
+    float3 blockColor = lerp(blockTint, float3(1.0, 1.0, 1.0),
+                             0.9 * VanillaParabolic(blockLevel));
+
+    float3 lightColor = ambient + skyColor * skyBright + blockColor * blockBright;
+    lightColor = clamp(lightColor, 0.0, 1.0);
+
+    float3 lit = albedo.rgb * lightColor * faceShade * ao;
 
     if (fr.giEnabled != 0u) {
         vk::BufferPointer<float4> gi = vk::BufferPointer<float4>(fr.giAddr);
