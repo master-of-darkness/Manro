@@ -1,11 +1,14 @@
 #include "VulkanHelpers.h"
 #include "VulkanContext.h"
+#include "Buffer.h"
+#include "SparseBuffer.h"
 
 #include <volk.h>
 #include <Manro/Core/Logger.h>
 #include <stdexcept>
 #include <fstream>
 #include <vector>
+#include <cstring>
 
 namespace Manro {
     AllocatedImage_t CreateImage(const CVulkanContext &ctx, const ImageCreateParams_t &params,
@@ -119,5 +122,42 @@ namespace Manro {
         file.close();
 
         return buffer;
+    }
+
+    void FillSparseSync(const CVulkanContext &ctx, CSparseBuffer &dst, u64 offset, u64 size) {
+        if (size == 0) return;
+        VkBuffer native = dst.NativeBuffer();
+        ExecuteOneShot(ctx, [&](VkCommandBuffer cmd) {
+            vkCmdFillBuffer(cmd, native, static_cast<VkDeviceSize>(offset),
+                            static_cast<VkDeviceSize>(size), 0);
+        });
+    }
+
+    void CopyBufferToSparseSync(const CVulkanContext &ctx, const CBuffer &staging, CSparseBuffer &dst,
+                                const BufferCopyRegion *regions, u32 count) {
+        if (count == 0 || !regions) return;
+        std::vector<VkBufferCopy> copies(count);
+        for (u32 i = 0; i < count; ++i) {
+            copies[i].srcOffset = static_cast<VkDeviceSize>(regions[i].srcOffset);
+            copies[i].dstOffset = static_cast<VkDeviceSize>(regions[i].dstOffset);
+            copies[i].size = static_cast<VkDeviceSize>(regions[i].size);
+        }
+        VkBuffer src = staging.GetHandle();
+        VkBuffer dstBuf = dst.NativeBuffer();
+        ExecuteOneShot(ctx, [&](VkCommandBuffer cmd) {
+            vkCmdCopyBuffer(cmd, src, dstBuf, count, copies.data());
+        });
+    }
+
+    void UploadBytesToSparseSync(const CVulkanContext &ctx, const void *bytes, u64 byteSize,
+                                 CSparseBuffer &dst, u64 dstOffset) {
+        if (!bytes || byteSize == 0) return;
+        CBuffer staging(ctx, byteSize, EBufferUsage::TransferSrc, EBufferMemory::CpuToGpu);
+        staging.LoadData(bytes, static_cast<size_t>(byteSize));
+        BufferCopyRegion region{};
+        region.srcOffset = 0;
+        region.dstOffset = dstOffset;
+        region.size = byteSize;
+        CopyBufferToSparseSync(ctx, staging, dst, &region, 1);
     }
 } // namespace Manro

@@ -164,9 +164,10 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                 uint z = (i >> 4u) & 15u;
                 uint iter = x + 7u * 16u + z * 256u;
                 uint mat = (x + z) & 1u;
-                fcb[1u + i * 3u] = (iter & 0xFFFu) | (2u << 12u) | ((mat & 0x1FFu) << 15u);
-                fcb[1u + i * 3u + 1u] = 0x3FFu | (0x3FFu << 10u) | (0x3FFu << 20u);
-                fcb[1u + i * 3u + 2u] = 0x3FFu; // full sky, no AO
+                fcb[1u + i * 4u] = (iter & 0xFFFu) | (2u << 12u) | ((mat & 0x1FFu) << 15u);
+                fcb[1u + i * 4u + 1u] = 0x3FFu | (0x3FFu << 10u) | (0x3FFu << 20u);
+                fcb[1u + i * 4u + 2u] = 0x3FFu; // full sky, no AO
+                fcb[1u + i * 4u + 3u] = 0u; // single-quad path
             }
             if (gidx == 0) {
                 fcb[0] = 256u;
@@ -203,6 +204,8 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                 uint* blockFlags = flagPtr.getPtr();
                 vk::BufferPointer<uint> shapePtr = vk::BufferPointer<uint>(g_TaskRoot.shapeTableAddr);
                 uint* blockShapes = shapePtr.getPtr();
+                vk::BufferPointer<uint> boxPtr = vk::BufferPointer<uint>(g_TaskRoot.boxTableAddr);
+                uint* blockBoxes = boxPtr.getPtr();
                 vk::BufferPointer<int> nbpt = vk::BufferPointer<int>(g_TaskRoot.pageTableAddr);
                 int* pageTable = nbpt.getPtr();
                 float voxelSize = s_brickSize / 16.0;
@@ -211,6 +214,7 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                 float3 wMin = s_worldMin;
 
                 uint localBuf[32];
+                uint localBox[32];
                 uint localN = 0u;
 
                 for (uint iter = gidx; iter < 4096u; iter += 32u) {
@@ -256,6 +260,12 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                         }
 
                         bool emit;
+                        uint packed =
+                            (iter & 0xFFFu) | ((f & 0x7u) << 12u) | ((mat & 0x7FFFu) << 15u);
+                        uint msBox = min(mat, kBlockStateMax - 1u);
+                        bool isMulti = ((vflags & 16u) != 0u) &&
+                                       (VoxelBoxCount(blockBoxes, msBox) > 1u);
+                        if (!isMulti) {
                         if (nstate >= kBlockStateMax) {
                             emit = true;
                         } else {
@@ -288,17 +298,61 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                         }
                         if (!emit)
                             continue;
-                        localBuf[localN++] =
-                            (iter & 0xFFFu) | ((f & 0x7u) << 12u) | ((mat & 0x7FFFu) << 15u);
+                        localBuf[localN] = packed;
+                        localBox[localN] = 0u;
+                        localN++;
                         if (localN == 32u) {
                             uint slot;
                             InterlockedAdd(s_faceStaging[0], 32u, slot);
                             for (uint k = 0u; k < 32u; ++k) {
                                 if (slot + k < kVoxelFaceCacheCap) {
                                     s_faceStaging[1u + slot + k] = localBuf[k];
+                                    fcb[1u + (slot + k) * 4u + 3u] = localBox[k];
                                 }
                             }
                             localN = 0u;
+                        }
+                        } else {
+                            // Multi-box fence: one cache entry per surviving box
+                            // face in direction f. Interior box faces (baked mask)
+                            // are skipped; the rest get per-box cover tests so
+                            // rails reach exactly to connected neighbors.
+                            bool nSkip = true;
+                            int3 nMin = int3(0, 0, 0);
+                            int3 nMax = int3(16, 16, 16);
+                            if (nstate < kBlockStateMax) {
+                                uint nflags = blockFlags[nstate];
+                                if ((nflags & 4u) == 0u) {
+                                    nSkip = false;
+                                    nMin = VoxelShapeMin(blockShapes, nstate);
+                                    nMax = VoxelShapeMax(blockShapes, nstate);
+                                }
+                            }
+                            uint nBox = VoxelBoxCount(blockBoxes, msBox);
+                            for (uint bi = 0u; bi < nBox; ++bi) {
+                                if (VoxelBoxFaceHidden(blockBoxes, msBox, bi, f))
+                                    continue;
+                                if (!nSkip) {
+                                    int3 bMin = VoxelBoxMin(blockBoxes, msBox, bi);
+                                    int3 bMax = VoxelBoxMax(blockBoxes, msBox, bi);
+                                    if (VoxelFaceCovered(bMin, bMax, nMin, nMax, f))
+                                        continue;
+                                }
+                                localBuf[localN] = packed;
+                                localBox[localN] = bi + 1u;
+                                localN++;
+                                if (localN == 32u) {
+                                    uint slot;
+                                    InterlockedAdd(s_faceStaging[0], 32u, slot);
+                                    for (uint k = 0u; k < 32u; ++k) {
+                                        if (slot + k < kVoxelFaceCacheCap) {
+                                            s_faceStaging[1u + slot + k] = localBuf[k];
+                                            fcb[1u + (slot + k) * 4u + 3u] = localBox[k];
+                                        }
+                                    }
+                                    localN = 0u;
+                                }
+                            }
                         }
                     }
                 }
@@ -308,6 +362,7 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                     for (uint k = 0u; k < localN; ++k) {
                         if (slot + k < kVoxelFaceCacheCap) {
                             s_faceStaging[1u + slot + k] = localBuf[k];
+                            fcb[1u + (slot + k) * 4u + 3u] = localBox[k];
                         }
                     }
                 }
@@ -336,7 +391,7 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                     int3 brickAbs = int3(s_origin / voxelSize);
                     for (uint i = gidx; i < faceCount; i += 32u) {
                         uint packed = s_faceStaging[1u + i];
-                        fcb[1u + i * 3u] = packed;
+                        fcb[1u + i * 4u] = packed;
                         uint iter = packed & 0xFFFu;
                         uint f = (packed >> 12u) & 0x7u;
                         int3 vPos = brickAbs + int3(int(iter & 15u),
@@ -409,8 +464,8 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                                 v3ao = ao & 0x3u;
                             }
                         }
-                        fcb[1u + i * 3u + 1u] = w1;
-                        fcb[1u + i * 3u + 2u] = v3sky | (v3blk << 4u) | (v3ao << 8u);
+                        fcb[1u + i * 4u + 1u] = w1;
+                        fcb[1u + i * 4u + 2u] = v3sky | (v3blk << 4u) | (v3ao << 8u);
                     }
                 }
             } else {

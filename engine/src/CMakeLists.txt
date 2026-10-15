@@ -29,7 +29,6 @@ set(ENGINE_RENDER_SOURCES
         Render/Scene/InstanceBatcher.cpp
         Render/Scene/SceneRenderer.cpp
 
-        Render/Voxel/VoxelSparseBinder.cpp
         Render/Voxel/VoxelWorld.cpp
         Render/Voxel/VoxelRenderer.cpp
         Render/Voxel/VoxelBlockAssets.cpp
@@ -50,6 +49,11 @@ set(ENGINE_RENDER_SOURCES
         Render/Vulkan/Pipeline.cpp
         Render/Vulkan/DescriptorAllocator.cpp
         Render/Vulkan/PipelineCache.cpp
+        Render/Vulkan/SparseBuffer.cpp
+        Render/Vulkan/TileArray.cpp
+        Render/Vulkan/GpuTimer.cpp
+        Render/Vulkan/VoxelEncoder.cpp
+        Render/Vulkan/VoxelPipelines.cpp
 
         Render/Overlay/Overlay.cpp
 )

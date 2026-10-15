@@ -2,10 +2,14 @@
 #include "VoxelWorld.h"
 #include "VoxelStreamWorld.h"
 #include "../Vulkan/VulkanContext.h"
-#include "../Vulkan/VulkanHelpers.h"
 #include "../Vulkan/Pipeline.h"
 #include "../Vulkan/PipelineCache.h"
 #include "../Vulkan/Buffer.h"
+#include "../Vulkan/GpuDefs.h"
+#include "../Vulkan/TileArray.h"
+#include "../Vulkan/GpuTimer.h"
+#include "../Vulkan/VoxelEncoder.h"
+#include "../Vulkan/VoxelPipelines.h"
 
 #include <Manro/Core/Logger.h>
 #include <Manro/Core/VirtualFS.h>
@@ -22,104 +26,78 @@ namespace Manro {
     CVoxelRenderer::~CVoxelRenderer() { Shutdown(); }
 
     void CVoxelRenderer::Init(CPipelineCache &cache, u32 width, u32 height) {
+        m_Context.RequireMeshShaders("Voxel");
         VoxelWorldDesc_t desc{};
         desc.virtualDim = 64;
         desc.voxelSize = 1.f;
         desc.maxResidentBricks = 8192;
         m_World->Init(desc);
 
-        CreateTileDescriptor();
+        m_Tiles = CreateScope<CTileArray>(m_Context);
+        m_Tiles->Ensure(1);
         BuildPipelines(cache);
 
         for (u32 i = 0; i < CVoxelRenderer::kFlightSlots; ++i) {
             m_VisibilityRing[i] = CreateScope<CBuffer>(
                 m_Context, sizeof(u32) * desc.maxResidentBricks,
-                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-                VMA_MEMORY_USAGE_CPU_TO_GPU);
+                EBufferUsage::Storage | EBufferUsage::ShaderAddress, EBufferMemory::CpuToGpu);
         }
 
         m_PaletteBuffer = CreateScope<CBuffer>(
             m_Context, sizeof(Vec4) * 512,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-            VMA_MEMORY_USAGE_CPU_TO_GPU);
+            EBufferUsage::Storage | EBufferUsage::ShaderAddress, EBufferMemory::CpuToGpu);
         m_SunBuffer = CreateScope<CBuffer>(
             m_Context, sizeof(Vec4) * 2,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-            VMA_MEMORY_USAGE_CPU_TO_GPU);
+            EBufferUsage::Storage | EBufferUsage::ShaderAddress, EBufferMemory::CpuToGpu);
         m_FragParams = CreateScope<CBuffer>(
             m_Context, sizeof(VoxelFragParams_t),
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-            VMA_MEMORY_USAGE_CPU_TO_GPU);
+            EBufferUsage::Storage | EBufferUsage::ShaderAddress, EBufferMemory::CpuToGpu);
         const u32 cascadeRes = 64;
         m_CascadeBuffer = CreateScope<CBuffer>(
             m_Context, sizeof(Vec4) * cascadeRes * cascadeRes * cascadeRes * 2,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-            VMA_MEMORY_USAGE_GPU_ONLY);
+            EBufferUsage::Storage | EBufferUsage::ShaderAddress, EBufferMemory::GpuOnly);
         m_EditStaging = CreateScope<CBuffer>(
             m_Context, sizeof(VoxelEditCmd_t) * 1024,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-            VMA_MEMORY_USAGE_CPU_TO_GPU);
+            EBufferUsage::Storage | EBufferUsage::ShaderAddress, EBufferMemory::CpuToGpu);
         m_FrameParamsRing[0] = CreateScope<CBuffer>(
             m_Context, sizeof(VoxelFrameParams_t),
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-            VMA_MEMORY_USAGE_CPU_TO_GPU);
+            EBufferUsage::Storage | EBufferUsage::ShaderAddress, EBufferMemory::CpuToGpu);
         for (u32 i = 1; i < CVoxelRenderer::kFlightSlots; ++i) {
             m_FrameParamsRing[i] = CreateScope<CBuffer>(
                 m_Context, sizeof(VoxelFrameParams_t),
-                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-                VMA_MEMORY_USAGE_CPU_TO_GPU);
+                EBufferUsage::Storage | EBufferUsage::ShaderAddress, EBufferMemory::CpuToGpu);
         }
 
         m_FaceCache = CreateScope<CBuffer>(
             m_Context, sizeof(u32) * kVoxelFaceCacheStride * desc.maxResidentBricks,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-            VMA_MEMORY_USAGE_GPU_ONLY);
+            EBufferUsage::Storage | EBufferUsage::ShaderAddress, EBufferMemory::GpuOnly);
 
         m_DebugReadback = CreateScope<CBuffer>(
             m_Context, sizeof(u32) * 8,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
-                VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-            VMA_MEMORY_USAGE_CPU_TO_GPU);
+            EBufferUsage::Storage | EBufferUsage::ShaderAddress | EBufferUsage::TransferDst,
+            EBufferMemory::CpuToGpu);
 
         m_BlockTileTable = CreateScope<CBuffer>(
             m_Context, sizeof(u32) * 32768 * 6,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-            VMA_MEMORY_USAGE_CPU_TO_GPU);
+            EBufferUsage::Storage | EBufferUsage::ShaderAddress, EBufferMemory::CpuToGpu);
         m_BlockFlagsTable = CreateScope<CBuffer>(
             m_Context, sizeof(u32) * 32768,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-            VMA_MEMORY_USAGE_CPU_TO_GPU);
+            EBufferUsage::Storage | EBufferUsage::ShaderAddress, EBufferMemory::CpuToGpu);
 
         m_BlockShapeTable = CreateScope<CBuffer>(
             m_Context, sizeof(u32) * 32768 * 2,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-            VMA_MEMORY_USAGE_CPU_TO_GPU);
+            EBufferUsage::Storage | EBufferUsage::ShaderAddress, EBufferMemory::CpuToGpu);
 
         m_BlockUvTable = CreateScope<CBuffer>(
             m_Context, sizeof(u32) * 32768 * 6,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-            VMA_MEMORY_USAGE_CPU_TO_GPU);
+            EBufferUsage::Storage | EBufferUsage::ShaderAddress, EBufferMemory::CpuToGpu);
 
-        {
-            VkPhysicalDeviceProperties props{};
-            vkGetPhysicalDeviceProperties(m_Context.GetPhysicalDevice(), &props);
-            m_TimestampPeriodNs = props.limits.timestampPeriod;
-            if (m_TimestampPeriodNs > 0.f) {
-                VkQueryPoolCreateInfo qi{};
-                qi.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
-                qi.queryType = VK_QUERY_TYPE_TIMESTAMP;
-                qi.queryCount = kFlightSlots * kQueriesPerSlot;
-                if (vkCreateQueryPool(m_Context.GetDevice(), &qi, nullptr,
-                                      &m_TimestampPool) != VK_SUCCESS)
-                    m_TimestampPool = VK_NULL_HANDLE;
-                if (m_TimestampPool) {
-                    ExecuteOneShot(m_Context, [&](VkCommandBuffer cmd) {
-                        vkCmdResetQueryPool(cmd, m_TimestampPool, 0,
-                                            kFlightSlots * kQueriesPerSlot);
-                    });
-                }
-            }
-        }
+        m_BlockBoxTable = CreateScope<CBuffer>(
+            m_Context, sizeof(u32) * kBlockStateMax * kBlockBoxWordsPerState,
+            EBufferUsage::Storage | EBufferUsage::ShaderAddress, EBufferMemory::CpuToGpu);
+
+        m_Timer = CreateScope<CGpuTimer>(m_Context);
+        m_Timer->Init(kFlightSlots, kQueriesPerSlot);
 
         {
             BlockAssetPack_t fallback{};
@@ -170,17 +148,15 @@ namespace Manro {
     }
 
     void CVoxelRenderer::Shutdown() {
-        VkDevice device = m_Context.GetDevice();
-        if (device) {
-            vkDeviceWaitIdle(device);
-        }
-        DestroyBlockTiles();
-        DestroyTileDescriptor();
+        m_Context.WaitIdle();
+        m_Tiles.reset();
+        m_Timer.reset();
         m_StreamWorld.reset();
         m_BlockTileTable.reset();
         m_BlockFlagsTable.reset();
         m_BlockShapeTable.reset();
         m_BlockUvTable.reset();
+        m_BlockBoxTable.reset();
         m_TaskMeshPipeline.reset();
         m_EditPipeline.reset();
         m_GiInjectPipeline.reset();
@@ -196,13 +172,10 @@ namespace Manro {
             slot.reset();
         m_DebugReadback.reset();
         m_FaceCache.reset();
-        if (m_TimestampPool && m_Context.GetDevice()) {
-            vkDestroyQueryPool(m_Context.GetDevice(), m_TimestampPool, nullptr);
-            m_TimestampPool = VK_NULL_HANDLE;
-        }
         if (m_World)
             m_World->Shutdown();
         m_bInitialized = false;
+        m_TileLayers = 0;
     }
 
     void CVoxelRenderer::BuildPipelines(CPipelineCache &cache) {
@@ -220,162 +193,20 @@ namespace Manro {
         if (editSpv.empty() || giInjectSpv.empty() || giPropSpv.empty())
             LOG_ERROR("[CVoxelRenderer] Voxel compute shaders missing");
 
-        PipelineConfigParams_t meshCfg{};
-        meshCfg.vertexEntryPoint = "main";
-        meshCfg.fragmentEntryPoint = "main";
-        meshCfg.computeEntryPoint = "main";
-        meshCfg.colorAttachmentFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
-        meshCfg.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
-        meshCfg.msaaSamples = VK_SAMPLE_COUNT_1_BIT;
-        meshCfg.pushConstantStages = VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT |
-                                      VK_SHADER_STAGE_FRAGMENT_BIT;
-        meshCfg.pushConstantSize = sizeof(VoxelFrameRoot_t);
-
-        if (m_TileSetLayout != VK_NULL_HANDLE)
-            meshCfg.descriptorSetLayouts = {m_TileSetLayout};
-        meshCfg.depthWriteEnable = VK_TRUE;
-        meshCfg.depthCompareOp = VK_COMPARE_OP_LESS;
-
-        PipelineKey_t meshKey{};
-        meshKey.taskHash = CPipelineCache::HashSpirV(taskSpv);
-        meshKey.meshHash = CPipelineCache::HashSpirV(meshSpv);
-        meshKey.fragHash = CPipelineCache::HashSpirV(fragSpv);
-        meshKey.variants = PipelineVariant_MeshTask;
-        meshKey.colorFmt = meshCfg.colorAttachmentFormat;
-        meshKey.depthFmt = meshCfg.depthAttachmentFormat;
-        meshKey.pushConstantSize = meshCfg.pushConstantSize;
-        if (m_TileSetLayout != VK_NULL_HANDLE) {
-            meshKey.setLayoutCount = 1;
-
-            meshKey.setLayoutHash = 0x7B9B2F4A8C1D3E55ull;
-        }
-
-        m_TaskMeshPipeline = CreateScope<CPipeline>(m_Context);
-        cache.GetGraphics(meshKey, [&](VkPipelineCache) -> VkPipeline {
-            m_TaskMeshPipeline->BuildMeshTask(taskSpv, meshSpv, fragSpv, meshCfg);
-            return m_TaskMeshPipeline->GetHandle();
-        });
-
-        auto buildCompute = [&](Scope<CPipeline> &pipe, const std::vector<u8> &spv, u32 pushSize,
-                                const char *name) {
-            PipelineConfigParams_t cfg{};
-            cfg.computeEntryPoint = "main";
-            cfg.pushConstantSize = pushSize;
-            PipelineKey_t key{};
-            key.compHash = CPipelineCache::HashSpirV(spv);
-            key.variants = PipelineVariant_Compute;
-            key.pushConstantSize = pushSize;
-            pipe = CreateScope<CPipeline>(m_Context);
-            cache.GetCompute(key, [&](VkPipelineCache) -> VkPipeline {
-                pipe->BuildCompute(spv, cfg);
-                return pipe->GetHandle();
-            });
-            if (!pipe->GetHandle())
-                LOG_ERROR("[CVoxelRenderer] Compute pipeline build failed: {}", name);
-        };
-
-        buildCompute(m_EditPipeline, editSpv, sizeof(VoxelEditPushConstants_t), "voxel_edit");
-        buildCompute(m_GiInjectPipeline, giInjectSpv, sizeof(VoxelGiPushConstants_t), "voxel_gi_inject");
-        buildCompute(m_GiPropagatePipeline, giPropSpv, sizeof(VoxelGiPushConstants_t), "voxel_gi_propagate");
-    }
-
-    void CVoxelRenderer::CreateTileDescriptor() {
-        DestroyTileDescriptor();
-        VkDevice device = m_Context.GetDevice();
-        VkDescriptorSetLayoutBinding b{};
-        b.binding = 0;
-        b.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        b.descriptorCount = 1;
-        b.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-        VkDescriptorSetLayoutCreateInfo li{};
-        li.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        li.bindingCount = 1;
-        li.pBindings = &b;
-        if (vkCreateDescriptorSetLayout(device, &li, nullptr, &m_TileSetLayout) != VK_SUCCESS)
-            throw std::runtime_error("[CVoxelRenderer] Tile set layout failed");
-        VkDescriptorPoolSize ps{};
-        ps.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        ps.descriptorCount = 1;
-        VkDescriptorPoolCreateInfo pi{};
-        pi.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        pi.maxSets = 1;
-        pi.poolSizeCount = 1;
-        pi.pPoolSizes = &ps;
-        if (vkCreateDescriptorPool(device, &pi, nullptr, &m_TilePool) != VK_SUCCESS)
-            throw std::runtime_error("[CVoxelRenderer] Tile pool failed");
-        VkDescriptorSetAllocateInfo ai{};
-        ai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        ai.descriptorPool = m_TilePool;
-        ai.descriptorSetCount = 1;
-        ai.pSetLayouts = &m_TileSetLayout;
-        if (vkAllocateDescriptorSets(device, &ai, &m_TileSet) != VK_SUCCESS)
-            throw std::runtime_error("[CVoxelRenderer] Tile set alloc failed");
-    }
-
-    void CVoxelRenderer::DestroyTileDescriptor() {
-        VkDevice device = m_Context.GetDevice();
-        if (!device)
-            return;
-
-        m_TileSet = VK_NULL_HANDLE;
-        if (m_TilePool) {
-            vkDestroyDescriptorPool(device, m_TilePool, nullptr);
-            m_TilePool = VK_NULL_HANDLE;
-        }
-        if (m_TileSetLayout) {
-            vkDestroyDescriptorSetLayout(device, m_TileSetLayout, nullptr);
-            m_TileSetLayout = VK_NULL_HANDLE;
-        }
-    }
-
-    namespace {
-        u32 FindDeviceLocalMemory(VkPhysicalDevice phys, u32 bits) {
-            VkPhysicalDeviceMemoryProperties props{};
-            vkGetPhysicalDeviceMemoryProperties(phys, &props);
-            for (u32 i = 0; i < props.memoryTypeCount; ++i) {
-                if ((bits & (1u << i)) &&
-                    (props.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
-                    return i;
-            }
-            throw std::runtime_error("[CVoxelRenderer] No device-local memory type");
-        }
+        BuildVoxelPipelines(m_Context, cache, *m_Tiles, taskSpv, meshSpv, fragSpv, editSpv,
+                            giInjectSpv, giPropSpv, m_TaskMeshPipeline, m_EditPipeline,
+                            m_GiInjectPipeline, m_GiPropagatePipeline);
     }
 
     void CVoxelRenderer::CreateBlockTiles(const BlockAssetPack_t &pack) {
-        DestroyBlockTiles();
-        VkDevice device = m_Context.GetDevice();
         const u32 layers = std::max<u32>(1u, static_cast<u32>(pack.tiles.size()));
         constexpr u32 kMips = 5;
         m_TileLayers = layers;
 
-        VkImageCreateInfo ii{};
-        ii.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-        ii.imageType = VK_IMAGE_TYPE_2D;
-        ii.format = VK_FORMAT_R8G8B8A8_SRGB;
-        ii.extent = {16, 16, 1};
-        ii.mipLevels = kMips;
-        ii.arrayLayers = layers;
-        ii.samples = VK_SAMPLE_COUNT_1_BIT;
-        ii.tiling = VK_IMAGE_TILING_OPTIMAL;
-        ii.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-        ii.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        ii.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        if (vkCreateImage(device, &ii, nullptr, &m_TileImage) != VK_SUCCESS)
-            throw std::runtime_error("[CVoxelRenderer] Tile image failed");
-        VkMemoryRequirements req{};
-        vkGetImageMemoryRequirements(device, m_TileImage, &req);
-        VkMemoryAllocateInfo ai{};
-        ai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        ai.allocationSize = req.size;
-        ai.memoryTypeIndex = FindDeviceLocalMemory(m_Context.GetPhysicalDevice(), req.memoryTypeBits);
-        if (vkAllocateMemory(device, &ai, nullptr, &m_TileMemory) != VK_SUCCESS)
-            throw std::runtime_error("[CVoxelRenderer] Tile memory failed");
-        vkBindImageMemory(device, m_TileImage, m_TileMemory, 0);
-
         constexpr u32 kLevelPx[5] = {256, 64, 16, 4, 1};
-        VkDeviceSize layerBytes = 0;
+        u64 layerBytes = 0;
         for (u32 m = 0; m < kMips; ++m)
-            layerBytes += static_cast<VkDeviceSize>(kLevelPx[m]) * 4u;
+            layerBytes += static_cast<u64>(kLevelPx[m]) * 4u;
         std::vector<u8> staging(static_cast<size_t>(layerBytes) * layers);
         std::vector<u32> prev(256), cur(256);
         for (u32 l = 0; l < layers; ++l) {
@@ -422,116 +253,14 @@ namespace Manro {
                 }
             }
         }
-        CBuffer stageBuf(m_Context, staging.size(),
-                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-        stageBuf.LoadData(staging.data(), staging.size());
-
-        std::vector<VkBufferImageCopy> regions;
-        regions.reserve(static_cast<size_t>(layers) * kMips);
-        for (u32 l = 0; l < layers; ++l) {
-            VkDeviceSize off = static_cast<VkDeviceSize>(layerBytes) * l;
-            u32 dim = 16;
-            for (u32 m = 0; m < kMips; ++m) {
-                VkBufferImageCopy r{};
-                r.bufferOffset = off;
-                r.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, m, l, 1};
-                r.imageExtent = {dim, dim, 1};
-                regions.push_back(r);
-                off += static_cast<VkDeviceSize>(dim) * dim * 4u;
-                dim /= 2u;
-            }
-        }
-
-        VkImageViewCreateInfo vi{};
-        vi.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        vi.image = m_TileImage;
-        vi.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
-        vi.format = VK_FORMAT_R8G8B8A8_SRGB;
-        vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, kMips, 0, layers};
-        if (vkCreateImageView(device, &vi, nullptr, &m_TileView) != VK_SUCCESS)
-            throw std::runtime_error("[CVoxelRenderer] Tile view failed");
-
-        VkSamplerCreateInfo si{};
-        si.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-        si.magFilter = VK_FILTER_NEAREST;
-        si.minFilter = VK_FILTER_LINEAR;
-        si.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-        si.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        si.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        si.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        si.minLod = 0.f;
-        si.maxLod = static_cast<float>(kMips - 1);
-        si.maxAnisotropy = 1.f;
-        if (vkCreateSampler(device, &si, nullptr, &m_TileSampler) != VK_SUCCESS)
-            throw std::runtime_error("[CVoxelRenderer] Tile sampler failed");
-
-        ExecuteOneShot(m_Context, [&](VkCommandBuffer cmd) {
-            VkImageMemoryBarrier b0{};
-            b0.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-            b0.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-            b0.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-            b0.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            b0.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            b0.image = m_TileImage;
-            b0.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, kMips, 0, layers};
-            b0.srcAccessMask = 0;
-            b0.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                                 VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &b0);
-            vkCmdCopyBufferToImage(cmd, stageBuf.GetHandle(), m_TileImage,
-                                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                   static_cast<u32>(regions.size()), regions.data());
-            VkImageMemoryBarrier b1 = b0;
-            b1.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-            b1.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            b1.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-            b1.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr,
-                                 1, &b1);
-        });
-
-        VkDescriptorImageInfo ii2{};
-        ii2.sampler = m_TileSampler;
-        ii2.imageView = m_TileView;
-        ii2.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        VkWriteDescriptorSet w{};
-        w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        w.dstSet = m_TileSet;
-        w.dstBinding = 0;
-        w.descriptorCount = 1;
-        w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        w.pImageInfo = &ii2;
-        vkUpdateDescriptorSets(device, 1, &w, 0, nullptr);
-        LOG_INFO("[CVoxelRenderer] Tile array: {} layers, {} mips", layers, kMips);
-    }
-
-    void CVoxelRenderer::DestroyBlockTiles() {
-        VkDevice device = m_Context.GetDevice();
-        if (!device)
-            return;
-        if (m_TileSampler) {
-            vkDestroySampler(device, m_TileSampler, nullptr);
-            m_TileSampler = VK_NULL_HANDLE;
-        }
-        if (m_TileView) {
-            vkDestroyImageView(device, m_TileView, nullptr);
-            m_TileView = VK_NULL_HANDLE;
-        }
-        if (m_TileImage) {
-            vkDestroyImage(device, m_TileImage, nullptr);
-            m_TileImage = VK_NULL_HANDLE;
-        }
-        if (m_TileMemory) {
-            vkFreeMemory(device, m_TileMemory, nullptr);
-            m_TileMemory = VK_NULL_HANDLE;
-        }
-        m_TileLayers = 0;
+        m_Tiles->Upload(layers, staging.data(), static_cast<u64>(staging.size()), layerBytes);
+        m_TileLayers = m_Tiles->Layers();
     }
 
     void CVoxelRenderer::UploadBlockTables() {
         std::vector<u32> tiles(32768u * 6u, 0u), flags(32768u, 0u), shapes(32768u * 2u, 0u),
-            uvs(32768u * 6u, 0xFFFF0000u);
+            uvs(32768u * 6u, 0xFFFF0000u),
+            boxes(kBlockStateMax * kBlockBoxWordsPerState, 0u);
 
         for (size_t s = 0; s < 32768u; ++s) {
             shapes[s * 2u + 0u] = 0u;
@@ -552,18 +281,21 @@ namespace Manro {
             for (int f = 0; f < 6; ++f)
                 uvs[s * 6u + static_cast<size_t>(f)] = look.uvPacked[f];
         }
+        const size_t nb =
+            std::min(m_BlockPack.boxTable.size(), boxes.size());
+        for (size_t i = 0; i < nb; ++i)
+            boxes[i] = m_BlockPack.boxTable[i];
         m_BlockTileTable->LoadData(tiles.data(), tiles.size() * sizeof(u32));
         m_BlockFlagsTable->LoadData(flags.data(), flags.size() * sizeof(u32));
         m_BlockShapeTable->LoadData(shapes.data(), shapes.size() * sizeof(u32));
         m_BlockUvTable->LoadData(uvs.data(), uvs.size() * sizeof(u32));
+        m_BlockBoxTable->LoadData(boxes.data(), boxes.size() * sizeof(u32));
     }
 
     Vec3 CVoxelRenderer::StreamInit(const std::string &worldDir, const std::string &assetsDir,
                                 int radiusSections) {
 
-        VkDevice device = m_Context.GetDevice();
-        if (device)
-            vkDeviceWaitIdle(device);
+        m_Context.WaitIdle();
 
         m_StreamWorld.reset();
 
@@ -654,140 +386,78 @@ namespace Manro {
         return ~0u;
     }
 
-    void CVoxelRenderer::DispatchEdits(VkCommandBuffer cb) {
+    void CVoxelRenderer::DispatchEdits(CVoxelEncoder &enc) {
         const auto &edits = m_World->GetPendingEdits();
-        if (edits.empty() || !m_EditPipeline->GetHandle())
+        if (edits.empty() || !m_EditPipeline->IsValid())
             return;
         m_EditStaging->LoadData(edits.data(), sizeof(VoxelEditCmd_t) * edits.size());
 
-        VoxelEditPushConstants_t pc{};
-        pc.brickBufferAddr = m_World->GetBrickBufferAddr();
-        pc.headerAddr = m_World->GetHeaderAddr();
-        pc.pageTableAddr = m_World->GetPageTableAddr();
-        pc.editAddr = m_EditStaging->GetDeviceAddress();
-        pc.worldMin = m_World->GetWorldMin();
-        pc.brickSize = m_World->GetBrickSize();
-        pc.editCount = static_cast<u32>(edits.size());
-        pc.virtualDim = m_World->GetVirtualDim();
+        VoxelEditDispatch desc{};
+        desc.brickBufferAddr = m_World->GetBrickBufferAddr();
+        desc.headerAddr = m_World->GetHeaderAddr();
+        desc.pageTableAddr = m_World->GetPageTableAddr();
+        desc.editAddr = m_EditStaging->Address();
+        desc.worldMin = m_World->GetWorldMin();
+        desc.brickSize = m_World->GetBrickSize();
+        desc.editCount = static_cast<u32>(edits.size());
+        desc.virtualDim = m_World->GetVirtualDim();
 
-        VkBufferMemoryBarrier2 barrier{};
-        barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
-        barrier.srcStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
-        barrier.srcAccessMask = VK_ACCESS_2_HOST_WRITE_BIT;
-        barrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-        barrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
-        barrier.buffer = m_EditStaging->GetHandle();
-        barrier.size = VK_WHOLE_SIZE;
-        VkDependencyInfo dep{};
-        dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        dep.bufferMemoryBarrierCount = 1;
-        dep.pBufferMemoryBarriers = &barrier;
-        vkCmdPipelineBarrier2(cb, &dep);
-
-        vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, m_EditPipeline->GetHandle());
-        vkCmdPushConstants(cb, m_EditPipeline->GetLayout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(pc),
-                           &pc);
-        vkCmdDispatch(cb, pc.editCount, 1, 1);
-
-        VkMemoryBarrier2 post{};
-        post.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-        post.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-        post.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
-        post.dstStageMask = VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT |
-                            VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT;
-        post.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
-        VkDependencyInfo postDep{};
-        postDep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        postDep.memoryBarrierCount = 1;
-        postDep.pMemoryBarriers = &post;
-        vkCmdPipelineBarrier2(cb, &postDep);
+        enc.DispatchEdit(*m_EditPipeline, *m_EditStaging, desc);
     }
 
-    void CVoxelRenderer::DispatchGi(VkCommandBuffer cb) {
+    void CVoxelRenderer::DispatchGi(CVoxelEncoder &enc) {
 
         if (!m_bGiEnabled)
             return;
-        if (!m_GiInjectPipeline->GetHandle() || !m_GiPropagatePipeline->GetHandle())
+        if (!m_GiInjectPipeline->IsValid() || !m_GiPropagatePipeline->IsValid())
             return;
         const u32 cascadeRes = 64;
-        const VkDeviceSize cascadeBytes =
+        const u64 cascadeBytes =
             sizeof(Vec4) * cascadeRes * cascadeRes * cascadeRes;
-        VoxelGiPushConstants_t pc{};
-        pc.brickBufferAddr = m_World->GetBrickBufferAddr();
-        pc.headerAddr = m_World->GetHeaderAddr();
-        pc.cascadeAddr = m_CascadeBuffer->GetDeviceAddress();
-        pc.cascadeDstAddr = m_CascadeBuffer->GetDeviceAddress() + cascadeBytes;
-        pc.sunAddr = m_SunBuffer->GetDeviceAddress();
-        pc.brickCount = m_World->GetBrickCount();
-        pc.cascadeRes = cascadeRes;
-        pc.cascadeCount = 1;
-        pc.brickSize = m_World->GetBrickSize();
-        pc.worldMin = m_World->GetWorldMin();
+        VoxelGiDispatch desc{};
+        desc.brickBufferAddr = m_World->GetBrickBufferAddr();
+        desc.headerAddr = m_World->GetHeaderAddr();
+        desc.cascadeAddr = m_CascadeBuffer->Address();
+        desc.cascadeDstAddr = m_CascadeBuffer->Address() + cascadeBytes;
+        desc.sunAddr = m_SunBuffer->Address();
+        desc.brickCount = m_World->GetBrickCount();
+        desc.cascadeRes = cascadeRes;
+        desc.cascadeCount = 1;
+        desc.brickSize = m_World->GetBrickSize();
+        desc.worldMin = m_World->GetWorldMin();
 
         const u32 groups = (cascadeRes + 7u) / 8u;
-        vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, m_GiInjectPipeline->GetHandle());
-        vkCmdPushConstants(cb, m_GiInjectPipeline->GetLayout(), VK_SHADER_STAGE_COMPUTE_BIT, 0,
-                           sizeof(pc), &pc);
-        vkCmdDispatch(cb, groups, groups, groups);
-
-        VkMemoryBarrier2 mem{};
-        mem.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-        mem.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-        mem.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
-        mem.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-        mem.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
-        VkDependencyInfo dep{};
-        dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        dep.memoryBarrierCount = 1;
-        dep.pMemoryBarriers = &mem;
-        vkCmdPipelineBarrier2(cb, &dep);
-
-        vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, m_GiPropagatePipeline->GetHandle());
-        vkCmdPushConstants(cb, m_GiPropagatePipeline->GetLayout(), VK_SHADER_STAGE_COMPUTE_BIT, 0,
-                           sizeof(pc), &pc);
-        vkCmdDispatch(cb, groups, groups, groups);
-
-        VkMemoryBarrier2 toFrag{};
-        toFrag.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-        toFrag.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-        toFrag.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
-        toFrag.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-        toFrag.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
-        VkDependencyInfo toFragDep{};
-        toFragDep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        toFragDep.memoryBarrierCount = 1;
-        toFragDep.pMemoryBarriers = &toFrag;
-        vkCmdPipelineBarrier2(cb, &toFragDep);
+        enc.DispatchGi(*m_GiInjectPipeline, desc, groups);
+        enc.BarrierGiToGi();
+        enc.DispatchGi(*m_GiPropagatePipeline, desc, groups);
+        enc.BarrierGiToFrag();
     }
 
-    VkDeviceAddress CVoxelRenderer::GetGiSampleAddr() const {
+    u64 CVoxelRenderer::GetGiSampleAddr() const {
         if (!m_bGiEnabled || !m_CascadeBuffer)
             return 0;
         const u32 cascadeRes = 64;
-        const VkDeviceSize cascadeBytes =
+        const u64 cascadeBytes =
             sizeof(Vec4) * cascadeRes * cascadeRes * cascadeRes;
-        return m_CascadeBuffer->GetDeviceAddress() + cascadeBytes;
+        return m_CascadeBuffer->Address() + cascadeBytes;
     }
 
-    void CVoxelRenderer::Record(VkCommandBuffer cb, VkExtent2D extent, VkImageView colorView,
-                                VkImageView depthView, bool clearColor, u32 flightSlot,
-                                const Mat4 &viewProj, const Mat4 &prevViewProj,
-                                const Vec3 &cameraPos, float nearZ, float farZ) {
+    void CVoxelRenderer::Record(CVoxelEncoder &enc, const VoxelFrameDesc &frame) {
         if (!m_bInitialized)
             return;
 
-        (void)nearZ;
-        const float maxDrawDist = farZ > 0.f ? farZ : 10000.f;
+        const u32 flightSlot = frame.flightSlot;
+        const Mat4 &viewProj = frame.viewProj;
+        const Mat4 &prevViewProj = frame.prevViewProj;
+        const Vec3 &cameraPos = frame.cameraPos;
+        const float maxDrawDist = frame.farZ > 0.f ? frame.farZ : 10000.f;
 
         ++m_RecordTick;
         const u32 qslot = flightSlot % kFlightSlots;
-        const u32 qbase = qslot * kQueriesPerSlot;
-        if (m_TimestampPool && m_TimestampPeriodNs > 0.f && (m_RecordTick & 1u) == 0u) {
+        if (m_Timer && m_Timer->Valid() && m_Timer->PeriodNs() > 0.f && (m_RecordTick & 1u) == 0u) {
             u64 ticks[kQueriesPerSlot]{0, 0, 0, 0, 0, 0};
-            if (vkGetQueryPoolResults(m_Context.GetDevice(), m_TimestampPool, qbase,
-                                      kQueriesPerSlot, sizeof(ticks), ticks, sizeof(u64),
-                                      VK_QUERY_RESULT_64_BIT) == VK_SUCCESS) {
-                const float msPerTick = m_TimestampPeriodNs / 1000000.f;
+            if (m_Timer->Poll(qslot, ticks, kQueriesPerSlot)) {
+                const float msPerTick = m_Timer->PeriodNs() / 1000000.f;
                 const float xfer = static_cast<float>(ticks[1] - ticks[0]) * msPerTick;
                 const float draw = static_cast<float>(ticks[2] - ticks[1]) * msPerTick;
                 const float post = static_cast<float>(ticks[5] - ticks[3]) * msPerTick;
@@ -805,22 +475,21 @@ namespace Manro {
         }
 
         m_World->FlushHeaders();
-        DispatchEdits(cb);
-        DispatchGi(cb);
+        DispatchEdits(enc);
+        DispatchGi(enc);
         m_World->ClearEdits();
 
-        m_World->FlushStagedUploads(cb, flightSlot);
+        m_World->FlushStagedUploads(enc, flightSlot);
 
         const u32 brickCount = m_World->GetBrickCount();
         m_Stats.brickCount = brickCount;
         m_Stats.editCount = 0;
-        if (brickCount == 0 || !m_TaskMeshPipeline->GetHandle())
+        if (brickCount == 0 || !m_TaskMeshPipeline->IsValid())
             return;
 
-        if (m_TimestampPool) {
-            vkCmdResetQueryPool(cb, m_TimestampPool, qbase, kQueriesPerSlot);
-            vkCmdWriteTimestamp(cb, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, m_TimestampPool,
-                                qbase + 0);
+        if (m_Timer && m_Timer->Valid()) {
+            m_Timer->Reset(enc, qslot);
+            m_Timer->Stamp(enc, qslot, 0, true);
         }
 
         u32 visibleCount = brickCount;
@@ -927,26 +596,26 @@ namespace Manro {
                 visSlot.LoadData(m_VisibleList.data(), sizeof(u32) * m_VisibleList.size());
         }
 
-        VoxelFrameParams_t frame{};
-        frame.viewProj = viewProj;
-        frame.prevViewProj = prevViewProj;
-        frame.cameraPos = cameraPos;
-        frame.brickCount = brickCount;
-        frame.worldMin = m_World->GetWorldMin();
-        frame.brickSize = m_World->GetBrickSize();
-        frame.maxDrawDistance = static_cast<u32>(maxDrawDist);
-        frame.enableHiZ = 0;
-        frame.paletteAddr = m_PaletteBuffer->GetDeviceAddress();
-        frame.sunAddr = m_SunBuffer->GetDeviceAddress();
-        frame.giAddr = GetGiSampleAddr();
-        frame.giEnabled = m_bGiEnabled ? 1u : 0u;
-        frame.shadowsEnabled = 0;
-        frame.debugEnabled = m_bDebugEnabled ? 1u : 0u;
-        frame.useBackface = m_bUseBackface ? 1u : 0u;
-        frame.useFrustum = m_bUseFrustum ? 1u : 0u;
-        frame.virtualDim = m_World->GetVirtualDim();
+        VoxelFrameParams_t params{};
+        params.viewProj = viewProj;
+        params.prevViewProj = prevViewProj;
+        params.cameraPos = cameraPos;
+        params.brickCount = brickCount;
+        params.worldMin = m_World->GetWorldMin();
+        params.brickSize = m_World->GetBrickSize();
+        params.maxDrawDistance = static_cast<u32>(maxDrawDist);
+        params.enableHiZ = 0;
+        params.paletteAddr = m_PaletteBuffer->Address();
+        params.sunAddr = m_SunBuffer->Address();
+        params.giAddr = GetGiSampleAddr();
+        params.giEnabled = m_bGiEnabled ? 1u : 0u;
+        params.shadowsEnabled = 0;
+        params.debugEnabled = m_bDebugEnabled ? 1u : 0u;
+        params.useBackface = m_bUseBackface ? 1u : 0u;
+        params.useFrustum = m_bUseFrustum ? 1u : 0u;
+        params.virtualDim = m_World->GetVirtualDim();
         CBuffer &paramsSlot = *m_FrameParamsRing[flightSlot % kFlightSlots];
-        paramsSlot.LoadData(&frame, sizeof(frame));
+        paramsSlot.LoadData(&params, sizeof(params));
 
         VoxelFragParams_t frag{};
         frag.sunDir = m_SunDir;
@@ -959,164 +628,56 @@ namespace Manro {
         root.brickBufferAddr = m_World->GetBrickBufferAddr();
         root.headerAddr = m_World->GetHeaderAddr();
         root.pageTableAddr = m_World->GetPageTableAddr();
-        root.visibilityAddr = visSlot.GetDeviceAddress();
-        root.frameAddr = paramsSlot.GetDeviceAddress();
-        root.faceCacheAddr = m_FaceCache->GetDeviceAddress();
-        root.tileTableAddr = m_BlockTileTable ? m_BlockTileTable->GetDeviceAddress() : 0u;
-        root.blockFlagsAddr = m_BlockFlagsTable ? m_BlockFlagsTable->GetDeviceAddress() : 0u;
-        root.shapeTableAddr = m_BlockShapeTable ? m_BlockShapeTable->GetDeviceAddress() : 0u;
-        root.uvTableAddr = m_BlockUvTable ? m_BlockUvTable->GetDeviceAddress() : 0u;
-        root.fragParamsAddr = m_FragParams ? m_FragParams->GetDeviceAddress() : 0u;
+        root.visibilityAddr = visSlot.Address();
+        root.frameAddr = paramsSlot.Address();
+        root.faceCacheAddr = m_FaceCache->Address();
+        root.tileTableAddr = m_BlockTileTable ? m_BlockTileTable->Address() : 0u;
+        root.blockFlagsAddr = m_BlockFlagsTable ? m_BlockFlagsTable->Address() : 0u;
+        root.shapeTableAddr = m_BlockShapeTable ? m_BlockShapeTable->Address() : 0u;
+        root.uvTableAddr = m_BlockUvTable ? m_BlockUvTable->Address() : 0u;
+        root.fragParamsAddr = m_FragParams ? m_FragParams->Address() : 0u;
+        root.boxTableAddr = m_BlockBoxTable ? m_BlockBoxTable->Address() : 0u;
 
         if (m_bDebugEnabled)
-            vkCmdFillBuffer(cb, m_DebugReadback->GetHandle(), 0, sizeof(u32) * 8, 0);
-        root.debugAddr = m_DebugReadback->GetDeviceAddress();
+            enc.FillBuffer(*m_DebugReadback, 0, sizeof(u32) * 8);
+        root.debugAddr = m_DebugReadback->Address();
 
         {
-            VkBufferMemoryBarrier2 b[7]{};
-            u32 barrierCount = 0;
-            auto pushBuf = [&](VkBuffer buf, VkPipelineStageFlags2 srcStage,
-                               VkAccessFlags2 srcAccess, VkPipelineStageFlags2 dstStage,
-                               VkAccessFlags2 dstAccess, VkDeviceSize offset = 0,
-                               VkDeviceSize size = VK_WHOLE_SIZE) {
-                VkBufferMemoryBarrier2 &e = b[barrierCount++];
-                e.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
-                e.srcStageMask = srcStage;
-                e.srcAccessMask = srcAccess;
-                e.dstStageMask = dstStage;
-                e.dstAccessMask = dstAccess;
-                e.buffer = buf;
-                e.offset = offset;
-                e.size = size;
-            };
-            pushBuf(paramsSlot.GetHandle(), VK_PIPELINE_STAGE_2_HOST_BIT,
-                    VK_ACCESS_2_HOST_WRITE_BIT,
-                    VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT |
-                        VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT,
-                    VK_ACCESS_2_SHADER_READ_BIT, 0, sizeof(VoxelFrameParams_t));
-            pushBuf(visSlot.GetHandle(), VK_PIPELINE_STAGE_2_HOST_BIT,
-                    VK_ACCESS_2_HOST_WRITE_BIT, VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT,
-                    VK_ACCESS_2_SHADER_READ_BIT, 0,
-                    sizeof(u32) * (m_VisibleList.empty() ? 1u : visibleCount));
-            pushBuf(m_FragParams->GetHandle(), VK_PIPELINE_STAGE_2_HOST_BIT,
-                    VK_ACCESS_2_HOST_WRITE_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-                    VK_ACCESS_2_SHADER_READ_BIT, 0, sizeof(VoxelFragParams_t));
-            if (VkBuffer hdr = m_World->GetHeaderHandle()) {
-                pushBuf(hdr,
-                        VK_PIPELINE_STAGE_2_HOST_BIT |
-                            VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT,
-                        VK_ACCESS_2_HOST_WRITE_BIT | VK_ACCESS_2_SHADER_WRITE_BIT,
-                        VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT,
-                        VK_ACCESS_2_SHADER_READ_BIT);
-            }
-            if (VkBuffer bricks = m_World->GetBrickStoreHandle()) {
-                pushBuf(bricks, VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-                        VK_ACCESS_2_TRANSFER_WRITE_BIT,
-                        VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT |
-                            VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT,
-                        VK_ACCESS_2_SHADER_READ_BIT);
-            }
-            if (m_FaceCache) {
-                pushBuf(m_FaceCache->GetHandle(),
-                        VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT,
-                        VK_ACCESS_2_SHADER_WRITE_BIT,
-                        VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT |
-                            VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT,
-                        VK_ACCESS_2_SHADER_READ_BIT);
-            }
-            // Flat packed light rides the brick buffer copy above; no
-            // separate light barrier needed here.
-            if (m_bDebugEnabled) {
-                pushBuf(m_DebugReadback->GetHandle(),
-                        VK_PIPELINE_STAGE_2_HOST_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-                        VK_ACCESS_2_HOST_WRITE_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT,
-                        VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT |
-                            VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT,
-                        VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT);
-            }
-            VkDependencyInfo dep{};
-            dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-            dep.bufferMemoryBarrierCount = barrierCount;
-            dep.pBufferMemoryBarriers = b;
-            vkCmdPipelineBarrier2(cb, &dep);
+            VoxelFrameBarriers bar{};
+            bar.params = &paramsSlot;
+            bar.paramsSize = sizeof(VoxelFrameParams_t);
+            bar.vis = &visSlot;
+            bar.visSize = sizeof(u32) * (m_VisibleList.empty() ? 1u : visibleCount);
+            bar.frag = m_FragParams.get();
+            bar.fragSize = sizeof(VoxelFragParams_t);
+            bar.headerOrNull = &m_World->GetHeaderBuffer();
+            bar.bricksOrNull = &m_World->GetBrickStore();
+            bar.faceCacheOrNull = m_FaceCache.get();
+            bar.debugOrNull = m_DebugReadback.get();
+            bar.debug = m_bDebugEnabled;
+            enc.BarrierFrame(bar);
         }
 
-        VkRenderingAttachmentInfo colorAtt{};
-        colorAtt.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        colorAtt.imageView = colorView;
-        colorAtt.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        colorAtt.loadOp = clearColor ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
-        colorAtt.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        colorAtt.clearValue.color = {{0.05f, 0.05f, 0.07f, 1.f}};
-
-        VkRenderingAttachmentInfo depthAtt{};
-        depthAtt.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        depthAtt.imageView = depthView;
-        depthAtt.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-        depthAtt.loadOp = clearColor ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
-        depthAtt.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        depthAtt.clearValue.depthStencil = {1.f, 0};
-
-        VkRenderingInfo ri{};
-        ri.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-        ri.renderArea.extent = extent;
-        ri.layerCount = 1;
-        ri.colorAttachmentCount = 1;
-        ri.pColorAttachments = &colorAtt;
-        ri.pDepthAttachment = &depthAtt;
-        vkCmdBeginRendering(cb, &ri);
-        if (m_TimestampPool)
-            vkCmdWriteTimestamp(cb, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, m_TimestampPool,
-                                qbase + 1);
-
-        VkViewport vp{0.f, 0.f, static_cast<float>(extent.width), static_cast<float>(extent.height),
-                      0.f, 1.f};
-        vkCmdSetViewport(cb, 0, 1, &vp);
-        VkRect2D sc{{0, 0}, extent};
-        vkCmdSetScissor(cb, 0, 1, &sc);
-
-        vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_TaskMeshPipeline->GetHandle());
-        vkCmdPushConstants(cb, m_TaskMeshPipeline->GetLayout(),
-                           VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT |
-                               VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(root), &root);
-
-        if (m_TileSet != VK_NULL_HANDLE) {
-            vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    m_TaskMeshPipeline->GetLayout(), 0, 1, &m_TileSet, 0, nullptr);
-        }
+        enc.BeginMeshPass();
+        if (m_Timer && m_Timer->Valid())
+            m_Timer->Stamp(enc, qslot, 1, true);
 
         m_Stats.taskGroups = visibleCount;
-        if (visibleCount > 0)
-            vkCmdDrawMeshTasksEXT(cb, visibleCount, 1, 1);
-        vkCmdEndRendering(cb);
-        if (m_TimestampPool)
-            vkCmdWriteTimestamp(cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, m_TimestampPool,
-                                qbase + 2);
+        enc.DrawVoxelMesh(*m_TaskMeshPipeline, *m_Tiles, &root, sizeof(root), visibleCount);
+        enc.EndMeshPass();
+        if (m_Timer && m_Timer->Valid())
+            m_Timer->Stamp(enc, qslot, 2, false);
 
-        if (m_bDebugEnabled) {
-            VkMemoryBarrier2 mem{};
-            mem.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-            mem.srcStageMask = VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT |
-                               VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT;
-            mem.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
-            mem.dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
-            mem.dstAccessMask = VK_ACCESS_2_HOST_READ_BIT;
-            VkDependencyInfo dep{};
-            dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-            dep.memoryBarrierCount = 1;
-            dep.pMemoryBarriers = &mem;
-            vkCmdPipelineBarrier2(cb, &dep);
-        }
+        if (m_bDebugEnabled)
+            enc.BarrierMeshToHost();
 
         m_PrevViewProj = viewProj;
     }
 
-    void CVoxelRenderer::CmdWriteTimestamp(VkCommandBuffer cb, u32 flightSlot, u32 subIdx) {
-        if (!m_TimestampPool || subIdx >= kQueriesPerSlot)
+    void CVoxelRenderer::StampPost(CVoxelEncoder &enc, u32 flightSlot, u32 subIdx) {
+        if (!m_Timer || !m_Timer->Valid() || subIdx >= kQueriesPerSlot)
             return;
-        vkCmdWriteTimestamp(cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, m_TimestampPool,
-                            (flightSlot % kFlightSlots) * kQueriesPerSlot + subIdx);
+        m_Timer->Stamp(enc, flightSlot % kFlightSlots, subIdx, false);
     }
 
     void CVoxelRenderer::ReadDebugCounters(u32 out[6]) const {
@@ -1127,8 +688,7 @@ namespace Manro {
             return;
         }
 
-        vmaInvalidateAllocation(m_Context.GetAllocator(), m_DebugReadback->GetAllocation(), 0,
-                                sizeof(u32) * 6);
+        m_DebugReadback->Invalidate(0, sizeof(u32) * 6);
         const auto *src = static_cast<const u32 *>(m_DebugReadback->GetMapped());
         for (int i = 0; i < 6; ++i) {
             out[i] = src[i];

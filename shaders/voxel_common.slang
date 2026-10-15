@@ -28,6 +28,7 @@ struct VoxelFrameRoot {
     uint64_t shapeTableAddr;
     uint64_t uvTableAddr;
     uint64_t fragParamsAddr;
+    uint64_t boxTableAddr;
 };
 
 struct VoxelFrameParams {
@@ -56,12 +57,50 @@ struct VoxelTaskPayload {
 };
 
 static const uint kVoxelFaceCacheCap = 4095u;
-// Per brick: word0 = face count, then 3 words per face:
+// Per brick: word0 = face count, then 4 words per face:
 //   w0 = iter(12b) | face(3b) | mat(15b)
 //   w1 = v0[sky4,blk4,ao2] | v1[...]<<10 | v2[...]<<20  (30b)
 //   w2 = v3[sky4,blk4,ao2]
+//   w3 = sub-box index + 1 (0 = single union-AABB quad path)
 // (Baked once by the task shader on rebuild: smooth per-vertex light + AO.)
-static const uint kVoxelFaceCacheStride = 12288u;
+static const uint kVoxelFaceCacheStride = 16384u;
+
+// Per-state multi-box table: 22 u32 per state (see kBlockBoxWordsPerState
+// in VoxelBlockAssets.h). w0 = box count (0 = single path), w1 = plank tile
+// (low 16) | internal-face mask bits [0:16) (high 16), w2/w3 = mask bits,
+// then box min/max pairs packed (x | y<<8 | z<<16). Mask bit = box * 6 + face.
+static const uint kVoxelBoxWordsPerState = 22u;
+
+uint VoxelBoxCount(uint* boxes, uint state) {
+    return boxes[state * kVoxelBoxWordsPerState];
+}
+
+uint VoxelBoxPlank(uint* boxes, uint state) {
+    return boxes[state * kVoxelBoxWordsPerState + 1u] & 0xFFFFu;
+}
+
+int3 VoxelBoxMin(uint* boxes, uint state, uint bi) {
+    uint p = boxes[state * kVoxelBoxWordsPerState + 4u + bi * 2u];
+    return int3(p & 0xFFu, (p >> 8u) & 0xFFu, (p >> 16u) & 0xFFu);
+}
+
+int3 VoxelBoxMax(uint* boxes, uint state, uint bi) {
+    uint p = boxes[state * kVoxelBoxWordsPerState + 4u + bi * 2u + 1u];
+    return int3(p & 0xFFu, (p >> 8u) & 0xFFu, (p >> 16u) & 0xFFu);
+}
+
+bool VoxelBoxFaceHidden(uint* boxes, uint state, uint bi, uint f) {
+    uint bit = bi * 6u + f;
+    uint w;
+    if (bit < 16u) {
+        w = boxes[state * kVoxelBoxWordsPerState + 1u] >> (16u + bit);
+    } else if (bit < 48u) {
+        w = boxes[state * kVoxelBoxWordsPerState + 2u] >> (bit - 16u);
+    } else {
+        w = boxes[state * kVoxelBoxWordsPerState + 3u] >> (bit - 48u);
+    }
+    return (w & 1u) != 0u;
+}
 
 static const uint kVoxelFacesPerMeshGroup = 32u;
 

@@ -63,6 +63,8 @@ namespace Manro {
 
         VkPipelineLayout GetLayout() const { return m_PipelineLayout; }
 
+        bool IsValid() const { return m_Pipeline != VK_NULL_HANDLE; }
+
     private:
         VkShaderModule CreateShaderModule(const std::vector<u8> &spvCode);
 

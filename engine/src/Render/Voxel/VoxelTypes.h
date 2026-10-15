@@ -16,13 +16,14 @@ namespace Manro {
     // Full brick stride on GPU: mats + occ + flat light. Single sparse
     // buffer, single staging copy, single barrier (no light bricks).
     static constexpr u32 kVoxelBrickExWords = 3200u;
-    // Face cache: word0 = face count, then 3 words per face:
+    // Face cache: word0 = face count, then 4 words per face:
     //   w0 = iter(12b) | face(3b) | mat(15b)
     //   w1 = v0[sky4,blk4,ao2] | v1[...]<<10 | v2[...]<<20  (30b)
     //   w2 = v3[sky4,blk4,ao2]
+    //   w3 = sub-box index + 1 (0 = single union-AABB quad path)
     // (Baked once by the task shader on rebuild: smooth light + AO.)
     // Must match kVoxelFaceCacheStride in shaders/voxel_common.slang.
-    static constexpr u32 kVoxelFaceCacheStride = 12288u;
+    static constexpr u32 kVoxelFaceCacheStride = 16384u;
 
     struct VoxelBrickHeader_t {
         Vec3 origin{};
@@ -56,8 +57,9 @@ namespace Manro {
         u64 shapeTableAddr{0};
         u64 uvTableAddr{0};
         u64 fragParamsAddr{0};
+        u64 boxTableAddr{0};
     };
-    static_assert(sizeof(VoxelFrameRoot_t) == 96);
+    static_assert(sizeof(VoxelFrameRoot_t) == 104);
 
     struct VoxelFrameParams_t {
         Mat4 viewProj{1.f};

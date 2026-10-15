@@ -664,6 +664,45 @@ namespace Manro {
                    name.compare(name.size() - 6, 6, "_chain") == 0;
         }
 
+        // Fences use the multipart blockstate system: a center post
+        // (X/Z 6-10, full height) plus side rails in the four cardinal
+        // directions, each with a lower rail (Y 6-9) and an upper rail
+        // (Y 12-15). See fence_post.json / fence_side.json.
+        // Fence gates share the post+rail look (closed) with the same
+        // 1.5-block collision, so they are handled by the same path.
+        bool IsFenceName(std::string_view name) {
+            if (name.size() > 6 && name.compare(name.size() - 6, 6, "_fence") == 0)
+                return true;
+            if (name.size() > 11 &&
+                name.compare(name.size() - 11, 11, "_fence_gate") == 0)
+                return true;
+            return false;
+        }
+
+        // Pure post-and-rail fences only (gates keep the alpha-impostor path:
+        // 8 boxes with a different topology, including swung-open doors).
+        bool IsFencePostRail(std::string_view name) {
+            if (name.size() > 11 &&
+                name.compare(name.size() - 11, 11, "_fence_gate") == 0)
+                return false;
+            return name.size() > 6 && name.compare(name.size() - 6, 6, "_fence") == 0;
+        }
+
+        // Standing, wall and hanging signs are block entities in vanilla
+        // (BER text overlay), but their boards/posts still have vanilla
+        // geometry we can approximate with a thin AABB + wood/sign texture:
+        //   standing: post (~2x14x2) + board (16x8x2, Y up to ~17.3, clamped)
+        //   wall:     board (16x8x2) flush against the wall face
+        //   hanging:  board (16x10x2, here 14x10x2) suspended + chains
+        // (chains are planar elements and only affect texture, not shape).
+        // Text/dye/glow/wax states are NOT rendered (board only).
+        bool IsSignName(std::string_view name) {
+            // Matches oak_sign, oak_wall_sign, oak_hanging_sign,
+            // oak_wall_hanging_sign and every wood variant. No other vanilla
+            // block name contains "sign".
+            return name.find("sign") != std::string_view::npos;
+        }
+
         bool IsSmallDecor(std::string_view name) {
             if (name == "snow")
                 return true;
@@ -690,7 +729,7 @@ namespace Manro {
             static const char *kKeys[] = {
                 "flower", "tulip", "sapling", "torch", "vine", "sprouts", "roots",
                 "tall_grass", "short_grass", "fern", "bush", "dead_bush", "rail", "redstone_wire",
-                "tripwire", "carpet", "lever", "pressure_plate", "ladder", "sign", "banner",
+                "tripwire", "carpet", "lever", "pressure_plate", "ladder", "banner",
                 "candle", "seagrass", "crop", "pitcher", "wheat",
                 "carrots", "potatoes", "beetroots", "beetroot", "seeds", "melon_stem",
                 "pumpkin_stem", "cocoa", "button", "hook", "lily_pad", "frogspawn",
@@ -1163,6 +1202,7 @@ namespace Manro {
         pack.states.resize(kBlockStateMax);
         for (auto &s : pack.states)
             s.flags = kBlockFlagSkip;
+        pack.boxTable.assign(kBlockStateMax * kBlockBoxWordsPerState, 0u);
         pack.fluid.assign(kBlockStateMax, 0);
         pack.emission.assign(kBlockStateMax, 0);
         pack.skyOpacity.assign(kBlockStateMax, 0);
@@ -1342,6 +1382,37 @@ namespace Manro {
                                     static_cast<float>(look.shapeMax[a]) / 16.f;
                             }
                         }
+                        // Fence collision is artificially extended to 1.5 blocks
+                        // tall (1x1.5x1) so players/mobs cannot jump over without
+                        // Jump Boost. Render/selection shape stays as the true
+                        // multipart union; only gates swung open keep the thin
+                        // post-only collision.
+                        if (IsFenceName(bview)) {
+                            const auto oit = pmap.find("open");
+                            const bool gateOpen =
+                                oit != pmap.end() && oit->second == "true";
+                            if (!gateOpen) {
+                                look.collMin[0] = 0.f;
+                                look.collMin[1] = 0.f;
+                                look.collMin[2] = 0.f;
+                                look.collMax[0] = 1.f;
+                                look.collMax[1] = 1.5f;
+                                look.collMax[2] = 1.f;
+                            }
+                        }
+                        // Signs keep collision == render shape (thin board/post
+                        // slab). No 1.5x extension, no text overlay.
+                        // (Reference IsSignName so sign states are explicitly
+                        // recognized here even though generic shape/texture
+                        // handling already covers them.)
+                        if (IsSignName(bview)) {
+                            for (int a = 0; a < 3; ++a) {
+                                look.collMin[a] =
+                                    static_cast<float>(look.shapeMin[a]) / 16.f;
+                                look.collMax[a] =
+                                    static_cast<float>(look.shapeMax[a]) / 16.f;
+                            }
+                        }
                         for (size_t f = 0; f < 6; ++f) {
                             if (ft.tex[f].empty())
                                 continue;
@@ -1382,26 +1453,150 @@ namespace Manro {
                                 ft.uv[f][3] = rectW;
                             }
                         }
-                        const bool isFence =
-                            bname.size() > 6 &&
-                            bname.compare(bname.size() - 6, 6, "_fence") == 0;
+                        // Fences use the multipart blockstate system: the center post
+                        // (6,0,6 -> 10,16,10) always renders, plus one side model
+                        // per true connection (north/south/east/west), each side
+                        // contributing a lower rail (Y 6-9) and an upper rail
+                        // (Y 12-15). Pure post-and-rail fences take the explicit
+                        // per-box draw path (see kBlockFlagMulti): the mesh shader
+                        // draws one quad per sub-box face instead of the single
+                        // union-AABB quad, so no alpha masking is needed. Fence
+                        // gates keep the orthographic alpha-impostor tiles below.
+                        const bool isFence = IsFenceName(bview);
                         bool useSyntheticFence = false;
+                        bool useMultiFence = false;
                         std::vector<Box3> fenceBoxes;
                         if (isFence && !refs.empty()) {
                             fenceBoxes = CollectSolidBoxes(modelsDir, modelCache, refs);
-                            useSyntheticFence = fenceBoxes.size() > 1;
+                            if (fenceBoxes.size() > 1) {
+                                if (IsFencePostRail(bview) &&
+                                    fenceBoxes.size() <= kBlockBoxMax)
+                                    useMultiFence = true;
+                                else
+                                    useSyntheticFence = true;
+                            }
+                        }
+                        u16 fencePlankTile = 0u;
+                        if ((useSyntheticFence || useMultiFence) &&
+                            (!ft.tex[0].empty() || !ft.tex[2].empty())) {
+                            fencePlankTile =
+                                tileForPath(ft.tex[0].empty() ? ft.tex[2] : ft.tex[0]);
+                            if (fencePlankTile == 0u ||
+                                fencePlankTile >= pack.tiles.size())
+                                fencePlankTile = tileForPath("block/oak_planks");
+                            if (fencePlankTile >= pack.tiles.size())
+                                fencePlankTile = 0u;
+                        } else if (useSyntheticFence || useMultiFence) {
+                            fencePlankTile = tileForPath("block/oak_planks");
+                            if (fencePlankTile >= pack.tiles.size())
+                                fencePlankTile = 0u;
+                        }
+                        if (useMultiFence) {
+                            // Explicit per-box geometry: plank tile on all faces
+                            // (the mesh shader picks the tile from the box table
+                            // and derives world-scale UVs per box face), full-tile
+                            // UVs (unused on the multi path), and the rounded
+                            // boxes plus baked internal-face mask in boxTable.
+                            for (size_t f = 0; f < 6; ++f) {
+                                look.faces.tile[f] = fencePlankTile;
+                                look.uvPacked[f] = 0xFFFF0000u;
+                            }
+                            struct QBox {
+                                u32 mn[3]{0, 0, 0};
+                                u32 mx[3]{16, 16, 16};
+                            };
+                            std::vector<QBox> qb;
+                            qb.reserve(fenceBoxes.size());
+                            for (const Box3 &b : fenceBoxes) {
+                                QBox q{};
+                                for (int a = 0; a < 3; ++a) {
+                                    long qmn = std::lround(
+                                        std::clamp(b.mn[a], 0.0, 16.0));
+                                    long qmx = std::lround(
+                                        std::clamp(b.mx[a], 0.0, 16.0));
+                                    qmn = std::clamp(qmn, 0L, 16L);
+                                    qmx = std::clamp(qmx, 0L, 16L);
+                                    if (qmx <= qmn) {
+                                        if (qmx < 16)
+                                            ++qmx;
+                                        else
+                                            --qmn;
+                                    }
+                                    q.mn[a] = static_cast<u32>(qmn);
+                                    q.mx[a] = static_cast<u32>(qmx);
+                                }
+                                qb.push_back(q);
+                            }
+                            // Internal faces: a box face is hidden when its plane
+                            // lies strictly inside another box that fully covers
+                            // the face rect (e.g. rail end caps inside the post).
+                            // Partial overlaps stay: depth resolves them.
+                            u64 hidden = 0u;
+                            for (size_t i = 0; i < qb.size(); ++i) {
+                                for (size_t f = 0; f < 6; ++f) {
+                                    const size_t ax = f >> 1u;
+                                    const double p =
+                                        ((f & 1u) == 0u)
+                                            ? fenceBoxes[i].mx[ax]
+                                            : fenceBoxes[i].mn[ax];
+                                    for (size_t j = 0; j < qb.size(); ++j) {
+                                        if (j == i)
+                                            continue;
+                                        if (!(fenceBoxes[j].mn[ax] < p - 1e-6 &&
+                                              fenceBoxes[j].mx[ax] > p + 1e-6))
+                                            continue;
+                                        bool covers = true;
+                                        for (size_t b = 0; b < 3; ++b) {
+                                            if (b == ax)
+                                                continue;
+                                            if (fenceBoxes[j].mn[b] >
+                                                    fenceBoxes[i].mn[b] + 1e-6 ||
+                                                fenceBoxes[j].mx[b] <
+                                                    fenceBoxes[i].mx[b] - 1e-6) {
+                                                covers = false;
+                                                break;
+                                            }
+                                        }
+                                        if (covers) {
+                                            hidden |= 1uLL << (i * 6u + f);
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            const size_t bo =
+                                static_cast<size_t>(id) * kBlockBoxWordsPerState;
+                            if (bo + kBlockBoxWordsPerState <= pack.boxTable.size()) {
+                                pack.boxTable[bo + 0u] =
+                                    static_cast<u32>(qb.size());
+                                pack.boxTable[bo + 1u] =
+                                    (static_cast<u32>(fencePlankTile) & 0xFFFFu) |
+                                    (static_cast<u32>(hidden & 0xFFFFu) << 16u);
+                                pack.boxTable[bo + 2u] =
+                                    static_cast<u32>((hidden >> 16u) & 0xFFFFFFFFu);
+                                pack.boxTable[bo + 3u] =
+                                    static_cast<u32>((hidden >> 48u) & 0x3Fu);
+                                for (size_t i = 0; i < qb.size(); ++i) {
+                                    pack.boxTable[bo + 4u + i * 2u + 0u] =
+                                        qb[i].mn[0] | (qb[i].mn[1] << 8u) |
+                                        (qb[i].mn[2] << 16u);
+                                    pack.boxTable[bo + 4u + i * 2u + 1u] =
+                                        qb[i].mx[0] | (qb[i].mx[1] << 8u) |
+                                        (qb[i].mx[2] << 16u);
+                                }
+                            }
                         }
                         if (useSyntheticFence) {
-                            u16 plankTile = tileForPath(ft.tex[0].empty() ? ft.tex[2] : ft.tex[0]);
-                            if (plankTile == 0u || plankTile >= pack.tiles.size())
-                                plankTile = tileForPath("block/oak_planks");
-                            if (plankTile >= pack.tiles.size())
-                                plankTile = 0u;
+                            u16 plankTile = fencePlankTile;
                             std::vector<u8> plankPx = pack.tiles[plankTile];
                             if (plankPx.size() < 16u * 16u * 4u)
                                 plankPx = pack.tiles[0];
                             const int sMin[3]{look.shapeMin[0], look.shapeMin[1], look.shapeMin[2]};
                             const int sMax[3]{look.shapeMax[0], look.shapeMax[1], look.shapeMax[2]};
+                            // Orthographic projection: a texel is solid when its
+                            // (y,z) / (x,z) / (x,y) coordinate falls inside ANY
+                            // multipart box, regardless of depth. This keeps rails
+                            // (thinner than the post) visible from the side.
                             auto insideAnyBoxProj = [&](size_t f, double x, double y,
                                                         double z) -> bool {
                                 for (const Box3 &b : fenceBoxes) {
@@ -1421,25 +1616,7 @@ namespace Manro {
                                 }
                                 return false;
                             };
-                            const int fSx = sMax[0] - sMin[0];
-                            const int fSz = sMax[2] - sMin[2];
-                            auto isEndFace = [&](size_t f) -> bool {
-                                if (fSx > fSz + 1e-6) {
-                                    return f == 0u || f == 1u;
-                                }
-                                if (fSz > fSx + 1e-6) {
-                                    return f == 4u || f == 5u;
-                                }
-                                return false;
-                            };
                             for (size_t f = 0; f < 6; ++f) {
-                                if (isEndFace(f)) {
-
-                                    u16 t = plankTile;
-                                    look.faces.tile[f] = t;
-                                    look.uvPacked[f] = 0xFFFF0000u;
-                                    continue;
-                                }
                                 std::vector<u8> synth(16 * 16 * 4, 0);
                                 bool anySolid = false, anyHole = false;
                                 for (int ty = 0; ty < 16; ++ty) {
@@ -1515,7 +1692,7 @@ namespace Manro {
                             look.faces.tile[f] = t;
                         }
                         }
-                        if (!useSyntheticFence) {
+                        if (!useSyntheticFence && !useMultiFence) {
                         for (size_t f = 0; f < 6; ++f) {
                             long q[4];
                             for (int k = 0; k < 4; ++k) {
@@ -1567,7 +1744,18 @@ namespace Manro {
                             look.uvPacked[c0] = 0xFFFF0000u;
                             look.uvPacked[c0 + 1u] = 0xFFFF0000u;
                         }
+                        // Multi-box fences draw explicit per-box quads (no alpha
+                        // masking, no discard): opaque-impossible, cutout-free.
+                        if (useMultiFence) {
+                            look.flags = kBlockFlagMulti;
+                        } else {
                         look.flags = (fullShape && IsOpaqueOccluder(bname)) ? kBlockFlagOpaque : 0u;
+                        // Fences/signs/gates are never opaque occluders, even when
+                        // the multipart union happens to span the full cube
+                        // (e.g. a 4-way connected fence unions to 0-16 in X/Z).
+                        // They always have see-through gaps (rails) or thin slabs.
+                        if (IsFenceName(bview) || IsSignName(bview))
+                            look.flags &= ~kBlockFlagOpaque;
                         if (IsCutout(bname))
                             look.flags |= kBlockFlagCutout;
                         if (IsInnerFaces(bname))
@@ -1577,6 +1765,7 @@ namespace Manro {
                             look.flags |= kBlockFlagCutout;
                             look.flags &= ~kBlockFlagOpaque;
                             ++autoCutout;
+                        }
                         }
                         if (anyTile == 0u)
                             ++fallback;

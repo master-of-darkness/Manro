@@ -17,6 +17,7 @@
 #include <Manro/Render/Tonemap/Tonemapper.h>
 
 #include <stdexcept>
+#include <vector>
 
 namespace Manro {
     CPipelineManager::CPipelineManager(CVulkanContext &ctx, CVirtualFS &vfs)
@@ -25,49 +26,51 @@ namespace Manro {
 
     void CPipelineManager::CreateDescriptorLayouts() {
         {
-            VkDescriptorSetLayoutBinding b[14];
-            b[0] = {
+            std::vector<VkDescriptorSetLayoutBinding> bindings;
+            bindings.reserve(14);
+            bindings.push_back({
                 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                 nullptr
-            };
-            b[1] = {1, VK_DESCRIPTOR_TYPE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
-            b[2] = {6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
-            b[3] = {7, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
-            b[4] = {8, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
-            b[5] = {
+            });
+            bindings.push_back({1, VK_DESCRIPTOR_TYPE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr});
+            bindings.push_back({6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr});
+            bindings.push_back({7, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr});
+            bindings.push_back({8, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr});
+            bindings.push_back({
                 9, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                 nullptr
-            };
-            b[6] = {10, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
-            b[7] = {11, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
-            b[8] = {12, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
-            b[9] = {13, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
-            b[10] = {14, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
-            b[11] = {
+            });
+            bindings.push_back({10, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr});
+            if (m_Context.HasRayQuery()) {
+                bindings.push_back({11, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr});
+            }
+            bindings.push_back({12, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr});
+            bindings.push_back({13, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr});
+            bindings.push_back({14, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr});
+            bindings.push_back({
                 15, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                 nullptr
-            };
-            b[12] = {
+            });
+            bindings.push_back({
                 16, VK_DESCRIPTOR_TYPE_SAMPLER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                 nullptr
-            };
-            b[13] = {
+            });
+            bindings.push_back({
                 17, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                 nullptr
-            };
+            });
 
-            VkDescriptorBindingFlags flags[14];
-            for (unsigned int &flag: flags) flag = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
+            std::vector<VkDescriptorBindingFlags> flags(bindings.size(), VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT);
 
             VkDescriptorSetLayoutBindingFlagsCreateInfo bf{};
             bf.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
-            bf.bindingCount = 14;
-            bf.pBindingFlags = flags;
+            bf.bindingCount = static_cast<u32>(flags.size());
+            bf.pBindingFlags = flags.data();
 
             VkDescriptorSetLayoutCreateInfo ci{};
             ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-            ci.bindingCount = 14;
-            ci.pBindings = b;
+            ci.bindingCount = static_cast<u32>(bindings.size());
+            ci.pBindings = bindings.data();
             ci.pNext = &bf;
             if (vkCreateDescriptorSetLayout(m_Context.GetDevice(), &ci, nullptr, &m_PbrSetLayout) != VK_SUCCESS)
                 throw std::runtime_error("Failed to create PBR descriptor set layout");
@@ -91,18 +94,20 @@ namespace Manro {
     }
 
     void CPipelineManager::CreateDescriptorPool(u32 frameCount) {
-        VkDescriptorPoolSize sizes[] = {
+        std::vector<VkDescriptorPoolSize> sizes = {
             {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, (frameCount * 10)},
             {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, (frameCount * 20)},
             {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, (frameCount * 10)},
-            {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, (frameCount * 2)},
             {VK_DESCRIPTOR_TYPE_SAMPLER, (frameCount * 10)},
             {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, (frameCount * 10)},
         };
+        if (m_Context.HasRayQuery()) {
+            sizes.push_back({VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, (frameCount * 2)});
+        }
         VkDescriptorPoolCreateInfo ci{};
         ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        ci.poolSizeCount = 6;
-        ci.pPoolSizes = sizes;
+        ci.poolSizeCount = static_cast<u32>(sizes.size());
+        ci.pPoolSizes = sizes.data();
         ci.maxSets = frameCount * 24;
         if (vkCreateDescriptorPool(m_Context.GetDevice(), &ci, nullptr, &m_DescriptorPool) != VK_SUCCESS)
             throw std::runtime_error("Failed to create descriptor pool");

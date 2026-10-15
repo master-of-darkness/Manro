@@ -79,11 +79,19 @@ void MeshMain(
     bool hasFace = gidx < count;
     bool vis = false;
     float3 nrm = float3(0.0);
+    // Multi-box fence path: w3 carries the sub-box index + 1 (0 = single
+    // union-AABB quad). The task shader expands one voxel face into one
+    // cache entry per surviving box face, so output stays 1 quad per entry.
+    uint boxW3 = 0u;
+    bool isMulti = false;
+    int3 bMin = int3(0, 0, 0);
+    int3 bMax = int3(16, 16, 16);
     if (hasFace) {
         uint faceIdx = base + gidx;
-        packed = fcb[1u + faceIdx * 3u];
-        lightW1 = fcb[1u + faceIdx * 3u + 1u];
-        lightW2 = fcb[1u + faceIdx * 3u + 2u];
+        packed = fcb[1u + faceIdx * 4u];
+        lightW1 = fcb[1u + faceIdx * 4u + 1u];
+        lightW2 = fcb[1u + faceIdx * 4u + 2u];
+        boxW3 = fcb[1u + faceIdx * 4u + 3u];
         iter = packed & 0xFFFu;
         f = (packed >> 12u) & 0x7u;
         mat = (packed >> 15u) & 0x7FFFu;
@@ -91,16 +99,38 @@ void MeshMain(
         uint x = iter & 15u;
         uint y = (iter >> 4u) & 15u;
         uint z = (iter >> 8u) & 15u;
+        uint msB = min(mat, kBlockStateMax - 1u);
+        if (boxW3 != 0u) {
+            vk::BufferPointer<uint> boxPtr =
+                vk::BufferPointer<uint>(g_MeshRoot.boxTableAddr);
+            uint* boxes = boxPtr.getPtr();
+            uint nBox = VoxelBoxCount(boxes, msB);
+            uint bi = boxW3 - 1u;
+            if (bi < nBox && nBox > 1u) {
+                isMulti = true;
+                bMin = VoxelBoxMin(boxes, msB, bi);
+                bMax = VoxelBoxMax(boxes, msB, bi);
+            }
+        }
         bool camInside =
             all(s_camPos >= bOrigin - voxelSize) &&
             all(s_camPos <= bOrigin + s_brickSize + voxelSize);
         vis = true;
         if (s_useBackface != 0u && !camInside) {
-            vk::BufferPointer<uint> shapePtr =
-                vk::BufferPointer<uint>(g_MeshRoot.shapeTableAddr);
-            uint ms = min(mat, kBlockStateMax - 1u);
-            int3 sMin = VoxelShapeMin(shapePtr.getPtr(), ms);
-            int3 sMax = VoxelShapeMax(shapePtr.getPtr(), ms);
+            int3 sMin;
+            int3 sMax;
+            if (isMulti) {
+                // Recessed box faces cull against their own plane, not the
+                // union boundary (rails sit behind the post plane).
+                sMin = bMin;
+                sMax = bMax;
+            } else {
+                vk::BufferPointer<uint> shapePtr =
+                    vk::BufferPointer<uint>(g_MeshRoot.shapeTableAddr);
+                uint ms = min(mat, kBlockStateMax - 1u);
+                sMin = VoxelShapeMin(shapePtr.getPtr(), ms);
+                sMax = VoxelShapeMax(shapePtr.getPtr(), ms);
+            }
             uint axis = f >> 1u;
             int off = ((f & 1u) == 0u) ? sMax[axis] : sMin[axis];
             float cellC = (axis == 0u) ? float(x) : (axis == 1u) ? float(y) : float(z);
@@ -138,7 +168,14 @@ void MeshMain(
         float3 e1w;
         float3 e2w;
         float4 uvRect;
+        uint tile = 0u;
+        uint mflags = 0u;
         {
+            vk::BufferPointer<uint> flagPtr = vk::BufferPointer<uint>(g_MeshRoot.blockFlagsAddr);
+            uint msf = min(mat, kBlockStateMax - 1u);
+            mflags = flagPtr.getPtr()[msf];
+        }
+        if (!isMulti) {
             vk::BufferPointer<uint> shapePtr = vk::BufferPointer<uint>(g_MeshRoot.shapeTableAddr);
             uint* shapes = shapePtr.getPtr();
             uint ms = min(mat, kBlockStateMax - 1u);
@@ -151,15 +188,32 @@ void MeshMain(
             e2w = qe2 * voxelSize;
             vk::BufferPointer<uint> uvPtr = vk::BufferPointer<uint>(g_MeshRoot.uvTableAddr);
             uvRect = VoxelFaceUv(uvPtr.getPtr(), ms, f);
-        }
-        uint tile = 0u;
-        uint mflags = 0u;
-        {
             vk::BufferPointer<uint> tilePtr = vk::BufferPointer<uint>(g_MeshRoot.tileTableAddr);
-            vk::BufferPointer<uint> flagPtr = vk::BufferPointer<uint>(g_MeshRoot.blockFlagsAddr);
-            uint ms2 = min(mat, kBlockStateMax - 1u);
-            tile = tilePtr.getPtr()[ms2 * 6u + f];
-            mflags = flagPtr.getPtr()[ms2];
+            tile = tilePtr.getPtr()[ms * 6u + f];
+        } else {
+            // Explicit sub-box quad: geometry from the box itself, plank tile
+            // from the box table, world-scale UVs from the box extents on the
+            // face plane (full-size faces reproduce the standard full-tile UVs
+            // exactly). No alpha masking, no discard.
+            float3 qb, qe1, qe2;
+            VoxelFaceQuad(x, y, z, f, bMin, bMax, qb, qe1, qe2);
+            b = bOrigin + qb * voxelSize;
+            e1w = qe1 * voxelSize;
+            e2w = qe2 * voxelSize;
+            vk::BufferPointer<uint> boxPtr2 =
+                vk::BufferPointer<uint>(g_MeshRoot.boxTableAddr);
+            uint msb = min(mat, kBlockStateMax - 1u);
+            tile = VoxelBoxPlank(boxPtr2.getPtr(), msb);
+            if (f == 2u || f == 3u) {
+                uvRect = float4(float(bMin.x), float(bMin.z),
+                                float(bMax.x), float(bMax.z)) / 16.0;
+            } else if (f == 0u || f == 1u) {
+                uvRect = float4(float(bMin.z), float(16 - bMax.y),
+                                float(bMax.z), float(16 - bMin.y)) / 16.0;
+            } else {
+                uvRect = float4(float(bMin.x), float(16 - bMax.y),
+                                float(bMax.x), float(16 - bMin.y)) / 16.0;
+            }
         }
 
         // Smooth per-vertex light + AO baked by the task shader:

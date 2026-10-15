@@ -1,5 +1,6 @@
 #pragma once
 
+#include "GpuDefs.h"
 #include <Manro/Core/Types.h>
 #include <vk_mem_alloc.h>
 #include <functional>
@@ -7,6 +8,8 @@
 
 namespace Manro {
     class CVulkanContext;
+    class CBuffer;
+    class CSparseBuffer;
 
     struct ImageCreateParams_t {
         u32 width{0};
@@ -32,4 +35,12 @@ namespace Manro {
     using OneShotWork = std::function<void(VkCommandBuffer cmd)>;
 
     void ExecuteOneShot(const CVulkanContext &ctx, const OneShotWork &work);
+
+    void FillSparseSync(const CVulkanContext &ctx, CSparseBuffer &dst, u64 offset, u64 size);
+
+    void CopyBufferToSparseSync(const CVulkanContext &ctx, const CBuffer &staging, CSparseBuffer &dst,
+                                const BufferCopyRegion *regions, u32 count);
+
+    void UploadBytesToSparseSync(const CVulkanContext &ctx, const void *bytes, u64 byteSize,
+                                 CSparseBuffer &dst, u64 dstOffset);
 } // namespace Manro

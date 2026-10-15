@@ -1,14 +1,14 @@
 #pragma once
 
 #include "VoxelTypes.h"
-#include <volk.h>
 #include <array>
 #include <vector>
 
 namespace Manro {
     class CVulkanContext;
     class CBuffer;
-    class CVoxelSparseBinder;
+    class CSparseBuffer;
+    class CVoxelEncoder;
 
     struct VoxelWorldDesc_t {
         u32 virtualDim{64};
@@ -40,8 +40,6 @@ namespace Manro {
 
         void UploadBrickBatch(const u32 *indices, const u16 *mats, const u32 *occupancy, u32 count);
 
-        // Stage bricks with attached flat packed light (sky<<4|block per
-        // voxel, 4096 bytes). Light rides the same copy as voxels.
         bool StageBrickBatch(u32 slot, const u32 *indices, const u16 *mats,
                              const u32 *occupancy, const u8 *light, u32 count);
 
@@ -53,8 +51,7 @@ namespace Manro {
         };
         VoxelUploadStats_t TakeUploadStats();
 
-        void FlushStagedUploads(VkCommandBuffer cb, u32 slot);
-        [[nodiscard]] VkBuffer GetBrickStoreHandle() const;
+        void FlushStagedUploads(CVoxelEncoder &enc, u32 slot);
         [[nodiscard]] u64 TakeBindSubmitCount();
 
         void SetVoxel(u32 bx, u32 by, u32 bz, u32 lx, u32 ly, u32 lz, u16 mat);
@@ -72,10 +69,11 @@ namespace Manro {
         void QueueEdit(const VoxelEditCmd_t &cmd);
         void ClearEdits();
 
-        [[nodiscard]] VkDeviceAddress GetBrickBufferAddr() const;
-        [[nodiscard]] VkDeviceAddress GetHeaderAddr() const;
-        [[nodiscard]] VkDeviceAddress GetPageTableAddr() const;
-        [[nodiscard]] VkBuffer GetHeaderHandle() const;
+        [[nodiscard]] u64 GetBrickBufferAddr() const;
+        [[nodiscard]] u64 GetHeaderAddr() const;
+        [[nodiscard]] u64 GetPageTableAddr() const;
+        [[nodiscard]] const CBuffer &GetHeaderBuffer() const { return *m_Headers; }
+        [[nodiscard]] const CSparseBuffer &GetBrickStore() const { return *m_Bricks; }
 
         [[nodiscard]] u32 GetBrickCount() const { return m_BrickCount; }
         [[nodiscard]] float GetBrickSize() const { return m_BrickSize; }
@@ -105,12 +103,10 @@ namespace Manro {
         void InvalidateSingleVoxel(const Vec3 &pos);
 
         CVulkanContext *m_Context{nullptr};
-        Scope<CVoxelSparseBinder> m_Bricks;
+        Scope<CSparseBuffer> m_Bricks;
         Scope<CBuffer> m_Headers;
         Scope<CBuffer> m_PageTable;
         Scope<CBuffer> m_EditRing;
-        // (Flat packed light lives inside the brick buffer after mats+occ;
-        // no separate light bricks, staging, or barriers.)
 
         std::vector<VoxelBrickHeader_t> m_HeaderMirror;
         std::vector<i32> m_PageMirror;

@@ -5,6 +5,7 @@
 
 #include <vk_mem_alloc.h>
 #include <Manro/Core/Types.h>
+#include <string>
 
 namespace Manro {
     class CWindow;
@@ -43,6 +44,18 @@ namespace Manro {
 
         void GetVramStats(u64 &usage, u64 &budget) const;
 
+        bool HasMeshShader() const { return m_HasMeshShader; }
+
+        bool HasRayQuery() const { return m_HasRayQuery; }
+
+        std::string GetDeviceName() const { return m_DeviceName; }
+
+        float GetTimestampPeriodNs() const { return m_TimestampPeriodNs; }
+
+        void WaitIdle() const;
+
+        void RequireMeshShaders(const char *feature) const;
+
         u64 GetTimelineSemaphoreCounterValue(VkSemaphore semaphore) const {
             u64 value = 0;
             vkGetSemaphoreCounterValue(m_Device, semaphore, &value);
@@ -67,6 +80,10 @@ namespace Manro {
         vkb::Instance vkb_Instance;
         vkb::Device vkb_Device;
         vkb::PhysicalDevice vkb_PhysDev;
+        bool m_HasMeshShader{false};
+        bool m_HasRayQuery{false};
+        std::string m_DeviceName;
+        float m_TimestampPeriodNs{0.f};
         VkQueue m_GraphicsQueue{nullptr};
         u32 m_unGraphicsQueueFamilyIndex{0};
         VkSurfaceKHR m_Surface{nullptr};

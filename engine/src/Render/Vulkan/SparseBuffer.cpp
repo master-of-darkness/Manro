@@ -1,29 +1,36 @@
-#include "VoxelSparseBinder.h"
-#include "../Vulkan/VulkanContext.h"
+#include "SparseBuffer.h"
+#include "VulkanContext.h"
 
 #include <Manro/Core/Logger.h>
 #include <stdexcept>
 
 namespace Manro {
-    CVoxelSparseBinder::CVoxelSparseBinder(CVulkanContext &ctx, VkDeviceSize virtualSizeBytes,
-                                           VkBufferUsageFlags usage)
-        : m_Context(ctx), m_VirtualSize(virtualSizeBytes) {
+    static VkBufferUsageFlags SparseNativeUsage(EBufferUsage usage) {
+        VkBufferUsageFlags out = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+        if (HasUsage(usage, EBufferUsage::Storage)) out |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+        if (HasUsage(usage, EBufferUsage::TransferSrc)) out |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        if (HasUsage(usage, EBufferUsage::TransferDst)) out |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        return out;
+    }
+
+    CSparseBuffer::CSparseBuffer(CVulkanContext &ctx, u64 sizeBytes, EBufferUsage usage)
+        : m_Context(ctx), m_VirtualSize(sizeBytes) {
         VkPhysicalDeviceMemoryProperties memProps{};
         vkGetPhysicalDeviceMemoryProperties(ctx.GetPhysicalDevice(), &memProps);
 
         VkBufferCreateInfo bi{};
         bi.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        bi.size = virtualSizeBytes;
-        bi.usage = usage | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+        bi.size = static_cast<VkDeviceSize>(sizeBytes);
+        bi.usage = SparseNativeUsage(usage);
         bi.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         bi.flags = VK_BUFFER_CREATE_SPARSE_BINDING_BIT | VK_BUFFER_CREATE_SPARSE_RESIDENCY_BIT;
 
         if (vkCreateBuffer(ctx.GetDevice(), &bi, nullptr, &m_Buffer) != VK_SUCCESS)
-            throw std::runtime_error("[CVoxelSparseBinder] Failed to create sparse buffer");
+            throw std::runtime_error("[CSparseBuffer] Failed to create sparse buffer");
 
         VkMemoryRequirements req{};
         vkGetBufferMemoryRequirements(ctx.GetDevice(), m_Buffer, &req);
-        m_PageSize = req.alignment;
+        m_PageSize = static_cast<u64>(req.alignment);
 
         m_MemoryTypeIndex = UINT32_MAX;
         for (u32 i = 0; i < memProps.memoryTypeCount; ++i) {
@@ -43,14 +50,14 @@ namespace Manro {
         }
         if (m_MemoryTypeIndex == UINT32_MAX) {
             vkDestroyBuffer(ctx.GetDevice(), m_Buffer, nullptr);
-            throw std::runtime_error("[CVoxelSparseBinder] No suitable sparse memory type");
+            throw std::runtime_error("[CSparseBuffer] No suitable sparse memory type");
         }
 
-        const u32 pageCount = static_cast<u32>((virtualSizeBytes + m_PageSize - 1) / m_PageSize);
+        const u32 pageCount = static_cast<u32>((sizeBytes + m_PageSize - 1) / m_PageSize);
         m_Pages.resize(pageCount);
     }
 
-    CVoxelSparseBinder::~CVoxelSparseBinder() {
+    CSparseBuffer::~CSparseBuffer() {
         VkDevice device = m_Context.GetDevice();
         for (auto &p : m_Pages) {
             if (p.memory) {
@@ -64,9 +71,9 @@ namespace Manro {
         }
     }
 
-    bool CVoxelSparseBinder::BindRange(VkDeviceSize offset, VkDeviceSize size) {
+    bool CSparseBuffer::BindRange(u64 offset, u64 size) {
         if (offset + size > m_VirtualSize) {
-            LOG_ERROR("[CVoxelSparseBinder] BindRange out of virtual range");
+            LOG_ERROR("[CSparseBuffer] BindRange out of virtual range");
             return false;
         }
         VkDevice device = m_Context.GetDevice();
@@ -82,7 +89,7 @@ namespace Manro {
                 continue;
             VkMemoryAllocateInfo ai{};
             ai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-            ai.allocationSize = m_PageSize;
+            ai.allocationSize = static_cast<VkDeviceSize>(m_PageSize);
             ai.memoryTypeIndex = m_MemoryTypeIndex;
 
             VkMemoryAllocateFlagsInfo flags{};
@@ -93,13 +100,13 @@ namespace Manro {
             if (vkAllocateMemory(device, &ai, nullptr, &mem) != VK_SUCCESS) {
                 for (VkDeviceMemory m : freshAllocs)
                     vkFreeMemory(device, m, nullptr);
-                LOG_ERROR("[CVoxelSparseBinder] Sparse page alloc failed (page {})", page);
+                LOG_ERROR("[CSparseBuffer] Sparse page alloc failed (page {})", page);
                 return false;
             }
             freshAllocs.push_back(mem);
             VkSparseMemoryBind b{};
-            b.resourceOffset = static_cast<VkDeviceSize>(page) * m_PageSize;
-            b.size = m_PageSize;
+            b.resourceOffset = static_cast<VkDeviceSize>(page) * static_cast<VkDeviceSize>(m_PageSize);
+            b.size = static_cast<VkDeviceSize>(m_PageSize);
             b.memory = mem;
             b.memoryOffset = 0;
             b.flags = 0;
@@ -133,7 +140,7 @@ namespace Manro {
             if (!ok) {
                 for (VkDeviceMemory m : freshAllocs)
                     vkFreeMemory(device, m, nullptr);
-                LOG_ERROR("[CVoxelSparseBinder] sparse bind failed/timed out");
+                LOG_ERROR("[CSparseBuffer] sparse bind failed/timed out");
                 return false;
             }
             ++m_BindSubmitCount;
@@ -143,14 +150,14 @@ namespace Manro {
                 if (m_Pages[page].memory)
                     continue;
                 m_Pages[page].memory = freshAllocs[fresh++];
-                m_Pages[page].offset = static_cast<VkDeviceSize>(page) * m_PageSize;
+                m_Pages[page].offset = static_cast<u64>(page) * m_PageSize;
                 ++m_BoundPages;
             }
         }
         return true;
     }
 
-    void CVoxelSparseBinder::UnbindRange(VkDeviceSize offset, VkDeviceSize size) {
+    void CSparseBuffer::UnbindRange(u64 offset, u64 size) {
         if (offset + size > m_VirtualSize)
             return;
         VkDevice device = m_Context.GetDevice();
@@ -162,8 +169,8 @@ namespace Manro {
             if (!m_Pages[page].memory)
                 continue;
             VkSparseMemoryBind b{};
-            b.resourceOffset = static_cast<VkDeviceSize>(page) * m_PageSize;
-            b.size = m_PageSize;
+            b.resourceOffset = static_cast<VkDeviceSize>(page) * static_cast<VkDeviceSize>(m_PageSize);
+            b.size = static_cast<VkDeviceSize>(m_PageSize);
             b.memory = VK_NULL_HANDLE;
             binds.push_back(b);
         }
@@ -192,7 +199,7 @@ namespace Manro {
             if (ok)
                 ++m_BindSubmitCount;
             else
-                LOG_ERROR("[CVoxelSparseBinder] sparse unbind failed/timed out");
+                LOG_ERROR("[CSparseBuffer] sparse unbind failed/timed out");
         }
         for (u32 page = firstPage; page <= lastPage; ++page) {
             if (m_Pages[page].memory) {
@@ -203,10 +210,10 @@ namespace Manro {
         }
     }
 
-    VkDeviceAddress CVoxelSparseBinder::GetDeviceAddress() const {
+    u64 CSparseBuffer::Address() const {
         VkBufferDeviceAddressInfo info{};
         info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
         info.buffer = m_Buffer;
-        return vkGetBufferDeviceAddress(m_Context.GetDevice(), &info);
+        return static_cast<u64>(vkGetBufferDeviceAddress(m_Context.GetDevice(), &info));
     }
 }

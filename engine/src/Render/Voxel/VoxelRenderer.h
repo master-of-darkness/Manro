@@ -2,9 +2,9 @@
 
 #include "VoxelTypes.h"
 #include "VoxelBlockAssets.h"
+#include "../Vulkan/GpuDefs.h"
 #include <Manro/Core/Types.h>
 #include <Manro/Render/VoxelStreamStats.h>
-#include <volk.h>
 
 #include <array>
 #include <memory>
@@ -19,8 +19,10 @@ namespace Manro {
     class CPipelineCache;
     class CBuffer;
     class CVoxelWorld;
-    class CVoxelSparseBinder;
     class CVoxelStreamWorld;
+    class CVoxelEncoder;
+    class CTileArray;
+    class CGpuTimer;
 
     struct VoxelFrameStats_t {
         u32 brickCount{0};
@@ -53,9 +55,7 @@ namespace Manro {
         void Init(CPipelineCache &cache, u32 width, u32 height);
         void Shutdown();
 
-        void Record(VkCommandBuffer cb, VkExtent2D extent, VkImageView colorView,
-                    VkImageView depthView, bool clearColor, u32 flightSlot, const Mat4 &viewProj,
-                    const Mat4 &prevViewProj, const Vec3 &cameraPos, float nearZ, float farZ);
+        void Record(CVoxelEncoder &enc, const VoxelFrameDesc &frame);
 
         Vec3 StreamInit(const std::string &worldDir, const std::string &assetsDir, int radiusSections);
 
@@ -87,18 +87,15 @@ namespace Manro {
 
         void ReadDebugCounters(u32 out[6]) const;
 
-        void CmdWriteTimestamp(VkCommandBuffer cb, u32 flightSlot, u32 subIdx);
+        void StampPost(CVoxelEncoder &enc, u32 flightSlot, u32 subIdx);
 
     private:
         void BuildPipelines(CPipelineCache &cache);
-        void CreateTileDescriptor();
-        void DestroyTileDescriptor();
         void UploadBlockTables();
         void CreateBlockTiles(const BlockAssetPack_t &pack);
-        void DestroyBlockTiles();
-        void DispatchEdits(VkCommandBuffer cb);
-        void DispatchGi(VkCommandBuffer cb);
-        [[nodiscard]] VkDeviceAddress GetGiSampleAddr() const;
+        void DispatchEdits(CVoxelEncoder &enc);
+        void DispatchGi(CVoxelEncoder &enc);
+        [[nodiscard]] u64 GetGiSampleAddr() const;
 
         CVulkanContext &m_Context;
         CVirtualFS &m_Vfs;
@@ -113,14 +110,9 @@ namespace Manro {
         Scope<CBuffer> m_BlockFlagsTable;
         Scope<CBuffer> m_BlockShapeTable;
         Scope<CBuffer> m_BlockUvTable;
+        Scope<CBuffer> m_BlockBoxTable;
 
-        VkImage m_TileImage{VK_NULL_HANDLE};
-        VkDeviceMemory m_TileMemory{VK_NULL_HANDLE};
-        VkImageView m_TileView{VK_NULL_HANDLE};
-        VkSampler m_TileSampler{VK_NULL_HANDLE};
-        VkDescriptorSetLayout m_TileSetLayout{VK_NULL_HANDLE};
-        VkDescriptorPool m_TilePool{VK_NULL_HANDLE};
-        VkDescriptorSet m_TileSet{VK_NULL_HANDLE};
+        Scope<CTileArray> m_Tiles;
         u32 m_TileLayers{0};
 
         BlockAssetPack_t m_BlockPack;
@@ -153,8 +145,7 @@ namespace Manro {
         u64 m_RecordTick{0};
 
         static constexpr u32 kQueriesPerSlot = 6;
-        VkQueryPool m_TimestampPool{VK_NULL_HANDLE};
-        float m_TimestampPeriodNs{0.f};
+        Scope<CGpuTimer> m_Timer;
 
         Mat4 m_PrevViewProj{1.f};
         VoxelFrameStats_t m_Stats{};

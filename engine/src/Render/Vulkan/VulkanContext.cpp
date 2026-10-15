@@ -10,6 +10,11 @@
 #include <Manro/Core/Logger.h>
 #include <volk.h>
 #include <stdexcept>
+#include <cstdlib>
+#include <string>
+#include <vector>
+#include <algorithm>
+#include <cctype>
 
 namespace Manro {
     CVulkanContext::CVulkanContext(const char *appName, const CWindow &window) {
@@ -89,8 +94,6 @@ namespace Manro {
     }
 
     void CVulkanContext::PickPhysicalDevice() {
-        vkb::PhysicalDeviceSelector selector{vkb_Instance};
-
         VkPhysicalDeviceVulkan12Features features12{};
         features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
         features12.bufferDeviceAddress = VK_TRUE;
@@ -142,65 +145,219 @@ namespace Manro {
         meshFeatures.primitiveFragmentShadingRateMeshShader = VK_FALSE;
         meshFeatures.meshShaderQueries = VK_TRUE;
 
-        auto configureSelector = [&](vkb::PhysicalDeviceSelector &sel, bool discreteOnly)
+        bool allowCpu = false;
+        if (const char *e = std::getenv("MANRO_ALLOW_CPU")) {
+            std::string v = e;
+            for (char &c : v) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            allowCpu = (v == "1" || v == "true" || v == "yes" || v == "on");
+        }
+        std::string gpuOverride;
+        if (const char *e = std::getenv("MANRO_GPU")) gpuOverride = e;
+
+        auto toLower = [](std::string s) {
+            for (char &c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            return s;
+        };
+        std::string overrideLower = toLower(gpuOverride);
+        bool overrideIsIndex = !overrideLower.empty();
+        for (char c : overrideLower) {
+            if (!std::isdigit(static_cast<unsigned char>(c))) {
+                overrideIsIndex = false;
+                break;
+            }
+        }
+        size_t overrideIndex = 0;
+        if (overrideIsIndex) overrideIndex = static_cast<size_t>(std::stoul(overrideLower));
+
+        auto rankOf = [](VkPhysicalDeviceType t) {
+            switch (t) {
+                case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU: return 0;
+                case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU: return 1;
+                case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU: return 2;
+                case VK_PHYSICAL_DEVICE_TYPE_CPU: return 4;
+                default: return 3;
+            }
+        };
+
+        auto typeNameOf = [](VkPhysicalDeviceType t) -> const char * {
+            switch (t) {
+                case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU: return "discrete";
+                case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU: return "integrated";
+                case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU: return "virtual";
+                case VK_PHYSICAL_DEVICE_TYPE_CPU: return "cpu";
+                default: return "other";
+            }
+        };
+
+        auto matchesOverride = [&](const vkb::PhysicalDevice &d) {
+            if (gpuOverride.empty()) return true;
+            if (overrideIsIndex) return true;
+            if (overrideLower == "discrete" || overrideLower == "integrated" ||
+                overrideLower == "virtual" || overrideLower == "virtual_gpu" ||
+                overrideLower == "cpu" || overrideLower == "other") {
+                std::string want = overrideLower == "virtual_gpu" ? std::string("virtual") : overrideLower;
+                return std::string(typeNameOf(d.properties.deviceType)) == want;
+            }
+            return toLower(d.name).find(overrideLower) != std::string::npos;
+        };
+
+        auto configureSelector = [&](vkb::PhysicalDeviceSelector &sel, bool withMesh, bool withRT)
                 -> vkb::PhysicalDeviceSelector & {
             sel.set_surface(m_Surface)
                 .set_required_features(baseFeatures)
                 .set_required_features_11(features11)
                 .set_required_features_12(features12)
                 .set_required_features_13(features13)
-                .add_required_extension(VK_EXT_MESH_SHADER_EXTENSION_NAME)
                 .add_required_extension("VK_KHR_buffer_device_address")
                 .add_required_extension("VK_KHR_dynamic_rendering")
                 .add_required_extension("VK_KHR_synchronization2")
-                .add_required_extension("VK_KHR_ray_query")
-                .add_required_extension("VK_KHR_acceleration_structure")
-                .add_required_extension("VK_KHR_deferred_host_operations")
-                .add_required_extension_features(rayQueryFeatures)
-                .add_required_extension_features(asFeatures)
-                .add_required_extension_features(meshFeatures);
-            if (discreteOnly) {
-                // allow_any=false makes the preferred type a hard filter:
-                // with the default (allow_any=true) the type is only a
-                // soft hint and the first enumerated device (usually the
-                // integrated GPU) wins. A voxel scene that runs at 80fps
-                // on an iGPU runs 200+ on the discrete GPU.
-                sel.prefer_gpu_device_type(vkb::PreferredDeviceType::discrete);
-                sel.allow_any_gpu_device_type(false);
+                .add_required_extension("VK_KHR_deferred_host_operations");
+            if (withMesh) {
+                sel.add_required_extension(VK_EXT_MESH_SHADER_EXTENSION_NAME);
+                sel.add_required_extension_features(meshFeatures);
+            }
+            if (withRT) {
+                sel.add_required_extension("VK_KHR_ray_query");
+                sel.add_required_extension("VK_KHR_acceleration_structure");
+                sel.add_required_extension_features(rayQueryFeatures);
+                sel.add_required_extension_features(asFeatures);
             }
             return sel;
         };
 
-        auto phys_ret = configureSelector(selector, true).select();
-        if (!phys_ret) {
-            LOG_WARN("[Vulkan] No discrete GPU matches requirements ({}), falling back to any device",
-                     phys_ret.error().message());
-            vkb::PhysicalDeviceSelector fallback{vkb_Instance};
-            phys_ret = configureSelector(fallback, false).select();
+        struct TierDef {
+            bool mesh;
+            bool rt;
+            const char *label;
+        };
+        TierDef tiers[3] = {
+            {true, true, "base+mesh+rayquery"},
+            {true, false, "base+mesh"},
+            {false, false, "base"}
+        };
+
+        vkb::PhysicalDevice chosen;
+        bool have = false;
+        bool usedMesh = false;
+        bool usedRT = false;
+        std::string usedTier;
+
+        for (const TierDef &tier : tiers) {
+            vkb::PhysicalDeviceSelector sel{vkb_Instance};
+            configureSelector(sel, tier.mesh, tier.rt);
+            auto res = sel.select_devices();
+            if (!res) {
+                LOG_WARN("[Vulkan] Tier {} has no match ({})", tier.label, res.error().message());
+                continue;
+            }
+            std::vector<vkb::PhysicalDevice> devs = res.value();
+            if (overrideIsIndex) {
+                if (overrideIndex >= devs.size()) {
+                    LOG_WARN("[Vulkan] Tier {} ignores MANRO_GPU={} (only {} devices)", tier.label,
+                             gpuOverride, devs.size());
+                    continue;
+                }
+                vkb::PhysicalDevice only = devs[overrideIndex];
+                if (only.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU && !allowCpu) {
+                    LOG_WARN("[Vulkan] Tier {} ignores MANRO_GPU={} (CPU excluded)", tier.label, gpuOverride);
+                    continue;
+                }
+                chosen = only;
+                usedMesh = tier.mesh;
+                usedRT = tier.rt;
+                usedTier = tier.label;
+                have = true;
+                break;
+            }
+            std::vector<vkb::PhysicalDevice> kept;
+            size_t cpuSkipped = 0;
+            for (auto &d : devs) {
+                if (d.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU && !allowCpu) {
+                    ++cpuSkipped;
+                    continue;
+                }
+                if (!matchesOverride(d)) continue;
+                kept.push_back(d);
+            }
+            if (kept.empty()) {
+                if (!gpuOverride.empty()) {
+                    LOG_WARN("[Vulkan] Tier {} has no match for MANRO_GPU={} ({} devices, {} cpu skipped)",
+                             tier.label, gpuOverride, devs.size(), cpuSkipped);
+                } else if (cpuSkipped > 0) {
+                    LOG_WARN("[Vulkan] Tier {} matched only CPU devices ({} skipped, set MANRO_ALLOW_CPU=1 to allow)",
+                             tier.label, cpuSkipped);
+                } else {
+                    LOG_WARN("[Vulkan] Tier {} has no match ({} devices)", tier.label, devs.size());
+                }
+                continue;
+            }
+            std::sort(kept.begin(), kept.end(), [&](const vkb::PhysicalDevice &a, const vkb::PhysicalDevice &b) {
+                return rankOf(a.properties.deviceType) < rankOf(b.properties.deviceType);
+            });
+            chosen = kept.front();
+            usedMesh = tier.mesh;
+            usedRT = tier.rt;
+            usedTier = tier.label;
+            have = true;
+            break;
         }
 
-        if (!phys_ret) {
-            LOG_ERROR("Failed to select physical device: {}", phys_ret.error().message());
+        if (!have) {
+            uint32_t count = 0;
+            vkEnumeratePhysicalDevices(m_Instance, &count, nullptr);
+            std::vector<VkPhysicalDevice> all(count);
+            if (count > 0) vkEnumeratePhysicalDevices(m_Instance, &count, all.data());
+            std::string list;
+            for (size_t i = 0; i < all.size(); ++i) {
+                VkPhysicalDeviceProperties props{};
+                vkGetPhysicalDeviceProperties(all[i], &props);
+                uint32_t extCount = 0;
+                vkEnumerateDeviceExtensionProperties(all[i], nullptr, &extCount, nullptr);
+                std::vector<VkExtensionProperties> exts(extCount);
+                if (extCount > 0) vkEnumerateDeviceExtensionProperties(all[i], nullptr, &extCount, exts.data());
+                bool hasMesh = false;
+                bool hasRay = false;
+                for (auto &e : exts) {
+                    if (std::string(e.extensionName) == VK_EXT_MESH_SHADER_EXTENSION_NAME) hasMesh = true;
+                    if (std::string(e.extensionName) == "VK_KHR_ray_query") hasRay = true;
+                }
+                if (!list.empty()) list += "; ";
+                list += std::string(props.deviceName) + " (" + typeNameOf(props.deviceType) + ") mesh=" +
+                        (hasMesh ? "yes" : "no") + " rayquery=" + (hasRay ? "yes" : "no");
+                if (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU && !allowCpu) list += " [cpu excluded]";
+            }
+            if (list.empty()) list = "no physical devices enumerated";
+            std::string hint = allowCpu ? "" : " Set MANRO_ALLOW_CPU=1 to allow CPU devices.";
+            std::string overrideHint = gpuOverride.empty() ? "" : " MANRO_GPU=" + gpuOverride + " filtered the list.";
             throw std::runtime_error(
-                std::string("Failed to select physical device (no GPU satisfies engine requirements): ") +
-                phys_ret.error().message());
+                std::string("Failed to select physical device (no GPU satisfies engine requirements). Available: ") +
+                list + "." + hint + overrideHint +
+                " Voxel requires mesh shaders; Intel Iris Xe lacks VK_EXT_mesh_shader, enable the discrete GPU.");
         }
 
-        vkb_PhysDev = phys_ret.value();
+        vkb_PhysDev = chosen;
         m_PhysicalDevice = vkb_PhysDev.physical_device;
+        m_HasMeshShader = usedMesh;
+        m_HasRayQuery = usedRT;
         {
             VkPhysicalDeviceProperties props{};
             vkGetPhysicalDeviceProperties(m_PhysicalDevice, &props);
-            const char *typeName = "other";
-            switch (props.deviceType) {
-                case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU: typeName = "discrete"; break;
-                case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU: typeName = "integrated"; break;
-                case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU: typeName = "virtual"; break;
-                case VK_PHYSICAL_DEVICE_TYPE_CPU: typeName = "cpu"; break;
-                default: break;
-            }
-            LOG_INFO("[Vulkan] Selected GPU: {} ({})", props.deviceName, typeName);
+            m_DeviceName = props.deviceName;
+            m_TimestampPeriodNs = props.limits.timestampPeriod;
+            LOG_INFO("[Vulkan] Selected GPU: {} ({}) tier={} mesh={} rayquery={}", props.deviceName,
+                     typeNameOf(props.deviceType), usedTier, usedMesh ? "yes" : "no", usedRT ? "yes" : "no");
         }
+    }
+
+    void CVulkanContext::WaitIdle() const {
+        if (m_Device) vkDeviceWaitIdle(m_Device);
+    }
+
+    void CVulkanContext::RequireMeshShaders(const char *feature) const {
+        if (m_HasMeshShader) return;
+        throw std::runtime_error(
+            std::string(feature) + " requires VK_EXT_mesh_shader, but selected GPU " + m_DeviceName +
+            " lacks mesh shader support. Enable the discrete GPU; Intel Iris Xe does not support mesh shaders and CPU devices are excluded by default.");
     }
 
     void CVulkanContext::CreateLogicalDevice() {

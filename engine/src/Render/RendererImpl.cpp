@@ -26,6 +26,7 @@
 #include "Vulkan/Pipeline.h"
 #include "Vulkan/DescriptorAllocator.h"
 #include "Vulkan/PipelineCache.h"
+#include "Vulkan/VoxelEncoder.h"
 #include "Core/Profiling.h"
 
 #include <Manro/Core/Logger.h>
@@ -142,6 +143,7 @@ namespace Manro {
         void VoxelInit() {
             if (m_bVoxelEnabled)
                 return;
+            m_Context.RequireMeshShaders("Voxel");
             m_Voxel = CreateScope<CVoxelRenderer>(m_Context, m_Vfs);
             m_Voxel->Init(m_PipelineCache, m_RenderExtent.width, m_RenderExtent.height);
             m_bVoxelEnabled = true;
@@ -400,6 +402,10 @@ namespace Manro {
           m_MaterialSystem(m_Context),
           m_Settings(settings), m_Config(config) {
         NormalizeRenderSettings(m_Settings, m_Context.GetMaxUsableSampleCount());
+        if (!m_Context.HasRayQuery()) {
+            m_Settings.rayTracing.enableReflections = false;
+            m_Settings.rayTracing.enableTransparency = false;
+        }
         m_Swapchain.Init(width, height, m_Settings.enableVSync);
 
         m_unPendingWidth = width;
@@ -546,6 +552,12 @@ namespace Manro {
     void CRendererImpl::SetSettings(const RenderSettings_t &settings) {
         RenderSettings_t normalized = settings;
         NormalizeRenderSettings(normalized, m_Context.GetMaxUsableSampleCount());
+        if (!m_Context.HasRayQuery() &&
+            (normalized.rayTracing.enableReflections || normalized.rayTracing.enableTransparency)) {
+            normalized.rayTracing.enableReflections = false;
+            normalized.rayTracing.enableTransparency = false;
+            LOG_WARN("[Renderer] Ray tracing requested but selected GPU lacks ray query support, disabled");
+        }
 
         bool needsResize = (m_Settings.resolutionScale != normalized.resolutionScale) ||
                            (m_Settings.msaaSamples != normalized.msaaSamples) ||
@@ -1111,8 +1123,10 @@ namespace Manro {
         ubo.farZ = m_Settings.farZ;
         ubo.slicesZ = 1.f;
         ubo.reflectionEnabled = m_Settings.rayTracing.enableReflections ? 1 : 0;
-        ubo.enableRayQueryReflections = m_Settings.rayTracing.enableReflections ? 1 : 0;
-        ubo.enableRayQueryTransparency = m_Settings.rayTracing.enableTransparency ? 1 : 0;
+        ubo.enableRayQueryReflections =
+            (m_Context.HasRayQuery() && m_Settings.rayTracing.enableReflections) ? 1 : 0;
+        ubo.enableRayQueryTransparency =
+            (m_Context.HasRayQuery() && m_Settings.rayTracing.enableTransparency) ? 1 : 0;
         ubo.rayMaxBounces = m_Settings.rayTracing.maxBounces;
         ubo.materialCount = static_cast<int>(m_MaterialSystem.GetMaterialCount());
         frame.uboBuffer->LoadData(&ubo, sizeof(ubo));
@@ -1251,11 +1265,21 @@ namespace Manro {
             proj[1][1] *= -1.0f;
             Mat4 viewProj = proj * m_ViewMatrix;
             const bool clearColor = !hasMeshes && !hasSkybox;
-            m_Voxel->Record(cb, m_RenderExtent, m_RenderTargets.GetOffscreenView(),
-                            m_RenderTargets.GetDepthView(), clearColor, m_unCurrentFrame, viewProj,
-                            m_PrevVoxelViewProj, m_CameraPosition, m_Settings.nearZ,
-                            m_Settings.farZ);
-            m_Voxel->CmdWriteTimestamp(cb, m_unCurrentFrame, 3);
+            CVoxelEncoder voxelEnc(cb, m_RenderTargets.GetOffscreenView(),
+                                   m_RenderTargets.GetDepthView(), m_RenderExtent.width,
+                                   m_RenderExtent.height, clearColor);
+            VoxelFrameDesc voxelFrame{};
+            voxelFrame.width = m_RenderExtent.width;
+            voxelFrame.height = m_RenderExtent.height;
+            voxelFrame.clearColor = clearColor;
+            voxelFrame.flightSlot = m_unCurrentFrame;
+            voxelFrame.viewProj = viewProj;
+            voxelFrame.prevViewProj = m_PrevVoxelViewProj;
+            voxelFrame.cameraPos = m_CameraPosition;
+            voxelFrame.nearZ = m_Settings.nearZ;
+            voxelFrame.farZ = m_Settings.farZ;
+            m_Voxel->Record(voxelEnc, voxelFrame);
+            m_Voxel->StampPost(voxelEnc, m_unCurrentFrame, 3);
             m_PrevVoxelViewProj = viewProj;
         }
 
@@ -1406,8 +1430,11 @@ namespace Manro {
 
             m_SceneRenderer->SetCompositePassState(&compositeState);
             m_SceneRenderer->Flush(cb);
-            if (m_Voxel)
-                m_Voxel->CmdWriteTimestamp(cb, m_unCurrentFrame, 4);
+            if (m_Voxel) {
+                CVoxelEncoder postEnc(cb, m_Swapchain.GetImageView(m_unCurrentImageIndex),
+                                      VK_NULL_HANDLE, ext.width, ext.height, false);
+                m_Voxel->StampPost(postEnc, m_unCurrentFrame, 4);
+            }
         }
 
         {
@@ -1428,8 +1455,11 @@ namespace Manro {
             vkCmdBeginRendering(cb, &guiRi);
             m_Overlay->Render(cb);
             vkCmdEndRendering(cb);
-            if (m_Voxel)
-                m_Voxel->CmdWriteTimestamp(cb, m_unCurrentFrame, 5);
+            if (m_Voxel) {
+                CVoxelEncoder guiEnc(cb, m_Swapchain.GetImageView(m_unCurrentImageIndex),
+                                     VK_NULL_HANDLE, ext.width, ext.height, false);
+                m_Voxel->StampPost(guiEnc, m_unCurrentFrame, 5);
+            }
         }
 
         FinalizeFrameAndPresent(cb);
