@@ -123,12 +123,11 @@ void MeshMain(
             earlyFlags = flagPtr.getPtr()[min(mat, kBlockStateMax - 1u)];
         }
         bool isLeaf = (earlyFlags & 32u) != 0u;
-        if (!isLeaf && s_useBackface != 0u && !camInside) {
+        bool isTrapdoor = (earlyFlags & 64u) != 0u;
+        if (!isLeaf && s_useBackface != 0u && (!camInside || isTrapdoor)) {
             int3 sMin;
             int3 sMax;
             if (isMulti) {
-
-
                 sMin = bMin;
                 sMax = bMax;
             } else {

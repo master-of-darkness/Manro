@@ -33,6 +33,7 @@ namespace Manro {
     // single union-AABB quad. Never combined with opaque/cutout.
     inline constexpr u32 kBlockFlagMulti = 1u << 4u;
     inline constexpr u32 kBlockFlagLeaf = 1u << 5u;
+    inline constexpr u32 kBlockFlagTrapdoor = 1u << 6u;
 
     inline constexpr u32 kBlockAir = 0u;
 

@@ -763,6 +763,10 @@ namespace Manro {
             return name.find("leaves") != std::string_view::npos;
         }
 
+        bool IsTrapdoorName(std::string_view name) {
+            return name.find("trapdoor") != std::string_view::npos;
+        }
+
         bool IsInnerFaces(std::string_view name) {
             (void)name;
             return false;
@@ -1257,6 +1261,8 @@ namespace Manro {
                         look.flags |= kBlockFlagCutout;
                     if (IsLeavesName(bview))
                         look.flags |= kBlockFlagLeaf;
+                    if (IsTrapdoorName(bview))
+                        look.flags |= kBlockFlagTrapdoor;
                     if (IsInnerFaces(bname))
                         look.flags |= kBlockFlagInner;
                     if ((look.flags & kBlockFlagCutout) == 0u && facesNeedCutout(look.faces)) {
@@ -1766,6 +1772,8 @@ namespace Manro {
                             look.flags |= kBlockFlagCutout;
                         if (IsLeavesName(bview))
                             look.flags |= kBlockFlagLeaf;
+                        if (IsTrapdoorName(bview))
+                            look.flags |= kBlockFlagTrapdoor;
                         if (IsInnerFaces(bname))
                             look.flags |= kBlockFlagInner;
                         if ((look.flags & kBlockFlagCutout) == 0u &&
