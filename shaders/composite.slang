@@ -41,9 +41,9 @@ float4 PSMain(VSOutput input) : SV_Target {
         const float targetLuminance = max(0.001f, autoExposureLuminance[0]);
         hdrColor *= middleGrey / targetLuminance;
     }
-    
+
     float2 pixel = input.uv * pc.imageSize;
     float3 result = applyTonemap(pc.tm, hdrColor, pixel, pc.imageSize);
-    
+
     return float4(result, color.a);
 }

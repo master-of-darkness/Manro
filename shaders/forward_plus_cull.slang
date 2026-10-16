@@ -3,12 +3,12 @@
 struct CullPushConstants {
     float4x4 view;
     float4x4 proj;
-    float4   screenTile;  // x,y = screen dims, z,w = tile size
+    float4   screenTile;  
     uint     lightCount;
     uint     maxPerTile;
     uint     tilesX;
     uint     tilesY;
-    float4   zParams;     // x = near, y = far
+    float4   zParams;     
 };
 
 struct TileHeader {
@@ -77,18 +77,18 @@ void main(uint3 gid : SV_DispatchThreadID, uint localIdx : SV_GroupIndex)
     float minNY = minPY / screenH * 2.0 - 1.0;
     float maxNY = maxPY / screenH * 2.0 - 1.0;
 
-    float p00 = pc.proj[0][0];   // 2*n / (r - l)
-    float p11 = pc.proj[1][1];   // -2*n / (t - b)  (negated)
+    float p00 = pc.proj[0][0];   
+    float p11 = pc.proj[1][1];   
 
-    float3 TL = float3(minNX / p00,  maxNY / p11, -1.0);  // top-left
-    float3 TR = float3(maxNX / p00,  maxNY / p11, -1.0);  // top-right
-    float3 BL = float3(minNX / p00,  minNY / p11, -1.0);  // bottom-left
-    float3 BR = float3(maxNX / p00,  minNY / p11, -1.0);  // bottom-right
+    float3 TL = float3(minNX / p00,  maxNY / p11, -1.0);  
+    float3 TR = float3(maxNX / p00,  maxNY / p11, -1.0);  
+    float3 BL = float3(minNX / p00,  minNY / p11, -1.0);  
+    float3 BR = float3(maxNX / p00,  minNY / p11, -1.0);  
 
-    float4 planeLeft   = makePlane(BL, TL);  // left edge: BL->TL, normal points right (+x)
-    float4 planeRight  = makePlane(TR, BR);  // right edge: TR->BR, normal points left (−x)
-    float4 planeBottom = makePlane(BR, BL);  // bottom edge: BR->BL, normal points up (+y)
-    float4 planeTop    = makePlane(TL, TR);  // top edge: TL->TR, normal points down (−y)
+    float4 planeLeft   = makePlane(BL, TL);  
+    float4 planeRight  = makePlane(TR, BR);  
+    float4 planeBottom = makePlane(BR, BL);  
+    float4 planeTop    = makePlane(TL, TR);  
 
     uint count = 0;
 

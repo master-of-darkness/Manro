@@ -52,6 +52,8 @@ namespace Manro {
 
         bool BeginFramePace();
 
+        bool ApplyPendingResize();
+
         void BeginFrameRecord();
 
         void BeginRendering();
@@ -306,6 +308,8 @@ namespace Manro {
         void DispatchAutoExposure(VkCommandBuffer cb, FrameData_t &frame) const;
 
         void RecreateSwapchain();
+
+        void DrainAcquiredSemaphore(u32 frame);
 
         void UploadLights(u32 frameIndex);
 
@@ -877,7 +881,18 @@ namespace Manro {
         m_unCurrentFrame = (m_unCurrentFrame + 1) % GetFrameCount();
     }
 
-    bool CRendererImpl::BeginFramePace() {
+    void CRendererImpl::DrainAcquiredSemaphore(u32 frame) {
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        VkSemaphore waitSemaphores[] = {m_Swapchain.GetImageAvailableSemaphore(frame)};
+        VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT};
+        submitInfo.waitSemaphoreCount = 1;
+        submitInfo.pWaitSemaphores = waitSemaphores;
+        submitInfo.pWaitDstStageMask = waitStages;
+        vkQueueSubmit(m_Context.GetGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE);
+    }
+
+    bool CRendererImpl::ApplyPendingResize() {
         MNR_PROFILE_FUNCTION();
 
         // Handle recreate before acquiring a new swapchain image.
@@ -900,6 +915,13 @@ namespace Manro {
                 return false;
             }
         }
+        return true;
+    }
+
+    bool CRendererImpl::BeginFramePace() {
+        MNR_PROFILE_FUNCTION();
+
+        if (!ApplyPendingResize()) return false;
 
         VkDevice device = m_Context.GetDevice();
 
@@ -924,11 +946,13 @@ namespace Manro {
                 std::chrono::duration<float, std::milli>(acqT1 - acqT0).count();
             if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR) {
                 m_Swapchain.SetNeedsRecreate(true);
+                DrainAcquiredSemaphore(m_unCurrentFrame);
                 return false;
             }
             if (acquireResult == VK_SUBOPTIMAL_KHR) {
                 m_Swapchain.SetNeedsRecreate(true);
             } else if (acquireResult != VK_SUCCESS) {
+                DrainAcquiredSemaphore(m_unCurrentFrame);
                 return false;
             }
         }
@@ -1722,6 +1746,8 @@ namespace Manro {
     CRenderer::~CRenderer() = default;
 
     bool RendererImplBeginFramePace(CRendererImpl &impl) { return impl.BeginFramePace(); }
+
+    void RendererImplApplyPendingResize(CRendererImpl &impl) { impl.ApplyPendingResize(); }
     void RendererImplBeginFrameRecord(CRendererImpl &impl) { impl.BeginFrameRecord(); }
     void RendererImplBeginRendering(CRendererImpl &impl) { impl.BeginRendering(); }
     void RendererImplRenderQueue(CRendererImpl &impl) { impl.RenderQueue(); }

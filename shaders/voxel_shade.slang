@@ -16,7 +16,7 @@ struct VoxelFragIn {
 };
 
 float VanillaBrightness(float level) {
-    // Exact vanilla lightmap curve: level in 0..1 (light/15).
+
     return level / (4.0 - 3.0 * level);
 }
 
@@ -25,8 +25,7 @@ float VanillaParabolic(float level) {
     return d * d;
 }
 
-[earlydepthstencil]
-float4 PSMain(VoxelFragIn input) : SV_Target {
+float4 VoxelShadeBody(VoxelFragIn input, bool doDiscard) {
     vk::BufferPointer<VoxelFragParams> frp = vk::BufferPointer<VoxelFragParams>(g_FragRoot.fragParamsAddr);
     VoxelFragParams fr = frp.getPtr()[0];
 
@@ -36,23 +35,26 @@ float4 PSMain(VoxelFragIn input) : SV_Target {
 
     float4 albedo = g_Tiles.Sample(float3(input.uv, float(tile)));
 
-    if ((mflags & 2u) != 0u && albedo.a < 0.5) {
+    if (doDiscard && albedo.a < 0.5) {
         discard;
     }
 
     float3 nrm = kFaceNormal[f];
+    bool leafDown = ((mflags & 32u) != 0u) && (nrm.y < -0.5);
 
-    // Vanilla directional face shading (top 1.0, bottom 0.5, north/south 0.8, east/west 0.6).
+
     float faceShade = 1.0;
     if (abs(nrm.y) > 0.5) {
         faceShade = (nrm.y > 0.0) ? 1.0 : 0.5;
+        if (leafDown)
+            faceShade = 0.9;
     } else if (abs(nrm.x) > 0.5) {
         faceShade = 0.6;
     } else {
         faceShade = 0.8;
     }
 
-    // Interpolated smooth lighting from mesh (sky/block 0..15, ao brightness 0.5..1.0).
+
     float sky = clamp(input.vLight.x, 0.0, 15.0);
     float blk = clamp(input.vLight.y, 0.0, 15.0);
     float ao = clamp(input.vLight.z, 0.0, 1.0);
@@ -62,7 +64,7 @@ float4 PSMain(VoxelFragIn input) : SV_Target {
     float skyBright = VanillaBrightness(skyLevel);
     float blockBright = VanillaBrightness(blockLevel);
 
-    // Vanilla day lightmap uniforms (Overworld, clear noon).
+
     float3 ambient = float3(0.02, 0.02, 0.02);
     float3 skyColor = float3(1.0, 1.0, 1.0);
     float3 blockTint = float3(1.0, 0.62, 0.32);
@@ -79,4 +81,13 @@ float4 PSMain(VoxelFragIn input) : SV_Target {
         lit += gi.getPtr()[0].rgb;
     }
     return float4(lit, 1.0);
+}
+
+[earlydepthstencil]
+float4 PSMainOpaque(VoxelFragIn input) : SV_Target {
+    return VoxelShadeBody(input, false);
+}
+
+float4 PSMainCutout(VoxelFragIn input) : SV_Target {
+    return VoxelShadeBody(input, true);
 }

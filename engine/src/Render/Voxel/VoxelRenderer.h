@@ -101,7 +101,8 @@ namespace Manro {
         CVirtualFS &m_Vfs;
 
         Scope<CVoxelWorld> m_World;
-        Scope<CPipeline> m_TaskMeshPipeline;
+        Scope<CPipeline> m_OpaquePipeline;
+        Scope<CPipeline> m_CutoutPipeline;
         Scope<CPipeline> m_EditPipeline;
         Scope<CPipeline> m_GiInjectPipeline;
         Scope<CPipeline> m_GiPropagatePipeline;
@@ -120,6 +121,7 @@ namespace Manro {
 
         static constexpr u32 kFlightSlots = 3;
         std::array<Scope<CBuffer>, kFlightSlots> m_FrameParamsRing{};
+        std::array<Scope<CBuffer>, kFlightSlots> m_CutoutParamsRing{};
 
         std::array<Scope<CBuffer>, kFlightSlots> m_VisibilityRing{};
         Scope<CBuffer> m_PaletteBuffer;

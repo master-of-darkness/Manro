@@ -32,6 +32,7 @@ namespace Manro {
     // and the mesh shader draws each box with VoxelFaceQuad instead of the
     // single union-AABB quad. Never combined with opaque/cutout.
     inline constexpr u32 kBlockFlagMulti = 1u << 4u;
+    inline constexpr u32 kBlockFlagLeaf = 1u << 5u;
 
     inline constexpr u32 kBlockAir = 0u;
 

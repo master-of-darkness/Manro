@@ -57,6 +57,8 @@ namespace Manro {
 
         [[nodiscard]] bool BeginFramePace() const;
 
+        void ApplyPendingResize() const;
+
         void BeginFrameRecord() const;
 
         void BeginRendering() const;

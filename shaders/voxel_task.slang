@@ -3,7 +3,9 @@ import voxel_common;
 [[vk::push_constant]]
 VoxelFrameRoot g_TaskRoot;
 
-groupshared uint s_faceStaging[4096];
+groupshared uint s_swap[4096];
+groupshared uint s_partCount[3];
+groupshared uint s_cutoutPass;
 groupshared uint s_hasContent;
 groupshared uint s_occ[128];
 groupshared uint s_mats[2048];
@@ -45,9 +47,9 @@ bool OpaqueFullLDS(uint x, uint y, uint z, uint* flags, uint* shapes) {
            shapes[state * 2u + 1u] == (16u | (16u << 8u) | (16u << 16u));
 }
 
-// Corner sampler: own-brick positions hit LDS, border-crossing positions
-// fetch globally from brickEx. Keeps the common interior case off global
-// memory entirely.
+
+
+
 uint FlatLightAt(int gx, int gy, int gz, int3 brickAbs,
                  uint* bricksEx, int* pages, int minBX, int minBZ, uint vdim) {
     int3 rel = int3(gx, gy, gz) - brickAbs;
@@ -74,7 +76,7 @@ bool OpaqueFullAt(int gx, int gy, int gz, int3 brickAbs,
     uint slot = uint(bx) + uint(by) * vdim + uint(bz) * vdim * vdim;
     int brick = pages[slot];
     if (brick < 0)
-        return true; // unloaded blocks occlusion
+        return true; 
     uint lx = uint(gx & 15);
     uint ly = uint(gy & 15);
     uint lz = uint(gz & 15);
@@ -104,6 +106,7 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
         s_brickSize = frame.brickSize;
         s_worldMin = frame.worldMin;
         s_virtualDim = frame.virtualDim;
+        s_cutoutPass = frame.cutoutPass;
 
         vk::BufferPointer<uint> vis = vk::BufferPointer<uint>(g_TaskRoot.visibilityAddr);
         uint bidx = vis.getPtr()[gid.x];
@@ -120,12 +123,15 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
         }
         s_hdrFlags = flags;
         s_origin = org;
-        s_faceStaging[0] = 0u;
+        s_partCount[0] = 0u;
+        s_partCount[1] = 0u;
+        s_partCount[2] = 0u;
         s_hasContent = 0u;
     }
     GroupMemoryBarrierWithGroupSync();
 
     uint brickIdx = s_brickIdx;
+    uint cutoutPass = s_cutoutPass;
     bool wantDbg = s_debugOn != 0u;
 
     vk::BufferPointer<uint> dbg = vk::BufferPointer<uint>(g_TaskRoot.debugAddr);
@@ -154,9 +160,22 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
 
     bool needsScan = kDebugSyntheticFaces ||
                      ((s_hdrFlags & 4u) == 0u) || ((s_hdrFlags & 2u) != 0u);
+    uint faceStart = 0u;
     uint faceCount = 0u;
     if (!needsScan) {
-        faceCount = fcb[0];
+        uint nTotal = fcb[0];
+        uint nOp = fcb[kVoxelFaceCacheOpaqueIdx];
+        if (nTotal > kVoxelFaceCacheCap)
+            nTotal = kVoxelFaceCacheCap;
+        if (nOp > nTotal)
+            nOp = nTotal;
+        if (cutoutPass != 0u) {
+            faceStart = nOp;
+            faceCount = (nTotal > nOp) ? (nTotal - nOp) : 0u;
+        } else {
+            faceStart = 0u;
+            faceCount = nOp;
+        }
     } else {
         if (kDebugSyntheticFaces) {
             for (uint i = gidx; i < 256u; i += 32u) {
@@ -166,13 +185,20 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                 uint mat = (x + z) & 1u;
                 fcb[1u + i * 4u] = (iter & 0xFFFu) | (2u << 12u) | ((mat & 0x1FFu) << 15u);
                 fcb[1u + i * 4u + 1u] = 0x3FFu | (0x3FFu << 10u) | (0x3FFu << 20u);
-                fcb[1u + i * 4u + 2u] = 0x3FFu; // full sky, no AO
-                fcb[1u + i * 4u + 3u] = 0u; // single-quad path
+                fcb[1u + i * 4u + 2u] = 0x3FFu; 
+                fcb[1u + i * 4u + 3u] = 0u; 
             }
             if (gidx == 0) {
                 fcb[0] = 256u;
+                fcb[kVoxelFaceCacheOpaqueIdx] = 256u;
             }
-            faceCount = 256u;
+            if (cutoutPass != 0u) {
+                faceStart = 256u;
+                faceCount = 0u;
+            } else {
+                faceStart = 0u;
+                faceCount = 256u;
+            }
         } else {
             for (uint w = gidx; w < 128u; w += 32u) {
                 s_occ[w] = occupancy[w];
@@ -213,8 +239,9 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                 float3 bOrigin = s_origin;
                 float3 wMin = s_worldMin;
 
-                uint localBuf[32];
+                uint localPack[32];
                 uint localBox[32];
+                uint localCut[32];
                 uint localN = 0u;
 
                 for (uint iter = gidx; iter < 4096u; iter += 32u) {
@@ -266,7 +293,9 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                         bool isMulti = ((vflags & 16u) != 0u) &&
                                        (VoxelBoxCount(blockBoxes, msBox) > 1u);
                         if (!isMulti) {
-                        if (nstate >= kBlockStateMax) {
+                        if (((vflags & 32u) != 0u) && (f == 3u) && (nstate != mat)) {
+                            emit = true;
+                        } else if (nstate >= kBlockStateMax) {
                             emit = true;
                         } else {
                             uint nflags = blockFlags[nstate];
@@ -281,7 +310,16 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                                     int3 vMax = VoxelShapeMax(blockShapes, vs);
                                     int3 nMin = VoxelShapeMin(blockShapes, nstate);
                                     int3 nMax = VoxelShapeMax(blockShapes, nstate);
-                                    emit = !VoxelFaceCovered(vMin, vMax, nMin, nMax, f);
+                                    bool bothFull =
+                                        all(vMin == int3(0, 0, 0)) &&
+                                        all(vMax == int3(16, 16, 16)) &&
+                                        all(nMin == int3(0, 0, 0)) &&
+                                        all(nMax == int3(16, 16, 16));
+                                    if ((vflags & 32u) != 0u && bothFull) {
+                                        emit = ((f & 1u) == 0u);
+                                    } else {
+                                        emit = !VoxelFaceCovered(vMin, vMax, nMin, nMax, f);
+                                    }
                                 }
                             } else {
                                 if ((nflags & 1u) == 0u) {
@@ -298,25 +336,53 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                         }
                         if (!emit)
                             continue;
-                        localBuf[localN] = packed;
+                        localPack[localN] = packed;
                         localBox[localN] = 0u;
+                        localCut[localN] = ((vflags & 2u) != 0u) ? 1u : 0u;
                         localN++;
                         if (localN == 32u) {
-                            uint slot;
-                            InterlockedAdd(s_faceStaging[0], 32u, slot);
-                            for (uint k = 0u; k < 32u; ++k) {
-                                if (slot + k < kVoxelFaceCacheCap) {
-                                    s_faceStaging[1u + slot + k] = localBuf[k];
-                                    fcb[1u + (slot + k) * 4u + 3u] = localBox[k];
+                            uint nOp = 0u;
+                            for (uint kc0 = 0u; kc0 < 32u; ++kc0)
+                                nOp += (localCut[kc0] == 0u) ? 1u : 0u;
+                            uint oldTotal = 0u;
+                            InterlockedAdd(s_partCount[0], 32u, oldTotal);
+                            uint keep = 32u;
+                            if (oldTotal >= kVoxelFaceCacheCap)
+                                keep = 0u;
+                            else if (oldTotal + 32u > kVoxelFaceCacheCap)
+                                keep = kVoxelFaceCacheCap - oldTotal;
+                            nOp = 0u;
+                            for (uint kc1 = 0u; kc1 < keep; ++kc1)
+                                nOp += (localCut[kc1] == 0u) ? 1u : 0u;
+                            uint nCut = keep - nOp;
+                            uint oldNop = 0u;
+                            uint oldNcut = 0u;
+                            InterlockedAdd(s_partCount[1], nOp, oldNop);
+                            InterlockedAdd(s_partCount[2], nCut, oldNcut);
+                            uint ko = 0u;
+                            uint kc = 0u;
+                            for (uint kf = 0u; kf < keep; ++kf) {
+                                if (localCut[kf] == 0u) {
+                                    uint widx = oldNop + ko; ko++;
+                                    if (widx < kVoxelFaceCacheCap) {
+                                        fcb[1u + widx * 4u] = localPack[kf];
+                                        fcb[1u + widx * 4u + 3u] = localBox[kf];
+                                    }
+                                } else {
+                                    uint widx = (kVoxelFaceCacheCap - 1u) - (oldNcut + kc); kc++;
+                                    if (widx < kVoxelFaceCacheCap) {
+                                        fcb[1u + widx * 4u] = localPack[kf];
+                                        fcb[1u + widx * 4u + 3u] = localBox[kf];
+                                    }
                                 }
                             }
                             localN = 0u;
                         }
                         } else {
-                            // Multi-box fence: one cache entry per surviving box
-                            // face in direction f. Interior box faces (baked mask)
-                            // are skipped; the rest get per-box cover tests so
-                            // rails reach exactly to connected neighbors.
+
+
+
+
                             bool nSkip = true;
                             int3 nMin = int3(0, 0, 0);
                             int3 nMax = int3(16, 16, 16);
@@ -338,16 +404,44 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                                     if (VoxelFaceCovered(bMin, bMax, nMin, nMax, f))
                                         continue;
                                 }
-                                localBuf[localN] = packed;
+                                localPack[localN] = packed;
                                 localBox[localN] = bi + 1u;
+                                localCut[localN] = ((vflags & 2u) != 0u) ? 1u : 0u;
                                 localN++;
                                 if (localN == 32u) {
-                                    uint slot;
-                                    InterlockedAdd(s_faceStaging[0], 32u, slot);
-                                    for (uint k = 0u; k < 32u; ++k) {
-                                        if (slot + k < kVoxelFaceCacheCap) {
-                                            s_faceStaging[1u + slot + k] = localBuf[k];
-                                            fcb[1u + (slot + k) * 4u + 3u] = localBox[k];
+                                    uint nOp = 0u;
+                                    for (uint kc0 = 0u; kc0 < 32u; ++kc0)
+                                        nOp += (localCut[kc0] == 0u) ? 1u : 0u;
+                                    uint oldTotal = 0u;
+                                    InterlockedAdd(s_partCount[0], 32u, oldTotal);
+                                    uint keep = 32u;
+                                    if (oldTotal >= kVoxelFaceCacheCap)
+                                        keep = 0u;
+                                    else if (oldTotal + 32u > kVoxelFaceCacheCap)
+                                        keep = kVoxelFaceCacheCap - oldTotal;
+                                    nOp = 0u;
+                                    for (uint kc1 = 0u; kc1 < keep; ++kc1)
+                                        nOp += (localCut[kc1] == 0u) ? 1u : 0u;
+                                    uint nCut = keep - nOp;
+                                    uint oldNop = 0u;
+                                    uint oldNcut = 0u;
+                                    InterlockedAdd(s_partCount[1], nOp, oldNop);
+                                    InterlockedAdd(s_partCount[2], nCut, oldNcut);
+                                    uint ko = 0u;
+                                    uint kc = 0u;
+                                    for (uint kf = 0u; kf < keep; ++kf) {
+                                        if (localCut[kf] == 0u) {
+                                            uint widx = oldNop + ko; ko++;
+                                            if (widx < kVoxelFaceCacheCap) {
+                                                fcb[1u + widx * 4u] = localPack[kf];
+                                                fcb[1u + widx * 4u + 3u] = localBox[kf];
+                                            }
+                                        } else {
+                                            uint widx = (kVoxelFaceCacheCap - 1u) - (oldNcut + kc); kc++;
+                                            if (widx < kVoxelFaceCacheCap) {
+                                                fcb[1u + widx * 4u] = localPack[kf];
+                                                fcb[1u + widx * 4u + 3u] = localBox[kf];
+                                            }
                                         }
                                     }
                                     localN = 0u;
@@ -357,26 +451,87 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                     }
                 }
                 if (localN != 0u) {
-                    uint slot;
-                    InterlockedAdd(s_faceStaging[0], localN, slot);
-                    for (uint k = 0u; k < localN; ++k) {
-                        if (slot + k < kVoxelFaceCacheCap) {
-                            s_faceStaging[1u + slot + k] = localBuf[k];
-                            fcb[1u + (slot + k) * 4u + 3u] = localBox[k];
+                    uint tailN = localN;
+                    uint nOp = 0u;
+                    for (uint k = 0u; k < tailN; ++k)
+                        nOp += (localCut[k] == 0u) ? 1u : 0u;
+                    uint oldTotal = 0u;
+                    InterlockedAdd(s_partCount[0], tailN, oldTotal);
+                    uint keep = tailN;
+                    if (oldTotal >= kVoxelFaceCacheCap)
+                        keep = 0u;
+                    else if (oldTotal + tailN > kVoxelFaceCacheCap)
+                        keep = kVoxelFaceCacheCap - oldTotal;
+                    nOp = 0u;
+                    for (uint k = 0u; k < keep; ++k)
+                        nOp += (localCut[k] == 0u) ? 1u : 0u;
+                    uint nCut = keep - nOp;
+                    uint oldNop = 0u;
+                    uint oldNcut = 0u;
+                    InterlockedAdd(s_partCount[1], nOp, oldNop);
+                    InterlockedAdd(s_partCount[2], nCut, oldNcut);
+                    uint ko = 0u;
+                    uint kc = 0u;
+                    for (uint k = 0u; k < keep; ++k) {
+                        if (localCut[k] == 0u) {
+                            uint widx = oldNop + ko; ko++;
+                            if (widx < kVoxelFaceCacheCap) {
+                                fcb[1u + widx * 4u] = localPack[k];
+                                fcb[1u + widx * 4u + 3u] = localBox[k];
+                            }
+                        } else {
+                            uint widx = (kVoxelFaceCacheCap - 1u) - (oldNcut + kc); kc++;
+                            if (widx < kVoxelFaceCacheCap) {
+                                fcb[1u + widx * 4u] = localPack[k];
+                                fcb[1u + widx * 4u + 3u] = localBox[k];
+                            }
                         }
                     }
                 }
                 GroupMemoryBarrierWithGroupSync();
 
-                faceCount = min(s_faceStaging[0], kVoxelFaceCacheCap);
+                uint nOpTotal = min(s_partCount[1], kVoxelFaceCacheCap);
+                uint nCutTotal = min(s_partCount[2], kVoxelFaceCacheCap - nOpTotal);
+                uint nTotal = nOpTotal + nCutTotal;
+
+                if (nCutTotal != 0u) {
+                    for (uint i = gidx; i < nCutTotal; i += 32u) {
+                        uint src = (kVoxelFaceCacheCap - 1u) - i;
+                        s_swap[i] = fcb[1u + src * 4u];
+                    }
+                    GroupMemoryBarrierWithGroupSync();
+                    for (uint i = gidx; i < nCutTotal; i += 32u) {
+                        fcb[1u + (nOpTotal + i) * 4u] = s_swap[i];
+                    }
+                    GroupMemoryBarrierWithGroupSync();
+                    for (uint i = gidx; i < nCutTotal; i += 32u) {
+                        uint src = (kVoxelFaceCacheCap - 1u) - i;
+                        s_swap[i] = fcb[1u + src * 4u + 3u];
+                    }
+                    GroupMemoryBarrierWithGroupSync();
+                    for (uint i = gidx; i < nCutTotal; i += 32u) {
+                        fcb[1u + (nOpTotal + i) * 4u + 3u] = s_swap[i];
+                    }
+                    GroupMemoryBarrierWithGroupSync();
+                }
 
                 if (gidx == 0) {
-                    fcb[0] = faceCount;
+                    fcb[0] = nTotal;
+                    fcb[kVoxelFaceCacheOpaqueIdx] = nOpTotal;
                 }
-                // Smooth v2 bake: per-corner sky/block + shape-aware AO into
-                // w1/w2. Runs only on face-cache rebuild (amortized). Own-brick
-                // corners hit LDS; only border-crossing corners fetch globally;
-                // o1&&o2-opaque corners skip side fetches (face value, ao=0).
+                GroupMemoryBarrierWithGroupSync();
+
+                if (cutoutPass != 0u) {
+                    faceStart = nOpTotal;
+                    faceCount = nCutTotal;
+                } else {
+                    faceStart = 0u;
+                    faceCount = nOpTotal;
+                }
+
+
+
+
                 {
                     vk::BufferPointer<uint> brickPtr =
                         vk::BufferPointer<uint>(g_TaskRoot.brickBufferAddr);
@@ -389,8 +544,8 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                     uint vdim = s_virtualDim;
                     float voxelSize = s_brickSize / 16.0;
                     int3 brickAbs = int3(s_origin / voxelSize);
-                    for (uint i = gidx; i < faceCount; i += 32u) {
-                        uint packed = s_faceStaging[1u + i];
+                    for (uint i = gidx; i < nTotal; i += 32u) {
+                        uint packed = fcb[1u + i * 4u];
                         fcb[1u + i * 4u] = packed;
                         uint iter = packed & 0xFFFu;
                         uint f = (packed >> 12u) & 0x7u;
@@ -411,7 +566,15 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                             vVec = int3(0, 1, 0);
                         }
                         int3 facePos = vPos + nOff;
-                        uint faceLP = FlatLightAt(facePos.x, facePos.y, facePos.z,
+                        uint fmat = min((packed >> 15u) & 0x7FFFu, kBlockStateMax - 1u);
+                        int3 lightBase = facePos;
+                        if (f == 3u && ((blockFlags[fmat] & 32u) != 0u) &&
+                            OpaqueFullAt(facePos.x, facePos.y, facePos.z, brickAbs,
+                                         bricksEx, pages, blockFlags, blockShapes,
+                                         minBX, minBZ, vdim)) {
+                            lightBase = vPos;
+                        }
+                        uint faceLP = FlatLightAt(lightBase.x, lightBase.y, lightBase.z,
                                                   brickAbs, bricksEx, pages, minBX, minBZ,
                                                   vdim);
                         uint faceSky = (faceLP >> 4u) & 0xFu;
@@ -421,9 +584,9 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                         for (uint ci = 0u; ci < 4u; ++ci) {
                             int du = (ci == 0u || ci == 3u) ? -1 : 1;
                             int dv = (ci == 0u || ci == 1u) ? -1 : 1;
-                            int3 s1Pos = vPos + nOff + uVec * du;
-                            int3 s2Pos = vPos + nOff + vVec * dv;
-                            int3 cPos = vPos + nOff + uVec * du + vVec * dv;
+                            int3 s1Pos = lightBase + uVec * du;
+                            int3 s2Pos = lightBase + vVec * dv;
+                            int3 cPos = lightBase + uVec * du + vVec * dv;
                             uint o1 = OpaqueFullAt(s1Pos.x, s1Pos.y, s1Pos.z, brickAbs,
                                                    bricksEx, pages, blockFlags, blockShapes,
                                                    minBX, minBZ, vdim) ? 1u : 0u;
@@ -471,7 +634,9 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
             } else {
                 if (gidx == 0) {
                     fcb[0] = 0u;
+                    fcb[kVoxelFaceCacheOpaqueIdx] = 0u;
                 }
+                faceStart = 0u;
                 faceCount = 0u;
             }
             GroupMemoryBarrierWithGroupSync();
@@ -493,6 +658,7 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
     }
     VoxelTaskPayload p;
     p.brickIdx = brickIdx;
+    p.faceStart = faceStart;
     p.faceCount = faceCount;
     uint meshGroups = (faceCount + kVoxelFacesPerMeshGroup - 1u) / kVoxelFacesPerMeshGroup;
     DispatchMesh(meshGroups, 1, 1, p);

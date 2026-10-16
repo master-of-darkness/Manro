@@ -11,6 +11,8 @@
 namespace Manro {
     bool CRenderer::BeginFramePace() const { return RendererImplBeginFramePace(*m_Impl); }
 
+    void CRenderer::ApplyPendingResize() const { static_cast<void>(RendererImplApplyPendingResize(*m_Impl)); }
+
     void CRenderer::BeginFrameRecord() const { RendererImplBeginFrameRecord(*m_Impl); }
 
     void CRenderer::BeginRendering() const { RendererImplBeginRendering(*m_Impl); }

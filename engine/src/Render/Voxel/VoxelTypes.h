@@ -24,6 +24,7 @@ namespace Manro {
     // (Baked once by the task shader on rebuild: smooth light + AO.)
     // Must match kVoxelFaceCacheStride in shaders/voxel_common.slang.
     static constexpr u32 kVoxelFaceCacheStride = 16384u;
+    static constexpr u32 kVoxelFaceCacheOpaqueIdx = 16383u;
 
     struct VoxelBrickHeader_t {
         Vec3 origin{};
@@ -79,6 +80,7 @@ namespace Manro {
         u32 useBackface{1};
         u32 useFrustum{1};
         u32 virtualDim{64};
+        u32 cutoutPass{0};
     };
 
     struct VoxelEditCmd_t {

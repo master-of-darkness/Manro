@@ -44,12 +44,17 @@ namespace Manro {
         void BarrierGiToFrag();
         void BarrierFrame(const VoxelFrameBarriers &bar);
         void BeginMeshPass();
+
+        void BeginMeshPassResume();
+
         void DrawVoxelMesh(const CPipeline &pipe, const CTileArray &tiles, const void *rootBytes, u64 rootSize,
                            u32 groupCount);
         void EndMeshPass();
         void BarrierMeshToHost();
 
     private:
+        void BeginRendering(bool clear);
+
         VkCommandBuffer m_Cmd{VK_NULL_HANDLE};
         VkImageView m_Color{VK_NULL_HANDLE};
         VkImageView m_Depth{VK_NULL_HANDLE};

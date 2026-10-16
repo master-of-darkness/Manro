@@ -49,26 +49,29 @@ struct VoxelFrameParams {
     uint useBackface;
     uint useFrustum;
     uint virtualDim;
+    uint cutoutPass;
 };
 
 struct VoxelTaskPayload {
     uint brickIdx;
+    uint faceStart;
     uint faceCount;
 };
 
 static const uint kVoxelFaceCacheCap = 4095u;
-// Per brick: word0 = face count, then 4 words per face:
-//   w0 = iter(12b) | face(3b) | mat(15b)
-//   w1 = v0[sky4,blk4,ao2] | v1[...]<<10 | v2[...]<<20  (30b)
-//   w2 = v3[sky4,blk4,ao2]
-//   w3 = sub-box index + 1 (0 = single union-AABB quad path)
-// (Baked once by the task shader on rebuild: smooth per-vertex light + AO.)
-static const uint kVoxelFaceCacheStride = 16384u;
 
-// Per-state multi-box table: 22 u32 per state (see kBlockBoxWordsPerState
-// in VoxelBlockAssets.h). w0 = box count (0 = single path), w1 = plank tile
-// (low 16) | internal-face mask bits [0:16) (high 16), w2/w3 = mask bits,
-// then box min/max pairs packed (x | y<<8 | z<<16). Mask bit = box * 6 + face.
+
+
+
+
+
+static const uint kVoxelFaceCacheStride = 16384u;
+static const uint kVoxelFaceCacheOpaqueIdx = 16383u;
+
+
+
+
+
 static const uint kVoxelBoxWordsPerState = 22u;
 
 uint VoxelBoxCount(uint* boxes, uint state) {
@@ -198,9 +201,9 @@ static const uint kBlockStateMax = 32768u;
 
 static const float kAoCurve[4] = { 0.5, 0.6, 0.8, 1.0 };
 
-// ---- Flat per-face light sampling (v1): 1 fetch per face from the
-// brickEx buffer (mats+occ at [0,2176), packed flat light at [2176,3200)).
-// No separate light bricks, no per-vertex bake. v2 restores smooth + AO.
+
+
+
 uint VoxelSampleFlatLight(int gx, int gy, int gz, uint* bricksEx, int* pageTable,
                           int minBX, int minBZ, uint vdim) {
     if (gy >= 320)

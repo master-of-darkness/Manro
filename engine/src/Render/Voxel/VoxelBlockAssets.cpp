@@ -759,6 +759,10 @@ namespace Manro {
             return false;
         }
 
+        bool IsLeavesName(std::string_view name) {
+            return name.find("leaves") != std::string_view::npos;
+        }
+
         bool IsInnerFaces(std::string_view name) {
             (void)name;
             return false;
@@ -1251,6 +1255,8 @@ namespace Manro {
                     look.flags = IsOpaqueOccluder(bname) ? kBlockFlagOpaque : 0u;
                     if (IsCutout(bname))
                         look.flags |= kBlockFlagCutout;
+                    if (IsLeavesName(bview))
+                        look.flags |= kBlockFlagLeaf;
                     if (IsInnerFaces(bname))
                         look.flags |= kBlockFlagInner;
                     if ((look.flags & kBlockFlagCutout) == 0u && facesNeedCutout(look.faces)) {
@@ -1758,6 +1764,8 @@ namespace Manro {
                             look.flags &= ~kBlockFlagOpaque;
                         if (IsCutout(bname))
                             look.flags |= kBlockFlagCutout;
+                        if (IsLeavesName(bview))
+                            look.flags |= kBlockFlagLeaf;
                         if (IsInnerFaces(bname))
                             look.flags |= kBlockFlagInner;
                         if ((look.flags & kBlockFlagCutout) == 0u &&

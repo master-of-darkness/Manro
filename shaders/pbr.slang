@@ -47,10 +47,10 @@ struct ShadowData {
     float3   _pad;
 };
 
-// TileHeader (16 bytes)
+
 struct TileHeader { uint offset; uint count; uint pad0; uint pad1; };
 
-// Bindings
+
 layout(set = 0, binding = 0)  ConstantBuffer<UniformBufferObject> ubo;
 layout(set = 0, binding = 1)  SamplerState defaultSampler;
 layout(set = 1, binding = 0)  Texture2D bindlessTextures[1024];
@@ -71,7 +71,7 @@ struct VSInput {
     [[vk::location(2)]] float2 uv       : TEXCOORD0;
     [[vk::location(3)]] float4 tangent  : TANGENT;
 
-    // Instanced
+
     [[vk::location(4)]]  float4x4 modelMatrix : INSTANCE_MODEL;
     [[vk::location(8)]]  float4   normalRow0  : INSTANCE_NORMAL0;
     [[vk::location(9)]]  float4   normalRow1  : INSTANCE_NORMAL1;

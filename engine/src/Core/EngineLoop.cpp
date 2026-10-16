@@ -66,7 +66,10 @@ namespace Manro {
         app.OnStartup(ictx);
         // Settings applied in OnStartup (e.g. MSAA mode) flag a pending
         // resize; apply it before the first frame so render targets match.
-        static_cast<void>(renderer.BeginFramePace());
+        // This must not acquire a swapchain image: a discarded acquire
+        // would leave its semaphore signaled and trip
+        // VUID-vkAcquireNextImageKHR-semaphore-01286 on the first frame.
+        renderer.ApplyPendingResize();
 
         using Clock = std::chrono::steady_clock;
         auto lastTime = Clock::now();

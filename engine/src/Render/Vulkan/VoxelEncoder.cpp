@@ -195,11 +195,19 @@ namespace Manro {
     }
 
     void CVoxelEncoder::BeginMeshPass() {
+        BeginRendering(m_Clear);
+    }
+
+    void CVoxelEncoder::BeginMeshPassResume() {
+        BeginRendering(false);
+    }
+
+    void CVoxelEncoder::BeginRendering(bool clear) {
         VkRenderingAttachmentInfo colorAtt{};
         colorAtt.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
         colorAtt.imageView = m_Color;
         colorAtt.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        colorAtt.loadOp = m_Clear ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
+        colorAtt.loadOp = clear ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
         colorAtt.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         colorAtt.clearValue.color = {{0.05f, 0.05f, 0.07f, 1.f}};
 
@@ -207,7 +215,7 @@ namespace Manro {
         depthAtt.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
         depthAtt.imageView = m_Depth;
         depthAtt.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-        depthAtt.loadOp = m_Clear ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
+        depthAtt.loadOp = clear ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
         depthAtt.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         depthAtt.clearValue.depthStencil = {1.f, 0};
 

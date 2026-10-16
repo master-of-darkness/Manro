@@ -67,6 +67,11 @@ namespace Manro {
                 m_Context, sizeof(VoxelFrameParams_t),
                 EBufferUsage::Storage | EBufferUsage::ShaderAddress, EBufferMemory::CpuToGpu);
         }
+        for (u32 i = 0; i < CVoxelRenderer::kFlightSlots; ++i) {
+            m_CutoutParamsRing[i] = CreateScope<CBuffer>(
+                m_Context, sizeof(VoxelFrameParams_t),
+                EBufferUsage::Storage | EBufferUsage::ShaderAddress, EBufferMemory::CpuToGpu);
+        }
 
         m_FaceCache = CreateScope<CBuffer>(
             m_Context, sizeof(u32) * kVoxelFaceCacheStride * desc.maxResidentBricks,
@@ -157,7 +162,8 @@ namespace Manro {
         m_BlockShapeTable.reset();
         m_BlockUvTable.reset();
         m_BlockBoxTable.reset();
-        m_TaskMeshPipeline.reset();
+        m_OpaquePipeline.reset();
+        m_CutoutPipeline.reset();
         m_EditPipeline.reset();
         m_GiInjectPipeline.reset();
         m_GiPropagatePipeline.reset();
@@ -170,6 +176,8 @@ namespace Manro {
         m_EditStaging.reset();
         for (auto &slot : m_FrameParamsRing)
             slot.reset();
+        for (auto &slot: m_CutoutParamsRing)
+            slot.reset();
         m_DebugReadback.reset();
         m_FaceCache.reset();
         if (m_World)
@@ -181,21 +189,23 @@ namespace Manro {
     void CVoxelRenderer::BuildPipelines(CPipelineCache &cache) {
         auto taskSpv = m_Vfs.ReadFile("shaders://voxel_task.task.spv");
         auto meshSpv = m_Vfs.ReadFile("shaders://voxel_mesh.mesh.spv");
-        auto fragSpv = m_Vfs.ReadFile("shaders://voxel_shade.frag.spv");
+        auto fragOpaqueSpv = m_Vfs.ReadFile("shaders://voxel_shade_opaque.frag.spv");
+        auto fragCutoutSpv = m_Vfs.ReadFile("shaders://voxel_shade_cutout.frag.spv");
         auto editSpv = m_Vfs.ReadFile("shaders://voxel_edit.comp.spv");
         auto giInjectSpv = m_Vfs.ReadFile("shaders://voxel_gi_inject.comp.spv");
         auto giPropSpv = m_Vfs.ReadFile("shaders://voxel_gi_propagate.comp.spv");
 
         if (taskSpv.empty() || meshSpv.empty())
             LOG_ERROR("[CVoxelRenderer] Voxel task/mesh shaders missing");
-        if (fragSpv.empty())
-            LOG_ERROR("[CVoxelRenderer] Voxel shade fragment missing");
+        if (fragOpaqueSpv.empty() || fragCutoutSpv.empty())
+            LOG_ERROR("[CVoxelRenderer] Voxel shade fragments missing");
         if (editSpv.empty() || giInjectSpv.empty() || giPropSpv.empty())
             LOG_ERROR("[CVoxelRenderer] Voxel compute shaders missing");
 
-        BuildVoxelPipelines(m_Context, cache, *m_Tiles, taskSpv, meshSpv, fragSpv, editSpv,
-                            giInjectSpv, giPropSpv, m_TaskMeshPipeline, m_EditPipeline,
-                            m_GiInjectPipeline, m_GiPropagatePipeline);
+        BuildVoxelPipelines(m_Context, cache, *m_Tiles, taskSpv, meshSpv, fragOpaqueSpv,
+                            fragCutoutSpv, editSpv, giInjectSpv, giPropSpv, m_OpaquePipeline,
+                            m_CutoutPipeline, m_EditPipeline, m_GiInjectPipeline,
+                            m_GiPropagatePipeline);
     }
 
     void CVoxelRenderer::CreateBlockTiles(const BlockAssetPack_t &pack) {
@@ -484,7 +494,7 @@ namespace Manro {
         const u32 brickCount = m_World->GetBrickCount();
         m_Stats.brickCount = brickCount;
         m_Stats.editCount = 0;
-        if (brickCount == 0 || !m_TaskMeshPipeline->IsValid())
+        if (brickCount == 0 || !m_OpaquePipeline->IsValid() || !m_CutoutPipeline->IsValid())
             return;
 
         if (m_Timer && m_Timer->Valid()) {
@@ -615,7 +625,11 @@ namespace Manro {
         params.useFrustum = m_bUseFrustum ? 1u : 0u;
         params.virtualDim = m_World->GetVirtualDim();
         CBuffer &paramsSlot = *m_FrameParamsRing[flightSlot % kFlightSlots];
+        CBuffer &cutoutParamsSlot = *m_CutoutParamsRing[flightSlot % kFlightSlots];
+        params.cutoutPass = 0u;
         paramsSlot.LoadData(&params, sizeof(params));
+        params.cutoutPass = 1u;
+        cutoutParamsSlot.LoadData(&params, sizeof(params));
 
         VoxelFragParams_t frag{};
         frag.sunDir = m_SunDir;
@@ -637,6 +651,8 @@ namespace Manro {
         root.uvTableAddr = m_BlockUvTable ? m_BlockUvTable->Address() : 0u;
         root.fragParamsAddr = m_FragParams ? m_FragParams->Address() : 0u;
         root.boxTableAddr = m_BlockBoxTable ? m_BlockBoxTable->Address() : 0u;
+        VoxelFrameRoot_t cutoutRoot = root;
+        cutoutRoot.frameAddr = cutoutParamsSlot.Address();
 
         if (m_bDebugEnabled)
             enc.FillBuffer(*m_DebugReadback, 0, sizeof(u32) * 8);
@@ -658,12 +674,30 @@ namespace Manro {
             enc.BarrierFrame(bar);
         }
 
+        {
+            VoxelFrameBarriers cutoutBar{};
+            cutoutBar.params = &cutoutParamsSlot;
+            cutoutBar.paramsSize = sizeof(VoxelFrameParams_t);
+            enc.BarrierFrame(cutoutBar);
+        }
+
         enc.BeginMeshPass();
         if (m_Timer && m_Timer->Valid())
             m_Timer->Stamp(enc, qslot, 1, true);
 
-        m_Stats.taskGroups = visibleCount;
-        enc.DrawVoxelMesh(*m_TaskMeshPipeline, *m_Tiles, &root, sizeof(root), visibleCount);
+        m_Stats.taskGroups = visibleCount * 2u;
+        enc.DrawVoxelMesh(*m_OpaquePipeline, *m_Tiles, &root, sizeof(root), visibleCount);
+        enc.EndMeshPass();
+
+        {
+            VoxelFrameBarriers bar{};
+            bar.faceCacheOrNull = m_FaceCache.get();
+            enc.BarrierFrame(bar);
+        }
+
+        enc.BeginMeshPassResume();
+        enc.DrawVoxelMesh(*m_CutoutPipeline, *m_Tiles, &cutoutRoot, sizeof(cutoutRoot),
+                          visibleCount);
         enc.EndMeshPass();
         if (m_Timer && m_Timer->Valid())
             m_Timer->Stamp(enc, qslot, 2, false);
