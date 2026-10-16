@@ -28,6 +28,9 @@ namespace Manro {
         u32 brickCount{0};
         u32 taskGroups{0};
         u32 editCount{0};
+        u32 taskGroupsOpaque{0};
+        u32 taskGroupsCutout{0};
+        u32 cutoutSkipped{1};
 
         u32 dbgTaskRuns{0};
         u32 dbgVisible{0};
@@ -118,6 +121,7 @@ namespace Manro {
 
         BlockAssetPack_t m_BlockPack;
         std::unique_ptr<CVoxelStreamWorld> m_StreamWorld;
+        bool m_HasAnyCutout{false};
 
         static constexpr u32 kFlightSlots = 3;
         std::array<Scope<CBuffer>, kFlightSlots> m_FrameParamsRing{};

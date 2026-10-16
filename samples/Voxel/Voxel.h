@@ -367,13 +367,16 @@ public:
         if (wantLog && m_Frame > 0) {
             float lgx = 0.f, lgd = 0.f, lgp = 0.f;
             m_Renderer->VoxelGetGpuTimes(lgx, lgd, lgp);
+            Manro::u32 tgOp = 0u, tgCut = 0u, tgSkip = 1u;
+            m_Renderer->VoxelGetTaskSplit(tgOp, tgCut, tgSkip);
             printf("[Voxel] fps=%.0f (%.2f ms) 1%%low=%.2fms 0.1%%low=%.2fms bricks=%u "
-                    "taskGroups=%u edits=%u unfilled=%d cpu=%.2fms stream=%.2fms gpuxfer=%.2fms "
+                    "taskGroups=%u (op=%u cut=%u skip=%u) edits=%u unfilled=%d cpu=%.2fms stream=%.2fms gpuxfer=%.2fms "
                     "gpudraw=%.2fms gpupost=%.2fms paceF=%.2fms paceA=%.2fms paceP=%.2fms gpuMax=%.2fms "
                     "cam=(%.1f,%.1f,%.1f)\n",
                     static_cast<double>(emaFps), static_cast<double>(m_FpsEma),
                     static_cast<double>(worst1), static_cast<double>(worst01),
-                    m_Renderer->VoxelGetBrickCount(), m_Renderer->VoxelGetTaskGroups(), m_EditCount,
+                    m_Renderer->VoxelGetBrickCount(), m_Renderer->VoxelGetTaskGroups(), tgOp,
+                    tgCut, tgSkip, m_EditCount,
                     m_Unfilled, static_cast<double>(m_CpuEma), static_cast<double>(m_StreamEma),
                     static_cast<double>(lgx), static_cast<double>(lgd), static_cast<double>(lgp),
                     static_cast<double>(m_PaceFenceMax), static_cast<double>(m_PaceAcquireMax),

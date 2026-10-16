@@ -110,6 +110,7 @@ namespace Manro {
         void VoxelQueueEdit(const Vec3 &pos, float radius, u32 material, u32 op) const;
         [[nodiscard]] u32 VoxelGetBrickCount() const;
         [[nodiscard]] u32 VoxelGetTaskGroups() const;
+        void VoxelGetTaskSplit(u32 &opaque, u32 &cutout, u32 &skipped) const;
         void VoxelGetGpuTimes(float &xferMs, float &drawMs, float &postMs) const;
         void VoxelGetGpuInstantTimes(float &xferMs, float &drawMs, float &postMs) const;
         void VoxelSetDebugEnabled(bool enabled) const;

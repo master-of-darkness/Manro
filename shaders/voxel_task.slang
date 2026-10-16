@@ -160,6 +160,8 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
 
     bool needsScan = kDebugSyntheticFaces ||
                      ((s_hdrFlags & 4u) == 0u) || ((s_hdrFlags & 2u) != 0u);
+    if (cutoutPass != 0u)
+        needsScan = false;
     uint faceStart = 0u;
     uint faceCount = 0u;
     if (!needsScan) {

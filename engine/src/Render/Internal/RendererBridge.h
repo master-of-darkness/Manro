@@ -97,6 +97,9 @@ namespace Manro {
     u32 RendererImplVoxelGetBrickCount(const CRendererImpl &impl);
 
     u32 RendererImplVoxelGetTaskGroups(const CRendererImpl &impl);
+
+    void RendererImplVoxelGetTaskSplit(const CRendererImpl &impl, u32 &opaque, u32 &cutout,
+                                       u32 &skipped);
     void RendererImplVoxelGetGpuTimes(const CRendererImpl &impl, float &xferMs, float &drawMs,
                                         float &postMs);
     void RendererImplVoxelGetGpuInstantTimes(const CRendererImpl &impl, float &xferMs, float &drawMs,

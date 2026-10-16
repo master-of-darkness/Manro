@@ -126,6 +126,10 @@ namespace Manro {
     u32 CRenderer::VoxelGetBrickCount() const { return RendererImplVoxelGetBrickCount(*m_Impl); }
 
     u32 CRenderer::VoxelGetTaskGroups() const { return RendererImplVoxelGetTaskGroups(*m_Impl); }
+
+    void CRenderer::VoxelGetTaskSplit(u32 &opaque, u32 &cutout, u32 &skipped) const {
+        RendererImplVoxelGetTaskSplit(*m_Impl, opaque, cutout, skipped);
+    }
     void CRenderer::VoxelGetGpuTimes(float &xferMs, float &drawMs, float &postMs) const {
         RendererImplVoxelGetGpuTimes(*m_Impl, xferMs, drawMs, postMs);
     }

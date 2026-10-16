@@ -295,6 +295,14 @@ namespace Manro {
             std::min(m_BlockPack.boxTable.size(), boxes.size());
         for (size_t i = 0; i < nb; ++i)
             boxes[i] = m_BlockPack.boxTable[i];
+        bool hasCutout = false;
+        for (size_t s = 0; s < n; ++s) {
+            if ((flags[s] & kBlockFlagCutout) != 0u) {
+                hasCutout = true;
+                break;
+            }
+        }
+        m_HasAnyCutout = hasCutout;
         m_BlockTileTable->LoadData(tiles.data(), tiles.size() * sizeof(u32));
         m_BlockFlagsTable->LoadData(flags.data(), flags.size() * sizeof(u32));
         m_BlockShapeTable->LoadData(shapes.data(), shapes.size() * sizeof(u32));
@@ -625,11 +633,15 @@ namespace Manro {
         params.useFrustum = m_bUseFrustum ? 1u : 0u;
         params.virtualDim = m_World->GetVirtualDim();
         CBuffer &paramsSlot = *m_FrameParamsRing[flightSlot % kFlightSlots];
-        CBuffer &cutoutParamsSlot = *m_CutoutParamsRing[flightSlot % kFlightSlots];
         params.cutoutPass = 0u;
         paramsSlot.LoadData(&params, sizeof(params));
-        params.cutoutPass = 1u;
-        cutoutParamsSlot.LoadData(&params, sizeof(params));
+        const bool wantCutout = m_HasAnyCutout && m_CutoutPipeline->IsValid();
+        CBuffer *cutoutParamsSlot = nullptr;
+        if (wantCutout) {
+            cutoutParamsSlot = m_CutoutParamsRing[flightSlot % kFlightSlots].get();
+            params.cutoutPass = 1u;
+            cutoutParamsSlot->LoadData(&params, sizeof(params));
+        }
 
         VoxelFragParams_t frag{};
         frag.sunDir = m_SunDir;
@@ -652,7 +664,8 @@ namespace Manro {
         root.fragParamsAddr = m_FragParams ? m_FragParams->Address() : 0u;
         root.boxTableAddr = m_BlockBoxTable ? m_BlockBoxTable->Address() : 0u;
         VoxelFrameRoot_t cutoutRoot = root;
-        cutoutRoot.frameAddr = cutoutParamsSlot.Address();
+        if (wantCutout)
+            cutoutRoot.frameAddr = cutoutParamsSlot->Address();
 
         if (m_bDebugEnabled)
             enc.FillBuffer(*m_DebugReadback, 0, sizeof(u32) * 8);
@@ -676,29 +689,42 @@ namespace Manro {
 
         {
             VoxelFrameBarriers cutoutBar{};
-            cutoutBar.params = &cutoutParamsSlot;
-            cutoutBar.paramsSize = sizeof(VoxelFrameParams_t);
-            enc.BarrierFrame(cutoutBar);
+            if (wantCutout) {
+                cutoutBar.params = cutoutParamsSlot;
+                cutoutBar.paramsSize = sizeof(VoxelFrameParams_t);
+                enc.BarrierFrame(cutoutBar);
+            }
         }
 
         enc.BeginMeshPass();
         if (m_Timer && m_Timer->Valid())
             m_Timer->Stamp(enc, qslot, 1, true);
 
-        m_Stats.taskGroups = visibleCount * 2u;
-        enc.DrawVoxelMesh(*m_OpaquePipeline, *m_Tiles, &root, sizeof(root), visibleCount);
-        enc.EndMeshPass();
-
-        {
-            VoxelFrameBarriers bar{};
-            bar.faceCacheOrNull = m_FaceCache.get();
-            enc.BarrierFrame(bar);
+        if (!wantCutout) {
+            m_Stats.taskGroups = visibleCount;
+            m_Stats.taskGroupsOpaque = visibleCount;
+            m_Stats.taskGroupsCutout = 0u;
+            m_Stats.cutoutSkipped = 1u;
+            enc.DrawVoxelMesh(*m_OpaquePipeline, *m_Tiles, &root, sizeof(root), visibleCount);
+            enc.EndMeshPass();
+        } else {
+            m_Stats.taskGroups = visibleCount * 2u;
+            m_Stats.taskGroupsOpaque = visibleCount;
+            m_Stats.taskGroupsCutout = visibleCount;
+            m_Stats.cutoutSkipped = 0u;
+            enc.DrawVoxelMesh(*m_OpaquePipeline, *m_Tiles, &root, sizeof(root), visibleCount);
+            enc.EndMeshPass();
+            {
+                VoxelFrameBarriers bar{};
+                bar.faceCacheOrNull = m_FaceCache.get();
+                bar.headerOrNull = &m_World->GetHeaderBuffer();
+                enc.BarrierFrame(bar);
+            }
+            enc.BeginMeshPassResume();
+            enc.DrawVoxelMesh(*m_CutoutPipeline, *m_Tiles, &cutoutRoot, sizeof(cutoutRoot),
+                              visibleCount);
+            enc.EndMeshPass();
         }
-
-        enc.BeginMeshPassResume();
-        enc.DrawVoxelMesh(*m_CutoutPipeline, *m_Tiles, &cutoutRoot, sizeof(cutoutRoot),
-                          visibleCount);
-        enc.EndMeshPass();
         if (m_Timer && m_Timer->Valid())
             m_Timer->Stamp(enc, qslot, 2, false);
 

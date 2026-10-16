@@ -186,6 +186,18 @@ namespace Manro {
             return (m_bVoxelEnabled && m_Voxel) ? m_Voxel->GetStats().taskGroups : 0;
         }
 
+        void VoxelGetTaskSplit(u32 &opaque, u32 &cutout, u32 &skipped) const {
+            if (m_bVoxelEnabled && m_Voxel) {
+                opaque = m_Voxel->GetStats().taskGroupsOpaque;
+                cutout = m_Voxel->GetStats().taskGroupsCutout;
+                skipped = m_Voxel->GetStats().cutoutSkipped;
+            } else {
+                opaque = 0u;
+                cutout = 0u;
+                skipped = 1u;
+            }
+        }
+
         void VoxelGetGpuTimes(float &xferMs, float &drawMs, float &postMs) const {
             if (m_bVoxelEnabled && m_Voxel) {
                 xferMs = m_Voxel->GetStats().gpuXferMs;
@@ -1665,6 +1677,11 @@ namespace Manro {
     u32 RendererImplVoxelGetBrickCount(const CRendererImpl &impl) { return impl.VoxelGetBrickCount(); }
 
     u32 RendererImplVoxelGetTaskGroups(const CRendererImpl &impl) { return impl.VoxelGetTaskGroups(); }
+
+    void RendererImplVoxelGetTaskSplit(const CRendererImpl &impl, u32 &opaque, u32 &cutout,
+                                       u32 &skipped) {
+        impl.VoxelGetTaskSplit(opaque, cutout, skipped);
+    }
 
     void RendererImplVoxelGetGpuTimes(const CRendererImpl &impl, float &xferMs, float &drawMs,
                                         float &postMs) {
