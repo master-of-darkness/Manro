@@ -20,6 +20,8 @@ namespace Manro {
         const CBuffer *headerOrNull{nullptr};
         const CSparseBuffer *bricksOrNull{nullptr};
         const CBuffer *faceCacheOrNull{nullptr};
+        const CBuffer *spillOrNull{nullptr};
+        const CBuffer *spillDescOrNull{nullptr};
         const CBuffer *debugOrNull{nullptr};
         bool debug{false};
     };

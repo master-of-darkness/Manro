@@ -29,6 +29,8 @@ struct VoxelFrameRoot {
     uint64_t uvTableAddr;
     uint64_t fragParamsAddr;
     uint64_t boxTableAddr;
+    uint64_t spillAddr;
+    uint64_t spillDescAddr;
 };
 
 struct VoxelFrameParams {
@@ -56,9 +58,11 @@ struct VoxelTaskPayload {
     uint brickIdx;
     uint faceStart;
     uint faceCount;
+    uint spillStart;
+    uint spillCount;
 };
 
-static const uint kVoxelFaceCacheCap = 4095u;
+static const uint kVoxelFaceCacheCap = 5460u;
 
 
 
@@ -67,6 +71,7 @@ static const uint kVoxelFaceCacheCap = 4095u;
 
 static const uint kVoxelFaceCacheStride = 16384u;
 static const uint kVoxelFaceCacheOpaqueIdx = 16383u;
+static const uint kVoxelSpillQuota = 512u;
 
 
 

@@ -126,7 +126,8 @@ namespace Manro {
         bool VoxelStreamGetCollisionBox(const Vec3 &p, Vec3 &mn, Vec3 &mx) const;
         std::string VoxelGetStateKey(u32 id) const;
         u32 VoxelFindStateByKey(const std::string &key) const;
-        void VoxelGetDebugCounters(u32 out[6]) const;
+
+        void VoxelGetDebugCounters(u32 out[8]) const;
 
         void SetSettings(const RenderSettings_t &settings) const;
 

@@ -293,7 +293,7 @@ public:
             if (id > m_GpuDrawMax) m_GpuDrawMax = id;
         }
 
-        Manro::u32 dbg[6] = {};
+        Manro::u32 dbg[8] = {};
         m_Renderer->VoxelGetDebugCounters(dbg);
 
         float worst1 = 0.f, worst01 = 0.f;
@@ -352,6 +352,7 @@ public:
                         m_bGrabbed ? "" : " (cursor free)");
             ImGui::TextDisabled("task=%u vis=%u faces=%u cull=%u mesh=%u mfaces=%u", dbg[0], dbg[1],
                                 dbg[2], dbg[3], dbg[4], dbg[5]);
+            ImGui::TextDisabled("ovfBricks=%u dropFaces=%u", dbg[6], dbg[7]);
             ImGui::TextDisabled("backface=%d frustum=%d", m_UseBackface ? 1 : 0,
                                 m_UseFrustum ? 1 : 0);
             ImGui::TextDisabled("placing: %s",

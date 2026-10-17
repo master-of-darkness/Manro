@@ -137,7 +137,7 @@ namespace Manro {
     }
 
     void CVoxelEncoder::BarrierFrame(const VoxelFrameBarriers &bar) {
-        VkBufferMemoryBarrier2 b[7]{};
+        VkBufferMemoryBarrier2 b[9]{};
         u32 barrierCount = 0;
         auto pushBuf = [&](VkBuffer buf, VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess,
                             VkPipelineStageFlags2 dstStage, VkAccessFlags2 dstAccess, u64 offset,
@@ -179,6 +179,15 @@ namespace Manro {
             pushBuf(bar.faceCacheOrNull->GetHandle(), VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT,
                     VK_ACCESS_2_SHADER_WRITE_BIT,
                     VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT,
+                    VK_ACCESS_2_SHADER_READ_BIT, 0, VK_WHOLE_SIZE);
+        if (bar.spillOrNull)
+            pushBuf(bar.spillOrNull->GetHandle(), VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT,
+                    VK_ACCESS_2_SHADER_WRITE_BIT,
+                    VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT,
+                    VK_ACCESS_2_SHADER_READ_BIT, 0, VK_WHOLE_SIZE);
+        if (bar.spillDescOrNull)
+            pushBuf(bar.spillDescOrNull->GetHandle(), VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT,
+                    VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT,
                     VK_ACCESS_2_SHADER_READ_BIT, 0, VK_WHOLE_SIZE);
         if (bar.debug && bar.debugOrNull)
             pushBuf(bar.debugOrNull->GetHandle(),

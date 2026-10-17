@@ -63,10 +63,6 @@ namespace Manro {
             }
         };
 
-        // Flat v1 light seed (worker-local, async, no flood-fill): sky column
-        // from true top through save opacity + block emission. Horizontal
-        // falloff converges via the main-thread border pull (1 step per load)
-        // with async lag. v2 restores full multi-step smooth propagation.
         inline void SeedFlatLight(const BlockAssetPack_t &pack, CAnvilWorldReader &reader,
                                   int sx, int sy, int sz, const std::vector<u16> &mats,
                                   std::vector<u8> &lightOut) {
@@ -83,8 +79,6 @@ namespace Manro {
                            ? pack.emission[static_cast<size_t>(st)]
                            : 0u;
             };
-            // Sky entering own top per (lx,lz): walk sections above via save
-            // (chunk-column cached, absent = air). Skipped for top section.
             u8 topSky[16][16];
             for (int lz = 0; lz < 16; ++lz)
                 for (int lx = 0; lx < 16; ++lx)
@@ -94,7 +88,7 @@ namespace Manro {
                 std::vector<u32> palTmp;
                 for (int asy = kMaxSectionY; asy > sy; --asy) {
                     if (!reader.ReadSectionStates(sx, asy, sz, sec) || !sec.present)
-                        continue; // air above
+                        continue;
                     palTmp.clear();
                     palTmp.reserve(sec.palette.size());
                     for (const FullState &fs : sec.palette) {
@@ -140,7 +134,6 @@ namespace Manro {
                             sky = carry;
                         lightOut[vi] = static_cast<u8>((sky << 4u) | (emis & 0x0Fu));
                         if (gy < -64 || gy >= 320) {
-                            /* carry unchanged outside world */
                         } else if (sop >= 15u) {
                             carry = 0u;
                         } else if (sop != 0u) {
@@ -163,8 +156,6 @@ namespace Manro {
             bool filled{false};
         };
         std::unordered_map<i64, SlotInfo> slots;
-        // O(1) slot -> filled brickIdx (or -1). Mirrors CVoxelWorld page table for
-        // the lighting hot path (avoids unordered_map hashing per neighbour).
         std::vector<i32> slotMirror;
 
         std::vector<i64> unfilled;
@@ -181,13 +172,10 @@ namespace Manro {
             std::vector<u16> mats;
             std::vector<u32> occ;
             std::vector<u32> fluid;
-            // Flat packed light (sky<<4|block), seeded async in the worker
-            // (sky column from true top via save + emission). Attached to the
-            // subchunk; uploaded with the brick (no light bricks, no flood).
             std::vector<u8> light;
             bool opaque{false};
             bool hasEmission{false};
-            u64 lightVisits{0}; // worker BFS visits (accumulated into stats)
+            u64 lightVisits{0};
         };
         struct WorkerState {
             SpscQueue<ParseJob, 64> jobs;
@@ -268,10 +256,6 @@ namespace Manro {
                     const bool valid = static_cast<size_t>(st) < pack->states.size();
                     const u32 flags = valid ? pack->states[static_cast<size_t>(st)].flags : 0u;
                     const bool skip = !valid || ((flags & kBlockFlagSkip) != 0);
-                    // Keep original state id (even for skip/air-like blocks such as
-                    // torches) so CPU lighting can look up emission. GPU face
-                    // culling still skips via the skip flag, so rendering is
-                    // unchanged. Occupancy stays air-like for skip.
                     out.mats[static_cast<size_t>(vi)] = valid ? static_cast<u16>(st) : 0;
                     if (valid && static_cast<size_t>(st) < pack->emission.size() &&
                         pack->emission[static_cast<size_t>(st)] != 0u)
@@ -289,8 +273,6 @@ namespace Manro {
                 }
                 out.opaque = allOpaque;
                 out.hasEmission = hasEmis;
-                // Async full spread in the worker: column seed + halo inflow +
-                // bounded in-brick BFS. Main thread never flood-fills.
                 out.lightVisits = SeedSpreadLight(job.sx, job.sy, job.sz, out.mats,
                                                  out.light, localReader);
                 while (!st.done.Push(std::move(out))) {
@@ -323,19 +305,10 @@ namespace Manro {
 
         std::vector<u16> stateMirror;
         std::vector<u8> brickContent;
-        // Packed vanilla light: high nibble sky (0-15), low nibble block (0-15).
         std::vector<u8> lightMirror;
         std::vector<u8> lightDirtyFlag;
         std::vector<u32> lightDirtyList;
-        // Guards slots/slotMirror/occMirror/fluidMirror/stateMirror/
-        // lightMirror/brickContent. Main thread (sole writer) takes unique
-        // locks at mutation sites; parse workers take brief shared locks to
-        // snapshot neighbour light for async BFS. Main-thread reads
-        // (physics/picking, same thread as writer) need no lock.
         mutable std::shared_mutex m_MirrorMutex;
-        // ---- Vanilla light perf instrumentation (Step A: bounded flood-fill) ----
-        // Accumulated per Update() and flushed into VoxelStreamStats_t.
-        // (ApplyEdit also accumulates; attributed to the next Update.)
         double lightMsAccum{0.0};
         u32 lightBrickCount{0};
         u64 lightVisitCount{0};
@@ -355,10 +328,6 @@ namespace Manro {
         }
 
         u32 SlotFor(int sx, int sy, int sz) const {
-            // D=64 is a power of two: bitmask instead of 3 idivs per call.
-            // (u32) truncation + &63 == ((v%64)+64)%64 for all ints, so the
-            // mapping is identical to the old modulo version, just ~30x
-            // cheaper. Matters for the per-neighbour lighting lookups.
             constexpr u32 M = 64u - 1u;
             const u32 bx = static_cast<u32>(sx - minBX) & M;
             const u32 by = static_cast<u32>(sy + 4) & M;
@@ -425,8 +394,6 @@ namespace Manro {
             world.SetBrickOpaqueFull(static_cast<u32>(brickIdx), opaque);
         }
 
-        // Flat v1 neighbour fetch: packed light at a global voxel via the
-        // resident slot mirror. Returns false when unloaded (no contribution).
         bool PackedLightAt(i64 x, i64 y, i64 z, u8 &skyOut, u8 &blkOut) const {
             if (y >= 320) {
                 skyOut = 15u;
@@ -454,10 +421,6 @@ namespace Manro {
             return true;
         }
 
-        // Flat v1 border pull (sync, bounded, no BFS): raise-only 1-step
-        // falloff from already-loaded face neighbours so seams converge with
-        // async lag. Sky columns are seeded from true top in the worker, so
-        // no commit ordering is required. v2 restores full propagation.
         void BorderPullLight(u32 brickIdx, int bsx, int bsy, int bsz) {
             if (!pack)
                 return;
@@ -480,7 +443,7 @@ namespace Manro {
                                            ? pack->skyOpacity[static_cast<size_t>(st)]
                                            : 15u;
                         if (sop >= 15u)
-                            continue; // opaque: worker seed (emission) stands
+                            continue;
                         const int gx = bsx * 16 + lx;
                         const int gy = bsy * 16 + ly;
                         const int gz = bsz * 16 + lz;
@@ -493,7 +456,7 @@ namespace Manro {
                                 continue;
                             u8 skyCand;
                             if (ns == 15 && o[1] == -1 && sop == 0u)
-                                skyCand = 15u; // open-sky column runs down
+                                skyCand = 15u;
                             else
                                 skyCand = ns > 0u ? static_cast<u8>(ns - 1u) : 0u;
                             const u8 blkCand = nb > 0u ? static_cast<u8>(nb - 1u) : 0u;
@@ -522,9 +485,6 @@ namespace Manro {
             u8 light[4096]{};
         };
 
-        // Snapshot the 6 face-neighbour light arrays under a brief shared
-        // lock (up to 6x4KB). Stale snapshots self-heal via BorderPull and
-        // future loads (async lag); callers must tolerate lag.
         void SnapshotHalo(int bsx, int bsy, int bsz, HaloSnap_t out[6]) const {
             std::shared_lock lk(m_MirrorMutex);
             for (int a = 0; a < 6; ++a) {
@@ -546,9 +506,6 @@ namespace Manro {
             }
         }
 
-        // Halo level for a global voxel known to be outside the own brick.
-        // Edge rules mirror the sampler: above world = full sky, below = dark,
-        // unloaded = dark (converges on load).
         static bool HaloLevel(const HaloSnap_t halo[6], int bsx, int bsy, int bsz,
                               int gx, int gy, int gz, u8 &skyOut, u8 &blkOut) {
             if (gy >= 320) {
@@ -575,11 +532,6 @@ namespace Manro {
             return false;
         }
 
-        // Async full spread (worker thread): column+emission seed, halo
-        // inflow, then bounded multi-step BFS confined to the own 16^3.
-        // Gives full 15-falloff inside the brick; cross-brick glow arrives via
-        // halo snapshots when neighbours are loaded (else truncated with lag).
-        // Never touches main-thread mirrors except the halo snapshot.
         u64 SeedSpreadLight(int sx, int sy, int sz, const std::vector<u16> &mats,
                             std::vector<u8> &lightOut,
                             CAnvilWorldReader &reader) const {
@@ -594,7 +546,7 @@ namespace Manro {
                 }
             }
             if (!anyLight)
-                return 0; // fully dark: no BFS needed
+                return 0;
             HaloSnap_t halo[6];
             SnapshotHalo(sx, sy, sz, halo);
             const size_t skyOpSize = pack->skyOpacity.size();
@@ -604,7 +556,6 @@ namespace Manro {
                            ? pack->skyOpacity[static_cast<size_t>(st)]
                            : 15u;
             };
-            // Border inflow from halo + edge rules (raise-only).
             for (int ly = 0; ly < 16; ++ly) {
                 for (int lz = 0; lz < 16; ++lz) {
                     for (int lx = 0; lx < 16; ++lx) {
@@ -653,13 +604,9 @@ namespace Manro {
                     }
                 }
             }
-            // Bounded BFS over the own brick (raise-only, writes own only).
             thread_local std::vector<u16> wSkyQ, wBlkQ;
             wSkyQ.clear();
             wBlkQ.clear();
-            // Seed every lit voxel: raise-only BFS then converges in-brick.
-            // (Border-only seeding would miss interior skylight shafts next
-            // to dark pockets.) Queue/visit caps bound pathological cases.
             for (size_t vi = 0; vi < 4096; ++vi) {
                 const u8 p = lightOut[vi];
                 if (p == 0u)
@@ -688,7 +635,7 @@ namespace Manro {
                     const int nlz = lz + o[2];
                     if (nlx < 0 || nlx > 15 || nly < 0 || nly > 15 || nlz < 0 ||
                         nlz > 15)
-                        continue; // writes confined to own brick
+                        continue;
                     const size_t nvi =
                         static_cast<size_t>(nlx + nly * 16 + nlz * 256);
                     const u32 nst = mats[nvi];
@@ -715,7 +662,7 @@ namespace Manro {
                 ++visits;
                 const u8 cur = static_cast<u8>(lightOut[vi] & 0xFu);
                 if (cur <= 1u)
-                    continue; // cur-1 would be 0: no spread
+                    continue;
                 const int lx = vi & 15;
                 const int ly = (vi >> 4) & 15;
                 const int lz = (vi >> 8) & 15;
@@ -747,9 +694,6 @@ namespace Manro {
             return visits;
         }
 
-        // Emissive-brick glow push (main thread, mirror lock held): raise the
-        // 1-halo of loaded face neighbours and queue them for restage/rebake
-        // so torch glow crosses chunk borders with async lag.
         void GlowPushToNeighbours(u32 brickIdx, int bsx, int bsy, int bsz) {
             if (!pack)
                 return;
@@ -843,9 +787,6 @@ namespace Manro {
             i64 key{-1};
             u32 brick{~0u};
         };
-        // Bricks whose CPU mirrors changed via ApplyEdit and need a full
-        // brickEx re-stage (voxels + flat light). Drained in Update with
-        // 1-frame async lag; pruned on evict via the slots map.
         std::vector<EditRestage_t> editRestage;
 
         i32 StateAt(i64 x, i64 y, i64 z) const {
@@ -914,11 +855,6 @@ namespace Manro {
             return mx.x > mn.x && mx.y > mn.y && mx.z > mn.z;
         }
 
-        // NOTE (v2): the old main-thread flood-fill lighting (~700 lines:
-        // voxel helpers, dirty flags, BFS queues, per-brick/box/edit
-        // recomputes) was deleted. Lighting is seeded async in workers
-        // (SeedFlatLight/SeedSpreadLight) and converged via BorderPullLight +
-        // GlowPushToNeighbours with lag. Edits re-stage via editRestage.
     };
 
     CVoxelStreamWorld::CVoxelStreamWorld() : m_Impl(std::make_unique<Impl>()) {}
@@ -1117,8 +1053,6 @@ namespace Manro {
                     world.EvictBrick(static_cast<u32>(b));
                     if (static_cast<size_t>(b) < I.brickContent.size())
                         I.brickContent[static_cast<size_t>(b)] = 0u;
-                    // No light-brick clear: the slot is dropped and the next
-                    // commit fully overwrites mirrors + brickEx upload.
                 }
                 {
                     const u32 slot = I.SlotFor(sx, sy, sz);
@@ -1198,12 +1132,10 @@ namespace Manro {
                             break;
                         bidx = static_cast<u32>(nb);
                         {
-                            // Mirror lock: workers snapshot slots concurrently.
-                            // (AllocateBrickSlot above stays outside: GPU bind.)
                             std::unique_lock lk(I.m_MirrorMutex);
                             sit = I.slots.emplace(key, Impl::SlotInfo{nb, false}).first;
                             if (slot < I.slotMirror.size())
-                                I.slotMirror[slot] = -1; // reserved, not loaded yet
+                                I.slotMirror[slot] = -1;
                         }
                     } else if (sit->second.filled || sit->second.brickIdx < 0) {
                         continue;
@@ -1291,7 +1223,6 @@ namespace Manro {
         const auto commitOne = [&](u32 brickIdx, const u32 *occ, const u32 *fluid,
                                    const u16 *mats, const u8 *light, u8 opaque, u8 hasEmis,
                                    i64 key) {
-            // Mirror lock: workers snapshot neighbour light concurrently.
             std::unique_lock lk(I.m_MirrorMutex);
             const size_t need = (static_cast<size_t>(brickIdx) + 1) * 128;
             if (I.occMirror.size() < need) {
@@ -1319,8 +1250,6 @@ namespace Manro {
             }
             I.pending.erase(key);
 
-            // Flat light: worker-seeded array rides the brick (no flood-fill
-            // on the main thread). Border pull converges seams with lag.
             {
                 const auto t0 = std::chrono::steady_clock::now();
                 const size_t lneed = (static_cast<size_t>(brickIdx) + 1) * 4096;
@@ -1392,10 +1321,7 @@ namespace Manro {
             }
         }
 
-        // Edited bricks: re-stage full brickEx (voxels + flat light) with
-        // 1-frame async lag. Wins staging over new bricks (user-visible).
         if (!I.editRestage.empty()) {
-            // Mirror lock: workers snapshot mirrors concurrently.
             std::unique_lock lk(I.m_MirrorMutex);
             {
                 size_t kept = 0;
@@ -1539,7 +1465,6 @@ namespace Manro {
     void CVoxelStreamWorld::ApplyEdit(CVoxelWorld &world, const Vec3 &pos, float radius, u32 op,
                                       u32 state) {
         auto &I = *m_Impl;
-        // Mirror lock: workers snapshot mirrors concurrently.
         std::unique_lock lk(I.m_MirrorMutex);
 
         const int bsx = static_cast<int>(std::floor(pos.x / 16.f));
@@ -1574,7 +1499,6 @@ namespace Manro {
                 if (hasState)
                     I.stateMirror[sbase + vi] = static_cast<u16>(state & 0xFFFFu);
             }
-            // Flat v1 edit light (sync, raise-only 1-step neighbour pull).
             if (hasLight) {
                 const u32 stNow = hasState ? I.stateMirror[sbase + vi] : 0u;
                 u8 emis = 0u, sop = 15u;
@@ -1645,8 +1569,6 @@ namespace Manro {
                 I.brickContent.resize(bi + 1, 1u);
             I.brickContent[bi] = (any != 0u) ? 1u : 0u;
         }
-        // Edited brickEx (voxels + flat light) is re-staged in Update with
-        // 1-frame async lag; the GPU edit-shader path covers occupancy now.
         {
             const Impl::EditRestage_t e{Impl::Key(bsx, bsy, bsz),
                                         static_cast<u32>(it->second.brickIdx)};

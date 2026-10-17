@@ -222,9 +222,9 @@ namespace Manro {
             }
         }
 
-        void VoxelGetDebugCounters(u32 out[6]) const {
+        void VoxelGetDebugCounters(u32 out[8]) const {
             if (!m_bVoxelEnabled || !m_Voxel) {
-                for (int i = 0; i < 6; ++i)
+                for (int i = 0; i < 8; ++i)
                     out[i] = 0;
                 return;
             }
@@ -1693,7 +1693,7 @@ namespace Manro {
         impl.VoxelGetGpuInstantTimes(xferMs, drawMs, postMs);
     }
 
-    void RendererImplVoxelGetDebugCounters(const CRendererImpl &impl, u32 out[6]) {
+    void RendererImplVoxelGetDebugCounters(const CRendererImpl &impl, u32 out[8]) {
         impl.VoxelGetDebugCounters(out);
     }
 

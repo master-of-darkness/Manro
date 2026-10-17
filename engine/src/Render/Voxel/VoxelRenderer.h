@@ -88,7 +88,7 @@ namespace Manro {
         void SetBackfaceEnabled(bool e) { m_bUseBackface = e; }
         void SetFrustumEnabled(bool e) { m_bUseFrustum = e; }
 
-        void ReadDebugCounters(u32 out[6]) const;
+        void ReadDebugCounters(u32 out[8]) const;
 
         void StampPost(CVoxelEncoder &enc, u32 flightSlot, u32 subIdx);
 
@@ -137,6 +137,8 @@ namespace Manro {
         Scope<CBuffer> m_EditStaging;
         Scope<CBuffer> m_DebugReadback;
         Scope<CBuffer> m_FaceCache;
+        Scope<CBuffer> m_SpillCache;
+        Scope<CBuffer> m_SpillDesc;
 
         std::vector<u32> m_VisibleList;
         std::vector<std::pair<float, u32>> m_SortScratch;
@@ -160,6 +162,6 @@ namespace Manro {
         bool m_bGiEnabled{false};
         bool m_bUseBackface{true};
         bool m_bUseFrustum{true};
-        mutable u32 m_CachedDebug[6]{};
+        mutable u32 m_CachedDebug[8]{};
     };
 }

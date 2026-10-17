@@ -77,6 +77,13 @@ namespace Manro {
             m_Context, sizeof(u32) * kVoxelFaceCacheStride * desc.maxResidentBricks,
             EBufferUsage::Storage | EBufferUsage::ShaderAddress, EBufferMemory::GpuOnly);
 
+        m_SpillCache = CreateScope<CBuffer>(
+            m_Context, sizeof(u32) * kVoxelSpillQuota * kVoxelSpillWords * desc.maxResidentBricks,
+            EBufferUsage::Storage | EBufferUsage::ShaderAddress, EBufferMemory::GpuOnly);
+        m_SpillDesc = CreateScope<CBuffer>(
+            m_Context, sizeof(u32) * kVoxelSpillDescWords * desc.maxResidentBricks,
+            EBufferUsage::Storage | EBufferUsage::ShaderAddress, EBufferMemory::GpuOnly);
+
         m_DebugReadback = CreateScope<CBuffer>(
             m_Context, sizeof(u32) * 8,
             EBufferUsage::Storage | EBufferUsage::ShaderAddress | EBufferUsage::TransferDst,
@@ -180,6 +187,8 @@ namespace Manro {
             slot.reset();
         m_DebugReadback.reset();
         m_FaceCache.reset();
+        m_SpillCache.reset();
+        m_SpillDesc.reset();
         if (m_World)
             m_World->Shutdown();
         m_bInitialized = false;
@@ -663,6 +672,8 @@ namespace Manro {
         root.uvTableAddr = m_BlockUvTable ? m_BlockUvTable->Address() : 0u;
         root.fragParamsAddr = m_FragParams ? m_FragParams->Address() : 0u;
         root.boxTableAddr = m_BlockBoxTable ? m_BlockBoxTable->Address() : 0u;
+        root.spillAddr = m_SpillCache ? m_SpillCache->Address() : 0u;
+        root.spillDescAddr = m_SpillDesc ? m_SpillDesc->Address() : 0u;
         VoxelFrameRoot_t cutoutRoot = root;
         if (wantCutout)
             cutoutRoot.frameAddr = cutoutParamsSlot->Address();
@@ -682,6 +693,8 @@ namespace Manro {
             bar.headerOrNull = &m_World->GetHeaderBuffer();
             bar.bricksOrNull = &m_World->GetBrickStore();
             bar.faceCacheOrNull = m_FaceCache.get();
+            bar.spillOrNull = m_SpillCache.get();
+            bar.spillDescOrNull = m_SpillDesc.get();
             bar.debugOrNull = m_DebugReadback.get();
             bar.debug = m_bDebugEnabled;
             enc.BarrierFrame(bar);
@@ -717,6 +730,8 @@ namespace Manro {
             {
                 VoxelFrameBarriers bar{};
                 bar.faceCacheOrNull = m_FaceCache.get();
+                bar.spillOrNull = m_SpillCache.get();
+                bar.spillDescOrNull = m_SpillDesc.get();
                 bar.headerOrNull = &m_World->GetHeaderBuffer();
                 enc.BarrierFrame(bar);
             }
@@ -740,17 +755,16 @@ namespace Manro {
         m_Timer->Stamp(enc, flightSlot % kFlightSlots, subIdx, false);
     }
 
-    void CVoxelRenderer::ReadDebugCounters(u32 out[6]) const {
-
+    void CVoxelRenderer::ReadDebugCounters(u32 out[8]) const {
         if (!m_bDebugEnabled || !m_DebugReadback) {
-            for (int i = 0; i < 6; ++i)
+            for (int i = 0; i < 8; ++i)
                 out[i] = m_CachedDebug[i];
             return;
         }
 
-        m_DebugReadback->Invalidate(0, sizeof(u32) * 6);
+        m_DebugReadback->Invalidate(0, sizeof(u32) * 8);
         const auto *src = static_cast<const u32 *>(m_DebugReadback->GetMapped());
-        for (int i = 0; i < 6; ++i) {
+        for (int i = 0; i < 8; ++i) {
             out[i] = src[i];
             m_CachedDebug[i] = src[i];
         }

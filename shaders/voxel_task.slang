@@ -5,6 +5,10 @@ VoxelFrameRoot g_TaskRoot;
 
 groupshared uint s_swap[4096];
 groupshared uint s_partCount[3];
+groupshared uint s_spillNop;
+groupshared uint s_spillNcut;
+groupshared uint s_spillTot;
+groupshared uint s_spillDrop;
 groupshared uint s_cutoutPass;
 groupshared uint s_hasContent;
 groupshared uint s_occ[128];
@@ -92,6 +96,93 @@ bool OpaqueFullAt(int gx, int gy, int gz, int3 brickAbs,
            shapes[state * 2u + 1u] == (16u | (16u << 8u) | (16u << 16u));
 }
 
+void BakeFaceLight(uint packed, int3 brickAbs, uint* bricksEx, int* pages,
+                   uint* blockFlags, uint* blockShapes,
+                   int minBX, int minBZ, uint vdim,
+                   out uint w1, out uint w2v3) {
+    uint iter = packed & 0xFFFu;
+    uint f = (packed >> 12u) & 0x7u;
+    int3 vPos = brickAbs + int3(int(iter & 15u),
+                                int((iter >> 4u) & 15u),
+                                int((iter >> 8u) & 15u));
+    int3 nOff = kFaceOffset[f];
+    int3 uVec;
+    int3 vVec;
+    if (f == 0u || f == 1u) {
+        uVec = int3(0, 1, 0);
+        vVec = int3(0, 0, 1);
+    } else if (f == 2u || f == 3u) {
+        uVec = int3(1, 0, 0);
+        vVec = int3(0, 0, 1);
+    } else {
+        uVec = int3(1, 0, 0);
+        vVec = int3(0, 1, 0);
+    }
+    int3 facePos = vPos + nOff;
+    uint fmat = min((packed >> 15u) & 0x7FFFu, kBlockStateMax - 1u);
+    int3 lightBase = facePos;
+    if (f == 3u && ((blockFlags[fmat] & 32u) != 0u) &&
+        OpaqueFullAt(facePos.x, facePos.y, facePos.z, brickAbs,
+                     bricksEx, pages, blockFlags, blockShapes,
+                     minBX, minBZ, vdim)) {
+        lightBase = vPos;
+    }
+    uint faceLP = FlatLightAt(lightBase.x, lightBase.y, lightBase.z,
+                              brickAbs, bricksEx, pages, minBX, minBZ,
+                              vdim);
+    uint faceSky = (faceLP >> 4u) & 0xFu;
+    uint faceBlk = faceLP & 0xFu;
+    w1 = 0u;
+    uint v3sky = 0u, v3blk = 0u, v3ao = 0u;
+    for (uint ci = 0u; ci < 4u; ++ci) {
+        int du = (ci == 0u || ci == 3u) ? -1 : 1;
+        int dv = (ci == 0u || ci == 1u) ? -1 : 1;
+        int3 s1Pos = lightBase + uVec * du;
+        int3 s2Pos = lightBase + vVec * dv;
+        int3 cPos = lightBase + uVec * du + vVec * dv;
+        uint o1 = OpaqueFullAt(s1Pos.x, s1Pos.y, s1Pos.z, brickAbs,
+                               bricksEx, pages, blockFlags, blockShapes,
+                               minBX, minBZ, vdim) ? 1u : 0u;
+        uint o2 = OpaqueFullAt(s2Pos.x, s2Pos.y, s2Pos.z, brickAbs,
+                               bricksEx, pages, blockFlags, blockShapes,
+                               minBX, minBZ, vdim) ? 1u : 0u;
+        uint oc = OpaqueFullAt(cPos.x, cPos.y, cPos.z, brickAbs,
+                               bricksEx, pages, blockFlags, blockShapes,
+                               minBX, minBZ, vdim) ? 1u : 0u;
+        uint ao = ((o1 != 0u && o2 != 0u)) ? 0u : (3u - (o1 + o2 + oc));
+        uint sky;
+        uint blk;
+        if (o1 != 0u && o2 != 0u) {
+            sky = faceSky;
+            blk = faceBlk;
+        } else {
+            uint s1LP = FlatLightAt(s1Pos.x, s1Pos.y, s1Pos.z,
+                                    brickAbs, bricksEx, pages, minBX,
+                                    minBZ, vdim);
+            uint s2LP = FlatLightAt(s2Pos.x, s2Pos.y, s2Pos.z,
+                                    brickAbs, bricksEx, pages, minBX,
+                                    minBZ, vdim);
+            uint cLP = FlatLightAt(cPos.x, cPos.y, cPos.z,
+                                   brickAbs, bricksEx, pages, minBX,
+                                   minBZ, vdim);
+            sky = min((faceSky + ((s1LP >> 4u) & 0xFu) +
+                       ((s2LP >> 4u) & 0xFu) + ((cLP >> 4u) & 0xFu) +
+                       2u) >> 2u, 15u);
+            blk = min((faceBlk + (s1LP & 0xFu) + (s2LP & 0xFu) +
+                       (cLP & 0xFu) + 2u) >> 2u, 15u);
+        }
+        uint bits = (sky & 0xFu) | ((blk & 0xFu) << 4u) | ((ao & 0x3u) << 8u);
+        if (ci < 3u) {
+            w1 |= bits << (ci * 10u);
+        } else {
+            v3sky = sky & 0xFu;
+            v3blk = blk & 0xFu;
+            v3ao = ao & 0x3u;
+        }
+    }
+    w2v3 = v3sky | (v3blk << 4u) | (v3ao << 8u);
+}
+
 static const bool kDebugSyntheticFaces = false;
 
 [shader("amplification")]
@@ -126,6 +217,10 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
         s_partCount[0] = 0u;
         s_partCount[1] = 0u;
         s_partCount[2] = 0u;
+        s_spillNop = 0u;
+        s_spillNcut = 0u;
+        s_spillTot = 0u;
+        s_spillDrop = 0u;
         s_hasContent = 0u;
     }
     GroupMemoryBarrierWithGroupSync();
@@ -157,6 +252,10 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
     }
     vk::BufferPointer<uint> fcache = vk::BufferPointer<uint>(g_TaskRoot.faceCacheAddr);
     uint* fcb = fcache.getPtr() + brickIdx * kVoxelFaceCacheStride;
+    vk::BufferPointer<uint> spillBuf = vk::BufferPointer<uint>(g_TaskRoot.spillAddr);
+    uint* spillBase = spillBuf.getPtr() + brickIdx * (kVoxelSpillQuota * 3u);
+    vk::BufferPointer<uint> spillDescBuf = vk::BufferPointer<uint>(g_TaskRoot.spillDescAddr);
+    uint* spillDesc = spillDescBuf.getPtr() + brickIdx * 2u;
 
     bool needsScan = kDebugSyntheticFaces ||
                      ((s_hdrFlags & 4u) == 0u) || ((s_hdrFlags & 2u) != 0u);
@@ -164,6 +263,8 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
         needsScan = false;
     uint faceStart = 0u;
     uint faceCount = 0u;
+    uint spillStart = 0u;
+    uint spillCount = 0u;
     if (!needsScan) {
         uint nTotal = fcb[0];
         uint nOp = fcb[kVoxelFaceCacheOpaqueIdx];
@@ -171,12 +272,18 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
             nTotal = kVoxelFaceCacheCap;
         if (nOp > nTotal)
             nOp = nTotal;
+        uint spTot = spillDesc[0];
+        uint spNop = min(spillDesc[1], spTot);
         if (cutoutPass != 0u) {
             faceStart = nOp;
             faceCount = (nTotal > nOp) ? (nTotal - nOp) : 0u;
+            spillStart = spNop;
+            spillCount = (spTot > spNop) ? (spTot - spNop) : 0u;
         } else {
             faceStart = 0u;
             faceCount = nOp;
+            spillStart = 0u;
+            spillCount = spNop;
         }
     } else {
         if (kDebugSyntheticFaces) {
@@ -185,10 +292,9 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                 uint z = (i >> 4u) & 15u;
                 uint iter = x + 7u * 16u + z * 256u;
                 uint mat = (x + z) & 1u;
-                fcb[1u + i * 4u] = (iter & 0xFFFu) | (2u << 12u) | ((mat & 0x1FFu) << 15u);
-                fcb[1u + i * 4u + 1u] = 0x3FFu | (0x3FFu << 10u) | (0x3FFu << 20u);
-                fcb[1u + i * 4u + 2u] = 0x3FFu; 
-                fcb[1u + i * 4u + 3u] = 0u; 
+                fcb[1u + i * 3u] = (iter & 0xFFFu) | (2u << 12u) | ((mat & 0x1FFu) << 15u);
+                fcb[1u + i * 3u + 1u] = 0x3FFu | (0x3FFu << 10u) | (0x3FFu << 20u);
+                fcb[1u + i * 3u + 2u] = 0x3FFu; 
             }
             if (gidx == 0) {
                 fcb[0] = 256u;
@@ -197,9 +303,13 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
             if (cutoutPass != 0u) {
                 faceStart = 256u;
                 faceCount = 0u;
+                spillStart = 0u;
+                spillCount = 0u;
             } else {
                 faceStart = 0u;
                 faceCount = 256u;
+                spillStart = 0u;
+                spillCount = 0u;
             }
         } else {
             for (uint w = gidx; w < 128u; w += 32u) {
@@ -367,16 +477,34 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                                 if (localCut[kf] == 0u) {
                                     uint widx = oldNop + ko; ko++;
                                     if (widx < kVoxelFaceCacheCap) {
-                                        fcb[1u + widx * 4u] = localPack[kf];
-                                        fcb[1u + widx * 4u + 3u] = localBox[kf];
+                                        fcb[1u + widx * 3u] = localPack[kf];
+                                        fcb[1u + widx * 3u + 2u] = localBox[kf];
                                     }
                                 } else {
                                     uint widx = (kVoxelFaceCacheCap - 1u) - (oldNcut + kc); kc++;
                                     if (widx < kVoxelFaceCacheCap) {
-                                        fcb[1u + widx * 4u] = localPack[kf];
-                                        fcb[1u + widx * 4u + 3u] = localBox[kf];
+                                        fcb[1u + widx * 3u] = localPack[kf];
+                                        fcb[1u + widx * 3u + 2u] = localBox[kf];
                                     }
                                 }
+                            }
+                            for (uint ks = keep; ks < 32u; ++ks) {
+                                uint stot = 0u;
+                                InterlockedAdd(s_spillTot, 1u, stot);
+                                if (stot >= kVoxelSpillQuota) {
+                                    uint sdrop = 0u;
+                                    InterlockedAdd(s_spillDrop, 1u, sdrop);
+                                    continue;
+                                }
+                                uint soff = 0u;
+                                if (localCut[ks] == 0u) {
+                                    InterlockedAdd(s_spillNop, 1u, soff);
+                                } else {
+                                    InterlockedAdd(s_spillNcut, 1u, soff);
+                                    soff = (kVoxelSpillQuota - 1u) - soff;
+                                }
+                                spillBase[soff * 3u] = localPack[ks];
+                                spillBase[soff * 3u + 2u] = localBox[ks];
                             }
                             localN = 0u;
                         }
@@ -435,16 +563,34 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                                         if (localCut[kf] == 0u) {
                                             uint widx = oldNop + ko; ko++;
                                             if (widx < kVoxelFaceCacheCap) {
-                                                fcb[1u + widx * 4u] = localPack[kf];
-                                                fcb[1u + widx * 4u + 3u] = localBox[kf];
+                                                fcb[1u + widx * 3u] = localPack[kf];
+                                                fcb[1u + widx * 3u + 2u] = localBox[kf];
                                             }
                                         } else {
                                             uint widx = (kVoxelFaceCacheCap - 1u) - (oldNcut + kc); kc++;
                                             if (widx < kVoxelFaceCacheCap) {
-                                                fcb[1u + widx * 4u] = localPack[kf];
-                                                fcb[1u + widx * 4u + 3u] = localBox[kf];
+                                                fcb[1u + widx * 3u] = localPack[kf];
+                                                fcb[1u + widx * 3u + 2u] = localBox[kf];
                                             }
                                         }
+                                    }
+                                    for (uint ks = keep; ks < 32u; ++ks) {
+                                        uint stot = 0u;
+                                        InterlockedAdd(s_spillTot, 1u, stot);
+                                        if (stot >= kVoxelSpillQuota) {
+                                            uint sdrop = 0u;
+                                            InterlockedAdd(s_spillDrop, 1u, sdrop);
+                                            continue;
+                                        }
+                                        uint soff = 0u;
+                                        if (localCut[ks] == 0u) {
+                                            InterlockedAdd(s_spillNop, 1u, soff);
+                                        } else {
+                                            InterlockedAdd(s_spillNcut, 1u, soff);
+                                            soff = (kVoxelSpillQuota - 1u) - soff;
+                                        }
+                                        spillBase[soff * 3u] = localPack[ks];
+                                        spillBase[soff * 3u + 2u] = localBox[ks];
                                     }
                                     localN = 0u;
                                 }
@@ -478,16 +624,34 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                         if (localCut[k] == 0u) {
                             uint widx = oldNop + ko; ko++;
                             if (widx < kVoxelFaceCacheCap) {
-                                fcb[1u + widx * 4u] = localPack[k];
-                                fcb[1u + widx * 4u + 3u] = localBox[k];
+                                fcb[1u + widx * 3u] = localPack[k];
+                                fcb[1u + widx * 3u + 2u] = localBox[k];
                             }
                         } else {
                             uint widx = (kVoxelFaceCacheCap - 1u) - (oldNcut + kc); kc++;
                             if (widx < kVoxelFaceCacheCap) {
-                                fcb[1u + widx * 4u] = localPack[k];
-                                fcb[1u + widx * 4u + 3u] = localBox[k];
+                                fcb[1u + widx * 3u] = localPack[k];
+                                fcb[1u + widx * 3u + 2u] = localBox[k];
                             }
                         }
+                    }
+                    for (uint ks = keep; ks < tailN; ++ks) {
+                        uint stot = 0u;
+                        InterlockedAdd(s_spillTot, 1u, stot);
+                        if (stot >= kVoxelSpillQuota) {
+                            uint sdrop = 0u;
+                            InterlockedAdd(s_spillDrop, 1u, sdrop);
+                            continue;
+                        }
+                        uint soff = 0u;
+                        if (localCut[ks] == 0u) {
+                            InterlockedAdd(s_spillNop, 1u, soff);
+                        } else {
+                            InterlockedAdd(s_spillNcut, 1u, soff);
+                            soff = (kVoxelSpillQuota - 1u) - soff;
+                        }
+                        spillBase[soff * 3u] = localPack[ks];
+                        spillBase[soff * 3u + 2u] = localBox[ks];
                     }
                 }
                 GroupMemoryBarrierWithGroupSync();
@@ -495,24 +659,57 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                 uint nOpTotal = min(s_partCount[1], kVoxelFaceCacheCap);
                 uint nCutTotal = min(s_partCount[2], kVoxelFaceCacheCap - nOpTotal);
                 uint nTotal = nOpTotal + nCutTotal;
+                uint spillNopTotal = min(s_spillNop, kVoxelSpillQuota);
+                uint spillNcutTotal = min(s_spillNcut, kVoxelSpillQuota - spillNopTotal);
+                uint spillTotal = spillNopTotal + spillNcutTotal;
+                if (wantDbg && s_partCount[0] > kVoxelFaceCacheCap) {
+                    InterlockedAdd(debug[6], 1u);
+                }
+                if (wantDbg && s_spillDrop != 0u) {
+                    InterlockedAdd(debug[7], s_spillDrop);
+                }
 
                 if (nCutTotal != 0u) {
-                    for (uint i = gidx; i < nCutTotal; i += 32u) {
-                        uint src = (kVoxelFaceCacheCap - 1u) - i;
-                        s_swap[i] = fcb[1u + src * 4u];
+                    for (uint chunk = 0u; chunk < nCutTotal; chunk += 4096u) {
+                        uint n = min(4096u, nCutTotal - chunk);
+                        for (uint i = gidx; i < n; i += 32u) {
+                            uint src = (kVoxelFaceCacheCap - 1u) - (chunk + i);
+                            s_swap[i] = fcb[1u + src * 3u];
+                        }
+                        GroupMemoryBarrierWithGroupSync();
+                        for (uint i = gidx; i < n; i += 32u) {
+                            fcb[1u + (nOpTotal + chunk + i) * 3u] = s_swap[i];
+                        }
+                        GroupMemoryBarrierWithGroupSync();
+                        for (uint i = gidx; i < n; i += 32u) {
+                            uint src = (kVoxelFaceCacheCap - 1u) - (chunk + i);
+                            s_swap[i] = fcb[1u + src * 3u + 2u];
+                        }
+                        GroupMemoryBarrierWithGroupSync();
+                        for (uint i = gidx; i < n; i += 32u) {
+                            fcb[1u + (nOpTotal + chunk + i) * 3u + 2u] = s_swap[i];
+                        }
+                        GroupMemoryBarrierWithGroupSync();
+                    }
+                }
+
+                if (spillNcutTotal != 0u) {
+                    for (uint i = gidx; i < spillNcutTotal; i += 32u) {
+                        uint src = (kVoxelSpillQuota - 1u) - i;
+                        s_swap[i] = spillBase[src * 3u];
                     }
                     GroupMemoryBarrierWithGroupSync();
-                    for (uint i = gidx; i < nCutTotal; i += 32u) {
-                        fcb[1u + (nOpTotal + i) * 4u] = s_swap[i];
+                    for (uint i = gidx; i < spillNcutTotal; i += 32u) {
+                        spillBase[(spillNopTotal + i) * 3u] = s_swap[i];
                     }
                     GroupMemoryBarrierWithGroupSync();
-                    for (uint i = gidx; i < nCutTotal; i += 32u) {
-                        uint src = (kVoxelFaceCacheCap - 1u) - i;
-                        s_swap[i] = fcb[1u + src * 4u + 3u];
+                    for (uint i = gidx; i < spillNcutTotal; i += 32u) {
+                        uint src = (kVoxelSpillQuota - 1u) - i;
+                        s_swap[i] = spillBase[src * 3u + 2u];
                     }
                     GroupMemoryBarrierWithGroupSync();
-                    for (uint i = gidx; i < nCutTotal; i += 32u) {
-                        fcb[1u + (nOpTotal + i) * 4u + 3u] = s_swap[i];
+                    for (uint i = gidx; i < spillNcutTotal; i += 32u) {
+                        spillBase[(spillNopTotal + i) * 3u + 2u] = s_swap[i];
                     }
                     GroupMemoryBarrierWithGroupSync();
                 }
@@ -520,15 +717,21 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                 if (gidx == 0) {
                     fcb[0] = nTotal;
                     fcb[kVoxelFaceCacheOpaqueIdx] = nOpTotal;
+                    spillDesc[0] = spillTotal;
+                    spillDesc[1] = spillNopTotal;
                 }
                 GroupMemoryBarrierWithGroupSync();
 
                 if (cutoutPass != 0u) {
                     faceStart = nOpTotal;
                     faceCount = nCutTotal;
+                    spillStart = spillNopTotal;
+                    spillCount = spillTotal - spillNopTotal;
                 } else {
                     faceStart = 0u;
                     faceCount = nOpTotal;
+                    spillStart = 0u;
+                    spillCount = spillNopTotal;
                 }
 
 
@@ -547,99 +750,39 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                     float voxelSize = s_brickSize / 16.0;
                     int3 brickAbs = int3(s_origin / voxelSize);
                     for (uint i = gidx; i < nTotal; i += 32u) {
-                        uint packed = fcb[1u + i * 4u];
-                        fcb[1u + i * 4u] = packed;
-                        uint iter = packed & 0xFFFu;
-                        uint f = (packed >> 12u) & 0x7u;
-                        int3 vPos = brickAbs + int3(int(iter & 15u),
-                                                    int((iter >> 4u) & 15u),
-                                                    int((iter >> 8u) & 15u));
-                        int3 nOff = kFaceOffset[f];
-                        int3 uVec;
-                        int3 vVec;
-                        if (f == 0u || f == 1u) {
-                            uVec = int3(0, 1, 0);
-                            vVec = int3(0, 0, 1);
-                        } else if (f == 2u || f == 3u) {
-                            uVec = int3(1, 0, 0);
-                            vVec = int3(0, 0, 1);
-                        } else {
-                            uVec = int3(1, 0, 0);
-                            vVec = int3(0, 1, 0);
-                        }
-                        int3 facePos = vPos + nOff;
-                        uint fmat = min((packed >> 15u) & 0x7FFFu, kBlockStateMax - 1u);
-                        int3 lightBase = facePos;
-                        if (f == 3u && ((blockFlags[fmat] & 32u) != 0u) &&
-                            OpaqueFullAt(facePos.x, facePos.y, facePos.z, brickAbs,
-                                         bricksEx, pages, blockFlags, blockShapes,
-                                         minBX, minBZ, vdim)) {
-                            lightBase = vPos;
-                        }
-                        uint faceLP = FlatLightAt(lightBase.x, lightBase.y, lightBase.z,
-                                                  brickAbs, bricksEx, pages, minBX, minBZ,
-                                                  vdim);
-                        uint faceSky = (faceLP >> 4u) & 0xFu;
-                        uint faceBlk = faceLP & 0xFu;
-                        uint w1 = 0u;
-                        uint v3sky = 0u, v3blk = 0u, v3ao = 0u;
-                        for (uint ci = 0u; ci < 4u; ++ci) {
-                            int du = (ci == 0u || ci == 3u) ? -1 : 1;
-                            int dv = (ci == 0u || ci == 1u) ? -1 : 1;
-                            int3 s1Pos = lightBase + uVec * du;
-                            int3 s2Pos = lightBase + vVec * dv;
-                            int3 cPos = lightBase + uVec * du + vVec * dv;
-                            uint o1 = OpaqueFullAt(s1Pos.x, s1Pos.y, s1Pos.z, brickAbs,
-                                                   bricksEx, pages, blockFlags, blockShapes,
-                                                   minBX, minBZ, vdim) ? 1u : 0u;
-                            uint o2 = OpaqueFullAt(s2Pos.x, s2Pos.y, s2Pos.z, brickAbs,
-                                                   bricksEx, pages, blockFlags, blockShapes,
-                                                   minBX, minBZ, vdim) ? 1u : 0u;
-                            uint oc = OpaqueFullAt(cPos.x, cPos.y, cPos.z, brickAbs,
-                                                   bricksEx, pages, blockFlags, blockShapes,
-                                                   minBX, minBZ, vdim) ? 1u : 0u;
-                            uint ao = ((o1 != 0u && o2 != 0u)) ? 0u : (3u - (o1 + o2 + oc));
-                            uint sky;
-                            uint blk;
-                            if (o1 != 0u && o2 != 0u) {
-                                sky = faceSky;
-                                blk = faceBlk;
-                            } else {
-                                uint s1LP = FlatLightAt(s1Pos.x, s1Pos.y, s1Pos.z,
-                                                        brickAbs, bricksEx, pages, minBX,
-                                                        minBZ, vdim);
-                                uint s2LP = FlatLightAt(s2Pos.x, s2Pos.y, s2Pos.z,
-                                                        brickAbs, bricksEx, pages, minBX,
-                                                        minBZ, vdim);
-                                uint cLP = FlatLightAt(cPos.x, cPos.y, cPos.z,
-                                                       brickAbs, bricksEx, pages, minBX,
-                                                       minBZ, vdim);
-                                sky = min((faceSky + ((s1LP >> 4u) & 0xFu) +
-                                           ((s2LP >> 4u) & 0xFu) + ((cLP >> 4u) & 0xFu) +
-                                           2u) >> 2u, 15u);
-                                blk = min((faceBlk + (s1LP & 0xFu) + (s2LP & 0xFu) +
-                                           (cLP & 0xFu) + 2u) >> 2u, 15u);
-                            }
-                            uint bits = (sky & 0xFu) | ((blk & 0xFu) << 4u) | ((ao & 0x3u) << 8u);
-                            if (ci < 3u) {
-                                w1 |= bits << (ci * 10u);
-                            } else {
-                                v3sky = sky & 0xFu;
-                                v3blk = blk & 0xFu;
-                                v3ao = ao & 0x3u;
-                            }
-                        }
-                        fcb[1u + i * 4u + 1u] = w1;
-                        fcb[1u + i * 4u + 2u] = v3sky | (v3blk << 4u) | (v3ao << 8u);
+                        uint packed = fcb[1u + i * 3u];
+                        fcb[1u + i * 3u] = packed;
+                        uint boxPre = fcb[1u + i * 3u + 2u] & 0xFu;
+                        uint lw1, lw2v3;
+                        BakeFaceLight(packed, brickAbs, bricksEx, pages,
+                                      blockFlags, blockShapes, minBX, minBZ, vdim,
+                                      lw1, lw2v3);
+                        fcb[1u + i * 3u + 1u] = lw1;
+                        fcb[1u + i * 3u + 2u] = lw2v3 | (boxPre << 10u);
+                    }
+                    for (uint i = gidx; i < spillTotal; i += 32u) {
+                        uint packed = spillBase[i * 3u];
+                        spillBase[i * 3u] = packed;
+                        uint boxPre = spillBase[i * 3u + 2u] & 0xFu;
+                        uint lw1, lw2v3;
+                        BakeFaceLight(packed, brickAbs, bricksEx, pages,
+                                      blockFlags, blockShapes, minBX, minBZ, vdim,
+                                      lw1, lw2v3);
+                        spillBase[i * 3u + 1u] = lw1;
+                        spillBase[i * 3u + 2u] = lw2v3 | (boxPre << 10u);
                     }
                 }
             } else {
                 if (gidx == 0) {
                     fcb[0] = 0u;
                     fcb[kVoxelFaceCacheOpaqueIdx] = 0u;
+                    spillDesc[0] = 0u;
+                    spillDesc[1] = 0u;
                 }
                 faceStart = 0u;
                 faceCount = 0u;
+                spillStart = 0u;
+                spillCount = 0u;
             }
             GroupMemoryBarrierWithGroupSync();
 
@@ -653,15 +796,18 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
         }
     }
 
-    if (faceCount == 0u)
+    if (faceCount == 0u && spillCount == 0u)
         return;
     if (gidx == 0 && wantDbg) {
-        InterlockedAdd(debug[2], faceCount);
+        InterlockedAdd(debug[2], faceCount + spillCount);
     }
     VoxelTaskPayload p;
     p.brickIdx = brickIdx;
     p.faceStart = faceStart;
     p.faceCount = faceCount;
-    uint meshGroups = (faceCount + kVoxelFacesPerMeshGroup - 1u) / kVoxelFacesPerMeshGroup;
+    p.spillStart = spillStart;
+    p.spillCount = spillCount;
+    uint meshGroups = (faceCount + spillCount + kVoxelFacesPerMeshGroup - 1u) /
+                      kVoxelFacesPerMeshGroup;
     DispatchMesh(meshGroups, 1, 1, p);
 }

@@ -105,7 +105,7 @@ namespace Manro {
     void RendererImplVoxelGetGpuInstantTimes(const CRendererImpl &impl, float &xferMs, float &drawMs,
                                                float &postMs);
 
-    void RendererImplVoxelGetDebugCounters(const CRendererImpl &impl, u32 out[6]);
+    void RendererImplVoxelGetDebugCounters(const CRendererImpl &impl, u32 out[8]);
 
     void RendererImplVoxelSetDebugEnabled(CRendererImpl &impl, bool enabled);
 

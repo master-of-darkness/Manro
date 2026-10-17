@@ -60,16 +60,16 @@ void MeshMain(
     if (gidx == 0 && s_debugOn != 0u) {
         vk::BufferPointer<uint> mdbg = vk::BufferPointer<uint>(g_MeshRoot.debugAddr);
         InterlockedAdd(mdbg.getPtr()[4], 1u);
-        InterlockedAdd(mdbg.getPtr()[5], payload.faceCount);
+        InterlockedAdd(mdbg.getPtr()[5], payload.faceCount + payload.spillCount);
     }
 
-    uint base = payload.faceStart + mgrid.x * kVoxelFacesPerMeshGroup;
-    uint remaining = payload.faceCount > mgrid.x * kVoxelFacesPerMeshGroup
-        ? payload.faceCount - mgrid.x * kVoxelFacesPerMeshGroup : 0u;
-    uint count = min(kVoxelFacesPerMeshGroup, remaining);
+    uint total = payload.faceCount + payload.spillCount;
+    uint lane = mgrid.x * kVoxelFacesPerMeshGroup + gidx;
 
     vk::BufferPointer<uint> fcache = vk::BufferPointer<uint>(g_MeshRoot.faceCacheAddr);
     uint* fcb = fcache.getPtr() + payload.brickIdx * kVoxelFaceCacheStride;
+    vk::BufferPointer<uint> spillBuf = vk::BufferPointer<uint>(g_MeshRoot.spillAddr);
+    uint* spillLane = spillBuf.getPtr() + payload.brickIdx * (kVoxelSpillQuota * 3u);
 
     uint packed = 0u;
     uint lightW1 = 0u;
@@ -78,7 +78,7 @@ void MeshMain(
     uint mat = 0u;
     uint iter = 0u;
     uint earlyFlags = 0u;
-    bool hasFace = gidx < count;
+    bool hasFace = lane < total;
     bool vis = false;
     float3 nrm = float3(0.0);
 
@@ -89,11 +89,18 @@ void MeshMain(
     int3 bMin = int3(0, 0, 0);
     int3 bMax = int3(16, 16, 16);
     if (hasFace) {
-        uint faceIdx = base + gidx;
-        packed = fcb[1u + faceIdx * 4u];
-        lightW1 = fcb[1u + faceIdx * 4u + 1u];
-        lightW2 = fcb[1u + faceIdx * 4u + 2u];
-        boxW3 = fcb[1u + faceIdx * 4u + 3u];
+        if (lane < payload.faceCount) {
+            uint faceIdx = payload.faceStart + lane;
+            packed = fcb[1u + faceIdx * 3u];
+            lightW1 = fcb[1u + faceIdx * 3u + 1u];
+            lightW2 = fcb[1u + faceIdx * 3u + 2u];
+        } else {
+            uint sIdx = payload.spillStart + (lane - payload.faceCount);
+            packed = spillLane[sIdx * 3u];
+            lightW1 = spillLane[sIdx * 3u + 1u];
+            lightW2 = spillLane[sIdx * 3u + 2u];
+        }
+        boxW3 = lightW2 >> 10u;
         iter = packed & 0xFFFu;
         f = (packed >> 12u) & 0x7u;
         mat = (packed >> 15u) & 0x7FFFu;
