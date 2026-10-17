@@ -185,6 +185,39 @@ void VoxelFaceQuad(uint x, uint y, uint z, uint f, int3 sMin, int3 sMax,
     }
 }
 
+static const uint kBlockFlagCrossX = 1u << 7u;
+static const uint kBlockFlagCrossY = 1u << 8u;
+static const uint kBlockFlagCrossZ = 1u << 9u;
+static const uint kBlockFlagCross = kBlockFlagCrossX | kBlockFlagCrossY | kBlockFlagCrossZ;
+
+static const float kCrossLodDistance = 16.0;
+
+void VoxelCrossQuad(uint x, uint y, uint z, uint f, uint flags, int3 sMin, int3 sMax,
+                    out float3 b, out float3 e1, out float3 e2) {
+    float3 mn = float3(float(x), float(y), float(z)) + float3(sMin) / 16.0;
+    float3 mx = float3(float(x), float(y), float(z)) + float3(sMax) / 16.0;
+    bool crossX = (flags & kBlockFlagCrossX) != 0u;
+    bool crossZ = (flags & kBlockFlagCrossZ) != 0u;
+    uint axis = crossX ? 0u : (crossZ ? 2u : 1u);
+    float3 u = (axis == 0u) ? float3(1.0, 0.0, 0.0)
+             : (axis == 1u) ? float3(0.0, 1.0, 0.0)
+                            : float3(0.0, 0.0, 1.0);
+    float3 p = (axis == 0u) ? float3(0.0, 1.0, 0.0)
+             : (axis == 1u) ? float3(0.0, 0.0, 1.0)
+                            : float3(1.0, 0.0, 0.0);
+    float3 q = (axis == 0u) ? float3(0.0, 0.0, 1.0)
+             : (axis == 1u) ? float3(1.0, 0.0, 0.0)
+                            : float3(0.0, 1.0, 0.0);
+    float3 ex = mx - mn;
+    float eAxis = dot(ex, u);
+    float eP = dot(ex, p);
+    float eQ = dot(ex, q);
+    bool second = (f != 0u);
+    b = mn + (second ? p * eP : float3(0.0));
+    e1 = u * eAxis;
+    e2 = q * eQ + p * (second ? -eP : eP);
+}
+
 static const int3 kFaceOffset[6] = {
     int3(1, 0, 0), int3(-1, 0, 0),
     int3(0, 1, 0), int3(0, -1, 0),

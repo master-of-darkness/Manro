@@ -80,6 +80,8 @@ void MeshMain(
     uint earlyFlags = 0u;
     bool hasFace = lane < total;
     bool vis = false;
+    bool isCross = false;
+    bool crossFar = false;
     float3 nrm = float3(0.0);
 
 
@@ -131,7 +133,16 @@ void MeshMain(
         }
         bool isLeaf = (earlyFlags & 32u) != 0u;
         bool isTrapdoor = (earlyFlags & 64u) != 0u;
-        if (!isLeaf && s_useBackface != 0u && (!camInside || isTrapdoor)) {
+        isCross = (earlyFlags & kBlockFlagCross) != 0u;
+        if (isCross) {
+            float3 centerLocal = float3(float(x), float(y), float(z)) + 0.5;
+            float3 camLocal = (s_camPos - bOrigin) / voxelSize;
+            float3 delta = (centerLocal - camLocal) * voxelSize;
+            crossFar = dot(delta, delta) >= kCrossLodDistance * kCrossLodDistance;
+            if (crossFar && f != 0u)
+                vis = false;
+        }
+        if (!isLeaf && !isCross && s_useBackface != 0u && (!camInside || isTrapdoor)) {
             int3 sMin;
             int3 sMax;
             if (isMulti) {
@@ -190,7 +201,34 @@ void MeshMain(
             int3 sMin = VoxelShapeMin(shapes, ms);
             int3 sMax = VoxelShapeMax(shapes, ms);
             float3 qb, qe1, qe2;
-            VoxelFaceQuad(x, y, z, f, sMin, sMax, qb, qe1, qe2);
+            if (isCross) {
+                if (crossFar) {
+                    float3 centerLocal = float3(float(x), float(y), float(z)) + 0.5;
+                    float3 camLocal = (s_camPos - bOrigin) / voxelSize;
+                    float3 viewLocal = normalize(centerLocal - camLocal);
+                    uint axis = (earlyFlags & kBlockFlagCrossX) != 0u
+                                    ? 0u
+                                    : ((earlyFlags & kBlockFlagCrossZ) != 0u ? 2u : 1u);
+                    float3 u = (axis == 0u) ? float3(1.0, 0.0, 0.0)
+                             : (axis == 1u) ? float3(0.0, 1.0, 0.0)
+                                            : float3(0.0, 0.0, 1.0);
+                    float3 w = cross(u, viewLocal);
+                    float wl = length(w);
+                    if (wl < 1e-4)
+                        w = (abs(u.y) > 0.5) ? float3(1.0, 0.0, 0.0)
+                                             : float3(0.0, 1.0, 0.0);
+                    else
+                        w /= wl;
+                    const float halfW = 1.0 / 16.0;
+                    qb = centerLocal - u * 0.5 - w * halfW;
+                    qe1 = u;
+                    qe2 = w * (2.0 * halfW);
+                } else {
+                    VoxelCrossQuad(x, y, z, f, earlyFlags, sMin, sMax, qb, qe1, qe2);
+                }
+            } else {
+                VoxelFaceQuad(x, y, z, f, sMin, sMax, qb, qe1, qe2);
+            }
             b = bOrigin + qb * voxelSize;
             e1w = qe1 * voxelSize;
             e2w = qe2 * voxelSize;

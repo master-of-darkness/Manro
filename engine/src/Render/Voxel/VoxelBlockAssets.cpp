@@ -660,6 +660,8 @@ namespace Manro {
         bool IsChainName(std::string_view name) {
             if (name == "chain_command_block")
                 return false;
+            if (name == "chain")
+                return true;
             return name.size() > 6 &&
                    name.compare(name.size() - 6, 6, "_chain") == 0;
         }
@@ -1076,7 +1078,6 @@ namespace Manro {
         pack.tiles.emplace_back(16 * 16 * 4, 0);
         pack.tilePaths.emplace_back("manro/transparent");
         tileCutout.push_back(1u);
-        const u16 kClearTile = 1;
         auto tileForPath = [&](const std::string &path) -> u16 {
             if (path.empty())
                 return 0;
@@ -1330,8 +1331,8 @@ namespace Manro {
                         if (IsChainName(bname)) {
                             const auto ait = pmap.find("axis");
                             const std::string &ax = (ait != pmap.end()) ? ait->second : "y";
-                            float mn[3]{6.5f, 0.f, 6.5f};
-                            float mx[3]{9.5f, 16.f, 9.5f};
+                            float mn[3]{7.f, 0.f, 7.f};
+                            float mx[3]{9.f, 16.f, 9.f};
                             if (ax == "x") {
                                 mn[0] = 0.f;
                                 mx[0] = 16.f;
@@ -1340,18 +1341,8 @@ namespace Manro {
                                 mx[2] = 16.f;
                             }
                             for (int a = 0; a < 3; ++a) {
-                                long qmn = static_cast<long>(
-                                    std::floor(std::clamp(mn[a], 0.f, 16.f)));
-                                long qmx = static_cast<long>(
-                                    std::ceil(std::clamp(mx[a], 0.f, 16.f)));
-                                if (qmx <= qmn) {
-                                    if (qmx < 16)
-                                        ++qmx;
-                                    else
-                                        --qmn;
-                                }
-                                look.shapeMin[a] = static_cast<u8>(qmn);
-                                look.shapeMax[a] = static_cast<u8>(qmx);
+                                look.shapeMin[a] = static_cast<u8>(mn[a]);
+                                look.shapeMax[a] = static_cast<u8>(mx[a]);
                                 look.collMin[a] = mn[a] / 16.f;
                                 look.collMax[a] = mx[a] / 16.f;
                             }
@@ -1711,14 +1702,17 @@ namespace Manro {
                             }
                         }
                         if (IsChainName(bname)) {
-                            const auto ait = pmap.find("axis");
-                            const std::string &ax =
-                                (ait != pmap.end()) ? ait->second : "y";
-                            const size_t c0 = (ax == "x") ? 0u : ((ax == "z") ? 4u : 2u);
-                            look.faces.tile[c0] = kClearTile;
-                            look.faces.tile[c0 + 1u] = kClearTile;
-                            look.uvPacked[c0] = 0xFFFF0000u;
-                            look.uvPacked[c0 + 1u] = 0xFFFF0000u;
+                            const u16 chainTile = look.faces.tile[0] != 0u
+                                                      ? look.faces.tile[0]
+                                                      : look.faces.tile[1];
+                            for (size_t f = 0; f < 6; ++f)
+                                look.faces.tile[f] = chainTile;
+                            look.uvPacked[0] = 0xFF300000u;
+                            look.uvPacked[1] = 0xFF600030u;
+                            look.uvPacked[2] = look.uvPacked[0];
+                            look.uvPacked[3] = look.uvPacked[1];
+                            look.uvPacked[4] = look.uvPacked[0];
+                            look.uvPacked[5] = look.uvPacked[1];
                         }
                         if (useMultiFence) {
                             look.flags = kBlockFlagMulti;
@@ -1734,6 +1728,19 @@ namespace Manro {
                             look.flags |= kBlockFlagTrapdoor;
                         if (IsInnerFaces(bname))
                             look.flags |= kBlockFlagInner;
+                        if (IsChainName(bname)) {
+                            const auto ait = pmap.find("axis");
+                            const std::string &ax =
+                                (ait != pmap.end()) ? ait->second : "y";
+                            look.flags &= ~kBlockFlagOpaque;
+                            look.flags |= kBlockFlagCutout;
+                            if (ax == "x")
+                                look.flags |= kBlockFlagCrossX;
+                            else if (ax == "z")
+                                look.flags |= kBlockFlagCrossZ;
+                            else
+                                look.flags |= kBlockFlagCrossY;
+                        }
                         if ((look.flags & kBlockFlagCutout) == 0u &&
                             facesNeedCutout(look.faces)) {
                             look.flags |= kBlockFlagCutout;

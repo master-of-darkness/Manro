@@ -30,6 +30,11 @@ namespace Manro {
     inline constexpr u32 kBlockFlagMulti = 1u << 4u;
     inline constexpr u32 kBlockFlagLeaf = 1u << 5u;
     inline constexpr u32 kBlockFlagTrapdoor = 1u << 6u;
+    inline constexpr u32 kBlockFlagCrossX = 1u << 7u;
+    inline constexpr u32 kBlockFlagCrossY = 1u << 8u;
+    inline constexpr u32 kBlockFlagCrossZ = 1u << 9u;
+    inline constexpr u32 kBlockFlagCross =
+        kBlockFlagCrossX | kBlockFlagCrossY | kBlockFlagCrossZ;
 
     inline constexpr u32 kBlockAir = 0u;
 

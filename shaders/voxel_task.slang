@@ -366,7 +366,10 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                     uint vflags = (mat < kBlockStateMax) ? blockFlags[mat] : 0u;
                     if ((vflags & 4u) != 0u)
                         continue;
+                    bool isCross = (vflags & kBlockFlagCross) != 0u;
                     for (uint f = 0u; f < 6u; ++f) {
+                        if (isCross && f > 1u)
+                            continue;
                         int3 n = int3(x, y, z) + kFaceOffset[f];
                         uint nstate = 0u;
                         if (n.x >= 0 && n.x < 16 && n.y >= 0 && n.y < 16 && n.z >= 0 &&
@@ -405,7 +408,9 @@ void TaskMain(uint gidx : SV_GroupIndex, uint3 gid : SV_GroupID) {
                         bool isMulti = ((vflags & 16u) != 0u) &&
                                        (VoxelBoxCount(blockBoxes, msBox) > 1u);
                         if (!isMulti) {
-                        if (((vflags & 32u) != 0u) && (f == 3u) && (nstate != mat)) {
+                        if (isCross) {
+                            emit = true;
+                        } else if (((vflags & 32u) != 0u) && (f == 3u) && (nstate != mat)) {
                             emit = true;
                         } else if (nstate >= kBlockStateMax) {
                             emit = true;
