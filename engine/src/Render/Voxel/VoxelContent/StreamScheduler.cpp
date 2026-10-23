@@ -86,14 +86,18 @@ namespace Manro {
             I.desc.fillBudgetPerUpdate = 6 * numWorkers;
             I.maxPending = static_cast<size_t>(48 * numWorkers);
             I.pending.reserve(I.maxPending * 2);
-            std::printf("[StreamWorld] parse workers=%d fillBudget=%d maxPending=%zu\n",
-                        numWorkers, I.desc.fillBudgetPerUpdate, I.maxPending);
+            std::printf("[StreamWorld] parse workers=%d light workers=%d fillBudget=%d "
+                        "maxPending=%zu\n",
+                        numWorkers, numWorkers, I.desc.fillBudgetPerUpdate, I.maxPending);
             I.workerStates.reserve(static_cast<size_t>(numWorkers));
             I.workers.reserve(static_cast<size_t>(numWorkers));
+            I.lightWorkers.reserve(static_cast<size_t>(numWorkers));
             for (int w = 0; w < numWorkers; ++w) {
                 I.workerStates.push_back(std::make_unique<Impl::WorkerState>());
                 I.workers.emplace_back(&Impl::ParseLoop, &I,
                                        static_cast<size_t>(w));
+                I.lightWorkers.emplace_back(&Impl::LightLoop, &I,
+                                            static_cast<size_t>(w));
             }
         }
         return I.spawn;
@@ -255,7 +259,7 @@ namespace Manro {
         if (!I.unfilled.empty()) {
             size_t inFlight = I.pending.size();
             for (const auto &s: I.workerStates)
-                inFlight += s->jobs.Size() + s->done.Size();
+                inFlight += s->jobs.Size() + s->parsed.Size() + s->done.Size();
             if (inFlight < I.maxPending) {
                 int enqueued = 0;
                 const size_t numW = I.workerStates.size();
@@ -313,6 +317,12 @@ namespace Manro {
                 if (enqueued > 0)
                     I.queueCv.notify_all();
             }
+        }
+        {
+            size_t parsedTotal = 0;
+            for (const auto &s: I.workerStates)
+                parsedTotal += s->parsed.Size();
+            I.lightQueuePeak = std::max(I.lightQueuePeak, parsedTotal);
         }
         ST.enqueueMs = snapMs(tPhase);
         tPhase = Clock::now();

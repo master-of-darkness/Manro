@@ -85,6 +85,7 @@ namespace Manro {
         struct ParseDone {
             i64 key{-1};
             u32 brickIdx{~0u};
+            int sx{0}, sy{0}, sz{0};
             std::vector<u16> mats;
             std::vector<u32> occ;
             std::vector<u32> fluid;
@@ -96,11 +97,13 @@ namespace Manro {
 
         struct WorkerState {
             SpscQueue<ParseJob, 64> jobs;
+            SpscQueue<ParseDone, 64> parsed;
             SpscQueue<ParseDone, 64> done;
         };
 
         std::vector<std::unique_ptr<WorkerState> > workerStates;
         std::vector<std::thread> workers;
+        std::vector<std::thread> lightWorkers;
         std::mutex sleepMutex;
         std::condition_variable queueCv;
         std::unordered_set<i64> pending;
@@ -126,6 +129,8 @@ namespace Manro {
         u64 totalDeferredDropped{0};
 
         void ParseLoop(size_t wi);
+
+        void LightLoop(size_t wi);
 
         ~Impl();
 
