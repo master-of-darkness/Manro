@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AnvilSource.h"
 #include "Player.h"
 
 #include <Manro/Interfaces/IApplication.h>
@@ -18,6 +19,7 @@
 #include <cmath>
 #include <cstdio>
 #include <map>
+#include <memory>
 #include <string>
 #include <utility>
 
@@ -63,8 +65,17 @@ public:
 
         m_Renderer->VoxelInit(1280, 720);
 
-        m_Spawn = m_Renderer->VoxelStreamInit(m_Params.worldDir.c_str(), m_Params.assetsDir.c_str(),
-                                              m_Params.radius);
+        std::unique_ptr<Manro::IVoxelContentSource> content;
+        if (!m_Params.worldDir.empty()) {
+            auto anvil = std::make_unique<Manro::CAnvilContentSource>();
+            if (anvil->Open(m_Params.worldDir))
+                content = std::move(anvil);
+            else
+                printf("[Voxel] warning: failed to open world '%s'\n",
+                       m_Params.worldDir.c_str());
+        }
+        m_Spawn = m_Renderer->VoxelStreamInit(std::move(content), m_Params.worldDir.c_str(),
+                                              m_Params.assetsDir.c_str(), m_Params.radius);
         printf("[Voxel] stream spawn=(%.1f,%.1f,%.1f) world=%s\n", m_Spawn.x, m_Spawn.y, m_Spawn.z,
                m_Params.worldDir.empty() ? "<no-save>" : m_Params.worldDir.c_str());
 

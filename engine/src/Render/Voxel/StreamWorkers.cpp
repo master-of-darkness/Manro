@@ -9,11 +9,14 @@ namespace Manro {
         const CpuTopology_t topo = QueryCpuTopology();
         if (topo.IsHybrid() && !topo.m_EfficiencyCores.empty())
             SetThreadAffinity(topo.m_EfficiencyCores);
-        CAnvilWorldReader localReader;
-        const bool localHasSave =
-                !desc.worldDir.empty() && localReader.Open(desc.worldDir);
+        std::unique_ptr<IVoxelContentSource> localContent;
+        if (content) {
+            localContent = content->Clone();
+            if (localContent)
+                localContent->Open(desc.worldDir);
+        }
         std::vector<u32> palLocal;
-        AnvilSectionStates saveSec{};
+        VoxelSectionStates saveSec{};
         WorkerState &st = *workerStates[wi];
         for (;;) {
             ParseJob job;
@@ -37,12 +40,12 @@ namespace Manro {
             bool hasEmis = false;
             palLocal.clear();
             bool haveData = false;
-            if (localHasSave &&
-                localReader.ReadSectionStates(job.sx, job.sy, job.sz, saveSec) &&
+            if (localContent && localContent->IsOpen() &&
+                localContent->ReadSectionStates(job.sx, job.sy, job.sz, saveSec) &&
                 saveSec.present) {
                 haveData = true;
                 palLocal.reserve(saveSec.palette.size());
-                for (const FullState &fs: saveSec.palette) {
+                for (const VoxelBlockState &fs: saveSec.palette) {
                     const auto it =
                             pack->stateByKey.find(MakeStateKey(fs.name, fs.props));
                     palLocal.push_back(it != pack->stateByKey.end()
@@ -73,7 +76,7 @@ namespace Manro {
             out.opaque = allOpaque;
             out.hasEmission = hasEmis;
             out.lightVisits = SeedSpreadLight(job.sx, job.sy, job.sz, out.mats,
-                                              out.light, localReader);
+                                              out.light, localContent.get());
             while (!st.done.Push(std::move(out))) {
                 if (stopWorker.load(std::memory_order_acquire))
                     return;

@@ -16,6 +16,7 @@
 #include <Manro/Core/VirtualFS.h>
 #include <algorithm>
 #include <cmath>
+#include <utility>
 #include <vector>
 
 namespace Manro {
@@ -320,16 +321,23 @@ namespace Manro {
         m_BlockBoxTable->LoadData(boxes.data(), boxes.size() * sizeof(u32));
     }
 
-    Vec3 CVoxelRenderer::StreamInit(const std::string &worldDir, const std::string &assetsDir,
-                                int radiusSections) {
+    Vec3 CVoxelRenderer::StreamInit(std::unique_ptr<IVoxelContentSource> content,
+                                    const std::string &worldDir, const std::string &assetsDir,
+                                    int radiusSections) {
 
         m_Context.WaitIdle();
 
         m_StreamWorld.reset();
 
+        std::vector<VoxelBlockState> saveStates;
+        if (content && !content->ScanSaveStates(saveStates)) {
+            LOG_ERROR("[CVoxelRenderer] Save scan failed");
+            return Vec3(8.f, 80.f, 8.f);
+        }
+
         const std::string dir = assetsDir.empty() ? MANRO_MC_ASSETS_DIR : assetsDir;
         std::string err;
-        if (!BuildBlockAssetPack(dir, worldDir, m_BlockPack, err)) {
+        if (!BuildBlockAssetPack(dir, saveStates, m_BlockPack, err)) {
             LOG_ERROR("[CVoxelRenderer] Block assets failed: {}", err);
             return Vec3(8.f, 80.f, 8.f);
         }
@@ -343,7 +351,7 @@ namespace Manro {
         VoxelStreamDesc_t desc{};
         desc.worldDir = worldDir;
         desc.radiusSections = radiusSections;
-        return m_StreamWorld->Init(*m_World, m_BlockPack, desc);
+        return m_StreamWorld->Init(*m_World, m_BlockPack, desc, std::move(content));
     }
 
     int CVoxelRenderer::StreamUpdate(const Vec3 &cameraPos, u32 flightSlot) {

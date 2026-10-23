@@ -9,7 +9,7 @@
 namespace {
     void PrintUsage(const char *prog) {
         std::printf("Usage: %s [options]\n"
-                    "  --world-dir <path>   Anvil save dir (required, no fallback)\n"
+                    "  --world-dir <path>   Anvil save dir (optional; empty world if omitted)\n"
                     "  --assets-dir <path>  <...>/assets/minecraft dir (default: build-time assets)\n"
                     "  --radius <1-10>      section radius (default 6)\n"
                     "  --res-scale <f>      offscreen resolution scale 0.25-1 (default 1)\n"

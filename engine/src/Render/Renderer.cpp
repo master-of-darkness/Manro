@@ -8,6 +8,8 @@
 #include <Manro/Resource/ModelLoader.h>
 #include <Manro/Resource/TextureLoader.h>
 
+#include <utility>
+
 namespace Manro {
     bool CRenderer::BeginFramePace() const { return RendererImplBeginFramePace(*m_Impl); }
 
@@ -153,9 +155,11 @@ namespace Manro {
         RendererImplVoxelSetFrustumEnabled(*m_Impl, enabled);
     }
 
-    Vec3 CRenderer::VoxelStreamInit(const char *worldDir, const char *assetsDir,
+    Vec3 CRenderer::VoxelStreamInit(std::unique_ptr<IVoxelContentSource> content,
+                                    const char *worldDir, const char *assetsDir,
                                     int radiusSections) const {
-        return RendererImplVoxelStreamInit(*m_Impl, worldDir ? worldDir : "",
+        return RendererImplVoxelStreamInit(*m_Impl, std::move(content),
+                                           worldDir ? worldDir : "",
                                            assetsDir ? assetsDir : "", radiusSections);
     }
 

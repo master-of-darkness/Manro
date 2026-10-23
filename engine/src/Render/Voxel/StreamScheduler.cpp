@@ -12,16 +12,17 @@
 
 namespace Manro {
     Vec3 CVoxelStreamWorld::Init(CVoxelBrickStore &world, const BlockAssetPack_t &pack,
-                                 const VoxelStreamDesc_t &desc) {
+                                 const VoxelStreamDesc_t &desc,
+                                 std::unique_ptr<IVoxelContentSource> content) {
         m_Impl->desc = desc;
         m_Impl->pack = &pack;
         auto &I = *m_Impl;
+        I.content = std::move(content);
 
-        I.hasSave = false;
-        if (!desc.worldDir.empty() && I.reader.Open(desc.worldDir)) {
-            I.hasSave = true;
+        I.hasSave = I.content != nullptr;
+        if (I.hasSave) {
             Vec3 s{};
-            if (I.reader.ReadSpawn(s))
+            if (I.content->ReadSpawn(s))
                 I.spawn = s + Vec3(0.f, 1.f, 0.f);
             else
                 I.spawn = Vec3(8.f, 80.f, 8.f);
@@ -29,8 +30,7 @@ namespace Manro {
                         I.spawn.x, I.spawn.y, I.spawn.z);
         } else {
             I.spawn = Vec3(8.f, 80.f, 8.f);
-            std::printf("[StreamWorld] ERROR: no region data in '%s' (pass --world-dir)\n",
-                        desc.worldDir.c_str());
+            std::printf("[StreamWorld] no content source, flat world\n");
         }
 
         const int csx = static_cast<int>(std::floor(I.spawn.x / 16.f));

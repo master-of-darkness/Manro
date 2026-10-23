@@ -187,6 +187,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(shaders)
 
 add_subdirectory(engine/src)
+add_subdirectory(tools/anvil)
 
 option(MANRO_BUILD_SAMPLES "Build sample applications" ON)
 if(MANRO_BUILD_SAMPLES)

@@ -61,7 +61,9 @@ namespace Manro {
 
         void Record(CVoxelEncoder &enc, const VoxelFrameDesc &frame);
 
-        Vec3 StreamInit(const std::string &worldDir, const std::string &assetsDir, int radiusSections);
+        Vec3 StreamInit(std::unique_ptr<IVoxelContentSource> content,
+                        const std::string &worldDir, const std::string &assetsDir,
+                        int radiusSections);
 
         int StreamUpdate(const Vec3 &cameraPos, u32 flightSlot);
 

@@ -113,7 +113,9 @@ namespace Manro {
 
     void RendererImplVoxelSetFrustumEnabled(CRendererImpl &impl, bool enabled);
 
-    Vec3 RendererImplVoxelStreamInit(CRendererImpl &impl, const std::string &worldDir,
+    Vec3 RendererImplVoxelStreamInit(CRendererImpl &impl,
+                                     std::unique_ptr<IVoxelContentSource> content,
+                                     const std::string &worldDir,
                                      const std::string &assetsDir, int radiusSections);
 
     int RendererImplVoxelStreamUpdate(const CRendererImpl &impl);

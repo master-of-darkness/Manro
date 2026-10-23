@@ -1,8 +1,9 @@
 #pragma once
 
 #include "VoxelStreamWorld.h"
-#include "VoxelAnvilReader.h"
 #include "VoxelBlockAssets.h"
+
+#include <Manro/Resource/VoxelContentSource.h>
 #include "VoxelBrickStore.h"
 
 #include <array>
@@ -61,7 +62,7 @@ namespace Manro {
 
         VoxelStreamDesc_t desc{};
         const BlockAssetPack_t *pack{nullptr};
-        CAnvilWorldReader reader;
+        std::unique_ptr<IVoxelContentSource> content;
         bool hasSave{false};
 
         struct SlotInfo {
@@ -203,7 +204,7 @@ namespace Manro {
 
         u64 SeedSpreadLight(int sx, int sy, int sz, const std::vector<u16> &mats,
                             std::vector<u8> &lightOut,
-                            CAnvilWorldReader &reader) const;
+                            IVoxelContentSource *content) const;
 
         void GlowPushToNeighbours(u32 brickIdx, int bsx, int bsy, int bsz);
 

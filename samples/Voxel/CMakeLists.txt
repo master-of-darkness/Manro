@@ -7,4 +7,4 @@ add_executable(VoxelTest
 target_include_directories(VoxelTest SYSTEM PRIVATE
         ${MANRO_THIRD_PARTY_DIR}/imgui
 )
-target_link_libraries(VoxelTest PRIVATE Manro)
+target_link_libraries(VoxelTest PRIVATE Manro ManroAnvil)

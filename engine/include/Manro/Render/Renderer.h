@@ -8,8 +8,10 @@
 #include <Manro/Render/VoxelStreamStats.h>
 #include <Manro/Resource/ModelLoader.h>
 #include <Manro/Resource/TextureLoader.h>
+#include <Manro/Resource/VoxelContentSource.h>
 #include <Manro/Render/LightData.h>
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -116,7 +118,10 @@ namespace Manro {
         void VoxelSetDebugEnabled(bool enabled) const;
         void VoxelSetBackfaceEnabled(bool enabled) const;
         void VoxelSetFrustumEnabled(bool enabled) const;
-        Vec3 VoxelStreamInit(const char *worldDir, const char *assetsDir, int radiusSections) const;
+
+        Vec3 VoxelStreamInit(std::unique_ptr<IVoxelContentSource> content, const char *worldDir,
+                             const char *assetsDir, int radiusSections) const;
+
         int VoxelStreamUpdate() const;
         void VoxelStreamGetStats(VoxelStreamStats_t &out) const;
         bool VoxelStreamIsSolid(const Vec3 &p) const;

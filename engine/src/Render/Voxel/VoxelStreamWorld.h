@@ -2,6 +2,7 @@
 
 #include <Manro/Core/Types.h>
 #include <Manro/Render/VoxelStreamStats.h>
+#include <Manro/Resource/VoxelContentSource.h>
 
 #include <cstdint>
 #include <memory>
@@ -30,7 +31,8 @@ namespace Manro {
         CVoxelStreamWorld &operator=(const CVoxelStreamWorld &) = delete;
 
         Vec3 Init(CVoxelBrickStore &world, const BlockAssetPack_t &pack,
-                  const VoxelStreamDesc_t &desc);
+                  const VoxelStreamDesc_t &desc,
+                  std::unique_ptr<IVoxelContentSource> content);
 
         int Update(CVoxelBrickStore &world, const Vec3 &cameraPos, u32 flightSlot);
 

@@ -1,5 +1,5 @@
 #include "BlockAssetInternal.h"
-#include "VoxelAnvilReader.h"
+#include <Manro/Resource/VoxelContentSource.h>
 
 #include <stb_image.h>
 
@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace Manro {
@@ -69,7 +70,8 @@ namespace Manro {
         }
     }
 
-    bool BuildBlockAssetPack(const std::string &assetsDir, const std::string &worldDir,
+    bool BuildBlockAssetPack(const std::string &assetsDir,
+                             const std::vector<VoxelBlockState> &saveStates,
                              BlockAssetPack_t &out, std::string &err) {
         const std::string texDir = assetsDir + "/textures/block";
         const std::string bsDir = assetsDir + "/blockstates";
@@ -80,32 +82,22 @@ namespace Manro {
             return false;
         }
 
-        CAnvilWorldReader reader;
-        if (!reader.Open(worldDir)) {
-            err = "no region data in " + worldDir;
-            return false;
-        }
-        std::vector<FullState> saveStates;
-        if (!reader.ScanSaveStates(saveStates)) {
-            err = "save scan failed for " + worldDir;
-            return false;
-        }
-        std::unordered_map<std::string, FullState> byKey;
-        for (FullState &fs : saveStates)
-            byKey.emplace(MakeStateKey(fs.name, fs.props), std::move(fs));
+        std::unordered_map<std::string, VoxelBlockState> byKey;
+        for (const VoxelBlockState &fs: saveStates)
+            byKey.emplace(MakeStateKey(fs.name, fs.props), fs);
         auto ensure = [&](const char *name) {
-            FullState fs;
+            VoxelBlockState fs;
             fs.name = name;
             byKey.try_emplace(MakeStateKey(fs.name, fs.props), std::move(fs));
         };
         ensure("minecraft:air");
         ensure("minecraft:stone");
         ensure("minecraft:oak_planks");
-        std::vector<FullState> ordered;
+        std::vector<VoxelBlockState> ordered;
         ordered.reserve(byKey.size());
         for (auto &kv : byKey)
             ordered.push_back(std::move(kv.second));
-        std::sort(ordered.begin(), ordered.end(), [](const FullState &a, const FullState &b) {
+        std::sort(ordered.begin(), ordered.end(), [](const VoxelBlockState &a, const VoxelBlockState &b) {
             if ((a.name == "minecraft:air") != (b.name == "minecraft:air"))
                 return a.name == "minecraft:air";
             return MakeStateKey(a.name, a.props) < MakeStateKey(b.name, b.props);
@@ -258,7 +250,7 @@ namespace Manro {
 
         u32 mapped = 0, fallback = 0, skipped = 0, autoCutout = 0, shapedStates = 0;
         u32 id = 0;
-        for (const FullState &fs : ordered) {
+        for (const VoxelBlockState &fs: ordered) {
             const std::string key = MakeStateKey(fs.name, fs.props);
             const std::string bname = StripState(StripPrefix(fs.name));
             const std::string_view bview(bname);

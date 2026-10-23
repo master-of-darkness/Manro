@@ -33,6 +33,8 @@
 #include <Manro/Core/VirtualFS.h>
 #include <Manro/Render/MeshManager.h>
 #include <Manro/Render/Material/MaterialInstance.h>
+
+#include <utility>
 #include <Manro/Render/Model.h>
 #include <Manro/Render/RendererConfig.h>
 #include <VkBootstrap.h>
@@ -246,11 +248,13 @@ namespace Manro {
                 m_Voxel->SetFrustumEnabled(enabled);
         }
 
-        Vec3 VoxelStreamInit(const std::string &worldDir, const std::string &assetsDir,
+        Vec3 VoxelStreamInit(std::unique_ptr<IVoxelContentSource> content,
+                             const std::string &worldDir, const std::string &assetsDir,
                              int radiusSections) {
             if (!m_bVoxelEnabled || !m_Voxel)
                 return Vec3(8.f, 80.f, 8.f);
-            return m_Voxel->StreamInit(worldDir, assetsDir, radiusSections);
+            return m_Voxel->StreamInit(std::move(content), worldDir, assetsDir,
+                                       radiusSections);
         }
 
         int VoxelStreamUpdate() {
@@ -1709,9 +1713,12 @@ namespace Manro {
         impl.VoxelSetFrustumEnabled(enabled);
     }
 
-    Vec3 RendererImplVoxelStreamInit(CRendererImpl &impl, const std::string &worldDir,
+    Vec3 RendererImplVoxelStreamInit(CRendererImpl &impl,
+                                     std::unique_ptr<IVoxelContentSource> content,
+                                     const std::string &worldDir,
                                      const std::string &assetsDir, int radiusSections) {
-        return impl.VoxelStreamInit(worldDir, assetsDir, radiusSections);
+        return impl.VoxelStreamInit(std::move(content), worldDir, assetsDir,
+                                    radiusSections);
     }
 
     int RendererImplVoxelStreamUpdate(const CRendererImpl &impl) {

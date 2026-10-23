@@ -41,7 +41,6 @@ set(ENGINE_RENDER_SOURCES
         Render/Voxel/ChunkCache.cpp
         Render/Voxel/LightPropagation.cpp
         Render/Voxel/StreamEdits.cpp
-        Render/Voxel/VoxelAnvilReader.cpp
 
         Render/Targets/RenderTargetManager.cpp
         Render/Targets/SwapchainManager.cpp
@@ -154,7 +153,6 @@ target_link_libraries(Manro PUBLIC
         glm::glm tinyobjloader Jolt spdlog::spdlog
         SDL3::SDL3-static SDL3_mixer::SDL3_mixer-static tinygltf
         Freetype::Freetype flecs::flecs_static
-        ZLIB::ZLIB
 )
 
 if (MANRO_ENABLE_PROFILING)

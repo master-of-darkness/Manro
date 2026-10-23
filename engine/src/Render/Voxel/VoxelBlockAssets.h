@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Manro/Core/Types.h>
+#include <Manro/Resource/VoxelContentSource.h>
 
 #include <cstdint>
 #include <string>
@@ -71,6 +72,7 @@ namespace Manro {
         u32 skippedStates{0};
     };
 
-    [[nodiscard]] bool BuildBlockAssetPack(const std::string &assetsDir, const std::string &worldDir,
-                                          BlockAssetPack_t &out, std::string &err);
+    [[nodiscard]] bool BuildBlockAssetPack(const std::string &assetsDir,
+                                           const std::vector<VoxelBlockState> &saveStates,
+                                           BlockAssetPack_t &out, std::string &err);
 }

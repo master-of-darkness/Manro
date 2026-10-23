@@ -2,7 +2,7 @@
 
 namespace Manro {
     namespace {
-        inline void SeedFlatLight(const BlockAssetPack_t &pack, CAnvilWorldReader &reader,
+        inline void SeedFlatLight(const BlockAssetPack_t &pack, IVoxelContentSource *content,
                                   int sx, int sy, int sz, const std::vector<u16> &mats,
                                   std::vector<u8> &lightOut) {
             lightOut.assign(4096, 0);
@@ -22,15 +22,15 @@ namespace Manro {
             for (int lz = 0; lz < 16; ++lz)
                 for (int lx = 0; lx < 16; ++lx)
                     topSky[lx][lz] = 15u;
-            if (sy < kMaxSectionY) {
-                AnvilSectionStates sec{};
+            if (content && sy < kMaxSectionY) {
+                VoxelSectionStates sec{};
                 std::vector<u32> palTmp;
                 for (int asy = kMaxSectionY; asy > sy; --asy) {
-                    if (!reader.ReadSectionStates(sx, asy, sz, sec) || !sec.present)
+                    if (!content->ReadSectionStates(sx, asy, sz, sec) || !sec.present)
                         continue;
                     palTmp.clear();
                     palTmp.reserve(sec.palette.size());
-                    for (const FullState &fs: sec.palette) {
+                    for (const VoxelBlockState &fs: sec.palette) {
                         const auto it =
                                 pack.stateByKey.find(MakeStateKey(fs.name, fs.props));
                         palTmp.push_back(it != pack.stateByKey.end()
@@ -200,8 +200,8 @@ namespace Manro {
     u64 CVoxelStreamWorld::Impl::SeedSpreadLight(int sx, int sy, int sz,
                                                  const std::vector<u16> &mats,
                                                  std::vector<u8> &lightOut,
-                                                 CAnvilWorldReader &reader) const {
-        SeedFlatLight(*pack, reader, sx, sy, sz, mats, lightOut);
+                                                 IVoxelContentSource *content) const {
+        SeedFlatLight(*pack, content, sx, sy, sz, mats, lightOut);
         if (!pack)
             return 0;
         bool anyLight = false;
