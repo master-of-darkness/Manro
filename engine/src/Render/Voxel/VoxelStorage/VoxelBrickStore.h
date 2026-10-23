@@ -11,7 +11,7 @@ namespace Manro {
     class CSparseBuffer;
     class CVoxelEncoder;
 
-    struct VoxelWorldDesc_t {
+    struct VoxelBrickStoreDesc_t {
         u32 virtualDim{64};
         float voxelSize{1.f};
         Vec3 worldMin{0.f, 0.f, 0.f};
@@ -28,7 +28,7 @@ namespace Manro {
 
         CVoxelBrickStore &operator=(const CVoxelBrickStore &) = delete;
 
-        void Init(const VoxelWorldDesc_t &desc);
+        void Init(const VoxelBrickStoreDesc_t &desc);
         void Shutdown();
 
         i32 AllocateBrick(u32 bx, u32 by, u32 bz);

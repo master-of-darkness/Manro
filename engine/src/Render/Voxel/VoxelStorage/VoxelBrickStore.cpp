@@ -1,9 +1,9 @@
 #include "VoxelBrickStore.h"
-#include "../Vulkan/SparseBuffer.h"
-#include "../Vulkan/Buffer.h"
-#include "../Vulkan/GpuDefs.h"
-#include "../Vulkan/VulkanHelpers.h"
-#include "../Vulkan/VoxelEncoder.h"
+#include "../../Vulkan/SparseBuffer.h"
+#include "../../Vulkan/Buffer.h"
+#include "../../Vulkan/GpuDefs.h"
+#include "../../Vulkan/VulkanHelpers.h"
+#include "../../Vulkan/VoxelEncoder.h"
 
 #include <Manro/Core/Logger.h>
 #include <algorithm>
@@ -22,7 +22,7 @@ namespace Manro {
                                          {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
     }
 
-    void CVoxelBrickStore::Init(const VoxelWorldDesc_t &desc) {
+    void CVoxelBrickStore::Init(const VoxelBrickStoreDesc_t &desc) {
         m_VirtualDim = desc.virtualDim;
         m_VoxelSize = desc.voxelSize;
         m_BrickSize = desc.voxelSize * static_cast<float>(kVoxelBrickEdge);

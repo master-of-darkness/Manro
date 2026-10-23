@@ -29,19 +29,19 @@ set(ENGINE_RENDER_SOURCES
         Render/Scene/InstanceBatcher.cpp
         Render/Scene/SceneRenderer.cpp
 
-        Render/Voxel/VoxelBrickStore.cpp
         Render/Voxel/VoxelRuntime.cpp
-        Render/Voxel/VoxelRenderer.cpp
-        Render/Voxel/BlockAtlas.cpp
-        Render/Voxel/BlockStateMap.cpp
-        Render/Voxel/BlockModelBake.cpp
-        Render/Voxel/BlockShapes.cpp
-        Render/Voxel/VoxelStreamWorld.cpp
-        Render/Voxel/StreamScheduler.cpp
-        Render/Voxel/StreamWorkers.cpp
-        Render/Voxel/ChunkCache.cpp
-        Render/Voxel/LightPropagation.cpp
-        Render/Voxel/StreamEdits.cpp
+        Render/Voxel/VoxelStorage/VoxelBrickStore.cpp
+        Render/Voxel/VoxelDraw/VoxelRenderer.cpp
+        Render/Voxel/VoxelBlocks/BlockAtlas.cpp
+        Render/Voxel/VoxelBlocks/BlockStateMap.cpp
+        Render/Voxel/VoxelBlocks/BlockModelBake.cpp
+        Render/Voxel/VoxelBlocks/BlockShapes.cpp
+        Render/Voxel/VoxelContent/VoxelStreamWorld.cpp
+        Render/Voxel/VoxelContent/StreamScheduler.cpp
+        Render/Voxel/VoxelContent/StreamWorkers.cpp
+        Render/Voxel/VoxelContent/ChunkCache.cpp
+        Render/Voxel/VoxelContent/LightPropagation.cpp
+        Render/Voxel/VoxelContent/StreamEdits.cpp
 
         Render/Targets/RenderTargetManager.cpp
         Render/Targets/SwapchainManager.cpp
@@ -144,6 +144,7 @@ target_include_directories(Manro SYSTEM PRIVATE
 target_include_directories(Manro PRIVATE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Render>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Render/Voxel>
         ${MANRO_THIRD_PARTY_DIR}/stb
 )
 target_compile_definitions(Manro PUBLIC VK_NO_PROTOTYPES IMGUI_ENABLE_FREETYPE)

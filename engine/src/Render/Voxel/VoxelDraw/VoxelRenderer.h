@@ -1,11 +1,10 @@
 #pragma once
 
-#include "VoxelPacking.h"
+#include "VoxelStorage/VoxelPacking.h"
 #include "VoxelFrame.h"
-#include "VoxelBlockAssets.h"
-#include "../Vulkan/GpuDefs.h"
+#include "VoxelBlocks/VoxelBlockAssets.h"
+#include "../../Vulkan/GpuDefs.h"
 #include <Manro/Core/Types.h>
-#include <Manro/Render/VoxelStreamStats.h>
 
 #include <array>
 #include <memory>
@@ -59,26 +58,13 @@ namespace Manro {
         void Init(CPipelineCache &cache, u32 width, u32 height);
         void Shutdown();
 
-        void Record(CVoxelEncoder &enc, const VoxelFrameDesc &frame);
+        void Record(CVoxelEncoder &enc, const VoxelFrameDesc &frame,
+                    const CVoxelStreamWorld *streamWorld);
 
-        Vec3 StreamInit(std::unique_ptr<IVoxelContentSource> content,
-                        const std::string &worldDir, const std::string &assetsDir,
-                        int radiusSections);
+        void WaitIdle();
+        bool LoadBlockAssets(const BlockAssetPack_t &pack);
+        [[nodiscard]] const BlockAssetPack_t &GetBlockPack() const { return m_BlockPack; }
 
-        int StreamUpdate(const Vec3 &cameraPos, u32 flightSlot);
-
-        [[nodiscard]] const VoxelStreamStats_t &GetStreamStats() const;
-
-        bool StreamIsSolid(const Vec3 &p) const;
-        bool StreamIsFluid(const Vec3 &p) const;
-
-        u32 StreamPlaceState() const;
-
-        void StreamApplyEdit(const Vec3 &pos, float radius, u32 op, u32 state = 0u);
-
-        i32 StreamGetStateAt(const Vec3 &p) const;
-
-        bool StreamGetCollisionBox(const Vec3 &p, Vec3 &mn, Vec3 &mx) const;
         std::string GetStateKey(u32 id) const;
         u32 FindStateByKey(const std::string &key) const;
 
@@ -123,7 +109,6 @@ namespace Manro {
         u32 m_TileLayers{0};
 
         BlockAssetPack_t m_BlockPack;
-        std::unique_ptr<CVoxelStreamWorld> m_StreamWorld;
         bool m_HasAnyCutout{false};
 
         static constexpr u32 kFlightSlots = 3;

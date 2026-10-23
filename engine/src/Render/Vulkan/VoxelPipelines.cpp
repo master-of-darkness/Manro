@@ -3,8 +3,8 @@
 #include "Pipeline.h"
 #include "PipelineCache.h"
 #include "TileArray.h"
-#include "../Voxel/VoxelEdit.h"
-#include "../Voxel/VoxelFrame.h"
+#include "../Voxel/VoxelStorage/VoxelEdit.h"
+#include "../Voxel/VoxelDraw/VoxelFrame.h"
 
 #include <Manro/Core/Logger.h>
 

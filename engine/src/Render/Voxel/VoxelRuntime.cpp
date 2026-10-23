@@ -1,9 +1,14 @@
 #include <Manro/Render/VoxelRuntime.h>
 
-#include "VoxelBrickStore.h"
-#include "VoxelEdit.h"
-#include "VoxelRenderer.h"
+#include "VoxelBlocks/VoxelBlockAssets.h"
+#include "VoxelContent/VoxelStreamWorld.h"
+#include "VoxelDraw/VoxelRenderer.h"
+#include "VoxelStorage/VoxelBrickStore.h"
+#include "VoxelStorage/VoxelEdit.h"
 
+#include <Manro/Core/Logger.h>
+
+#include <cmath>
 #include <utility>
 
 namespace Manro {
@@ -12,18 +17,17 @@ namespace Manro {
         CVirtualFS &vfs;
         CPipelineCache &cache;
         std::unique_ptr<CVoxelRenderer> renderer;
+        std::unique_ptr<CVoxelStreamWorld> streamWorld;
         int lastUnfilled{0};
         bool initialized{false};
 
         Impl(CVulkanContext &c, CVirtualFS &v, CPipelineCache &pc)
-            : ctx(c), vfs(v), cache(pc) {
-        }
+            : ctx(c), vfs(v), cache(pc) {}
     };
 
     CVoxelRuntime::CVoxelRuntime(CVulkanContext &ctx, CVirtualFS &vfs,
                                  CPipelineCache &cache)
-        : m_Impl(std::make_unique<Impl>(ctx, vfs, cache)) {
-    }
+        : m_Impl(std::make_unique<Impl>(ctx, vfs, cache)) {}
 
     CVoxelRuntime::~CVoxelRuntime() { Shutdown(); }
 
@@ -38,6 +42,9 @@ namespace Manro {
     void CVoxelRuntime::Shutdown() {
         if (!m_Impl)
             return;
+        if (m_Impl->renderer)
+            m_Impl->renderer->WaitIdle();
+        m_Impl->streamWorld.reset();
         m_Impl->renderer.reset();
         m_Impl->initialized = false;
         m_Impl->lastUnfilled = 0;
@@ -65,8 +72,10 @@ namespace Manro {
         cmd.radius = radius;
         cmd.material = material;
         cmd.op = op;
-        m_Impl->renderer->GetWorld().QueueEdit(cmd);
-        m_Impl->renderer->StreamApplyEdit(pos, radius, op, material);
+        CVoxelBrickStore &world = m_Impl->renderer->GetWorld();
+        world.QueueEdit(cmd);
+        if (m_Impl->streamWorld)
+            m_Impl->streamWorld->ApplyEdit(world, pos, radius, op, material);
     }
 
     u32 CVoxelRuntime::GetBrickCount() const {
@@ -143,17 +152,46 @@ namespace Manro {
                                    const std::string &assetsDir, int radiusSections) {
         if (!IsInitialized())
             return Vec3(8.f, 80.f, 8.f);
-        return m_Impl->renderer->StreamInit(std::move(content), worldDir, assetsDir,
-                                            radiusSections);
+
+        m_Impl->renderer->WaitIdle();
+        m_Impl->streamWorld.reset();
+
+        std::vector<VoxelBlockState> saveStates;
+        if (content && !content->ScanSaveStates(saveStates)) {
+            LOG_ERROR("[CVoxelRuntime] Save scan failed");
+            return Vec3(8.f, 80.f, 8.f);
+        }
+
+        const std::string dir = assetsDir.empty() ? MANRO_MC_ASSETS_DIR : assetsDir;
+        std::string err;
+        BlockAssetPack_t pack;
+        if (!BuildBlockAssetPack(dir, saveStates, pack, err)) {
+            LOG_ERROR("[CVoxelRuntime] Block assets failed: {}", err);
+            return Vec3(8.f, 80.f, 8.f);
+        }
+        if (!m_Impl->renderer->LoadBlockAssets(pack)) {
+            LOG_ERROR("[CVoxelRuntime] State id {} exceeds 15-bit face-cache pack",
+                      pack.maxState);
+            return Vec3(8.f, 80.f, 8.f);
+        }
+
+        m_Impl->streamWorld = std::make_unique<CVoxelStreamWorld>();
+        VoxelStreamDesc_t desc{};
+        desc.worldDir = worldDir;
+        desc.radiusSections = radiusSections;
+        return m_Impl->streamWorld->Init(m_Impl->renderer->GetWorld(),
+                                         m_Impl->renderer->GetBlockPack(), desc,
+                                         std::move(content));
     }
 
     int CVoxelRuntime::StreamUpdate(const Vec3 &cameraPos, u32 flightSlot) {
-        if (!IsInitialized()) {
+        if (!IsInitialized() || !m_Impl->streamWorld) {
             if (m_Impl)
                 m_Impl->lastUnfilled = 0;
             return 0;
         }
-        m_Impl->lastUnfilled = m_Impl->renderer->StreamUpdate(cameraPos, flightSlot);
+        m_Impl->lastUnfilled = m_Impl->streamWorld->Update(
+            m_Impl->renderer->GetWorld(), cameraPos, flightSlot);
         return m_Impl->lastUnfilled;
     }
 
@@ -163,27 +201,46 @@ namespace Manro {
 
     const VoxelStreamStats_t &CVoxelRuntime::GetStreamStats() const {
         static const VoxelStreamStats_t kEmpty{};
-        return IsInitialized() ? m_Impl->renderer->GetStreamStats() : kEmpty;
+        return m_Impl->streamWorld ? m_Impl->streamWorld->GetLastStats() : kEmpty;
     }
 
     bool CVoxelRuntime::StreamIsSolid(const Vec3 &p) const {
-        return IsInitialized() ? m_Impl->renderer->StreamIsSolid(p) : true;
+        if (!m_Impl->streamWorld)
+            return true;
+        return m_Impl->streamWorld->IsSolidAt(static_cast<i64>(std::floor(p.x)),
+                                              static_cast<i64>(std::floor(p.y)),
+                                              static_cast<i64>(std::floor(p.z)));
     }
 
     bool CVoxelRuntime::StreamIsFluid(const Vec3 &p) const {
-        return IsInitialized() ? m_Impl->renderer->StreamIsFluid(p) : false;
+        if (!m_Impl->streamWorld)
+            return false;
+        return m_Impl->streamWorld->IsFluidAt(static_cast<i64>(std::floor(p.x)),
+                                              static_cast<i64>(std::floor(p.y)),
+                                              static_cast<i64>(std::floor(p.z)));
     }
 
     u32 CVoxelRuntime::StreamPlaceState() const {
-        return IsInitialized() ? m_Impl->renderer->StreamPlaceState() : 1u;
+        if (!m_Impl->streamWorld)
+            return 1u;
+        const i32 st = m_Impl->streamWorld->PlaceState();
+        return st >= 0 ? static_cast<u32>(st) : 1u;
     }
 
     i32 CVoxelRuntime::StreamGetStateAt(const Vec3 &p) const {
-        return IsInitialized() ? m_Impl->renderer->StreamGetStateAt(p) : -1;
+        if (!m_Impl->streamWorld)
+            return -1;
+        return m_Impl->streamWorld->GetStateAt(static_cast<i64>(std::floor(p.x)),
+                                               static_cast<i64>(std::floor(p.y)),
+                                               static_cast<i64>(std::floor(p.z)));
     }
 
     bool CVoxelRuntime::StreamGetCollisionBox(const Vec3 &p, Vec3 &mn, Vec3 &mx) const {
-        return IsInitialized() ? m_Impl->renderer->StreamGetCollisionBox(p, mn, mx) : false;
+        if (!m_Impl->streamWorld)
+            return false;
+        return m_Impl->streamWorld->GetCollisionBoxAt(static_cast<i64>(std::floor(p.x)),
+                                                      static_cast<i64>(std::floor(p.y)),
+                                                      static_cast<i64>(std::floor(p.z)), mn, mx);
     }
 
     std::string CVoxelRuntime::GetStateKey(u32 id) const {
@@ -196,7 +253,7 @@ namespace Manro {
 
     void CVoxelRuntime::Record(CVoxelEncoder &enc, const VoxelFrameDesc &frame) {
         if (IsInitialized())
-            m_Impl->renderer->Record(enc, frame);
+            m_Impl->renderer->Record(enc, frame, m_Impl->streamWorld.get());
     }
 
     void CVoxelRuntime::StampPost(CVoxelEncoder &enc, u32 flightSlot, u32 subIdx) {

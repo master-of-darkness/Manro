@@ -1,10 +1,10 @@
 #pragma once
 
 #include "VoxelStreamWorld.h"
-#include "VoxelBlockAssets.h"
+#include "VoxelBlocks/VoxelBlockAssets.h"
 
 #include <Manro/Resource/VoxelContentSource.h>
-#include "VoxelBrickStore.h"
+#include "VoxelStorage/VoxelBrickStore.h"
 
 #include <array>
 #include <atomic>

@@ -1,16 +1,16 @@
 #include "VoxelRenderer.h"
-#include "VoxelEdit.h"
-#include "VoxelBrickStore.h"
-#include "VoxelStreamWorld.h"
-#include "../Vulkan/VulkanContext.h"
-#include "../Vulkan/Pipeline.h"
-#include "../Vulkan/PipelineCache.h"
-#include "../Vulkan/Buffer.h"
-#include "../Vulkan/GpuDefs.h"
-#include "../Vulkan/TileArray.h"
-#include "../Vulkan/GpuTimer.h"
-#include "../Vulkan/VoxelEncoder.h"
-#include "../Vulkan/VoxelPipelines.h"
+#include "VoxelStorage/VoxelEdit.h"
+#include "VoxelStorage/VoxelBrickStore.h"
+#include "VoxelContent/VoxelStreamWorld.h"
+#include "../../Vulkan/VulkanContext.h"
+#include "../../Vulkan/Pipeline.h"
+#include "../../Vulkan/PipelineCache.h"
+#include "../../Vulkan/Buffer.h"
+#include "../../Vulkan/GpuDefs.h"
+#include "../../Vulkan/TileArray.h"
+#include "../../Vulkan/GpuTimer.h"
+#include "../../Vulkan/VoxelEncoder.h"
+#include "../../Vulkan/VoxelPipelines.h"
 
 #include <Manro/Core/Logger.h>
 #include <Manro/Core/VirtualFS.h>
@@ -29,7 +29,7 @@ namespace Manro {
 
     void CVoxelRenderer::Init(CPipelineCache &cache, u32 width, u32 height) {
         m_Context.RequireMeshShaders("Voxel");
-        VoxelWorldDesc_t desc{};
+        VoxelBrickStoreDesc_t desc{};
         desc.virtualDim = 64;
         desc.voxelSize = 1.f;
         desc.maxResidentBricks = 8192;
@@ -165,7 +165,6 @@ namespace Manro {
         m_Context.WaitIdle();
         m_Tiles.reset();
         m_Timer.reset();
-        m_StreamWorld.reset();
         m_BlockTileTable.reset();
         m_BlockFlagsTable.reset();
         m_BlockShapeTable.reset();
@@ -321,92 +320,15 @@ namespace Manro {
         m_BlockBoxTable->LoadData(boxes.data(), boxes.size() * sizeof(u32));
     }
 
-    Vec3 CVoxelRenderer::StreamInit(std::unique_ptr<IVoxelContentSource> content,
-                                    const std::string &worldDir, const std::string &assetsDir,
-                                    int radiusSections) {
+    void CVoxelRenderer::WaitIdle() { m_Context.WaitIdle(); }
 
-        m_Context.WaitIdle();
-
-        m_StreamWorld.reset();
-
-        std::vector<VoxelBlockState> saveStates;
-        if (content && !content->ScanSaveStates(saveStates)) {
-            LOG_ERROR("[CVoxelRenderer] Save scan failed");
-            return Vec3(8.f, 80.f, 8.f);
-        }
-
-        const std::string dir = assetsDir.empty() ? MANRO_MC_ASSETS_DIR : assetsDir;
-        std::string err;
-        if (!BuildBlockAssetPack(dir, saveStates, m_BlockPack, err)) {
-            LOG_ERROR("[CVoxelRenderer] Block assets failed: {}", err);
-            return Vec3(8.f, 80.f, 8.f);
-        }
-        if (m_BlockPack.maxState >= 32768u) {
-            LOG_ERROR("[CVoxelRenderer] State id {} exceeds 15-bit face-cache pack", m_BlockPack.maxState);
-            return Vec3(8.f, 80.f, 8.f);
-        }
+    bool CVoxelRenderer::LoadBlockAssets(const BlockAssetPack_t &pack) {
+        m_BlockPack = pack;
+        if (m_BlockPack.maxState >= 32768u)
+            return false;
         CreateBlockTiles(m_BlockPack);
         UploadBlockTables();
-        m_StreamWorld = std::make_unique<CVoxelStreamWorld>();
-        VoxelStreamDesc_t desc{};
-        desc.worldDir = worldDir;
-        desc.radiusSections = radiusSections;
-        return m_StreamWorld->Init(*m_World, m_BlockPack, desc, std::move(content));
-    }
-
-    int CVoxelRenderer::StreamUpdate(const Vec3 &cameraPos, u32 flightSlot) {
-        if (!m_StreamWorld)
-            return 0;
-        return m_StreamWorld->Update(*m_World, cameraPos, flightSlot);
-    }
-
-    const VoxelStreamStats_t &CVoxelRenderer::GetStreamStats() const {
-        static const VoxelStreamStats_t kEmpty{};
-        return m_StreamWorld ? m_StreamWorld->GetLastStats() : kEmpty;
-    }
-
-    bool CVoxelRenderer::StreamIsSolid(const Vec3 &p) const {
-        if (!m_StreamWorld)
-            return true;
-        return m_StreamWorld->IsSolidAt(static_cast<i64>(std::floor(p.x)),
-                                    static_cast<i64>(std::floor(p.y)),
-                                    static_cast<i64>(std::floor(p.z)));
-    }
-
-    bool CVoxelRenderer::StreamIsFluid(const Vec3 &p) const {
-        if (!m_StreamWorld)
-            return false;
-        return m_StreamWorld->IsFluidAt(static_cast<i64>(std::floor(p.x)),
-                                    static_cast<i64>(std::floor(p.y)),
-                                    static_cast<i64>(std::floor(p.z)));
-    }
-
-    u32 CVoxelRenderer::StreamPlaceState() const {
-        if (!m_StreamWorld)
-            return 1u;
-        const i32 st = m_StreamWorld->PlaceState();
-        return st >= 0 ? static_cast<u32>(st) : 1u;
-    }
-
-    void CVoxelRenderer::StreamApplyEdit(const Vec3 &pos, float radius, u32 op, u32 state) {
-        if (m_StreamWorld)
-            m_StreamWorld->ApplyEdit(*m_World, pos, radius, op, state);
-    }
-
-    i32 CVoxelRenderer::StreamGetStateAt(const Vec3 &p) const {
-        if (!m_StreamWorld)
-            return -1;
-        return m_StreamWorld->GetStateAt(static_cast<i64>(std::floor(p.x)),
-                                         static_cast<i64>(std::floor(p.y)),
-                                         static_cast<i64>(std::floor(p.z)));
-    }
-
-    bool CVoxelRenderer::StreamGetCollisionBox(const Vec3 &p, Vec3 &mn, Vec3 &mx) const {
-        if (!m_StreamWorld)
-            return false;
-        return m_StreamWorld->GetCollisionBoxAt(static_cast<i64>(std::floor(p.x)),
-                                                static_cast<i64>(std::floor(p.y)),
-                                                static_cast<i64>(std::floor(p.z)), mn, mx);
+        return true;
     }
 
     std::string CVoxelRenderer::GetStateKey(u32 id) const {
@@ -478,7 +400,8 @@ namespace Manro {
         return m_CascadeBuffer->Address() + cascadeBytes;
     }
 
-    void CVoxelRenderer::Record(CVoxelEncoder &enc, const VoxelFrameDesc &frame) {
+    void CVoxelRenderer::Record(CVoxelEncoder &enc, const VoxelFrameDesc &frame,
+                                const CVoxelStreamWorld *streamWorld) {
         if (!m_bInitialized)
             return;
 
@@ -566,7 +489,7 @@ namespace Manro {
                         const VoxelBrickHeader_t &h = mirror[i];
                         if ((h.flags & 1u) == 0u)
                             continue;
-                        if (m_StreamWorld && !m_StreamWorld->BrickHasContent(i))
+                        if (streamWorld && !streamWorld->BrickHasContent(i))
                             continue;
                         const Vec3 center = h.origin + Vec3(brickSize * 0.5f);
                         const Vec3 toC = center - cameraPos;
@@ -591,7 +514,7 @@ namespace Manro {
                     for (u32 i = 0; i < brickCount; ++i) {
                         if (m_World->IsBrickHidden(i))
                             continue;
-                        if (m_StreamWorld && !m_StreamWorld->BrickHasContent(i))
+                        if (streamWorld && !streamWorld->BrickHasContent(i))
                             continue;
                         const VoxelBrickHeader_t &h = mirrorNF[i];
                         if ((h.flags & 1u) == 0u)
