@@ -1,4 +1,4 @@
-#include "VoxelWorld.h"
+#include "VoxelBrickStore.h"
 #include "../Vulkan/SparseBuffer.h"
 #include "../Vulkan/Buffer.h"
 #include "../Vulkan/GpuDefs.h"
@@ -12,16 +12,17 @@
 #include <vector>
 
 namespace Manro {
-    CVoxelWorld::CVoxelWorld(CVulkanContext &ctx) : m_Context(&ctx) {}
+    CVoxelBrickStore::CVoxelBrickStore(CVulkanContext &ctx) : m_Context(&ctx) {
+    }
 
-    CVoxelWorld::~CVoxelWorld() { Shutdown(); }
+    CVoxelBrickStore::~CVoxelBrickStore() { Shutdown(); }
 
     namespace {
         constexpr int kHiddenNb[6][3] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0},
                                          {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
     }
 
-    void CVoxelWorld::Init(const VoxelWorldDesc_t &desc) {
+    void CVoxelBrickStore::Init(const VoxelWorldDesc_t &desc) {
         m_VirtualDim = desc.virtualDim;
         m_VoxelSize = desc.voxelSize;
         m_BrickSize = desc.voxelSize * static_cast<float>(kVoxelBrickEdge);
@@ -66,7 +67,7 @@ namespace Manro {
         FlushHeaders();
     }
 
-    void CVoxelWorld::Shutdown() {
+    void CVoxelBrickStore::Shutdown() {
         m_Bricks.reset();
         m_Headers.reset();
         m_PageTable.reset();
@@ -91,14 +92,14 @@ namespace Manro {
         ++m_HeaderVersion;
     }
 
-    i32 CVoxelWorld::AllocateBrick(u32 bx, u32 by, u32 bz) {
+    i32 CVoxelBrickStore::AllocateBrick(u32 bx, u32 by, u32 bz) {
         if (bx >= m_VirtualDim || by >= m_VirtualDim || bz >= m_VirtualDim)
             return -1;
         const u32 slot = BrickSlot(bx, by, bz);
         if (m_PageMirror[slot] >= 0)
             return m_PageMirror[slot];
         if (m_BrickCount >= m_HeaderMirror.size()) {
-            LOG_ERROR("[CVoxelWorld] Resident brick budget exhausted");
+            LOG_ERROR("[CVoxelBrickStore] Resident brick budget exhausted");
             return -1;
         }
         const u64 brickBytes = static_cast<u64>(kVoxelBrickExWords) * sizeof(u32);
@@ -126,7 +127,7 @@ namespace Manro {
         return static_cast<i32>(brickIdx);
     }
 
-    i32 CVoxelWorld::AllocateBrickSlot(u32 slot, const Vec3 &origin) {
+    i32 CVoxelBrickStore::AllocateBrickSlot(u32 slot, const Vec3 &origin) {
         if (slot >= m_PageMirror.size())
             return -1;
         const i32 existing = m_PageMirror[slot];
@@ -163,7 +164,7 @@ namespace Manro {
         return static_cast<i32>(brickIdx);
     }
 
-    void CVoxelWorld::EvictBrick(u32 brickIdx) {
+    void CVoxelBrickStore::EvictBrick(u32 brickIdx) {
         if (brickIdx >= m_HeaderMirror.size())
             return;
         const u32 slot = (brickIdx < m_BrickSlots.size()) ? m_BrickSlots[brickIdx] : ~0u;
@@ -198,7 +199,7 @@ namespace Manro {
         ++m_HeaderVersion;
     }
 
-    void CVoxelWorld::ReserveResident(u32 brickCount) {
+    void CVoxelBrickStore::ReserveResident(u32 brickCount) {
         if (!m_Bricks)
             return;
         const u32 capped = std::min<u32>(brickCount, static_cast<u32>(m_HeaderMirror.size()));
@@ -208,7 +209,7 @@ namespace Manro {
         const u64 totalBytes = static_cast<u64>(capped) * brickBytes;
 
         if (!m_Bricks->BindRange(0, totalBytes)) {
-            LOG_ERROR("[CVoxelWorld] ReserveResident failed for {} bricks", capped);
+            LOG_ERROR("[CVoxelBrickStore] ReserveResident failed for {} bricks", capped);
             return;
         }
 
@@ -216,7 +217,7 @@ namespace Manro {
         (void)m_Bricks->TakeBinds();
     }
 
-    void CVoxelWorld::MarkBrickDirty(u32 brickIdx) {
+    void CVoxelBrickStore::MarkBrickDirty(u32 brickIdx) {
         if (brickIdx >= m_HeaderMirror.size())
             return;
 
@@ -227,7 +228,7 @@ namespace Manro {
         }
     }
 
-    void CVoxelWorld::MarkBrickAndNeighborsDirty(u32 brickIdx) {
+    void CVoxelBrickStore::MarkBrickAndNeighborsDirty(u32 brickIdx) {
         MarkBrickDirty(brickIdx);
         if (brickIdx >= m_BrickSlots.size())
             return;
@@ -238,7 +239,7 @@ namespace Manro {
         }
     }
 
-    void CVoxelWorld::UploadBrickData(u32 brickIdx, const u16 *mats, const u32 *occupancy) {
+    void CVoxelBrickStore::UploadBrickData(u32 brickIdx, const u16 *mats, const u32 *occupancy) {
         ++m_BlockingUploadCount;
         const u64 brickBytes = static_cast<u64>(kVoxelBrickExWords) * sizeof(u32);
         const u64 dstOffset = static_cast<u64>(brickIdx) * brickBytes;
@@ -253,8 +254,8 @@ namespace Manro {
         MarkBrickDirty(brickIdx);
     }
 
-    void CVoxelWorld::UploadBrickBatch(const u32 *indices, const u16 *mats, const u32 *occupancy,
-                                       u32 count) {
+    void CVoxelBrickStore::UploadBrickBatch(const u32 *indices, const u16 *mats, const u32 *occupancy,
+                                            u32 count) {
         if (count == 0 || !indices || !mats || !occupancy)
             return;
         ++m_BlockingUploadCount;
@@ -286,8 +287,8 @@ namespace Manro {
             MarkBrickDirty(indices[i]);
     }
 
-    bool CVoxelWorld::StageBrickBatch(u32 slot, const u32 *indices, const u16 *mats,
-                                       const u32 *occupancy, const u8 *light, u32 count) {
+    bool CVoxelBrickStore::StageBrickBatch(u32 slot, const u32 *indices, const u16 *mats,
+                                           const u32 *occupancy, const u8 *light, u32 count) {
         if (count == 0 || !indices || !mats || !occupancy || !light)
             return true;
         if (!m_UploadStaging || !m_Bricks)
@@ -341,7 +342,7 @@ namespace Manro {
         return true;
     }
 
-    u32 CVoxelWorld::GetStageFree(u32 slot) const {
+    u32 CVoxelBrickStore::GetStageFree(u32 slot) const {
         if (!m_UploadStaging || !m_Bricks)
             return 0;
         const u32 s = slot % kStageSlots;
@@ -350,7 +351,7 @@ namespace Manro {
                    : (kStageCapacityBricks - m_StageCounts[s]);
     }
 
-    CVoxelWorld::VoxelUploadStats_t CVoxelWorld::TakeUploadStats() {
+    CVoxelBrickStore::VoxelUploadStats_t CVoxelBrickStore::TakeUploadStats() {
         VoxelUploadStats_t out;
         out.blockingUploads = m_BlockingUploadCount;
         m_BlockingUploadCount = 0;
@@ -361,7 +362,7 @@ namespace Manro {
         return out;
     }
 
-    void CVoxelWorld::FlushStagedUploads(CVoxelEncoder &enc, u32 slot) {
+    void CVoxelBrickStore::FlushStagedUploads(CVoxelEncoder &enc, u32 slot) {
         const u32 s = slot % kStageSlots;
         const u32 count = m_StageCounts[s];
         if (count == 0 || !m_UploadStaging || !m_Bricks)
@@ -378,11 +379,11 @@ namespace Manro {
         m_StageCounts[s] = 0;
     }
 
-    u64 CVoxelWorld::TakeBindSubmitCount() {
+    u64 CVoxelBrickStore::TakeBindSubmitCount() {
         return m_Bricks ? m_Bricks->TakeBinds() : 0;
     }
 
-    i32 CVoxelWorld::SlotNeighbor(u32 slot, int dx, int dy, int dz) const {
+    i32 CVoxelBrickStore::SlotNeighbor(u32 slot, int dx, int dy, int dz) const {
         const i64 bx = static_cast<i64>(slot % m_VirtualDim) + dx;
         const i64 by = static_cast<i64>((slot / m_VirtualDim) % m_VirtualDim) + dy;
         const i64 bz = static_cast<i64>(slot / (static_cast<u64>(m_VirtualDim) * m_VirtualDim)) + dz;
@@ -396,7 +397,7 @@ namespace Manro {
         return static_cast<i32>(nslot);
     }
 
-    i32 CVoxelWorld::NeighborBrick(u32 brickIdx, int dx, int dy, int dz) const {
+    i32 CVoxelBrickStore::NeighborBrick(u32 brickIdx, int dx, int dy, int dz) const {
         if (brickIdx >= m_BrickSlots.size())
             return -1;
         const u32 slot = m_BrickSlots[brickIdx];
@@ -408,7 +409,7 @@ namespace Manro {
         return m_PageMirror[static_cast<u32>(nslot)];
     }
 
-    void CVoxelWorld::RecomputeHidden(u32 brickIdx) {
+    void CVoxelBrickStore::RecomputeHidden(u32 brickIdx) {
         if (brickIdx >= m_BrickHidden.size())
             return;
         if (m_BrickOpaqueFull[brickIdx] == 0u) {
@@ -425,7 +426,7 @@ namespace Manro {
         m_BrickHidden[brickIdx] = 1u;
     }
 
-    void CVoxelWorld::SetBrickOpaqueFull(u32 brickIdx, bool opaque) {
+    void CVoxelBrickStore::SetBrickOpaqueFull(u32 brickIdx, bool opaque) {
         if (brickIdx >= m_BrickOpaqueFull.size())
             return;
         m_BrickOpaqueFull[brickIdx] = opaque ? 1u : 0u;
@@ -437,7 +438,7 @@ namespace Manro {
         }
     }
 
-    void CVoxelWorld::InvalidateHiddenNear(const Vec3 &pos, float radius) {
+    void CVoxelBrickStore::InvalidateHiddenNear(const Vec3 &pos, float radius) {
         if (m_BrickSize <= 0.f || m_BrickHidden.empty())
             return;
         const Vec3 local = (pos - m_WorldMin) / m_BrickSize;
@@ -466,7 +467,7 @@ namespace Manro {
         }
     }
 
-    void CVoxelWorld::InvalidateSingleVoxel(const Vec3 &pos) {
+    void CVoxelBrickStore::InvalidateSingleVoxel(const Vec3 &pos) {
         if (m_BrickSize <= 0.f || m_BrickHidden.empty())
             return;
         const Vec3 local = (pos - m_WorldMin) / m_BrickSize;
@@ -504,7 +505,7 @@ namespace Manro {
         }
     }
 
-    void CVoxelWorld::SetVoxel(u32 bx, u32 by, u32 bz, u32 lx, u32 ly, u32 lz, u16 mat) {
+    void CVoxelBrickStore::SetVoxel(u32 bx, u32 by, u32 bz, u32 lx, u32 ly, u32 lz, u16 mat) {
         i32 brick = AllocateBrick(bx, by, bz);
         if (brick < 0)
             return;
@@ -516,12 +517,12 @@ namespace Manro {
         (void)scratch;
         (void)srcOffset;
         (void)lx; (void)ly; (void)lz; (void)mat;
-        LOG_WARN("[CVoxelWorld] SetVoxel single-write: batch via UploadBrickData instead");
+        LOG_WARN("[CVoxelBrickStore] SetVoxel single-write: batch via UploadBrickData instead");
     }
 
-    void CVoxelWorld::QueueEdit(const VoxelEditCmd_t &cmd) {
+    void CVoxelBrickStore::QueueEdit(const VoxelEditCmd_t &cmd) {
         if (m_PendingEdits.size() >= 1024) {
-            LOG_WARN("[CVoxelWorld] Edit ring full, dropping edit");
+            LOG_WARN("[CVoxelBrickStore] Edit ring full, dropping edit");
             return;
         }
 
@@ -532,21 +533,21 @@ namespace Manro {
         m_PendingEdits.push_back(cmd);
     }
 
-    void CVoxelWorld::ClearEdits() { m_PendingEdits.clear(); }
+    void CVoxelBrickStore::ClearEdits() { m_PendingEdits.clear(); }
 
-    u64 CVoxelWorld::GetBrickBufferAddr() const {
+    u64 CVoxelBrickStore::GetBrickBufferAddr() const {
         return m_Bricks ? m_Bricks->Address() : 0;
     }
 
-    u64 CVoxelWorld::GetHeaderAddr() const {
+    u64 CVoxelBrickStore::GetHeaderAddr() const {
         return m_Headers ? m_Headers->Address() : 0;
     }
 
-    u64 CVoxelWorld::GetPageTableAddr() const {
+    u64 CVoxelBrickStore::GetPageTableAddr() const {
         return m_PageTable ? m_PageTable->Address() : 0;
     }
 
-    void CVoxelWorld::FlushHeaders() {
+    void CVoxelBrickStore::FlushHeaders() {
         if (!m_Headers || !m_PageTable)
             return;
 

@@ -1,5 +1,6 @@
 #include "VoxelRenderer.h"
-#include "VoxelWorld.h"
+#include "VoxelEdit.h"
+#include "VoxelBrickStore.h"
 #include "VoxelStreamWorld.h"
 #include "../Vulkan/VulkanContext.h"
 #include "../Vulkan/Pipeline.h"
@@ -20,7 +21,7 @@
 namespace Manro {
     CVoxelRenderer::CVoxelRenderer(CVulkanContext &ctx, CVirtualFS &vfs)
         : m_Context(ctx), m_Vfs(vfs) {
-        m_World = CreateScope<CVoxelWorld>(ctx);
+        m_World = CreateScope<CVoxelBrickStore>(ctx);
     }
 
     CVoxelRenderer::~CVoxelRenderer() { Shutdown(); }

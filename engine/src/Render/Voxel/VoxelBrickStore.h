@@ -1,6 +1,7 @@
 #pragma once
 
-#include "VoxelTypes.h"
+#include "VoxelPacking.h"
+#include "VoxelEdit.h"
 #include <array>
 #include <vector>
 
@@ -17,13 +18,15 @@ namespace Manro {
         u32 maxResidentBricks{8192};
     };
 
-    class CVoxelWorld {
+    class CVoxelBrickStore {
     public:
-        explicit CVoxelWorld(CVulkanContext &ctx);
-        ~CVoxelWorld();
+        explicit CVoxelBrickStore(CVulkanContext &ctx);
 
-        CVoxelWorld(const CVoxelWorld &) = delete;
-        CVoxelWorld &operator=(const CVoxelWorld &) = delete;
+        ~CVoxelBrickStore();
+
+        CVoxelBrickStore(const CVoxelBrickStore &) = delete;
+
+        CVoxelBrickStore &operator=(const CVoxelBrickStore &) = delete;
 
         void Init(const VoxelWorldDesc_t &desc);
         void Shutdown();

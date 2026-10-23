@@ -1,6 +1,7 @@
 #pragma once
 
-#include "VoxelTypes.h"
+#include "VoxelPacking.h"
+#include "VoxelFrame.h"
 #include "VoxelBlockAssets.h"
 #include "../Vulkan/GpuDefs.h"
 #include <Manro/Core/Types.h>
@@ -18,7 +19,7 @@ namespace Manro {
     class CPipeline;
     class CPipelineCache;
     class CBuffer;
-    class CVoxelWorld;
+    class CVoxelBrickStore;
     class CVoxelStreamWorld;
     class CVoxelEncoder;
     class CTileArray;
@@ -79,7 +80,7 @@ namespace Manro {
         std::string GetStateKey(u32 id) const;
         u32 FindStateByKey(const std::string &key) const;
 
-        [[nodiscard]] CVoxelWorld &GetWorld() { return *m_World; }
+        [[nodiscard]] CVoxelBrickStore &GetWorld() { return *m_World; }
         [[nodiscard]] const VoxelFrameStats_t &GetStats() const { return m_Stats; }
 
         void SetDebugEnabled(bool e) { m_bDebugEnabled = e; }
@@ -103,7 +104,7 @@ namespace Manro {
         CVulkanContext &m_Context;
         CVirtualFS &m_Vfs;
 
-        Scope<CVoxelWorld> m_World;
+        Scope<CVoxelBrickStore> m_World;
         Scope<CPipeline> m_OpaquePipeline;
         Scope<CPipeline> m_CutoutPipeline;
         Scope<CPipeline> m_EditPipeline;

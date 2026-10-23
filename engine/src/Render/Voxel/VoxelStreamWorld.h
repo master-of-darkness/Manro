@@ -9,7 +9,7 @@
 #include <vector>
 
 namespace Manro {
-    class CVoxelWorld;
+    class CVoxelBrickStore;
     struct BlockAssetPack_t;
 
     struct VoxelStreamDesc_t {
@@ -29,13 +29,16 @@ namespace Manro {
         CVoxelStreamWorld(const CVoxelStreamWorld &) = delete;
         CVoxelStreamWorld &operator=(const CVoxelStreamWorld &) = delete;
 
-        Vec3 Init(CVoxelWorld &world, const BlockAssetPack_t &pack, const VoxelStreamDesc_t &desc);
+        Vec3 Init(CVoxelBrickStore &world, const BlockAssetPack_t &pack,
+                  const VoxelStreamDesc_t &desc);
 
-        int Update(CVoxelWorld &world, const Vec3 &cameraPos, u32 flightSlot);
+        int Update(CVoxelBrickStore &world, const Vec3 &cameraPos, u32 flightSlot);
 
         [[nodiscard]] bool IsSolidAt(i64 x, i64 y, i64 z) const;
         [[nodiscard]] bool IsFluidAt(i64 x, i64 y, i64 z) const;
-        void ApplyEdit(CVoxelWorld &world, const Vec3 &pos, float radius, u32 op, u32 state = 0u);
+
+        void ApplyEdit(CVoxelBrickStore &world, const Vec3 &pos, float radius, u32 op,
+                       u32 state = 0u);
 
         [[nodiscard]] i32 GetStateAt(i64 x, i64 y, i64 z) const;
 

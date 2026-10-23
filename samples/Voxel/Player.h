@@ -59,9 +59,9 @@ namespace PlayerDetail {
                 for (int x = x0; x <= x1; ++x) {
                     Manro::Vec3 bMn, bMx;
                     if (!ren.VoxelStreamGetCollisionBox(
-                            Manro::Vec3(static_cast<float>(x), static_cast<float>(y),
-                                        static_cast<float>(z)),
-                            bMn, bMx))
+                        Manro::Vec3(static_cast<float>(x), static_cast<float>(y),
+                                    static_cast<float>(z)),
+                        bMn, bMx))
                         continue;
                     if (AABBsOverlap(pMn, pMx, bMn, bMx))
                         return true;
@@ -98,9 +98,9 @@ namespace PlayerDetail {
                 for (int x = x0; x <= x1; ++x) {
                     Manro::Vec3 bMn, bMx;
                     if (!ren.VoxelStreamGetCollisionBox(
-                            Manro::Vec3(static_cast<float>(x), static_cast<float>(y),
-                                        static_cast<float>(z)),
-                            bMn, bMx))
+                        Manro::Vec3(static_cast<float>(x), static_cast<float>(y),
+                                    static_cast<float>(z)),
+                        bMn, bMx))
                         continue;
                     if (!AABBsOverlap(nMn, nMx, bMn, bMx))
                         continue;

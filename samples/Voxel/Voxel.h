@@ -184,7 +184,7 @@ public:
                     const Manro::Vec3 hitPos = eye + fwd * hit.t;
                     const bool fluid = m_Renderer->VoxelStreamIsFluid(target);
                     const Manro::u32 state =
-                        OrientPlaceState(m_PlaceState, hitPos.y, hit.nx, hit.ny, hit.nz, fluid);
+                            OrientPlaceState(m_PlaceState, hitPos.y, hit.nx, hit.ny, hit.nz, fluid);
                     m_Renderer->VoxelQueueEdit(target + Manro::Vec3(0.5f), 0.f, state, 1);
                     ++m_EditCount;
                 }
@@ -242,8 +242,8 @@ public:
         const auto streamT0 = std::chrono::steady_clock::now();
         m_Unfilled = m_Renderer->VoxelStreamUpdate();
         m_StreamMs = std::chrono::duration<float, std::milli>(
-                         std::chrono::steady_clock::now() - streamT0)
-                         .count();
+                    std::chrono::steady_clock::now() - streamT0)
+                .count();
         m_Renderer->VoxelStreamGetStats(m_StreamStats);
         return true;
     }
@@ -256,7 +256,7 @@ public:
             m_Fov = fovTarget;
         const Manro::Mat4 view = glm::lookAt(m_CamPos, m_CamPos + m_Fwd, Manro::Vec3{0, 1, 0});
         const Manro::Mat4 proj =
-            glm::perspective(glm::radians(m_Fov), m_Renderer->GetAspectRatio(), 0.1f, 10000.f);
+                glm::perspective(glm::radians(m_Fov), m_Renderer->GetAspectRatio(), 0.1f, 10000.f);
         m_Renderer->SetViewProjection(view, proj);
         m_Renderer->SetCameraPosition(m_CamPos);
 
@@ -270,10 +270,10 @@ public:
         const auto t2 = std::chrono::steady_clock::now();
         const float streamMs = m_StreamMs;
         const float cpuMs =
-            std::chrono::duration<float, std::milli>(t2 - t0).count();
+                std::chrono::duration<float, std::milli>(t2 - t0).count();
         m_CpuEma = (m_CpuEma <= 0.f) ? cpuMs : m_CpuEma + (cpuMs - m_CpuEma) * 0.05f;
         m_StreamEma =
-            (m_StreamEma <= 0.f) ? streamMs : m_StreamEma + (streamMs - m_StreamEma) * 0.05f;
+                (m_StreamEma <= 0.f) ? streamMs : m_StreamEma + (streamMs - m_StreamEma) * 0.05f;
 
         const float dtMs = frame.DeltaTime * 1000.f;
         m_FpsEma = (m_FpsEma <= 0.f) ? dtMs : m_FpsEma + (dtMs - m_FpsEma) * 0.05f;
@@ -285,8 +285,8 @@ public:
             const Manro::FrameStats_t &fst = m_Renderer->GetLastFrameStats();
             float ix = 0.f, id = 0.f, ip = 0.f;
             m_Renderer->VoxelGetGpuInstantTimes(ix, id, ip);
-            (void)ix;
-            (void)ip;
+            (void) ix;
+            (void) ip;
             if (fst.paceFenceMs > m_PaceFenceMax) m_PaceFenceMax = fst.paceFenceMs;
             if (fst.paceAcquireMs > m_PaceAcquireMax) m_PaceAcquireMax = fst.paceAcquireMs;
             if (fst.pacePresentMs > m_PacePresentMax) m_PacePresentMax = fst.pacePresentMs;
@@ -310,8 +310,8 @@ public:
         ImGui::SetNextWindowBgAlpha(0.85f);
         if (ImGui::Begin("Voxel HUD", nullptr,
                          ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
-                             ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
-                             ImGuiWindowFlags_NoNav)) {
+                         ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
+                         ImGuiWindowFlags_NoNav)) {
             ImGui::Text("FPS: %.0f (%.2f ms)", static_cast<double>(emaFps),
                         static_cast<double>(m_FpsEma));
             ImGui::Text("1%% low: %.2f ms  0.1%% low: %.2f ms", static_cast<double>(worst1),
@@ -346,9 +346,11 @@ public:
                         static_cast<double>(gd), static_cast<double>(gp));
             ImGui::Text("Player: (%.1f,%.1f,%.1f) %s%s", static_cast<double>(m_Player.pos.x),
                         static_cast<double>(m_Player.pos.y), static_cast<double>(m_Player.pos.z),
-                        m_Player.fly ? "FLY"
-                                     : (m_Player.sprinting ? "SPRINT"
-                                                           : (m_Player.onGround ? "GROUND" : "AIR")),
+                        m_Player.fly
+                            ? "FLY"
+                            : (m_Player.sprinting
+                                   ? "SPRINT"
+                                   : (m_Player.onGround ? "GROUND" : "AIR")),
                         m_bGrabbed ? "" : " (cursor free)");
             ImGui::TextDisabled("task=%u vis=%u faces=%u cull=%u mesh=%u mfaces=%u", dbg[0], dbg[1],
                                 dbg[2], dbg[3], dbg[4], dbg[5]);
@@ -356,7 +358,7 @@ public:
             ImGui::TextDisabled("backface=%d frustum=%d", m_UseBackface ? 1 : 0,
                                 m_UseFrustum ? 1 : 0);
             ImGui::TextDisabled("placing: %s",
-                               m_PlaceKey.empty() ? "?" : m_PlaceKey.c_str());
+                                m_PlaceKey.empty() ? "?" : m_PlaceKey.c_str());
             ImGui::TextDisabled(
                 "WASD move | 2xW/Shift/Ctrl sprint | Space jump | F fly | LMB break | RMB place");
             ImGui::TextDisabled("MMB pick block | F11 fullscreen | B/N cull | V vsync | Esc cursor/quit");
@@ -364,25 +366,25 @@ public:
         ImGui::End();
 
         const float fps = frame.DeltaTime > 0.f ? 1.f / frame.DeltaTime : 0.f;
-        (void)fps;
+        (void) fps;
         if (wantLog && m_Frame > 0) {
             float lgx = 0.f, lgd = 0.f, lgp = 0.f;
             m_Renderer->VoxelGetGpuTimes(lgx, lgd, lgp);
             Manro::u32 tgOp = 0u, tgCut = 0u, tgSkip = 1u;
             m_Renderer->VoxelGetTaskSplit(tgOp, tgCut, tgSkip);
             printf("[Voxel] fps=%.0f (%.2f ms) 1%%low=%.2fms 0.1%%low=%.2fms bricks=%u "
-                    "taskGroups=%u (op=%u cut=%u skip=%u) edits=%u unfilled=%d cpu=%.2fms stream=%.2fms gpuxfer=%.2fms "
-                    "gpudraw=%.2fms gpupost=%.2fms paceF=%.2fms paceA=%.2fms paceP=%.2fms gpuMax=%.2fms "
-                    "cam=(%.1f,%.1f,%.1f)\n",
-                    static_cast<double>(emaFps), static_cast<double>(m_FpsEma),
-                    static_cast<double>(worst1), static_cast<double>(worst01),
-                    m_Renderer->VoxelGetBrickCount(), m_Renderer->VoxelGetTaskGroups(), tgOp,
-                    tgCut, tgSkip, m_EditCount,
-                    m_Unfilled, static_cast<double>(m_CpuEma), static_cast<double>(m_StreamEma),
-                    static_cast<double>(lgx), static_cast<double>(lgd), static_cast<double>(lgp),
-                    static_cast<double>(m_PaceFenceMax), static_cast<double>(m_PaceAcquireMax),
-                    static_cast<double>(m_PacePresentMax), static_cast<double>(m_GpuDrawMax),
-                    m_CamPos.x, m_CamPos.y, m_CamPos.z);
+                   "taskGroups=%u (op=%u cut=%u skip=%u) edits=%u unfilled=%d cpu=%.2fms stream=%.2fms gpuxfer=%.2fms "
+                   "gpudraw=%.2fms gpupost=%.2fms paceF=%.2fms paceA=%.2fms paceP=%.2fms gpuMax=%.2fms "
+                   "cam=(%.1f,%.1f,%.1f)\n",
+                   static_cast<double>(emaFps), static_cast<double>(m_FpsEma),
+                   static_cast<double>(worst1), static_cast<double>(worst01),
+                   m_Renderer->VoxelGetBrickCount(), m_Renderer->VoxelGetTaskGroups(), tgOp,
+                   tgCut, tgSkip, m_EditCount,
+                   m_Unfilled, static_cast<double>(m_CpuEma), static_cast<double>(m_StreamEma),
+                   static_cast<double>(lgx), static_cast<double>(lgd), static_cast<double>(lgp),
+                   static_cast<double>(m_PaceFenceMax), static_cast<double>(m_PaceAcquireMax),
+                   static_cast<double>(m_PacePresentMax), static_cast<double>(m_GpuDrawMax),
+                   m_CamPos.x, m_CamPos.y, m_CamPos.z);
             printf("[VoxelStream] total=%.2fms rebuild=%.2fms evict=%.2fms enqueue=%.2fms "
                    "drain=%.2fms commit=%.2fms defer=%u drop=%llu blk=%llu stageHW=%u/%u/%u binds=%u\n",
                    static_cast<double>(m_StreamStats.totalMs),
@@ -412,7 +414,8 @@ public:
     }
 
     Manro::CInputManager *GetInputManager() override { return &m_InputManager; }
-  private:
+
+private:
     static void SplitStateKey(const std::string &key, std::string &nameOut,
                               std::map<std::string, std::string> &propsOut) {
         const size_t bar = key.find('|');
@@ -437,7 +440,7 @@ public:
                                     const std::map<std::string, std::string> &props) {
         std::string key = name;
         key += '|';
-        for (const auto &p : props) {
+        for (const auto &p: props) {
             key += p.first;
             key += '=';
             key += p.second;
@@ -447,7 +450,7 @@ public:
     }
 
     Manro::u32 OrientPlaceState(Manro::u32 base, float hitY, int nx, int ny, int nz,
-                               bool targetFluid) const {
+                                bool targetFluid) const {
         const std::string baseKey = m_Renderer->VoxelGetStateKey(base);
         if (baseKey.empty())
             return base;
@@ -461,8 +464,9 @@ public:
         if (it != props.end()) {
             const float fx = -m_Fwd.x, fz = -m_Fwd.z;
             const std::string want =
-                (std::fabs(fx) > std::fabs(fz)) ? (fx > 0.f ? "east" : "west")
-                                               : (fz > 0.f ? "south" : "north");
+                    (std::fabs(fx) > std::fabs(fz))
+                        ? (fx > 0.f ? "east" : "west")
+                        : (fz > 0.f ? "south" : "north");
             if (it->second != want) {
                 auto trial = props;
                 trial["facing"] = want;
@@ -472,7 +476,7 @@ public:
             }
         }
         const bool wantTop =
-            (ny > 0) ? false : (ny < 0) ? true : (hitY - std::floor(hitY) > 0.5f);
+                (ny > 0) ? false : (ny < 0) ? true : (hitY - std::floor(hitY) > 0.5f);
         it = props.find("half");
         if (it != props.end()) {
             const std::string want = wantTop ? "top" : "bottom";
@@ -576,4 +580,5 @@ public:
     float m_GpuDrawMax{0.f};
 };
 
-inline CVoxel::CVoxel(Params params) : m_Params(std::move(params)) {}
+inline CVoxel::CVoxel(Params params) : m_Params(std::move(params)) {
+}

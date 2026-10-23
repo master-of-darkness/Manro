@@ -3,7 +3,8 @@
 #include "SparseBuffer.h"
 #include "Pipeline.h"
 #include "TileArray.h"
-#include "../Voxel/VoxelTypes.h"
+#include "../Voxel/VoxelEdit.h"
+#include "../Voxel/VoxelFrame.h"
 
 #include <vector>
 

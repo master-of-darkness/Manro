@@ -17,8 +17,8 @@
 #include "Passes/SkyboxRenderer.h"
 #include "Passes/DebugDrawSystem.h"
 #include "Voxel/VoxelRenderer.h"
-#include "Voxel/VoxelTypes.h"
-#include "Voxel/VoxelWorld.h"
+#include "Voxel/VoxelEdit.h"
+#include "Voxel/VoxelBrickStore.h"
 #include "Overlay/Overlay.h"
 #include "Vulkan/VulkanContext.h"
 #include <imgui_impl_vulkan.h>

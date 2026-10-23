@@ -29,10 +29,18 @@ set(ENGINE_RENDER_SOURCES
         Render/Scene/InstanceBatcher.cpp
         Render/Scene/SceneRenderer.cpp
 
-        Render/Voxel/VoxelWorld.cpp
+        Render/Voxel/VoxelBrickStore.cpp
         Render/Voxel/VoxelRenderer.cpp
-        Render/Voxel/VoxelBlockAssets.cpp
+        Render/Voxel/BlockAtlas.cpp
+        Render/Voxel/BlockStateMap.cpp
+        Render/Voxel/BlockModelBake.cpp
+        Render/Voxel/BlockShapes.cpp
         Render/Voxel/VoxelStreamWorld.cpp
+        Render/Voxel/StreamScheduler.cpp
+        Render/Voxel/StreamWorkers.cpp
+        Render/Voxel/ChunkCache.cpp
+        Render/Voxel/LightPropagation.cpp
+        Render/Voxel/StreamEdits.cpp
         Render/Voxel/VoxelAnvilReader.cpp
 
         Render/Targets/RenderTargetManager.cpp
