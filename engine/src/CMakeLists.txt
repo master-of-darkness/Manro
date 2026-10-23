@@ -30,6 +30,7 @@ set(ENGINE_RENDER_SOURCES
         Render/Scene/SceneRenderer.cpp
 
         Render/Voxel/VoxelBrickStore.cpp
+        Render/Voxel/VoxelRuntime.cpp
         Render/Voxel/VoxelRenderer.cpp
         Render/Voxel/BlockAtlas.cpp
         Render/Voxel/BlockStateMap.cpp

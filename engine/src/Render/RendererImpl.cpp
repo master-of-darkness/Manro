@@ -16,9 +16,8 @@
 #include "Passes/ShadowSystem.h"
 #include "Passes/SkyboxRenderer.h"
 #include "Passes/DebugDrawSystem.h"
-#include "Voxel/VoxelRenderer.h"
-#include "Voxel/VoxelEdit.h"
-#include "Voxel/VoxelBrickStore.h"
+#include <Manro/Render/VoxelRuntime.h>
+#include "Vulkan/GpuDefs.h"
 #include "Overlay/Overlay.h"
 #include "Vulkan/VulkanContext.h"
 #include <imgui_impl_vulkan.h>
@@ -143,157 +142,10 @@ namespace Manro {
             return m_Overlay && m_Overlay->IsDebugUIEnabled();
         }
 
-        // ---- Separate voxel path ----
-        void VoxelInit() {
-            if (m_bVoxelEnabled)
-                return;
-            m_Context.RequireMeshShaders("Voxel");
-            m_Voxel = CreateScope<CVoxelRenderer>(m_Context, m_Vfs);
-            m_Voxel->Init(m_PipelineCache, m_RenderExtent.width, m_RenderExtent.height);
-            m_bVoxelEnabled = true;
-        }
-
-        void VoxelShutdown() {
-            m_Voxel.reset();
-            m_bVoxelEnabled = false;
-        }
-
-        void VoxelAllocateBrick(u32 bx, u32 by, u32 bz) {
-            if (m_bVoxelEnabled && m_Voxel)
-                m_Voxel->GetWorld().AllocateBrick(bx, by, bz);
-        }
-
-        void VoxelUploadBrick(u32 brickIdx, const u16 *mats, const u32 *occupancy) const {
-            if (m_bVoxelEnabled && m_Voxel)
-                m_Voxel->GetWorld().UploadBrickData(brickIdx, mats, occupancy);
-        }
-
-        void VoxelQueueEdit(const Vec3 &pos, float radius, u32 material, u32 op) {
-            if (!m_bVoxelEnabled || !m_Voxel)
-                return;
-            VoxelEditCmd_t cmd{};
-            cmd.pos = pos;
-            cmd.radius = radius;
-            cmd.material = material;
-            cmd.op = op;
-            m_Voxel->GetWorld().QueueEdit(cmd);
-            m_Voxel->StreamApplyEdit(pos, radius, op, material);
-        }
-
-        u32 VoxelGetBrickCount() const {
-            return (m_bVoxelEnabled && m_Voxel) ? m_Voxel->GetWorld().GetBrickCount() : 0;
-        }
-
-        u32 VoxelGetTaskGroups() const {
-            return (m_bVoxelEnabled && m_Voxel) ? m_Voxel->GetStats().taskGroups : 0;
-        }
-
-        void VoxelGetTaskSplit(u32 &opaque, u32 &cutout, u32 &skipped) const {
-            if (m_bVoxelEnabled && m_Voxel) {
-                opaque = m_Voxel->GetStats().taskGroupsOpaque;
-                cutout = m_Voxel->GetStats().taskGroupsCutout;
-                skipped = m_Voxel->GetStats().cutoutSkipped;
-            } else {
-                opaque = 0u;
-                cutout = 0u;
-                skipped = 1u;
-            }
-        }
-
-        void VoxelGetGpuTimes(float &xferMs, float &drawMs, float &postMs) const {
-            if (m_bVoxelEnabled && m_Voxel) {
-                xferMs = m_Voxel->GetStats().gpuXferMs;
-                drawMs = m_Voxel->GetStats().gpuDrawMs;
-                postMs = m_Voxel->GetStats().gpuPostMs;
-            } else {
-                xferMs = 0.f;
-                drawMs = 0.f;
-                postMs = 0.f;
-            }
-        }
-
-        void VoxelGetGpuInstantTimes(float &xferMs, float &drawMs, float &postMs) const {
-            if (m_bVoxelEnabled && m_Voxel) {
-                xferMs = m_Voxel->GetStats().gpuXferInstMs;
-                drawMs = m_Voxel->GetStats().gpuDrawInstMs;
-                postMs = m_Voxel->GetStats().gpuPostInstMs;
-            } else {
-                xferMs = 0.f;
-                drawMs = 0.f;
-                postMs = 0.f;
-            }
-        }
-
-        void VoxelGetDebugCounters(u32 out[8]) const {
-            if (!m_bVoxelEnabled || !m_Voxel) {
-                for (int i = 0; i < 8; ++i)
-                    out[i] = 0;
-                return;
-            }
-            m_Voxel->ReadDebugCounters(out);
-        }
-
-        void VoxelSetDebugEnabled(bool enabled) {
-            if (m_bVoxelEnabled && m_Voxel)
-                m_Voxel->SetDebugEnabled(enabled);
-        }
-
-        void VoxelSetBackfaceEnabled(bool enabled) {
-            if (m_bVoxelEnabled && m_Voxel)
-                m_Voxel->SetBackfaceEnabled(enabled);
-        }
-
-        void VoxelSetFrustumEnabled(bool enabled) {
-            if (m_bVoxelEnabled && m_Voxel)
-                m_Voxel->SetFrustumEnabled(enabled);
-        }
-
-        Vec3 VoxelStreamInit(std::unique_ptr<IVoxelContentSource> content,
-                             const std::string &worldDir, const std::string &assetsDir,
-                             int radiusSections) {
-            if (!m_bVoxelEnabled || !m_Voxel)
-                return Vec3(8.f, 80.f, 8.f);
-            return m_Voxel->StreamInit(std::move(content), worldDir, assetsDir,
-                                       radiusSections);
-        }
-
-        int VoxelStreamUpdate() {
-            if (!m_bVoxelEnabled || !m_Voxel)
-                return 0;
-            return m_Voxel->StreamUpdate(m_CameraPosition, m_unCurrentFrame);
-        }
-
-        const VoxelStreamStats_t &VoxelStreamGetStats() const {
-            static const VoxelStreamStats_t kEmpty{};
-            return (m_bVoxelEnabled && m_Voxel) ? m_Voxel->GetStreamStats() : kEmpty;
-        }
-
-        bool VoxelStreamIsSolid(const Vec3 &p) const {
-            return (m_bVoxelEnabled && m_Voxel) ? m_Voxel->StreamIsSolid(p) : true;
-        }
-
-        bool VoxelStreamIsFluid(const Vec3 &p) const {
-            return (m_bVoxelEnabled && m_Voxel) ? m_Voxel->StreamIsFluid(p) : false;
-        }
-
-        u32 VoxelStreamPlaceState() const {
-            return (m_bVoxelEnabled && m_Voxel) ? m_Voxel->StreamPlaceState() : 1u;
-        }
-
-        i32 VoxelStreamGetStateAt(const Vec3 &p) const {
-            return (m_bVoxelEnabled && m_Voxel) ? m_Voxel->StreamGetStateAt(p) : -1;
-        }
-
-        bool VoxelStreamGetCollisionBox(const Vec3 &p, Vec3 &mn, Vec3 &mx) const {
-            return (m_bVoxelEnabled && m_Voxel) ? m_Voxel->StreamGetCollisionBox(p, mn, mx) : false;
-        }
-
-        std::string VoxelGetStateKey(u32 id) const {
-            return (m_bVoxelEnabled && m_Voxel) ? m_Voxel->GetStateKey(id) : std::string{};
-        }
-
-        u32 VoxelFindStateByKey(const std::string &key) const {
-            return (m_bVoxelEnabled && m_Voxel) ? m_Voxel->FindStateByKey(key) : ~0u;
+        CVoxelRuntime *GetVoxelRuntime() {
+            if (!m_VoxelRuntime)
+                m_VoxelRuntime = CreateScope<CVoxelRuntime>(m_Context, m_Vfs, m_PipelineCache);
+            return m_VoxelRuntime.get();
         }
 
         void DrawLine(const Vec3 &a, const Vec3 &b, u32 color, bool depthTest) const;
@@ -368,8 +220,7 @@ namespace Manro {
         CVirtualFS &m_Vfs;
 
         // Separate GPU-driven voxel path (task/mesh + BDA + sparse).
-        Scope<CVoxelRenderer> m_Voxel;
-        bool m_bVoxelEnabled{false};
+        Scope<CVoxelRuntime> m_VoxelRuntime;
         Mat4 m_PrevVoxelViewProj{1.f};
 
         VkDescriptorSetLayout m_AutoExposureSetLayout{VK_NULL_HANDLE};
@@ -511,8 +362,7 @@ namespace Manro {
     CRendererImpl::~CRendererImpl() {
         vkDeviceWaitIdle(m_Context.GetDevice());
 
-        m_Voxel.reset();
-        m_bVoxelEnabled = false;
+        m_VoxelRuntime.reset();
 
 #ifdef MANRO_PROFILING
         if (m_TracyGpuCtx)
@@ -1206,6 +1056,9 @@ namespace Manro {
         FrameData_t &frame = m_Frames[m_unCurrentFrame];
         VkCommandBuffer cb = frame.commandBuffer;
 
+        if (m_VoxelRuntime && m_VoxelRuntime->IsInitialized())
+            m_VoxelRuntime->StreamUpdate(m_CameraPosition, m_unCurrentFrame);
+
         u32 instanceCount = m_InstanceBatcher.GetTotalInstanceCount();
         auto *indexBuffer = m_Meshes.GetIndexBuffer();
         auto *vertexBuffer = m_Meshes.GetVertexBuffer();
@@ -1243,10 +1096,10 @@ namespace Manro {
         }
 
         Internal::PbrPassState_t pbrState{};
-        const bool voxelCompatible = m_bVoxelEnabled && m_Voxel &&
-                                     m_Voxel->GetWorld().GetBrickCount() > 0 &&
+        const bool voxelCompatible = m_VoxelRuntime && m_VoxelRuntime->IsInitialized() &&
+                                     m_VoxelRuntime->GetBrickCount() > 0 &&
                                      ToVulkanSampleCount(m_Settings.msaaSamples) ==
-                                         VK_SAMPLE_COUNT_1_BIT;
+                                     VK_SAMPLE_COUNT_1_BIT;
         // Voxel task/mesh PSO is MSAA-free (1X) with its own pass; the PBR
         // state block stays PBR-only so hasMeshes==false skips it entirely.
         if (hasMeshes) {
@@ -1318,8 +1171,8 @@ namespace Manro {
             voxelFrame.cameraPos = m_CameraPosition;
             voxelFrame.nearZ = m_Settings.nearZ;
             voxelFrame.farZ = m_Settings.farZ;
-            m_Voxel->Record(voxelEnc, voxelFrame);
-            m_Voxel->StampPost(voxelEnc, m_unCurrentFrame, 3);
+            m_VoxelRuntime->Record(voxelEnc, voxelFrame);
+            m_VoxelRuntime->StampPost(voxelEnc, m_unCurrentFrame, 3);
             m_PrevVoxelViewProj = viewProj;
         }
 
@@ -1470,10 +1323,10 @@ namespace Manro {
 
             m_SceneRenderer->SetCompositePassState(&compositeState);
             m_SceneRenderer->Flush(cb);
-            if (m_Voxel) {
+            if (m_VoxelRuntime) {
                 CVoxelEncoder postEnc(cb, m_Swapchain.GetImageView(m_unCurrentImageIndex),
                                       VK_NULL_HANDLE, ext.width, ext.height, false);
-                m_Voxel->StampPost(postEnc, m_unCurrentFrame, 4);
+                m_VoxelRuntime->StampPost(postEnc, m_unCurrentFrame, 4);
             }
         }
 
@@ -1495,10 +1348,10 @@ namespace Manro {
             vkCmdBeginRendering(cb, &guiRi);
             m_Overlay->Render(cb);
             vkCmdEndRendering(cb);
-            if (m_Voxel) {
+            if (m_VoxelRuntime) {
                 CVoxelEncoder guiEnc(cb, m_Swapchain.GetImageView(m_unCurrentImageIndex),
                                      VK_NULL_HANDLE, ext.width, ext.height, false);
-                m_Voxel->StampPost(guiEnc, m_unCurrentFrame, 5);
+                m_VoxelRuntime->StampPost(guiEnc, m_unCurrentFrame, 5);
             }
         }
 
@@ -1660,102 +1513,8 @@ namespace Manro {
         return CreateScope<CRendererImpl>(window, vfs, width, height, settings, config);
     }
 
-    void RendererImplVoxelInit(CRendererImpl &impl) { impl.VoxelInit(); }
-
-    void RendererImplVoxelShutdown(CRendererImpl &impl) { impl.VoxelShutdown(); }
-
-    void RendererImplVoxelAllocateBrick(CRendererImpl &impl, u32 bx, u32 by, u32 bz) {
-        impl.VoxelAllocateBrick(bx, by, bz);
-    }
-
-    void RendererImplVoxelUploadBrick(const CRendererImpl &impl, u32 brickIdx, const u16 *mats,
-                                      const u32 *occupancy) {
-        impl.VoxelUploadBrick(brickIdx, mats, occupancy);
-    }
-
-    void RendererImplVoxelQueueEdit(CRendererImpl &impl, const Vec3 &pos, float radius, u32 material,
-                                    u32 op) {
-        impl.VoxelQueueEdit(pos, radius, material, op);
-    }
-
-    u32 RendererImplVoxelGetBrickCount(const CRendererImpl &impl) { return impl.VoxelGetBrickCount(); }
-
-    u32 RendererImplVoxelGetTaskGroups(const CRendererImpl &impl) { return impl.VoxelGetTaskGroups(); }
-
-    void RendererImplVoxelGetTaskSplit(const CRendererImpl &impl, u32 &opaque, u32 &cutout,
-                                       u32 &skipped) {
-        impl.VoxelGetTaskSplit(opaque, cutout, skipped);
-    }
-
-    void RendererImplVoxelGetGpuTimes(const CRendererImpl &impl, float &xferMs, float &drawMs,
-                                        float &postMs) {
-        impl.VoxelGetGpuTimes(xferMs, drawMs, postMs);
-    }
-
-    void RendererImplVoxelGetGpuInstantTimes(const CRendererImpl &impl, float &xferMs, float &drawMs,
-                                               float &postMs) {
-        impl.VoxelGetGpuInstantTimes(xferMs, drawMs, postMs);
-    }
-
-    void RendererImplVoxelGetDebugCounters(const CRendererImpl &impl, u32 out[8]) {
-        impl.VoxelGetDebugCounters(out);
-    }
-
-    void RendererImplVoxelSetDebugEnabled(CRendererImpl &impl, bool enabled) {
-        impl.VoxelSetDebugEnabled(enabled);
-    }
-
-    void RendererImplVoxelSetBackfaceEnabled(CRendererImpl &impl, bool enabled) {
-        impl.VoxelSetBackfaceEnabled(enabled);
-    }
-
-    void RendererImplVoxelSetFrustumEnabled(CRendererImpl &impl, bool enabled) {
-        impl.VoxelSetFrustumEnabled(enabled);
-    }
-
-    Vec3 RendererImplVoxelStreamInit(CRendererImpl &impl,
-                                     std::unique_ptr<IVoxelContentSource> content,
-                                     const std::string &worldDir,
-                                     const std::string &assetsDir, int radiusSections) {
-        return impl.VoxelStreamInit(std::move(content), worldDir, assetsDir,
-                                    radiusSections);
-    }
-
-    int RendererImplVoxelStreamUpdate(const CRendererImpl &impl) {
-        return const_cast<CRendererImpl &>(impl).VoxelStreamUpdate();
-    }
-
-    void RendererImplVoxelStreamGetStats(const CRendererImpl &impl, VoxelStreamStats_t &out) {
-        out = impl.VoxelStreamGetStats();
-    }
-
-    bool RendererImplVoxelStreamIsSolid(const CRendererImpl &impl, const Vec3 &p) {
-        return impl.VoxelStreamIsSolid(p);
-    }
-
-    bool RendererImplVoxelStreamIsFluid(const CRendererImpl &impl, const Vec3 &p) {
-        return impl.VoxelStreamIsFluid(p);
-    }
-
-    u32 RendererImplVoxelStreamPlaceState(const CRendererImpl &impl) {
-        return impl.VoxelStreamPlaceState();
-    }
-
-    i32 RendererImplVoxelStreamGetStateAt(const CRendererImpl &impl, const Vec3 &p) {
-        return impl.VoxelStreamGetStateAt(p);
-    }
-
-    bool RendererImplVoxelStreamGetCollisionBox(const CRendererImpl &impl, const Vec3 &p, Vec3 &mn,
-                                                Vec3 &mx) {
-        return impl.VoxelStreamGetCollisionBox(p, mn, mx);
-    }
-
-    std::string RendererImplVoxelGetStateKey(const CRendererImpl &impl, u32 id) {
-        return impl.VoxelGetStateKey(id);
-    }
-
-    u32 RendererImplVoxelFindStateByKey(const CRendererImpl &impl, const std::string &key) {
-        return impl.VoxelFindStateByKey(key);
+    CVoxelRuntime *RendererImplGetVoxelRuntime(CRendererImpl &impl) {
+        return impl.GetVoxelRuntime();
     }
 
     CRenderer::CRenderer(CWindow &window, CVirtualFS &vfs, u32 width, u32 height, const RenderSettings_t &settings)

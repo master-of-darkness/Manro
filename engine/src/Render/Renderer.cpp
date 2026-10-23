@@ -8,7 +8,6 @@
 #include <Manro/Resource/ModelLoader.h>
 #include <Manro/Resource/TextureLoader.h>
 
-#include <utility>
 
 namespace Manro {
     bool CRenderer::BeginFramePace() const { return RendererImplBeginFramePace(*m_Impl); }
@@ -109,89 +108,7 @@ namespace Manro {
 
     void CRenderer::WaitIdle() const { RendererImplWaitIdle(*m_Impl); }
 
-    void CRenderer::VoxelInit(u32 /*width*/, u32 /*height*/) const { RendererImplVoxelInit(*m_Impl); }
-
-    void CRenderer::VoxelShutdown() const { RendererImplVoxelShutdown(*m_Impl); }
-
-    void CRenderer::VoxelAllocateBrick(u32 bx, u32 by, u32 bz) const {
-        RendererImplVoxelAllocateBrick(*m_Impl, bx, by, bz);
-    }
-
-    void CRenderer::VoxelUploadBrick(u32 brickIdx, const u16 *mats, const u32 *occupancy) const {
-        RendererImplVoxelUploadBrick(*m_Impl, brickIdx, mats, occupancy);
-    }
-
-    void CRenderer::VoxelQueueEdit(const Vec3 &pos, float radius, u32 material, u32 op) const {
-        RendererImplVoxelQueueEdit(*m_Impl, pos, radius, material, op);
-    }
-
-    u32 CRenderer::VoxelGetBrickCount() const { return RendererImplVoxelGetBrickCount(*m_Impl); }
-
-    u32 CRenderer::VoxelGetTaskGroups() const { return RendererImplVoxelGetTaskGroups(*m_Impl); }
-
-    void CRenderer::VoxelGetTaskSplit(u32 &opaque, u32 &cutout, u32 &skipped) const {
-        RendererImplVoxelGetTaskSplit(*m_Impl, opaque, cutout, skipped);
-    }
-    void CRenderer::VoxelGetGpuTimes(float &xferMs, float &drawMs, float &postMs) const {
-        RendererImplVoxelGetGpuTimes(*m_Impl, xferMs, drawMs, postMs);
-    }
-    void CRenderer::VoxelGetGpuInstantTimes(float &xferMs, float &drawMs, float &postMs) const {
-        RendererImplVoxelGetGpuInstantTimes(*m_Impl, xferMs, drawMs, postMs);
-    }
-
-    void CRenderer::VoxelGetDebugCounters(u32 out[8]) const {
-        RendererImplVoxelGetDebugCounters(*m_Impl, out);
-    }
-
-    void CRenderer::VoxelSetDebugEnabled(bool enabled) const {
-        RendererImplVoxelSetDebugEnabled(*m_Impl, enabled);
-    }
-
-    void CRenderer::VoxelSetBackfaceEnabled(bool enabled) const {
-        RendererImplVoxelSetBackfaceEnabled(*m_Impl, enabled);
-    }
-
-    void CRenderer::VoxelSetFrustumEnabled(bool enabled) const {
-        RendererImplVoxelSetFrustumEnabled(*m_Impl, enabled);
-    }
-
-    Vec3 CRenderer::VoxelStreamInit(std::unique_ptr<IVoxelContentSource> content,
-                                    const char *worldDir, const char *assetsDir,
-                                    int radiusSections) const {
-        return RendererImplVoxelStreamInit(*m_Impl, std::move(content),
-                                           worldDir ? worldDir : "",
-                                           assetsDir ? assetsDir : "", radiusSections);
-    }
-
-    int CRenderer::VoxelStreamUpdate() const { return RendererImplVoxelStreamUpdate(*m_Impl); }
-
-    void CRenderer::VoxelStreamGetStats(VoxelStreamStats_t &out) const {
-        RendererImplVoxelStreamGetStats(*m_Impl, out);
-    }
-
-    bool CRenderer::VoxelStreamIsSolid(const Vec3 &p) const {
-        return RendererImplVoxelStreamIsSolid(*m_Impl, p);
-    }
-
-    bool CRenderer::VoxelStreamIsFluid(const Vec3 &p) const {
-        return RendererImplVoxelStreamIsFluid(*m_Impl, p);
-    }
-
-    u32 CRenderer::VoxelStreamPlaceState() const { return RendererImplVoxelStreamPlaceState(*m_Impl); }
-
-    i32 CRenderer::VoxelStreamGetStateAt(const Vec3 &p) const {
-        return RendererImplVoxelStreamGetStateAt(*m_Impl, p);
-    }
-
-    bool CRenderer::VoxelStreamGetCollisionBox(const Vec3 &p, Vec3 &mn, Vec3 &mx) const {
-        return RendererImplVoxelStreamGetCollisionBox(*m_Impl, p, mn, mx);
-    }
-
-    std::string CRenderer::VoxelGetStateKey(u32 id) const {
-        return RendererImplVoxelGetStateKey(*m_Impl, id);
-    }
-
-    u32 CRenderer::VoxelFindStateByKey(const std::string &key) const {
-        return RendererImplVoxelFindStateByKey(*m_Impl, key);
+    CVoxelRuntime *CRenderer::GetVoxelRuntime() const {
+        return RendererImplGetVoxelRuntime(*m_Impl);
     }
 } // namespace Manro

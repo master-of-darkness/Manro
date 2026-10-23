@@ -2,7 +2,7 @@
 
 #include <Manro/Core/Types.h>
 #include <Manro/Input/InputManager.h>
-#include <Manro/Render/Renderer.h>
+#include <Manro/Render/VoxelRuntime.h>
 
 #include <cmath>
 
@@ -45,7 +45,7 @@ namespace PlayerDetail {
                aMn.z < bMx.z && aMx.z > bMn.z;
     }
 
-    inline bool BoxCollides(Manro::CRenderer &ren, const Manro::Vec3 &feet) {
+    inline bool BoxCollides(Manro::CVoxelRuntime &runtime, const Manro::Vec3 &feet) {
         Manro::Vec3 pMn, pMx;
         PlayerAABB(feet, pMn, pMx);
         const int x0 = static_cast<int>(std::floor(pMn.x));
@@ -58,7 +58,7 @@ namespace PlayerDetail {
             for (int z = z0; z <= z1; ++z)
                 for (int x = x0; x <= x1; ++x) {
                     Manro::Vec3 bMn, bMx;
-                    if (!ren.VoxelStreamGetCollisionBox(
+                    if (!runtime.StreamGetCollisionBox(
                         Manro::Vec3(static_cast<float>(x), static_cast<float>(y),
                                     static_cast<float>(z)),
                         bMn, bMx))
@@ -69,7 +69,7 @@ namespace PlayerDetail {
         return false;
     }
 
-    inline bool MoveAxis(Manro::CRenderer &ren, CPlayer &p, int axis, float delta) {
+    inline bool MoveAxis(Manro::CVoxelRuntime &runtime, CPlayer &p, int axis, float delta) {
         if (delta == 0.f)
             return false;
         Manro::Vec3 np = p.pos;
@@ -79,7 +79,7 @@ namespace PlayerDetail {
             np.y += delta;
         else
             np.z += delta;
-        if (!BoxCollides(ren, np)) {
+        if (!BoxCollides(runtime, np)) {
             p.pos = np;
             return false;
         }
@@ -97,7 +97,7 @@ namespace PlayerDetail {
             for (int z = z0; z <= z1; ++z)
                 for (int x = x0; x <= x1; ++x) {
                     Manro::Vec3 bMn, bMx;
-                    if (!ren.VoxelStreamGetCollisionBox(
+                    if (!runtime.StreamGetCollisionBox(
                         Manro::Vec3(static_cast<float>(x), static_cast<float>(y),
                                     static_cast<float>(z)),
                         bMn, bMx))
@@ -152,7 +152,7 @@ namespace PlayerDetail {
         float t{0.f};
     };
 
-    inline RayHit_t RaycastVoxel(Manro::CRenderer &ren, const Manro::Vec3 &origin,
+    inline RayHit_t RaycastVoxel(Manro::CVoxelRuntime &runtime, const Manro::Vec3 &origin,
                                  const Manro::Vec3 &dir, float maxDist) {
         RayHit_t r;
         int x = static_cast<int>(std::floor(origin.x));
@@ -203,10 +203,10 @@ namespace PlayerDetail {
             if (t > maxDist)
                 return r;
             Manro::Vec3 bMn, bMx;
-            if (!ren.VoxelStreamGetCollisionBox(Manro::Vec3(static_cast<float>(x),
-                                                            static_cast<float>(y),
-                                                            static_cast<float>(z)),
-                                                bMn, bMx))
+            if (!runtime.StreamGetCollisionBox(Manro::Vec3(static_cast<float>(x),
+                                                           static_cast<float>(y),
+                                                           static_cast<float>(z)),
+                                               bMn, bMx))
                 continue;
             float t0 = 0.f, t1 = maxDist;
             bool miss = false;
@@ -242,7 +242,7 @@ namespace PlayerDetail {
     }
 }
 
-inline void PlayerUpdate(CPlayer &p, Manro::CRenderer &ren, Manro::CInputManager &in,
+inline void PlayerUpdate(CPlayer &p, Manro::CVoxelRuntime &runtime, Manro::CInputManager &in,
                          const Manro::Vec3 &yawFwd, const Manro::Vec3 &right,
                          const Manro::Vec3 &fullFwd, float dt, float nowSec) {
     using K = Manro::Key;
@@ -312,7 +312,7 @@ inline void PlayerUpdate(CPlayer &p, Manro::CRenderer &ren, Manro::CInputManager
         }
 
         const float bodyY = p.pos.y + 0.5f;
-        const bool inFluid = ren.VoxelStreamIsFluid(
+        const bool inFluid = runtime.StreamIsFluid(
             Manro::Vec3(p.pos.x, bodyY, p.pos.z));
 
         float speed = CPlayer::kWalk;
@@ -349,12 +349,12 @@ inline void PlayerUpdate(CPlayer &p, Manro::CRenderer &ren, Manro::CInputManager
         }
 
         p.onGround = false;
-        const bool hitX = PlayerDetail::MoveAxis(ren, p, 0, p.vel.x * h);
-        const bool hitZ = PlayerDetail::MoveAxis(ren, p, 2, p.vel.z * h);
-        const bool hitY = PlayerDetail::MoveAxis(ren, p, 1, p.vel.y * h);
+        const bool hitX = PlayerDetail::MoveAxis(runtime, p, 0, p.vel.x * h);
+        const bool hitZ = PlayerDetail::MoveAxis(runtime, p, 2, p.vel.z * h);
+        const bool hitY = PlayerDetail::MoveAxis(runtime, p, 1, p.vel.y * h);
         if (p.vel.y <= 0.f) {
             const Manro::Vec3 probePos = p.pos - Manro::Vec3(0.f, CPlayer::kGroundProbe, 0.f);
-            if (PlayerDetail::BoxCollides(ren, probePos)) {
+            if (PlayerDetail::BoxCollides(runtime, probePos)) {
                 p.onGround = true;
                 if (!hitY && p.vel.y < 0.f) {
                     float snapY = p.pos.y;
@@ -362,7 +362,7 @@ inline void PlayerUpdate(CPlayer &p, Manro::CRenderer &ren, Manro::CInputManager
                         const float cand = snapY - 0.001f;
                         if (cand <= p.pos.y - CPlayer::kGroundProbe - 0.0005f)
                             break;
-                        if (PlayerDetail::BoxCollides(ren, Manro::Vec3(p.pos.x, cand, p.pos.z)))
+                        if (PlayerDetail::BoxCollides(runtime, Manro::Vec3(p.pos.x, cand, p.pos.z)))
                             break;
                         snapY = cand;
                     }

@@ -5,10 +5,8 @@
 #include <Manro/Render/Material/MaterialInstance.h>
 #include <Manro/Render/RendererConfig.h>
 #include <Manro/Render/RenderSettings.h>
-#include <Manro/Render/VoxelStreamStats.h>
 #include <Manro/Resource/ModelLoader.h>
 #include <Manro/Resource/TextureLoader.h>
-#include <Manro/Resource/VoxelContentSource.h>
 #include <Manro/Render/LightData.h>
 
 #include <memory>
@@ -22,6 +20,7 @@ namespace Manro {
     class CModel;
     class CRendererImpl;
     class CVirtualFS;
+    class CVoxelRuntime;
 
     struct FrameStats_t {
         u32 drawCalls = 0;
@@ -105,34 +104,7 @@ namespace Manro {
 
         [[nodiscard]] float GetAspectRatio() const;
 
-        void VoxelInit(u32 width, u32 height) const;
-        void VoxelShutdown() const;
-        void VoxelAllocateBrick(u32 bx, u32 by, u32 bz) const;
-        void VoxelUploadBrick(u32 brickIdx, const u16 *mats, const u32 *occupancy) const;
-        void VoxelQueueEdit(const Vec3 &pos, float radius, u32 material, u32 op) const;
-        [[nodiscard]] u32 VoxelGetBrickCount() const;
-        [[nodiscard]] u32 VoxelGetTaskGroups() const;
-        void VoxelGetTaskSplit(u32 &opaque, u32 &cutout, u32 &skipped) const;
-        void VoxelGetGpuTimes(float &xferMs, float &drawMs, float &postMs) const;
-        void VoxelGetGpuInstantTimes(float &xferMs, float &drawMs, float &postMs) const;
-        void VoxelSetDebugEnabled(bool enabled) const;
-        void VoxelSetBackfaceEnabled(bool enabled) const;
-        void VoxelSetFrustumEnabled(bool enabled) const;
-
-        Vec3 VoxelStreamInit(std::unique_ptr<IVoxelContentSource> content, const char *worldDir,
-                             const char *assetsDir, int radiusSections) const;
-
-        int VoxelStreamUpdate() const;
-        void VoxelStreamGetStats(VoxelStreamStats_t &out) const;
-        bool VoxelStreamIsSolid(const Vec3 &p) const;
-        bool VoxelStreamIsFluid(const Vec3 &p) const;
-        u32 VoxelStreamPlaceState() const;
-        i32 VoxelStreamGetStateAt(const Vec3 &p) const;
-        bool VoxelStreamGetCollisionBox(const Vec3 &p, Vec3 &mn, Vec3 &mx) const;
-        std::string VoxelGetStateKey(u32 id) const;
-        u32 VoxelFindStateByKey(const std::string &key) const;
-
-        void VoxelGetDebugCounters(u32 out[8]) const;
+        [[nodiscard]] CVoxelRuntime *GetVoxelRuntime() const;
 
         void SetSettings(const RenderSettings_t &settings) const;
 

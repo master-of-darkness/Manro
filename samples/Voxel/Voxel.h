@@ -10,6 +10,7 @@
 #include <Manro/Platform/Input/InputBackend.h>
 #include <Manro/Platform/Window/Window.h>
 #include <Manro/Render/Renderer.h>
+#include <Manro/Render/VoxelRuntime.h>
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <imgui.h>
@@ -63,7 +64,8 @@ public:
             m_Renderer->SetSettings(s);
         }
 
-        m_Renderer->VoxelInit(1280, 720);
+        m_VoxelRuntime = m_Renderer->GetVoxelRuntime();
+        m_VoxelRuntime->Init(1280, 720);
 
         std::unique_ptr<Manro::IVoxelContentSource> content;
         if (!m_Params.worldDir.empty()) {
@@ -74,13 +76,13 @@ public:
                 printf("[Voxel] warning: failed to open world '%s'\n",
                        m_Params.worldDir.c_str());
         }
-        m_Spawn = m_Renderer->VoxelStreamInit(std::move(content), m_Params.worldDir.c_str(),
-                                              m_Params.assetsDir.c_str(), m_Params.radius);
+        m_Spawn = m_VoxelRuntime->StreamInit(std::move(content), m_Params.worldDir,
+                                             m_Params.assetsDir, m_Params.radius);
         printf("[Voxel] stream spawn=(%.1f,%.1f,%.1f) world=%s\n", m_Spawn.x, m_Spawn.y, m_Spawn.z,
                m_Params.worldDir.empty() ? "<no-save>" : m_Params.worldDir.c_str());
 
-        m_PlaceState = m_Renderer->VoxelStreamPlaceState();
-        m_PlaceKey = m_Renderer->VoxelGetStateKey(m_PlaceState);
+        m_PlaceState = m_VoxelRuntime->StreamPlaceState();
+        m_PlaceKey = m_VoxelRuntime->GetStateKey(m_PlaceState);
         m_Player.pos = m_Spawn;
         m_CamPos = m_Player.pos + Manro::Vec3(0.f, CPlayer::kEye, 0.f);
         m_Fwd = Manro::Vec3(0, 0, -1);
@@ -96,8 +98,8 @@ public:
     }
 
     void OnShutdown() override {
-        if (m_Renderer)
-            m_Renderer->VoxelShutdown();
+        if (m_VoxelRuntime)
+            m_VoxelRuntime->Shutdown();
     }
 
     bool OnUpdate(const Manro::FrameContext_t &ctx, const Manro::UserCmd_t &) override {
@@ -147,7 +149,7 @@ public:
         Manro::Vec3 yawRight = glm::normalize(glm::cross(yawFwd, Manro::Vec3{0, 1, 0}));
         m_Fwd = fwd;
 
-        PlayerUpdate(m_Player, *m_Renderer, m_InputManager, yawFwd, yawRight, fwd, ctx.DeltaTime,
+        PlayerUpdate(m_Player, *m_VoxelRuntime, m_InputManager, yawFwd, yawRight, fwd, ctx.DeltaTime,
                      ctx.TotalTime);
 
         if (m_Chaos) {
@@ -170,9 +172,9 @@ public:
         if (m_bGrabbed && !justGrabbed && m_InputManager.IsMouseButtonDown(MB::Left) &&
             (!m_bLMBHeld || m_BreakCd <= 0.f)) {
             m_bLMBHeld = true;
-            const auto hit = PlayerDetail::RaycastVoxel(*m_Renderer, eye, fwd, 8.f);
+            const auto hit = PlayerDetail::RaycastVoxel(*m_VoxelRuntime, eye, fwd, 8.f);
             if (hit.hit) {
-                m_Renderer->VoxelQueueEdit(
+                m_VoxelRuntime->QueueEdit(
                     Manro::Vec3(static_cast<float>(hit.hx) + 0.5f,
                                 static_cast<float>(hit.hy) + 0.5f,
                                 static_cast<float>(hit.hz) + 0.5f),
@@ -186,17 +188,17 @@ public:
         if (m_bGrabbed && !justGrabbed && m_InputManager.IsMouseButtonDown(MB::Right) &&
             !m_bRMBHeld) {
             m_bRMBHeld = true;
-            const auto hit = PlayerDetail::RaycastVoxel(*m_Renderer, eye, fwd, 8.f);
+            const auto hit = PlayerDetail::RaycastVoxel(*m_VoxelRuntime, eye, fwd, 8.f);
             if (hit.hit) {
                 const Manro::Vec3 target(static_cast<float>(hit.hx + hit.nx),
                                          static_cast<float>(hit.hy + hit.ny),
                                          static_cast<float>(hit.hz + hit.nz));
-                if (!m_Renderer->VoxelStreamIsSolid(target)) {
+                if (!m_VoxelRuntime->StreamIsSolid(target)) {
                     const Manro::Vec3 hitPos = eye + fwd * hit.t;
-                    const bool fluid = m_Renderer->VoxelStreamIsFluid(target);
+                    const bool fluid = m_VoxelRuntime->StreamIsFluid(target);
                     const Manro::u32 state =
                             OrientPlaceState(m_PlaceState, hitPos.y, hit.nx, hit.ny, hit.nz, fluid);
-                    m_Renderer->VoxelQueueEdit(target + Manro::Vec3(0.5f), 0.f, state, 1);
+                    m_VoxelRuntime->QueueEdit(target + Manro::Vec3(0.5f), 0.f, state, 1);
                     ++m_EditCount;
                 }
             }
@@ -206,15 +208,15 @@ public:
         if (m_bGrabbed && !justGrabbed && m_InputManager.IsMouseButtonDown(MB::Middle) &&
             !m_bMMBHeld) {
             m_bMMBHeld = true;
-            const auto hit = PlayerDetail::RaycastVoxel(*m_Renderer, eye, fwd, 8.f);
+            const auto hit = PlayerDetail::RaycastVoxel(*m_VoxelRuntime, eye, fwd, 8.f);
             if (hit.hit) {
-                const Manro::i32 st = m_Renderer->VoxelStreamGetStateAt(
+                const Manro::i32 st = m_VoxelRuntime->StreamGetStateAt(
                     Manro::Vec3(static_cast<float>(hit.hx) + 0.5f,
                                 static_cast<float>(hit.hy) + 0.5f,
                                 static_cast<float>(hit.hz) + 0.5f));
                 if (st > 0) {
                     m_PlaceState = static_cast<Manro::u32>(st);
-                    m_PlaceKey = m_Renderer->VoxelGetStateKey(m_PlaceState);
+                    m_PlaceKey = m_VoxelRuntime->GetStateKey(m_PlaceState);
                     printf("[Voxel] pick state=%u %s\n", m_PlaceState, m_PlaceKey.c_str());
                 } else {
                     printf("[Voxel] pick: no state (air/unloaded)\n");
@@ -227,7 +229,7 @@ public:
         if (m_InputManager.IsKeyDown(K::B) && !m_bBHeld) {
             m_bBHeld = true;
             m_UseBackface = !m_UseBackface;
-            m_Renderer->VoxelSetBackfaceEnabled(m_UseBackface);
+            m_VoxelRuntime->SetBackfaceEnabled(m_UseBackface);
             printf("[Voxel] backface %s\n", m_UseBackface ? "ON" : "OFF");
         } else if (!m_InputManager.IsKeyDown(K::B)) {
             m_bBHeld = false;
@@ -235,7 +237,7 @@ public:
         if (m_InputManager.IsKeyDown(K::N) && !m_bNHeld) {
             m_bNHeld = true;
             m_UseFrustum = !m_UseFrustum;
-            m_Renderer->VoxelSetFrustumEnabled(m_UseFrustum);
+            m_VoxelRuntime->SetFrustumEnabled(m_UseFrustum);
             printf("[Voxel] frustum %s\n", m_UseFrustum ? "ON" : "OFF");
         } else if (!m_InputManager.IsKeyDown(K::N)) {
             m_bNHeld = false;
@@ -250,12 +252,6 @@ public:
             m_bVHeld = false;
         }
         m_Renderer->SetCameraPosition(m_CamPos);
-        const auto streamT0 = std::chrono::steady_clock::now();
-        m_Unfilled = m_Renderer->VoxelStreamUpdate();
-        m_StreamMs = std::chrono::duration<float, std::milli>(
-                    std::chrono::steady_clock::now() - streamT0)
-                .count();
-        m_Renderer->VoxelStreamGetStats(m_StreamStats);
         return true;
     }
 
@@ -273,11 +269,14 @@ public:
 
 
         const bool wantLog = (m_Frame % 600) == 0;
-        m_Renderer->VoxelSetDebugEnabled(wantLog && m_DbgAllowed);
+        m_VoxelRuntime->SetDebugEnabled(wantLog && m_DbgAllowed);
 
         m_Renderer->BeginRendering();
         m_Renderer->RenderQueue();
         m_Renderer->EndRendering();
+        m_Unfilled = m_VoxelRuntime->GetUnfilledCount();
+        m_StreamStats = m_VoxelRuntime->GetStreamStats();
+        m_StreamMs = m_StreamStats.totalMs;
         const auto t2 = std::chrono::steady_clock::now();
         const float streamMs = m_StreamMs;
         const float cpuMs =
@@ -295,7 +294,7 @@ public:
         {
             const Manro::FrameStats_t &fst = m_Renderer->GetLastFrameStats();
             float ix = 0.f, id = 0.f, ip = 0.f;
-            m_Renderer->VoxelGetGpuInstantTimes(ix, id, ip);
+            m_VoxelRuntime->GetGpuInstantTimes(ix, id, ip);
             (void) ix;
             (void) ip;
             if (fst.paceFenceMs > m_PaceFenceMax) m_PaceFenceMax = fst.paceFenceMs;
@@ -305,7 +304,7 @@ public:
         }
 
         Manro::u32 dbg[8] = {};
-        m_Renderer->VoxelGetDebugCounters(dbg);
+        m_VoxelRuntime->ReadDebugCounters(dbg);
 
         float worst1 = 0.f, worst01 = 0.f;
         if (m_FramesSeen > 0) {
@@ -329,7 +328,7 @@ public:
                         static_cast<double>(worst01));
             ImGui::Separator();
             ImGui::Text("Bricks: %u  TaskGroups: %u  Edits: %u  Unfilled: %d",
-                        m_Renderer->VoxelGetBrickCount(), m_Renderer->VoxelGetTaskGroups(),
+                        m_VoxelRuntime->GetBrickCount(), m_VoxelRuntime->GetTaskGroups(),
                         m_EditCount, m_Unfilled);
             ImGui::Text("Stream: %.2f ms (r%.2f/e%.2f/n%.2f/d%.2f/c%.2f)",
                         static_cast<double>(m_StreamEma),
@@ -352,7 +351,7 @@ public:
                                 m_StreamStats.lightQueuePeak,
                                 m_StreamStats.lightDirtyBricks);
             float gx = 0.f, gd = 0.f, gp = 0.f;
-            m_Renderer->VoxelGetGpuTimes(gx, gd, gp);
+            m_VoxelRuntime->GetGpuTimes(gx, gd, gp);
             ImGui::Text("GPU xfer: %.2f ms  draw: %.2f ms  post: %.2f ms", static_cast<double>(gx),
                         static_cast<double>(gd), static_cast<double>(gp));
             ImGui::Text("Player: (%.1f,%.1f,%.1f) %s%s", static_cast<double>(m_Player.pos.x),
@@ -380,16 +379,16 @@ public:
         (void) fps;
         if (wantLog && m_Frame > 0) {
             float lgx = 0.f, lgd = 0.f, lgp = 0.f;
-            m_Renderer->VoxelGetGpuTimes(lgx, lgd, lgp);
+            m_VoxelRuntime->GetGpuTimes(lgx, lgd, lgp);
             Manro::u32 tgOp = 0u, tgCut = 0u, tgSkip = 1u;
-            m_Renderer->VoxelGetTaskSplit(tgOp, tgCut, tgSkip);
+            m_VoxelRuntime->GetTaskSplit(tgOp, tgCut, tgSkip);
             printf("[Voxel] fps=%.0f (%.2f ms) 1%%low=%.2fms 0.1%%low=%.2fms bricks=%u "
                    "taskGroups=%u (op=%u cut=%u skip=%u) edits=%u unfilled=%d cpu=%.2fms stream=%.2fms gpuxfer=%.2fms "
                    "gpudraw=%.2fms gpupost=%.2fms paceF=%.2fms paceA=%.2fms paceP=%.2fms gpuMax=%.2fms "
                    "cam=(%.1f,%.1f,%.1f)\n",
                    static_cast<double>(emaFps), static_cast<double>(m_FpsEma),
                    static_cast<double>(worst1), static_cast<double>(worst01),
-                   m_Renderer->VoxelGetBrickCount(), m_Renderer->VoxelGetTaskGroups(), tgOp,
+                   m_VoxelRuntime->GetBrickCount(), m_VoxelRuntime->GetTaskGroups(), tgOp,
                    tgCut, tgSkip, m_EditCount,
                    m_Unfilled, static_cast<double>(m_CpuEma), static_cast<double>(m_StreamEma),
                    static_cast<double>(lgx), static_cast<double>(lgd), static_cast<double>(lgp),
@@ -462,7 +461,7 @@ private:
 
     Manro::u32 OrientPlaceState(Manro::u32 base, float hitY, int nx, int ny, int nz,
                                 bool targetFluid) const {
-        const std::string baseKey = m_Renderer->VoxelGetStateKey(base);
+        const std::string baseKey = m_VoxelRuntime->GetStateKey(base);
         if (baseKey.empty())
             return base;
         std::string name;
@@ -481,7 +480,7 @@ private:
             if (it->second != want) {
                 auto trial = props;
                 trial["facing"] = want;
-                const Manro::u32 id = m_Renderer->VoxelFindStateByKey(JoinStateKey(name, trial));
+                const Manro::u32 id = m_VoxelRuntime->FindStateByKey(JoinStateKey(name, trial));
                 if (id != ~0u)
                     props = std::move(trial);
             }
@@ -494,7 +493,7 @@ private:
             if (it->second != want) {
                 auto trial = props;
                 trial["half"] = want;
-                const Manro::u32 id = m_Renderer->VoxelFindStateByKey(JoinStateKey(name, trial));
+                const Manro::u32 id = m_VoxelRuntime->FindStateByKey(JoinStateKey(name, trial));
                 if (id != ~0u)
                     props = std::move(trial);
             }
@@ -505,7 +504,7 @@ private:
             if (it->second != want) {
                 auto trial = props;
                 trial["type"] = want;
-                const Manro::u32 id = m_Renderer->VoxelFindStateByKey(JoinStateKey(name, trial));
+                const Manro::u32 id = m_VoxelRuntime->FindStateByKey(JoinStateKey(name, trial));
                 if (id != ~0u)
                     props = std::move(trial);
             }
@@ -516,7 +515,7 @@ private:
             if (it->second != want) {
                 auto trial = props;
                 trial["axis"] = want;
-                const Manro::u32 id = m_Renderer->VoxelFindStateByKey(JoinStateKey(name, trial));
+                const Manro::u32 id = m_VoxelRuntime->FindStateByKey(JoinStateKey(name, trial));
                 if (id != ~0u)
                     props = std::move(trial);
             }
@@ -525,7 +524,7 @@ private:
         if (it != props.end() && it->second != "false") {
             auto trial = props;
             trial["open"] = "false";
-            const Manro::u32 id = m_Renderer->VoxelFindStateByKey(JoinStateKey(name, trial));
+            const Manro::u32 id = m_VoxelRuntime->FindStateByKey(JoinStateKey(name, trial));
             if (id != ~0u)
                 props = std::move(trial);
         }
@@ -535,17 +534,18 @@ private:
             if (it->second != want) {
                 auto trial = props;
                 trial["waterlogged"] = want;
-                const Manro::u32 id = m_Renderer->VoxelFindStateByKey(JoinStateKey(name, trial));
+                const Manro::u32 id = m_VoxelRuntime->FindStateByKey(JoinStateKey(name, trial));
                 if (id != ~0u)
                     props = std::move(trial);
             }
         }
-        const Manro::u32 resolved = m_Renderer->VoxelFindStateByKey(JoinStateKey(name, props));
+        const Manro::u32 resolved = m_VoxelRuntime->FindStateByKey(JoinStateKey(name, props));
         return (resolved != ~0u) ? resolved : base;
     }
 
     Params m_Params;
     Manro::CRenderer *m_Renderer{nullptr};
+    Manro::CVoxelRuntime *m_VoxelRuntime{nullptr};
     Manro::CWindow *m_Window{nullptr};
     Manro::CInputBackend m_InputBackend;
     Manro::CInputManager m_InputManager;

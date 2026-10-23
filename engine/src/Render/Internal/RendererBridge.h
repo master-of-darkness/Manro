@@ -82,58 +82,5 @@ namespace Manro {
 
     void RendererImplWaitIdle(const CRendererImpl &impl);
 
-    void RendererImplVoxelInit(CRendererImpl &impl);
-
-    void RendererImplVoxelShutdown(CRendererImpl &impl);
-
-    void RendererImplVoxelAllocateBrick(CRendererImpl &impl, u32 bx, u32 by, u32 bz);
-
-    void RendererImplVoxelUploadBrick(const CRendererImpl &impl, u32 brickIdx, const u16 *mats,
-                                      const u32 *occupancy);
-
-    void RendererImplVoxelQueueEdit(CRendererImpl &impl, const Vec3 &pos, float radius, u32 material,
-                                    u32 op);
-
-    u32 RendererImplVoxelGetBrickCount(const CRendererImpl &impl);
-
-    u32 RendererImplVoxelGetTaskGroups(const CRendererImpl &impl);
-
-    void RendererImplVoxelGetTaskSplit(const CRendererImpl &impl, u32 &opaque, u32 &cutout,
-                                       u32 &skipped);
-    void RendererImplVoxelGetGpuTimes(const CRendererImpl &impl, float &xferMs, float &drawMs,
-                                        float &postMs);
-    void RendererImplVoxelGetGpuInstantTimes(const CRendererImpl &impl, float &xferMs, float &drawMs,
-                                               float &postMs);
-
-    void RendererImplVoxelGetDebugCounters(const CRendererImpl &impl, u32 out[8]);
-
-    void RendererImplVoxelSetDebugEnabled(CRendererImpl &impl, bool enabled);
-
-    void RendererImplVoxelSetBackfaceEnabled(CRendererImpl &impl, bool enabled);
-
-    void RendererImplVoxelSetFrustumEnabled(CRendererImpl &impl, bool enabled);
-
-    Vec3 RendererImplVoxelStreamInit(CRendererImpl &impl,
-                                     std::unique_ptr<IVoxelContentSource> content,
-                                     const std::string &worldDir,
-                                     const std::string &assetsDir, int radiusSections);
-
-    int RendererImplVoxelStreamUpdate(const CRendererImpl &impl);
-
-    void RendererImplVoxelStreamGetStats(const CRendererImpl &impl, VoxelStreamStats_t &out);
-
-    bool RendererImplVoxelStreamIsSolid(const CRendererImpl &impl, const Vec3 &p);
-
-    bool RendererImplVoxelStreamIsFluid(const CRendererImpl &impl, const Vec3 &p);
-
-    u32 RendererImplVoxelStreamPlaceState(const CRendererImpl &impl);
-
-    i32 RendererImplVoxelStreamGetStateAt(const CRendererImpl &impl, const Vec3 &p);
-
-    bool RendererImplVoxelStreamGetCollisionBox(const CRendererImpl &impl, const Vec3 &p, Vec3 &mn,
-                                                Vec3 &mx);
-
-    std::string RendererImplVoxelGetStateKey(const CRendererImpl &impl, u32 id);
-
-    u32 RendererImplVoxelFindStateByKey(const CRendererImpl &impl, const std::string &key);
+    CVoxelRuntime *RendererImplGetVoxelRuntime(CRendererImpl &impl);
 }
