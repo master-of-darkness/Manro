@@ -62,6 +62,9 @@ namespace Manro {
                     const CVoxelStreamWorld *streamWorld);
 
         void WaitIdle();
+
+        void InvalidateVisibilityCache();
+
         bool LoadBlockAssets(const BlockAssetPack_t &pack);
         [[nodiscard]] const BlockAssetPack_t &GetBlockPack() const { return m_BlockPack; }
 
@@ -134,7 +137,7 @@ namespace Manro {
         Mat4 m_CachedViewProj{0.f};
         Vec3 m_CachedCameraPos{0.f};
         u32 m_CachedBrickCount{~0u};
-        u64 m_CachedHeaderVersion{~0ull};
+        u64 m_CachedVisibilityVersion{~0ull};
         bool m_CachedUseFrustum{false};
         bool m_VisCacheValid{false};
 

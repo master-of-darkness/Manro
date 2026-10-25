@@ -74,23 +74,36 @@ namespace Manro::Anvil {
     }
 
     struct CRegionFile::Impl {
+        struct RegionEntry {
+            std::vector<u8> bytes;
+            u64 lastUse{0};
+        };
+
         std::string regionDir;
-        std::unordered_map<i64, std::vector<u8> > regionCache;
+        std::unordered_map<i64, RegionEntry> regionCache;
+        u64 cacheTick{0};
 
         static i64 RegionKey(int rx, int rz) {
-            return (static_cast<i64>(rx) << 32) | (static_cast<u32>(rz));
+            return (static_cast<i64>(rx) << 32) | static_cast<u32>(rz);
         }
 
         bool LoadRegion(int rx, int rz, const std::vector<u8> *&bytes) {
             const i64 key = RegionKey(rx, rz);
             auto it = regionCache.find(key);
             if (it != regionCache.end()) {
-                bytes = &it->second;
+                it->second.lastUse = ++cacheTick;
+                bytes = &it->second.bytes;
                 return true;
             }
             static constexpr size_t kRegionCacheCap = 8;
-            if (regionCache.size() >= kRegionCacheCap)
-                regionCache.erase(regionCache.begin());
+            if (regionCache.size() >= kRegionCacheCap) {
+                auto victim = regionCache.begin();
+                for (auto i = regionCache.begin(); i != regionCache.end(); ++i) {
+                    if (i->second.lastUse < victim->second.lastUse)
+                        victim = i;
+                }
+                regionCache.erase(victim);
+            }
             char name[64];
             std::snprintf(name, sizeof(name), "/r.%d.%d.mca", rx, rz);
             std::vector<u8> data;
@@ -98,10 +111,15 @@ namespace Manro::Anvil {
                 return false;
             if (data.size() < 8192)
                 return false;
-            auto res = regionCache.emplace(key, std::move(data));
-            bytes = &res.first->second;
+            RegionEntry entry;
+            entry.bytes = std::move(data);
+            entry.lastUse = ++cacheTick;
+            auto res = regionCache.emplace(key, std::move(entry));
+            bytes = &res.first->second.bytes;
             return true;
         }
+
+        void ClearCache() { regionCache.clear(); }
 
         bool LoadChunkPayload(int cx, int cz, std::vector<u8> &payload) {
             payload.clear();
@@ -155,6 +173,11 @@ namespace Manro::Anvil {
 
     bool CRegionFile::LoadChunkPayload(int cx, int cz, std::vector<u8> &payload) {
         return m_Impl && m_Impl->LoadChunkPayload(cx, cz, payload);
+    }
+
+    void CRegionFile::ClearCache() {
+        if (m_Impl)
+            m_Impl->ClearCache();
     }
 
     const std::string &CRegionFile::GetRegionDir() const {

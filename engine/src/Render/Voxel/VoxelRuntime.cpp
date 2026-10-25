@@ -82,6 +82,10 @@ namespace Manro {
         return IsInitialized() ? m_Impl->renderer->GetWorld().GetBrickCount() : 0u;
     }
 
+    u32 CVoxelRuntime::GetBrickHighWater() const {
+        return IsInitialized() ? m_Impl->renderer->GetWorld().GetBrickHighWater() : 0u;
+    }
+
     u32 CVoxelRuntime::GetTaskGroups() const {
         return IsInitialized() ? m_Impl->renderer->GetStats().taskGroups : 0u;
     }
@@ -155,6 +159,9 @@ namespace Manro {
 
         m_Impl->renderer->WaitIdle();
         m_Impl->streamWorld.reset();
+        m_Impl->renderer->GetWorld().Reset();
+        m_Impl->renderer->InvalidateVisibilityCache();
+        m_Impl->lastUnfilled = 0;
 
         std::vector<VoxelBlockState> saveStates;
         if (content && !content->ScanSaveStates(saveStates)) {

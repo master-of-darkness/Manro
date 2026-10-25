@@ -112,7 +112,8 @@ namespace Manro {
         return true;
     }
 
-    void CVoxelStreamWorld::Impl::BorderPullLight(u32 brickIdx, int bsx, int bsy, int bsz) {
+    void CVoxelStreamWorld::Impl::BorderPullLight(u32 brickIdx, int bsx, int bsy,
+                                                  int bsz, u32 faceMask) {
         if (!pack)
             return;
         const size_t base = static_cast<size_t>(brickIdx) * 4096;
@@ -127,8 +128,13 @@ namespace Manro {
         for (int ly = 0; ly < 16; ++ly) {
             for (int lz = 0; lz < 16; ++lz) {
                 for (int lx = 0; lx < 16; ++lx) {
-                    if (lx != 0 && lx != 15 && ly != 0 && ly != 15 && lz != 0 &&
-                        lz != 15)
+                    const bool onX = (lx == 15 && (faceMask & (1u << 0u))) ||
+                                     (lx == 0 && (faceMask & (1u << 1u)));
+                    const bool onY = (ly == 15 && (faceMask & (1u << 2u))) ||
+                                     (ly == 0 && (faceMask & (1u << 3u)));
+                    const bool onZ = (lz == 15 && (faceMask & (1u << 4u))) ||
+                                     (lz == 0 && (faceMask & (1u << 5u)));
+                    if (!onX && !onY && !onZ)
                         continue;
                     const size_t vi = static_cast<size_t>(lx + ly * 16 + lz * 256);
                     const u32 st = stateMirror[base + vi];
@@ -360,8 +366,8 @@ namespace Manro {
         return visits;
     }
 
-    void CVoxelStreamWorld::Impl::GlowPushToNeighbours(u32 brickIdx, int bsx, int bsy,
-                                                       int bsz) {
+    void CVoxelStreamWorld::Impl::GlowPushToNeighbours(
+        u32 brickIdx, int bsx, int bsy, int bsz, std::vector<EditRestage_t> &out) {
         if (!pack)
             return;
         const size_t base = static_cast<size_t>(brickIdx) * 4096;
@@ -435,18 +441,8 @@ namespace Manro {
                     }
                 }
             }
-            if (raised) {
-                const i64 nkey = Key(nsx, nsy, nsz);
-                bool dup = false;
-                for (const auto &q: editRestage) {
-                    if (q.key == nkey) {
-                        dup = true;
-                        break;
-                    }
-                }
-                if (!dup)
-                    editRestage.push_back({nkey, nb});
-            }
+            if (raised)
+                out.push_back({Key(nsx, nsy, nsz), nb});
         }
     }
 }

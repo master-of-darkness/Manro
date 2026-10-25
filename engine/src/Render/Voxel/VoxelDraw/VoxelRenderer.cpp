@@ -156,6 +156,7 @@ namespace Manro {
 
         m_VisibleList.reserve(desc.maxResidentBricks);
         m_SortScratch.reserve(desc.maxResidentBricks);
+        InvalidateVisibilityCache();
 
         m_bInitialized = true;
         LOG_INFO("[CVoxelRenderer] Initialized (sparse bricks, task/mesh PSO, {}x{})", width, height);
@@ -192,6 +193,7 @@ namespace Manro {
         m_SpillDesc.reset();
         if (m_World)
             m_World->Shutdown();
+        InvalidateVisibilityCache();
         m_bInitialized = false;
         m_TileLayers = 0;
     }
@@ -322,12 +324,20 @@ namespace Manro {
 
     void CVoxelRenderer::WaitIdle() { m_Context.WaitIdle(); }
 
+    void CVoxelRenderer::InvalidateVisibilityCache() {
+        m_VisCacheValid = false;
+        m_VisibleList.clear();
+        m_CachedBrickCount = ~0u;
+        m_CachedVisibilityVersion = ~0ull;
+    }
+
     bool CVoxelRenderer::LoadBlockAssets(const BlockAssetPack_t &pack) {
         m_BlockPack = pack;
         if (m_BlockPack.maxState >= 32768u)
             return false;
         CreateBlockTiles(m_BlockPack);
         UploadBlockTables();
+        InvalidateVisibilityCache();
         return true;
     }
 
@@ -378,7 +388,7 @@ namespace Manro {
         desc.cascadeAddr = m_CascadeBuffer->Address();
         desc.cascadeDstAddr = m_CascadeBuffer->Address() + cascadeBytes;
         desc.sunAddr = m_SunBuffer->Address();
-        desc.brickCount = m_World->GetBrickCount();
+        desc.brickCount = m_World->GetBrickHighWater();
         desc.cascadeRes = cascadeRes;
         desc.cascadeCount = 1;
         desc.brickSize = m_World->GetBrickSize();
@@ -440,10 +450,11 @@ namespace Manro {
 
         m_World->FlushStagedUploads(enc, flightSlot);
 
-        const u32 brickCount = m_World->GetBrickCount();
-        m_Stats.brickCount = brickCount;
+        const u32 brickHighWater = m_World->GetBrickHighWater();
+        const u32 liveBricks = m_World->GetBrickCount();
+        m_Stats.brickCount = liveBricks;
         m_Stats.editCount = 0;
-        if (brickCount == 0 || !m_OpaquePipeline->IsValid() || !m_CutoutPipeline->IsValid())
+        if (liveBricks == 0 || !m_OpaquePipeline->IsValid() || !m_CutoutPipeline->IsValid())
             return;
 
         if (m_Timer && m_Timer->Valid()) {
@@ -451,16 +462,18 @@ namespace Manro {
             m_Timer->Stamp(enc, qslot, 0, true);
         }
 
-        u32 visibleCount = brickCount;
+        u32 visibleCount = liveBricks;
 
         CBuffer &visSlot = *m_VisibilityRing[flightSlot % kFlightSlots];
         {
             const float brickSize = m_World->GetBrickSize();
             const float radius = brickSize * 0.8660254f;
-            const u64 headerVersion = m_World->GetHeaderVersion();
+            const u64 visibilityVersion = m_World->GetVisibilityVersion();
+            const auto &liveList = m_World->GetLiveBrickList();
             const bool cacheHit =
                 m_VisCacheValid && m_CachedUseFrustum == m_bUseFrustum &&
-                m_CachedBrickCount == brickCount && m_CachedHeaderVersion == headerVersion &&
+                m_CachedBrickCount == liveBricks &&
+                m_CachedVisibilityVersion == visibilityVersion &&
                 m_CachedCameraPos == cameraPos && m_CachedViewProj == viewProj;
             if (!cacheHit) {
                 const float maxDistWithRadius = maxDrawDist + radius;
@@ -483,7 +496,7 @@ namespace Manro {
                         }
                     }
                     const auto &mirror = m_World->GetHeaderMirror();
-                    for (u32 i = 0; i < brickCount; ++i) {
+                    for (const u32 i: liveList) {
                         if (m_World->IsBrickHidden(i))
                             continue;
                         const VoxelBrickHeader_t &h = mirror[i];
@@ -511,7 +524,7 @@ namespace Manro {
                     visibleCount = static_cast<u32>(m_VisibleList.size());
                 } else {
                     const auto &mirrorNF = m_World->GetHeaderMirror();
-                    for (u32 i = 0; i < brickCount; ++i) {
+                    for (const u32 i: liveList) {
                         if (m_World->IsBrickHidden(i))
                             continue;
                         if (streamWorld && !streamWorld->BrickHasContent(i))
@@ -527,25 +540,10 @@ namespace Manro {
                     }
                     visibleCount = static_cast<u32>(m_VisibleList.size());
                 }
-                const size_t nvis = m_VisibleList.size();
-                if (nvis >= 2) {
-                    const auto &mirror2 = m_World->GetHeaderMirror();
-                    m_SortScratch.clear();
-                    m_SortScratch.reserve(nvis);
-                    for (const u32 bi : m_VisibleList) {
-                        const Vec3 center = mirror2[bi].origin + Vec3(brickSize * 0.5f);
-                        const Vec3 toC = center - cameraPos;
-                        m_SortScratch.emplace_back(glm::dot(toC, toC), bi);
-                    }
-                    std::sort(m_SortScratch.begin(), m_SortScratch.end(),
-                              [](const auto &a, const auto &b) { return a.first < b.first; });
-                    for (size_t k = 0; k < nvis; ++k)
-                        m_VisibleList[k] = m_SortScratch[k].second;
-                }
                 m_CachedViewProj = viewProj;
                 m_CachedCameraPos = cameraPos;
-                m_CachedBrickCount = brickCount;
-                m_CachedHeaderVersion = headerVersion;
+                m_CachedBrickCount = liveBricks;
+                m_CachedVisibilityVersion = visibilityVersion;
                 m_CachedUseFrustum = m_bUseFrustum;
                 m_VisCacheValid = true;
             } else {
@@ -559,7 +557,7 @@ namespace Manro {
         params.viewProj = viewProj;
         params.prevViewProj = prevViewProj;
         params.cameraPos = cameraPos;
-        params.brickCount = brickCount;
+        params.brickCount = brickHighWater;
         params.worldMin = m_World->GetWorldMin();
         params.brickSize = m_World->GetBrickSize();
         params.maxDrawDistance = static_cast<u32>(maxDrawDist);

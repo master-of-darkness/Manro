@@ -35,45 +35,67 @@ namespace Manro {
 
         const int csx = static_cast<int>(std::floor(I.spawn.x / 16.f));
         const int csz = static_cast<int>(std::floor(I.spawn.z / 16.f));
-        const int R = desc.radiusSections;
+        const int H = kMaxSectionY - kMinSectionY + 1;
+        const u32 brickCap = world.GetBrickCapacity();
+        int R = std::max(1, desc.radiusSections);
+        int maxR = 1;
+        if (brickCap > 0) {
+            for (int r = 1; r <= 64; ++r) {
+                const long long live = static_cast<long long>(2 * r + 1) *
+                                       static_cast<long long>(2 * r + 1) * H;
+                if (live <= static_cast<long long>(brickCap))
+                    maxR = r;
+                else
+                    break;
+            }
+            if (R > maxR) {
+                std::printf("[StreamWorld] radius %d exceeds brick capacity %u; "
+                            "clamping to %d\n",
+                            R, brickCap, maxR);
+                R = maxR;
+            }
+        }
+        I.desc.radiusSections = R;
         world.SetWorldMin(Vec3(static_cast<float>((csx - R) * 16), -64.f,
                                static_cast<float>((csz - R) * 16)));
         I.minBX = csx - R;
         I.minBZ = csz - R;
 
-        const int wantLive =
-                (2 * (R + 1) + 1) * (kMaxSectionY - kMinSectionY + 1) * (2 * (R + 1) + 1);
-        const int wantEvict2 =
-                (2 * (R + 2) + 1) * (kMaxSectionY - kMinSectionY + 1) * (2 * (R + 2) + 1);
-        if (wantEvict2 <= 8192)
+        const int wantEvict1 = (2 * (R + 1) + 1) * H * (2 * (R + 1) + 1);
+        const int wantEvict2 = (2 * (R + 2) + 1) * H * (2 * (R + 2) + 1);
+        const int capacity = brickCap > 0 ? static_cast<int>(brickCap) : 8192;
+        if (wantEvict2 <= capacity)
             I.evictRadius = R + 2;
-        else if (wantLive <= 8192)
+        else if (wantEvict1 <= capacity)
             I.evictRadius = R + 1;
         else
             I.evictRadius = R;
 
-        world.ReserveResident(8192);
+        world.ReserveResident(static_cast<u32>(capacity));
         std::printf("[StreamWorld] streaming R=%d evict=%d save=%d spawn=(%.1f,%.1f,%.1f)\n", R,
                     I.evictRadius, I.hasSave ? 1 : 0, I.spawn.x, I.spawn.y, I.spawn.z);
         {
-            constexpr size_t kReserveBricks = 8192;
-            I.slots.reserve(kReserveBricks * 2);
+            const size_t reserveBricks = static_cast<size_t>(capacity);
+            I.slots.reserve(reserveBricks * 2);
             I.pending.reserve(128);
             const size_t window =
-                    static_cast<size_t>(2 * R + 1) * 24 * (2 * R + 1);
+                    static_cast<size_t>(2 * R + 1) * H * (2 * R + 1);
             I.unfilled.reserve(window);
             I.unfilledScratch.reserve(window);
             I.evictPending.reserve(1024);
-            I.occMirror.assign(kReserveBricks * 128, 0u);
-            I.fluidMirror.assign(kReserveBricks * 128, 0u);
-            I.stateMirror.assign(kReserveBricks * 4096, 0u);
-            I.brickContent.assign(kReserveBricks, 1u);
-            I.lightMirror.assign(kReserveBricks * 4096, 0u);
-            I.lightDirtyFlag.assign(kReserveBricks, 0u);
+            I.occMirror.assign(reserveBricks * 128, 0u);
+            I.fluidMirror.assign(reserveBricks * 128, 0u);
+            I.stateMirror.assign(reserveBricks * 4096, 0u);
+            I.brickContent.assign(reserveBricks, 0u);
+            I.streamBrick.assign(reserveBricks, 0u);
+            I.lightMirror.assign(reserveBricks * 4096, 0u);
+            I.lightDirtyFlag.assign(reserveBricks, 0u);
+            I.lightDirtyMask.assign(reserveBricks, 0u);
             I.lightDirtyList.reserve(256);
             {
                 const u32 vd = world.GetVirtualDim() != 0u ? world.GetVirtualDim() : 64u;
                 I.slotMirror.assign(static_cast<size_t>(vd) * vd * vd, -1);
+                I.slotOwner.assign(static_cast<size_t>(vd) * vd * vd, -1);
             }
         }
         {
@@ -101,6 +123,96 @@ namespace Manro {
             }
         }
         return I.spawn;
+    }
+
+    void CVoxelStreamWorld::Impl::ReleaseChunk(CVoxelBrickStore &world, i64 key) {
+        std::unique_lock lk(m_MirrorMutex);
+        pending.erase(key);
+        const auto sit = slots.find(key);
+        if (sit == slots.end())
+            return;
+        const i32 b = sit->second.brickIdx;
+        if (b >= 0 && world.EvictBrick(static_cast<u32>(b))) {
+            if (static_cast<size_t>(b) < brickContent.size())
+                brickContent[static_cast<size_t>(b)] = 0u;
+            if (static_cast<size_t>(b) < streamBrick.size())
+                streamBrick[static_cast<size_t>(b)] = 0u;
+            if (static_cast<size_t>(b) < lightDirtyFlag.size())
+                lightDirtyFlag[static_cast<size_t>(b)] = 0u;
+            if (static_cast<size_t>(b) < lightDirtyMask.size())
+                lightDirtyMask[static_cast<size_t>(b)] = 0u;
+        }
+        int sx = 0, sy = 0, sz = 0;
+        DecodeKey(key, sx, sy, sz);
+        const u32 slot = SlotFor(sx, sy, sz);
+        if (slot < slotMirror.size())
+            slotMirror[slot] = -1;
+        if (slot < slotOwner.size() && slotOwner[slot] == key)
+            slotOwner[slot] = -1;
+        slots.erase(sit);
+    }
+
+    void CVoxelStreamWorld::Impl::MarkLightDirty(i64 key, u32 brick, u32 faceMask) {
+        if (brick >= lightDirtyFlag.size())
+            return;
+        const u32 mask = faceMask & 0x3Fu;
+        if (mask == 0u)
+            return;
+        if (lightDirtyFlag[brick] != 0u) {
+            if (brick < lightDirtyMask.size())
+                lightDirtyMask[brick] =
+                        static_cast<u8>(lightDirtyMask[brick] | mask);
+            return;
+        }
+        lightDirtyFlag[brick] = 1u;
+        if (brick < lightDirtyMask.size())
+            lightDirtyMask[brick] = static_cast<u8>(mask);
+        lightDirtyList.push_back({key, brick});
+    }
+
+    void CVoxelStreamWorld::Impl::ProcessLightDirty(int budget) {
+        int processed = 0;
+        while (!lightDirtyList.empty() && processed < budget) {
+            const LightDirty_t d = lightDirtyList.back();
+            lightDirtyList.pop_back();
+            if (d.brick >= lightDirtyFlag.size())
+                continue;
+            if (lightDirtyFlag[d.brick] == 0u)
+                continue;
+            const auto sit = slots.find(d.key);
+            if (sit == slots.end() ||
+                sit->second.brickIdx != static_cast<i32>(d.brick) ||
+                !sit->second.filled) {
+                continue;
+            }
+            lightDirtyFlag[d.brick] = 0u;
+            const u32 faceMask =
+                    d.brick < lightDirtyMask.size()
+                        ? static_cast<u32>(lightDirtyMask[d.brick])
+                        : 0x3Fu;
+            if (d.brick < lightDirtyMask.size())
+                lightDirtyMask[d.brick] = 0u;
+            int sx = 0, sy = 0, sz = 0;
+            DecodeKey(d.key, sx, sy, sz);
+            {
+                std::shared_lock mlk(m_MirrorMutex);
+                std::unique_lock llk(m_LightMutex);
+                BorderPullLight(d.brick, sx, sy, sz, faceMask);
+            }
+            {
+                std::unique_lock mlk(m_MirrorMutex);
+                bool dup = false;
+                for (const auto &q: editRestage) {
+                    if (q.key == d.key) {
+                        dup = true;
+                        break;
+                    }
+                }
+                if (!dup)
+                    editRestage.push_back({d.key, d.brick});
+            }
+            ++processed;
+        }
     }
 
     int CVoxelStreamWorld::Update(CVoxelBrickStore &world, const Vec3 &cameraPos, u32 flightSlot) {
@@ -195,17 +307,35 @@ namespace Manro {
                 if (std::max(std::abs(sx - ccx), std::abs(sz - ccz)) <= E)
                     continue;
                 const i32 b = it->second.brickIdx;
-                if (b >= 0) {
-                    world.EvictBrick(static_cast<u32>(b));
+                if (b >= 0 && world.EvictBrick(static_cast<u32>(b))) {
                     if (static_cast<size_t>(b) < I.brickContent.size())
                         I.brickContent[static_cast<size_t>(b)] = 0u;
+                    if (static_cast<size_t>(b) < I.streamBrick.size())
+                        I.streamBrick[static_cast<size_t>(b)] = 0u;
+                    if (static_cast<size_t>(b) < I.lightDirtyFlag.size())
+                        I.lightDirtyFlag[static_cast<size_t>(b)] = 0u;
+                    if (static_cast<size_t>(b) < I.lightDirtyMask.size())
+                        I.lightDirtyMask[static_cast<size_t>(b)] = 0u;
                 }
                 {
                     const u32 slot = I.SlotFor(sx, sy, sz);
                     std::unique_lock lk(I.m_MirrorMutex);
                     if (slot < I.slotMirror.size())
                         I.slotMirror[slot] = -1;
+                    if (slot < I.slotOwner.size() && I.slotOwner[slot] == key)
+                        I.slotOwner[slot] = -1;
                     I.slots.erase(it);
+                }
+                for (int a = 0; a < 6; ++a) {
+                    const auto &o = Impl::kHaloDir[a];
+                    const i64 nkey = Impl::Key(sx + o[0], sy + o[1], sz + o[2]);
+                    const auto nit = I.slots.find(nkey);
+                    if (nit != I.slots.end() && nit->second.filled &&
+                        nit->second.brickIdx >= 0) {
+                        I.MarkLightDirty(nkey,
+                                         static_cast<u32>(nit->second.brickIdx),
+                                         1u << (a ^ 1));
+                    }
                 }
                 ++evicted;
             }
@@ -221,7 +351,9 @@ namespace Manro {
                     break;
                 }
             }
-            if (I.unfilled.empty() && I.evictPending.empty() && !anyDone) {
+            if (I.unfilled.empty() && I.evictPending.empty() && I.pending.empty() &&
+                I.deferQueue.empty() && I.editRestage.empty() &&
+                I.lightDirtyList.empty() && !anyDone) {
                 ST.totalMs = snapMs(tAll);
                 ST.deferredBricks = static_cast<u32>(I.deferQueue.size());
                 ST.lightMs = static_cast<float>(I.lightMsAccum);
@@ -272,6 +404,11 @@ namespace Manro {
                     u32 bidx = ~0u;
                     if (sit == I.slots.end()) {
                         const u32 slot = I.SlotFor(sx, sy, sz);
+                        if (slot < I.slotOwner.size()) {
+                            const i64 oldKey = I.slotOwner[slot];
+                            if (oldKey >= 0 && oldKey != key)
+                                I.ReleaseChunk(world, oldKey);
+                        }
                         const i32 nb = world.AllocateBrickSlot(
                             slot, Impl::OriginFor(sx, sy, sz));
                         if (nb < 0)
@@ -282,7 +419,14 @@ namespace Manro {
                             sit = I.slots.emplace(key, Impl::SlotInfo{nb, false}).first;
                             if (slot < I.slotMirror.size())
                                 I.slotMirror[slot] = -1;
+                            if (slot < I.slotOwner.size())
+                                I.slotOwner[slot] = key;
                         }
+                        if (static_cast<size_t>(bidx) < I.streamBrick.size())
+                            I.streamBrick[static_cast<size_t>(bidx)] = 1u;
+                        if (static_cast<size_t>(bidx) < I.brickContent.size())
+                            I.brickContent[static_cast<size_t>(bidx)] = 0u;
+                        world.BumpVisibilityVersion();
                     } else if (sit->second.filled || sit->second.brickIdx < 0) {
                         continue;
                     } else {
@@ -375,54 +519,89 @@ namespace Manro {
         const auto commitOne = [&](u32 brickIdx, const u32 *occ, const u32 *fluid,
                                    const u16 *mats, const u8 *light, u8 opaque, u8 hasEmis,
                                    i64 key) {
-            std::unique_lock lk(I.m_MirrorMutex);
-            const size_t need = (static_cast<size_t>(brickIdx) + 1) * 128;
-            if (I.occMirror.size() < need) {
-                I.occMirror.resize(need, 0u);
-                I.fluidMirror.resize(need, 0u);
-            }
-            std::memcpy(I.occMirror.data() + static_cast<size_t>(brickIdx) * 128, occ,
-                        sizeof(u32) * 128);
-            std::memcpy(I.fluidMirror.data() + static_cast<size_t>(brickIdx) * 128, fluid,
-                        sizeof(u32) * 128);
-
-            const size_t sneed = (static_cast<size_t>(brickIdx) + 1) * 4096;
-            if (I.stateMirror.size() < sneed)
-                I.stateMirror.resize(sneed, 0u);
-            std::memcpy(I.stateMirror.data() + static_cast<size_t>(brickIdx) * 4096, mats,
-                        sizeof(u16) * 4096);
-            world.SetBrickOpaqueFull(brickIdx, opaque != 0u);
-
-            world.MarkBrickAndNeighborsDirty(brickIdx);
-            const auto sit = I.slots.find(key);
-            if (sit != I.slots.end() &&
-                sit->second.brickIdx == static_cast<i32>(brickIdx) && !sit->second.filled) {
-                sit->second.filled = true;
-                filledKeys.push_back(key);
-            }
-            I.pending.erase(key);
-
+            const size_t bi = static_cast<size_t>(brickIdx);
+            u32 any = 0u;
+            for (int w = 0; w < 128; ++w)
+                any |= occ[w] | fluid[w];
+            int dsx = 0, dsy = 0, dsz = 0;
+            Impl::DecodeKey(key, dsx, dsy, dsz);
+            const u32 slot = I.SlotFor(dsx, dsy, dsz);
+            const u8 newContent = (any != 0u) ? 1u : 0u;
+            bool visibilityChanged = false;
             {
-                const auto t0 = std::chrono::steady_clock::now();
-                const size_t lneed = (static_cast<size_t>(brickIdx) + 1) * 4096;
+                std::unique_lock mlk(I.m_MirrorMutex);
+                std::unique_lock llk(I.m_LightMutex);
+                const size_t need = (bi + 1) * 128;
+                if (I.occMirror.size() < need) {
+                    I.occMirror.resize(need, 0u);
+                    I.fluidMirror.resize(need, 0u);
+                }
+                std::memcpy(I.occMirror.data() + bi * 128, occ, sizeof(u32) * 128);
+                std::memcpy(I.fluidMirror.data() + bi * 128, fluid, sizeof(u32) * 128);
+
+                const size_t sneed = (bi + 1) * 4096;
+                if (I.stateMirror.size() < sneed)
+                    I.stateMirror.resize(sneed, 0u);
+                std::memcpy(I.stateMirror.data() + bi * 4096, mats, sizeof(u16) * 4096);
+
+                const size_t lneed = (bi + 1) * 4096;
                 if (I.lightMirror.size() < lneed)
                     I.lightMirror.resize(lneed, 0u);
-                std::memcpy(I.lightMirror.data() + static_cast<size_t>(brickIdx) * 4096,
-                            light, 4096);
-                int dsx = 0, dsy = 0, dsz = 0;
-                Impl::DecodeKey(key, dsx, dsy, dsz);
-                const u32 slot = I.SlotFor(dsx, dsy, dsz);
+                std::memcpy(I.lightMirror.data() + bi * 4096, light, 4096);
+
+                const auto sit = I.slots.find(key);
+                if (sit != I.slots.end() &&
+                    sit->second.brickIdx == static_cast<i32>(brickIdx) &&
+                    !sit->second.filled) {
+                    sit->second.filled = true;
+                    filledKeys.push_back(key);
+                }
+                I.pending.erase(key);
                 if (slot < I.slotMirror.size())
                     I.slotMirror[slot] = static_cast<i32>(brickIdx);
+                if (bi < I.brickContent.size() && I.brickContent[bi] != newContent) {
+                    I.brickContent[bi] = newContent;
+                    visibilityChanged = true;
+                }
+                if (bi < I.streamBrick.size() && I.streamBrick[bi] == 0u) {
+                    I.streamBrick[bi] = 1u;
+                    visibilityChanged = true;
+                }
+            }
+
+            world.SetBrickOpaqueFull(brickIdx, opaque != 0u);
+            world.MarkBrickAndNeighborsDirty(brickIdx);
+            if (visibilityChanged)
+                world.BumpVisibilityVersion();
+
+            const auto t0 = std::chrono::steady_clock::now();
+            std::vector<Impl::EditRestage_t> glowRestage;
+            {
+                std::shared_lock mlk(I.m_MirrorMutex);
+                std::unique_lock llk(I.m_LightMutex);
                 if (opaque == 0u || hasEmis != 0u)
                     I.BorderPullLight(brickIdx, dsx, dsy, dsz);
                 if (hasEmis != 0u)
-                    I.GlowPushToNeighbours(brickIdx, dsx, dsy, dsz);
-                I.lightMsAccum += std::chrono::duration<double, std::milli>(
-                            std::chrono::steady_clock::now() - t0)
-                        .count();
-                ++I.lightBrickCount;
+                    I.GlowPushToNeighbours(brickIdx, dsx, dsy, dsz, glowRestage);
             }
+            if (!glowRestage.empty()) {
+                std::unique_lock mlk(I.m_MirrorMutex);
+                for (const auto &e: glowRestage) {
+                    bool dup = false;
+                    for (const auto &q: I.editRestage) {
+                        if (q.key == e.key) {
+                            dup = true;
+                            break;
+                        }
+                    }
+                    if (!dup)
+                        I.editRestage.push_back(e);
+                }
+            }
+            I.lightMsAccum += std::chrono::duration<double, std::milli>(
+                        std::chrono::steady_clock::now() - t0)
+                    .count();
+            ++I.lightBrickCount;
         };
 
         if (!I.deferQueue.empty()) {
@@ -444,7 +623,10 @@ namespace Manro {
                 I.deferQueue.resize(kept);
             }
             const u32 free = world.GetStageFree(flightSlot);
-            const size_t n = std::min<size_t>(I.deferQueue.size(), free);
+            constexpr size_t kDeferredStagePerUpdate = 32;
+            const size_t n = std::min<size_t>(
+                std::min<size_t>(I.deferQueue.size(), free),
+                kDeferredStagePerUpdate);
             if (n > 0) {
                 stageMats.resize(n * 4096);
                 stageOcc.resize(n * 128);
@@ -491,7 +673,10 @@ namespace Manro {
                 I.editRestage.resize(kept);
             }
             const u32 free = world.GetStageFree(flightSlot);
-            const size_t n = std::min<size_t>(I.editRestage.size(), free);
+            constexpr size_t kEditRestagePerUpdate = 32;
+            const size_t n = std::min<size_t>(
+                std::min<size_t>(I.editRestage.size(), free),
+                kEditRestagePerUpdate);
             if (n > 0) {
                 stageMats.resize(n * 4096);
                 stageOcc.resize(n * 128);
@@ -528,15 +713,8 @@ namespace Manro {
                 const u32 *occ = batchOcc.data() + k * 128;
                 const u32 *fld = batchFluid.data() + k * 128;
                 u32 *gpu = batchGpuOcc.data() + k * 128;
-                u32 any = 0u;
-                for (int w = 0; w < 128; ++w) {
+                for (int w = 0; w < 128; ++w)
                     gpu[w] = occ[w] | fld[w];
-                    any |= gpu[w];
-                }
-                const size_t bi = static_cast<size_t>(batchIdx[k]);
-                if (I.brickContent.size() <= bi)
-                    I.brickContent.resize(bi + 1, 1u);
-                I.brickContent[bi] = (any != 0u) ? 1u : 0u;
             }
             const u32 free = world.GetStageFree(flightSlot);
             const u32 nStage =
@@ -559,6 +737,7 @@ namespace Manro {
                     ++I.totalDeferredDropped;
                     std::printf("[StreamWorld] deferral cap hit, dropping oldest (%zu queued)\n",
                                 I.deferQueue.size());
+                    I.ReleaseChunk(world, I.deferQueue.front().key);
                     I.deferQueue.erase(I.deferQueue.begin());
                 }
                 Impl::DeferredUpload_t df;
@@ -586,6 +765,8 @@ namespace Manro {
             }
             I.unfilled.resize(w);
         }
+
+        I.ProcessLightDirty(8);
 
         ST.commitMs = snapMs(tPhase);
         ST.totalMs = snapMs(tAll);

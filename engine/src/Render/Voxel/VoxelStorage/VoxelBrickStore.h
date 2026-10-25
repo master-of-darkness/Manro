@@ -31,11 +31,13 @@ namespace Manro {
         void Init(const VoxelBrickStoreDesc_t &desc);
         void Shutdown();
 
+        void Reset();
+
         i32 AllocateBrick(u32 bx, u32 by, u32 bz);
 
         i32 AllocateBrickSlot(u32 slot, const Vec3 &origin);
 
-        void EvictBrick(u32 brickIdx);
+        bool EvictBrick(u32 brickIdx);
 
         void ReserveResident(u32 brickCount);
 
@@ -78,7 +80,17 @@ namespace Manro {
         [[nodiscard]] const CBuffer &GetHeaderBuffer() const { return *m_Headers; }
         [[nodiscard]] const CSparseBuffer &GetBrickStore() const { return *m_Bricks; }
 
-        [[nodiscard]] u32 GetBrickCount() const { return m_BrickCount; }
+        [[nodiscard]] u32 GetBrickCount() const { return m_LiveBricks; }
+        [[nodiscard]] u32 GetBrickHighWater() const { return m_BrickCount; }
+
+        [[nodiscard]] u32 GetBrickCapacity() const {
+            return static_cast<u32>(m_HeaderMirror.size());
+        }
+
+        [[nodiscard]] const std::vector<u32> &GetLiveBrickList() const {
+            return m_LiveBrickList;
+        }
+
         [[nodiscard]] float GetBrickSize() const { return m_BrickSize; }
         [[nodiscard]] const Vec3 &GetWorldMin() const { return m_WorldMin; }
 
@@ -90,7 +102,9 @@ namespace Manro {
             return m_HeaderMirror;
         }
 
-        [[nodiscard]] u64 GetHeaderVersion() const { return m_HeaderVersion; }
+        [[nodiscard]] u64 GetVisibilityVersion() const { return m_VisibilityVersion; }
+
+        void BumpVisibilityVersion() { ++m_VisibilityVersion; }
 
         void FlushHeaders();
 
@@ -101,6 +115,12 @@ namespace Manro {
 
         i32 NeighborBrick(u32 brickIdx, int dx, int dy, int dz) const;
         void RecomputeHidden(u32 brickIdx);
+
+        u32 AcquireBrickIndex();
+
+        void AddLiveBrick(u32 brickIdx);
+
+        void RemoveLiveBrick(u32 brickIdx);
 
         void InvalidateHiddenNear(const Vec3 &pos, float radius);
         void InvalidateSingleVoxel(const Vec3 &pos);
@@ -120,6 +140,9 @@ namespace Manro {
         std::vector<u8> m_BrickHidden;
 
         std::vector<u32> m_FreeBricks;
+        std::vector<u32> m_LiveBrickList;
+        std::vector<u32> m_LiveBrickPos;
+        u32 m_LiveBricks{0};
 
         static constexpr u32 kStageSlots = 3;
         static constexpr u32 kStageCapacityBricks = 256;
@@ -147,6 +170,6 @@ namespace Manro {
 
         bool m_bHeadersFullUpload{true};
 
-        u64 m_HeaderVersion{0};
+        u64 m_VisibilityVersion{0};
     };
 }

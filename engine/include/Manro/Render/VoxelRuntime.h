@@ -38,6 +38,8 @@ namespace Manro {
 
         [[nodiscard]] u32 GetBrickCount() const;
 
+        [[nodiscard]] u32 GetBrickHighWater() const;
+
         [[nodiscard]] u32 GetTaskGroups() const;
 
         void GetTaskSplit(u32 &opaque, u32 &cutout, u32 &skipped) const;

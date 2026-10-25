@@ -72,6 +72,8 @@ namespace Manro {
 
         std::unordered_map<i64, SlotInfo> slots;
         std::vector<i32> slotMirror;
+        std::vector<i64> slotOwner;
+        std::vector<u8> streamBrick;
 
         std::vector<i64> unfilled;
         std::vector<std::pair<float, i64> > unfilledScratch;
@@ -149,8 +151,16 @@ namespace Manro {
         std::vector<u8> brickContent;
         std::vector<u8> lightMirror;
         std::vector<u8> lightDirtyFlag;
-        std::vector<u32> lightDirtyList;
+        std::vector<u8> lightDirtyMask;
+
+        struct LightDirty_t {
+            i64 key{-1};
+            u32 brick{~0u};
+        };
+
+        std::vector<LightDirty_t> lightDirtyList;
         mutable std::shared_mutex m_MirrorMutex;
+        mutable std::shared_mutex m_LightMutex;
         double lightMsAccum{0.0};
         u32 lightBrickCount{0};
         u64 lightVisitCount{0};
@@ -186,11 +196,18 @@ namespace Manro {
 
         bool IsFluidAt(i64 x, i64 y, i64 z) const;
 
+        void ReleaseChunk(CVoxelBrickStore &world, i64 key);
+
+        void MarkLightDirty(i64 key, u32 brick, u32 faceMask = 0x3Fu);
+
+        void ProcessLightDirty(int budget);
+
         void RecomputeOpaque(CVoxelBrickStore &world, i32 brickIdx);
 
         bool PackedLightAt(i64 x, i64 y, i64 z, u8 &skyOut, u8 &blkOut) const;
 
-        void BorderPullLight(u32 brickIdx, int bsx, int bsy, int bsz);
+        void BorderPullLight(u32 brickIdx, int bsx, int bsy, int bsz,
+                             u32 faceMask = 0x3Fu);
 
         static constexpr int kHaloDir[6][3] = {
             {1, 0, 0}, {-1, 0, 0}, {0, 1, 0},
@@ -211,12 +228,13 @@ namespace Manro {
                             std::vector<u8> &lightOut,
                             IVoxelContentSource *content) const;
 
-        void GlowPushToNeighbours(u32 brickIdx, int bsx, int bsy, int bsz);
-
         struct EditRestage_t {
             i64 key{-1};
             u32 brick{~0u};
         };
+
+        void GlowPushToNeighbours(u32 brickIdx, int bsx, int bsy, int bsz,
+                                  std::vector<EditRestage_t> &out);
 
         std::vector<EditRestage_t> editRestage;
 

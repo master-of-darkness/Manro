@@ -24,13 +24,15 @@ namespace Manro {
 
         bool ReadSectionStates(int sx, int sy, int sz, VoxelSectionStates &out) override;
 
+        void TrimCaches() override;
+
         bool ScanSaveStates(std::vector<VoxelBlockState> &uniqueOut) override;
 
         [[nodiscard]] bool ReadSpawn(Vec3 &spawn) const override;
 
     private:
         struct Impl;
-        std::unique_ptr<Impl> m_Impl;
+        std::shared_ptr<Impl> m_Impl;
         std::string m_WorldDir;
         bool m_bOpen{false};
     };

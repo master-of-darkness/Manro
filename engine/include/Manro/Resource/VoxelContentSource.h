@@ -46,6 +46,9 @@ namespace Manro {
 
         virtual bool ReadSectionStates(int sx, int sy, int sz, VoxelSectionStates &out) = 0;
 
+        virtual void TrimCaches() {
+        }
+
         virtual bool ScanSaveStates(std::vector<VoxelBlockState> &uniqueOut) = 0;
 
         [[nodiscard]] virtual bool ReadSpawn(Vec3 &spawn) const = 0;

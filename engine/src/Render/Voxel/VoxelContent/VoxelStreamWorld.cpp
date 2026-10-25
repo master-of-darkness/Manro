@@ -27,6 +27,9 @@ namespace Manro {
         auto &I = *m_Impl;
         if (static_cast<size_t>(brickIdx) >= I.brickContent.size())
             return true;
+        if (static_cast<size_t>(brickIdx) >= I.streamBrick.size() ||
+            I.streamBrick[static_cast<size_t>(brickIdx)] == 0u)
+            return true;
         return I.brickContent[static_cast<size_t>(brickIdx)] != 0u;
     }
 

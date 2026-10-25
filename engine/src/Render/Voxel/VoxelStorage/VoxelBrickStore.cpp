@@ -1,4 +1,5 @@
 #include "VoxelBrickStore.h"
+#include "../../Vulkan/VulkanContext.h"
 #include "../../Vulkan/SparseBuffer.h"
 #include "../../Vulkan/Buffer.h"
 #include "../../Vulkan/GpuDefs.h"
@@ -62,6 +63,10 @@ namespace Manro {
         m_BrickOpaqueFull.assign(desc.maxResidentBricks, 0u);
         m_BrickHidden.assign(desc.maxResidentBricks, 0u);
         m_BrickCount = 0;
+        m_LiveBricks = 0;
+        m_LiveBrickList.clear();
+        m_LiveBrickList.reserve(desc.maxResidentBricks);
+        m_LiveBrickPos.assign(desc.maxResidentBricks, ~0u);
         m_DirtyHeaders.reserve(desc.maxResidentBricks);
         m_FreeBricks.reserve(desc.maxResidentBricks);
         FlushHeaders();
@@ -80,6 +85,9 @@ namespace Manro {
         m_BrickOpaqueFull.clear();
         m_BrickHidden.clear();
         m_FreeBricks.clear();
+        m_LiveBrickList.clear();
+        m_LiveBrickPos.clear();
+        m_LiveBricks = 0;
         m_StageCounts.fill(0);
         m_StageHighWater.fill(0);
         m_BlockingUploadCount = 0;
@@ -89,24 +97,105 @@ namespace Manro {
         m_PageDirtyHi = 0u;
         m_bHeadersFullUpload = true;
         m_BrickCount = 0;
-        ++m_HeaderVersion;
+        ++m_VisibilityVersion;
+    }
+
+    void CVoxelBrickStore::Reset() {
+        if (!m_Bricks || !m_Headers || !m_PageTable)
+            return;
+        if (m_Context)
+            m_Context->WaitIdle();
+
+        std::fill(m_PageMirror.begin(), m_PageMirror.end(), -1);
+        std::fill(m_HeaderMirror.begin(), m_HeaderMirror.end(), VoxelBrickHeader_t{});
+        std::fill(m_BrickSlots.begin(), m_BrickSlots.end(), ~0u);
+        std::fill(m_BrickOpaqueFull.begin(), m_BrickOpaqueFull.end(), 0u);
+        std::fill(m_BrickHidden.begin(), m_BrickHidden.end(), 0u);
+        std::fill(m_LiveBrickPos.begin(), m_LiveBrickPos.end(), ~0u);
+        m_FreeBricks.clear();
+        m_LiveBrickList.clear();
+        m_LiveBricks = 0;
+        m_BrickCount = 0;
+        m_DirtyHeaders.clear();
+        m_PendingEdits.clear();
+        m_StageCounts.fill(0);
+        m_StageHighWater.fill(0);
+        m_BlockingUploadCount = 0;
+        m_bPagesDirty = true;
+        m_PageDirtyLo = ~0u;
+        m_PageDirtyHi = 0u;
+        m_bHeadersFullUpload = true;
+        ++m_VisibilityVersion;
+        FlushHeaders();
+    }
+
+    u32 CVoxelBrickStore::AcquireBrickIndex() {
+        while (!m_FreeBricks.empty()) {
+            const u32 candidate = m_FreeBricks.back();
+            m_FreeBricks.pop_back();
+            if (candidate >= m_BrickSlots.size())
+                continue;
+            if (m_BrickSlots[candidate] != ~0u) {
+                LOG_WARN("[CVoxelBrickStore] Free list contained live brick {}",
+                         candidate);
+                continue;
+            }
+            AddLiveBrick(candidate);
+            return candidate;
+        }
+        if (m_BrickCount >= m_HeaderMirror.size()) {
+            LOG_ERROR("[CVoxelBrickStore] Resident brick budget exhausted");
+            return ~0u;
+        }
+        const u64 brickBytes = static_cast<u64>(kVoxelBrickExWords) * sizeof(u32);
+        if (!m_Bricks->BindRange(static_cast<u64>(m_BrickCount) * brickBytes,
+                                 brickBytes))
+            return ~0u;
+        const u32 brickIdx = m_BrickCount++;
+        AddLiveBrick(brickIdx);
+        return brickIdx;
+    }
+
+    void CVoxelBrickStore::AddLiveBrick(u32 brickIdx) {
+        if (brickIdx >= m_LiveBrickPos.size())
+            return;
+        if (m_LiveBrickPos[brickIdx] != ~0u)
+            return;
+        m_LiveBrickPos[brickIdx] = static_cast<u32>(m_LiveBrickList.size());
+        m_LiveBrickList.push_back(brickIdx);
+        ++m_LiveBricks;
+    }
+
+    void CVoxelBrickStore::RemoveLiveBrick(u32 brickIdx) {
+        if (brickIdx >= m_LiveBrickPos.size())
+            return;
+        const u32 pos = m_LiveBrickPos[brickIdx];
+        if (pos == ~0u || pos >= m_LiveBrickList.size())
+            return;
+        const u32 last = m_LiveBrickList.back();
+        m_LiveBrickList[pos] = last;
+        m_LiveBrickPos[last] = pos;
+        m_LiveBrickList.pop_back();
+        m_LiveBrickPos[brickIdx] = ~0u;
+        --m_LiveBricks;
     }
 
     i32 CVoxelBrickStore::AllocateBrick(u32 bx, u32 by, u32 bz) {
         if (bx >= m_VirtualDim || by >= m_VirtualDim || bz >= m_VirtualDim)
             return -1;
         const u32 slot = BrickSlot(bx, by, bz);
-        if (m_PageMirror[slot] >= 0)
-            return m_PageMirror[slot];
-        if (m_BrickCount >= m_HeaderMirror.size()) {
-            LOG_ERROR("[CVoxelBrickStore] Resident brick budget exhausted");
-            return -1;
+        if (m_PageMirror[slot] >= 0) {
+            const u32 existing = static_cast<u32>(m_PageMirror[slot]);
+            if (existing < m_BrickSlots.size() && m_BrickSlots[existing] == slot)
+                return static_cast<i32>(existing);
+            LOG_WARN("[CVoxelBrickStore] Stale page entry at slot {} (brick {})",
+                     slot, existing);
+            m_PageMirror[slot] = -1;
+            TouchPageSlot(slot);
         }
-        const u64 brickBytes = static_cast<u64>(kVoxelBrickExWords) * sizeof(u32);
-        if (!m_Bricks->BindRange(static_cast<u64>(m_BrickCount) * brickBytes, brickBytes))
+        const u32 brickIdx = AcquireBrickIndex();
+        if (brickIdx == ~0u)
             return -1;
-
-        const u32 brickIdx = m_BrickCount++;
         m_PageMirror[slot] = static_cast<i32>(brickIdx);
         TouchPageSlot(slot);
         m_BrickSlots[brickIdx] = slot;
@@ -123,7 +212,7 @@ namespace Manro {
 
         m_DirtyHeaders.push_back(brickIdx);
         m_bPagesDirty = true;
-        ++m_HeaderVersion;
+        ++m_VisibilityVersion;
         return static_cast<i32>(brickIdx);
     }
 
@@ -131,20 +220,26 @@ namespace Manro {
         if (slot >= m_PageMirror.size())
             return -1;
         const i32 existing = m_PageMirror[slot];
-        if (existing >= 0)
-            return existing;
-        u32 brickIdx = ~0u;
-        if (!m_FreeBricks.empty()) {
-            brickIdx = m_FreeBricks.back();
-            m_FreeBricks.pop_back();
-        } else {
-            if (m_BrickCount >= m_HeaderMirror.size())
-                return -1;
-            const u64 brickBytes = static_cast<u64>(kVoxelBrickExWords) * sizeof(u32);
-            if (!m_Bricks->BindRange(static_cast<u64>(m_BrickCount) * brickBytes, brickBytes))
-                return -1;
-            brickIdx = m_BrickCount++;
+        if (existing >= 0) {
+            const u32 existingIdx = static_cast<u32>(existing);
+            if (existingIdx < m_BrickSlots.size() &&
+                m_BrickSlots[existingIdx] == slot) {
+                VoxelBrickHeader_t &h = m_HeaderMirror[existingIdx];
+                h.origin = origin;
+                h.pageIndex = existingIdx;
+                h.flags = (h.flags | 1u | 2u) & ~4u;
+                m_DirtyHeaders.push_back(existingIdx);
+                ++m_VisibilityVersion;
+                return existing;
+            }
+            LOG_WARN("[CVoxelBrickStore] Stale page entry at slot {} (brick {})",
+                     slot, existingIdx);
+            m_PageMirror[slot] = -1;
+            TouchPageSlot(slot);
         }
+        const u32 brickIdx = AcquireBrickIndex();
+        if (brickIdx == ~0u)
+            return -1;
         m_PageMirror[slot] = static_cast<i32>(brickIdx);
         TouchPageSlot(slot);
         m_BrickSlots[brickIdx] = slot;
@@ -160,27 +255,31 @@ namespace Manro {
 
         m_DirtyHeaders.push_back(brickIdx);
         m_bPagesDirty = true;
-        ++m_HeaderVersion;
+        ++m_VisibilityVersion;
         return static_cast<i32>(brickIdx);
     }
 
-    void CVoxelBrickStore::EvictBrick(u32 brickIdx) {
+    bool CVoxelBrickStore::EvictBrick(u32 brickIdx) {
         if (brickIdx >= m_HeaderMirror.size())
-            return;
-        const u32 slot = (brickIdx < m_BrickSlots.size()) ? m_BrickSlots[brickIdx] : ~0u;
-        if (slot != ~0u && slot < m_PageMirror.size() &&
-            m_PageMirror[slot] == static_cast<i32>(brickIdx)) {
-            m_PageMirror[slot] = -1;
-            TouchPageSlot(slot);
+            return false;
+        if (brickIdx >= m_BrickSlots.size() || m_BrickSlots[brickIdx] == ~0u)
+            return false;
+        const u32 slot = m_BrickSlots[brickIdx];
+        if (slot >= m_PageMirror.size() ||
+            m_PageMirror[slot] != static_cast<i32>(brickIdx)) {
+            LOG_WARN("[CVoxelBrickStore] Refusing to evict aliased brick {} (slot {})",
+                     brickIdx, slot);
+            return false;
         }
-        if (brickIdx < m_BrickSlots.size())
-            m_BrickSlots[brickIdx] = ~0u;
+        m_PageMirror[slot] = -1;
+        TouchPageSlot(slot);
+        m_BrickSlots[brickIdx] = ~0u;
         VoxelBrickHeader_t &h = m_HeaderMirror[brickIdx];
         h.flags = 0u;
         m_BrickOpaqueFull[brickIdx] = 0u;
         m_BrickHidden[brickIdx] = 0u;
 
-        if (slot != ~0u) {
+        {
             for (const auto &o : kHiddenNb) {
                 const i32 nslot = SlotNeighbor(slot, o[0], o[1], o[2]);
                 if (nslot < 0)
@@ -193,10 +292,12 @@ namespace Manro {
             }
         }
         m_FreeBricks.push_back(brickIdx);
+        RemoveLiveBrick(brickIdx);
 
         m_DirtyHeaders.push_back(brickIdx);
         m_bPagesDirty = true;
-        ++m_HeaderVersion;
+        ++m_VisibilityVersion;
+        return true;
     }
 
     void CVoxelBrickStore::ReserveResident(u32 brickCount) {
@@ -224,7 +325,6 @@ namespace Manro {
         if ((m_HeaderMirror[brickIdx].flags & 2u) == 0u) {
             m_HeaderMirror[brickIdx].flags |= 2u;
             m_DirtyHeaders.push_back(brickIdx);
-            ++m_HeaderVersion;
         }
     }
 
@@ -429,13 +529,33 @@ namespace Manro {
     void CVoxelBrickStore::SetBrickOpaqueFull(u32 brickIdx, bool opaque) {
         if (brickIdx >= m_BrickOpaqueFull.size())
             return;
+        const u8 selfBefore = m_BrickHidden[brickIdx];
+        i32 nbIdx[6] = {-1, -1, -1, -1, -1, -1};
+        u8 nbBefore[6]{0u, 0u, 0u, 0u, 0u, 0u};
+        for (int a = 0; a < 6; ++a) {
+            const i32 n = NeighborBrick(brickIdx, kHiddenNb[a][0], kHiddenNb[a][1],
+                                        kHiddenNb[a][2]);
+            nbIdx[a] = n;
+            if (n >= 0)
+                nbBefore[a] = m_BrickHidden[static_cast<u32>(n)];
+        }
+
         m_BrickOpaqueFull[brickIdx] = opaque ? 1u : 0u;
         RecomputeHidden(brickIdx);
-        for (const auto &o : kHiddenNb) {
-            const i32 n = NeighborBrick(brickIdx, o[0], o[1], o[2]);
-            if (n >= 0)
-                RecomputeHidden(static_cast<u32>(n));
+        for (int a = 0; a < 6; ++a) {
+            if (nbIdx[a] >= 0)
+                RecomputeHidden(static_cast<u32>(nbIdx[a]));
         }
+
+        bool changed = m_BrickHidden[brickIdx] != selfBefore;
+        for (int a = 0; a < 6; ++a) {
+            if (nbIdx[a] >= 0 &&
+                m_BrickHidden[static_cast<u32>(nbIdx[a])] != nbBefore[a]) {
+                changed = true;
+            }
+        }
+        if (changed)
+            ++m_VisibilityVersion;
     }
 
     void CVoxelBrickStore::InvalidateHiddenNear(const Vec3 &pos, float radius) {
@@ -459,7 +579,10 @@ namespace Manro {
                         continue;
                     const i32 b = m_PageMirror[slot];
                     if (b >= 0) {
-                        m_BrickHidden[static_cast<u32>(b)] = 0u;
+                        if (m_BrickHidden[static_cast<u32>(b)] != 0u) {
+                            m_BrickHidden[static_cast<u32>(b)] = 0u;
+                            ++m_VisibilityVersion;
+                        }
                         MarkBrickAndNeighborsDirty(static_cast<u32>(b));
                     }
                 }
@@ -485,7 +608,10 @@ namespace Manro {
         if (home < 0)
             return;
         const u32 h = static_cast<u32>(home);
-        m_BrickHidden[h] = 0u;
+        if (m_BrickHidden[h] != 0u) {
+            m_BrickHidden[h] = 0u;
+            ++m_VisibilityVersion;
+        }
         MarkBrickDirty(h);
         int lx = static_cast<int>(std::floor((local.x - bx) * 16.f));
         int ly = static_cast<int>(std::floor((local.y - by) * 16.f));
@@ -499,7 +625,10 @@ namespace Manro {
                 continue;
             const i32 n = NeighborBrick(h, kHiddenNb[a][0], kHiddenNb[a][1], kHiddenNb[a][2]);
             if (n >= 0) {
-                m_BrickHidden[static_cast<u32>(n)] = 0u;
+                if (m_BrickHidden[static_cast<u32>(n)] != 0u) {
+                    m_BrickHidden[static_cast<u32>(n)] = 0u;
+                    ++m_VisibilityVersion;
+                }
                 MarkBrickDirty(static_cast<u32>(n));
             }
         }

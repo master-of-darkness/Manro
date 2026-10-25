@@ -28,6 +28,8 @@ namespace Manro::Anvil {
 
         bool LoadChunkPayload(int cx, int cz, std::vector<u8> &payload);
 
+        void ClearCache();
+
         [[nodiscard]] const std::string &GetRegionDir() const;
 
     private:

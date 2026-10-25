@@ -4,6 +4,7 @@
 
 namespace Manro {
     bool CVoxelStreamWorld::Impl::IsSolidAt(i64 x, i64 y, i64 z) const {
+        std::shared_lock lk(m_MirrorMutex);
         if (y < -64)
             return true;
         if (y >= 320)
@@ -22,6 +23,7 @@ namespace Manro {
     }
 
     bool CVoxelStreamWorld::Impl::IsFluidAt(i64 x, i64 y, i64 z) const {
+        std::shared_lock lk(m_MirrorMutex);
         if (y < -64 || y >= 320)
             return false;
         const int sx = static_cast<int>(x >> 4);
@@ -40,6 +42,7 @@ namespace Manro {
     void CVoxelStreamWorld::Impl::SnapshotHalo(int bsx, int bsy, int bsz,
                                                HaloSnap_t out[6]) const {
         std::shared_lock lk(m_MirrorMutex);
+        std::shared_lock llk(m_LightMutex);
         for (int a = 0; a < 6; ++a) {
             HaloSnap_t &h = out[a];
             h.loaded = false;
@@ -60,6 +63,7 @@ namespace Manro {
     }
 
     i32 CVoxelStreamWorld::Impl::StateAt(i64 x, i64 y, i64 z) const {
+        std::shared_lock lk(m_MirrorMutex);
         if (y < -64 || y >= 320)
             return -1;
         const int sx = static_cast<int>(x >> 4);
@@ -80,6 +84,7 @@ namespace Manro {
 
     bool CVoxelStreamWorld::Impl::CollisionBoxAt(i64 x, i64 y, i64 z, Vec3 &mn,
                                                  Vec3 &mx) const {
+        std::shared_lock lk(m_MirrorMutex);
         if (y >= 320)
             return false;
         if (y < -64) {

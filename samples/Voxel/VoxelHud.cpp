@@ -19,9 +19,9 @@ void CVoxel::DrawHud(float emaFps, float worst1, float worst01,
         ImGui::Text("1%% low: %.2f ms  0.1%% low: %.2f ms", static_cast<double>(worst1),
                     static_cast<double>(worst01));
         ImGui::Separator();
-        ImGui::Text("Bricks: %u  TaskGroups: %u  Edits: %u  Unfilled: %d",
-                    m_VoxelRuntime->GetBrickCount(), m_VoxelRuntime->GetTaskGroups(),
-                    m_EditCount, m_Unfilled);
+        ImGui::Text("Bricks: %u (hw %u)  TaskGroups: %u  Edits: %u  Unfilled: %d",
+                    m_VoxelRuntime->GetBrickCount(), m_VoxelRuntime->GetBrickHighWater(),
+                    m_VoxelRuntime->GetTaskGroups(), m_EditCount, m_Unfilled);
         ImGui::Text("Stream: %.2f ms (r%.2f/e%.2f/n%.2f/d%.2f/c%.2f)",
                     static_cast<double>(m_StreamEma),
                     static_cast<double>(m_StreamStats.rebuildMs),
@@ -77,13 +77,14 @@ void CVoxel::LogStats(float emaFps, float worst1, float worst01, const Manro::u3
     m_VoxelRuntime->GetGpuTimes(lgx, lgd, lgp);
     Manro::u32 tgOp = 0u, tgCut = 0u, tgSkip = 1u;
     m_VoxelRuntime->GetTaskSplit(tgOp, tgCut, tgSkip);
-    printf("[Voxel] fps=%.0f (%.2f ms) 1%%low=%.2fms 0.1%%low=%.2fms bricks=%u "
+    printf("[Voxel] fps=%.0f (%.2f ms) 1%%low=%.2fms 0.1%%low=%.2fms bricks=%u (hw %u) "
            "taskGroups=%u (op=%u cut=%u skip=%u) edits=%u unfilled=%d cpu=%.2fms stream=%.2fms gpuxfer=%.2fms "
            "gpudraw=%.2fms gpupost=%.2fms paceF=%.2fms paceA=%.2fms paceP=%.2fms gpuMax=%.2fms "
            "cam=(%.1f,%.1f,%.1f)\n",
            static_cast<double>(emaFps), static_cast<double>(m_FpsEma),
            static_cast<double>(worst1), static_cast<double>(worst01),
-           m_VoxelRuntime->GetBrickCount(), m_VoxelRuntime->GetTaskGroups(), tgOp,
+           m_VoxelRuntime->GetBrickCount(), m_VoxelRuntime->GetBrickHighWater(),
+           m_VoxelRuntime->GetTaskGroups(), tgOp,
            tgCut, tgSkip, m_EditCount,
            m_Unfilled, static_cast<double>(m_CpuEma), static_cast<double>(m_StreamEma),
            static_cast<double>(lgx), static_cast<double>(lgd), static_cast<double>(lgp),
